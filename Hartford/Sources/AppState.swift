@@ -1,8 +1,10 @@
 import SwiftUI
 import Combine
+import UserNotifications
 
 @MainActor
 class AppState: ObservableObject {
+    @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
     @Published var isMonitoring = false
     @Published var currentApp: String?
     @Published var lastStatus: FocusStatus?
@@ -71,6 +73,11 @@ class AppState: ObservableObject {
                 onStatusChange: { [weak self] status in
                     Task { @MainActor in
                         self?.lastStatus = status
+                    }
+                },
+                onRefocus: {
+                    Task { @MainActor in
+                        GlowOverlayController.shared.showGlowAroundActiveWindow()
                     }
                 }
             )
@@ -163,6 +170,50 @@ class AppState: ObservableObject {
 
     func openScreenRecordingPreferences() {
         ScreenCaptureService.openScreenRecordingPreferences()
+    }
+
+    func openAutomationPreferences() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    func requestNotificationPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+            if let error = error {
+                print("Notification permission error: \(error)")
+            }
+        }
+    }
+
+    /// Trigger screen recording permission prompt
+    func triggerScreenRecordingPermission() {
+        // Use the official API to request screen capture access
+        // This will show the system permission dialog if not already granted
+        CGRequestScreenCaptureAccess()
+        // Then open settings so user can grant permission
+        openScreenRecordingPreferences()
+    }
+
+    /// Trigger automation permission by attempting to use Apple Events
+    nonisolated func triggerAutomationPermission() {
+        // Run a simple AppleScript to trigger the permission prompt
+        // This must be done on a background thread since it's nonisolated
+        Task.detached {
+            let script = NSAppleScript(source: """
+                tell application "System Events"
+                    return name of first process whose frontmost is true
+                end tell
+            """)
+            var error: NSDictionary?
+            script?.executeAndReturnError(&error)
+            // Then open settings on main thread
+            await MainActor.run {
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
+                    NSWorkspace.shared.open(url)
+                }
+            }
+        }
     }
 
     private func showPermissionAlert() {
