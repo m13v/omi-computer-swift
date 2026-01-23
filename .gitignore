@@ -5,8 +5,9 @@ DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 
-# Environment
+# Environment (both contain secrets)
 .env
+.env.app
 
 # macOS
 .DS_Store
