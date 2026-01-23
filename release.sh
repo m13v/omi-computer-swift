@@ -130,15 +130,41 @@ xcrun stapler staple "$APP_BUNDLE"
 echo "  ✓ App stapled"
 
 # -----------------------------------------------------------------------------
-# Step 5: Create DMG
+# Step 5: Create DMG (with Applications shortcut for drag-to-install)
 # -----------------------------------------------------------------------------
-echo "[5/9] Creating DMG..."
+echo "[5/9] Creating installer DMG..."
 
 rm -f "$DMG_PATH"
-hdiutil create -volname "$APP_NAME" \
-    -srcfolder "$APP_BUNDLE" \
-    -ov -format UDZO \
-    "$DMG_PATH"
+
+# Use create-dmg for a proper installer DMG with Applications shortcut
+if command -v create-dmg &> /dev/null; then
+    # Use background image if available
+    BG_ARGS=""
+    if [ -f "dmg-assets/background.png" ]; then
+        BG_ARGS="--background dmg-assets/background.png"
+    fi
+
+    create-dmg \
+        --volname "Install $APP_NAME" \
+        --volicon "$APP_BUNDLE/Contents/Resources/AppIcon.icns" \
+        --window-pos 200 120 \
+        --window-size 610 365 \
+        --icon-size 80 \
+        --icon "$APP_NAME.app" 155 175 \
+        --hide-extension "$APP_NAME.app" \
+        --app-drop-link 455 175 \
+        --no-internet-enable \
+        $BG_ARGS \
+        "$DMG_PATH" \
+        "$APP_BUNDLE"
+else
+    # Fallback to basic hdiutil if create-dmg not available
+    echo "  Warning: create-dmg not found, using basic DMG creation"
+    hdiutil create -volname "$APP_NAME" \
+        -srcfolder "$APP_BUNDLE" \
+        -ov -format UDZO \
+        "$DMG_PATH"
+fi
 
 echo "  ✓ DMG created"
 
