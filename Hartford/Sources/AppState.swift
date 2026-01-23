@@ -209,10 +209,8 @@ class AppState: ObservableObject {
     /// Trigger screen recording permission prompt
     func triggerScreenRecordingPermission() {
         // Use the official API to request screen capture access
-        // This will show the system permission dialog if not already granted
+        // This shows a system dialog with "Open System Settings" button
         CGRequestScreenCaptureAccess()
-        // Then open settings so user can grant permission
-        openScreenRecordingPreferences()
     }
 
     /// Trigger automation permission by attempting to use Apple Events
