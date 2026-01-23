@@ -63,7 +63,7 @@ class AppState: ObservableObject {
 
         do {
             geminiService = try GeminiService(
-                onAlert: { [weak self] message in
+                onAlert: { message in
                     NotificationService.shared.sendNotification(
                         title: "Focus Alert",
                         message: message,
