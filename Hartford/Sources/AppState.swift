@@ -9,6 +9,11 @@ class AppState: ObservableObject {
     @Published var currentApp: String?
     @Published var lastStatus: FocusStatus?
 
+    // Permission states for onboarding
+    @Published var hasNotificationPermission = false
+    @Published var hasScreenRecordingPermission = false
+    @Published var hasAutomationPermission = false
+
     private var screenCaptureService: ScreenCaptureService?
     private var windowMonitor: WindowMonitor?
     private var geminiService: GeminiService?
@@ -227,6 +232,47 @@ class AppState: ObservableObject {
                 if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Automation") {
                     NSWorkspace.shared.open(url)
                 }
+            }
+        }
+    }
+
+    // MARK: - Permission Status Checks
+
+    /// Check and update all permission states
+    func checkAllPermissions() {
+        checkNotificationPermission()
+        checkScreenRecordingPermission()
+        checkAutomationPermission()
+    }
+
+    /// Check notification permission status
+    func checkNotificationPermission() {
+        UNUserNotificationCenter.current().getNotificationSettings { settings in
+            DispatchQueue.main.async {
+                self.hasNotificationPermission = settings.authorizationStatus == .authorized
+            }
+        }
+    }
+
+    /// Check screen recording permission status
+    func checkScreenRecordingPermission() {
+        hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
+    }
+
+    /// Check automation permission by attempting to use Apple Events
+    func checkAutomationPermission() {
+        Task.detached {
+            let script = NSAppleScript(source: """
+                tell application "System Events"
+                    return name of first process whose frontmost is true
+                end tell
+            """)
+            var error: NSDictionary?
+            let result = script?.executeAndReturnError(&error)
+            let hasPermission = result != nil && error == nil
+
+            await MainActor.run {
+                self.hasAutomationPermission = hasPermission
             }
         }
     }
