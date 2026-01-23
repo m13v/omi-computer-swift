@@ -31,9 +31,11 @@ else
     codesign --force --deep --sign - "$APP_PATH"
 fi
 
-echo "Resetting permissions for $BUNDLE_ID..."
+echo "Resetting permissions and user defaults for $BUNDLE_ID..."
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset Notifications "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
+# Note: Notification permissions can't be reset via tccutil - must be done manually in System Settings
+defaults delete "$BUNDLE_ID" 2>/dev/null || true
 
 echo "Revealing app in Finder..."
 open -R "$APP_PATH"
