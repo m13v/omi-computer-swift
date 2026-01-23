@@ -18,12 +18,20 @@ struct OMIApp: App {
         Window("Welcome to OMI", id: "onboarding") {
             OnboardingView(appState: appState)
                 .onAppear {
-                    NSApp.activate(ignoringOtherApps: true)
+                    // Center and activate the window after a brief delay
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                        for window in NSApp.windows {
+                            if window.title == "Welcome to OMI" || window.contentView?.subviews.first != nil {
+                                window.center()
+                                window.makeKeyAndOrderFront(nil)
+                                window.orderFrontRegardless()
+                            }
+                        }
+                        NSApp.activate(ignoringOtherApps: true)
+                    }
                 }
         }
-        .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
-        .defaultPosition(.center)
         .defaultLaunchBehavior(.presented)
     }
 }
