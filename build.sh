@@ -44,15 +44,12 @@ cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
-# Copy .env file if it exists
-if [ -f "../.env" ]; then
-    cp "../.env" "$APP_BUNDLE/Contents/Resources/.env"
-    echo "Copied .env file to bundle"
-elif [ -f ".env" ]; then
-    cp ".env" "$APP_BUNDLE/Contents/Resources/.env"
-    echo "Copied .env file to bundle"
+# Copy .env.app file (app runtime secrets only)
+if [ -f ".env.app" ]; then
+    cp ".env.app" "$APP_BUNDLE/Contents/Resources/.env"
+    echo "Copied .env.app to bundle"
 else
-    echo "Warning: No .env file found. Make sure GEMINI_API_KEY is set."
+    echo "Warning: No .env.app file found. App may not have required API keys."
 fi
 
 # Create PkgInfo
