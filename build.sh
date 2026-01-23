@@ -36,6 +36,9 @@ cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 # Copy Info.plist
 cp Hartford/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
+# Copy app icon
+cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+
 # Update Info.plist with actual values
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
