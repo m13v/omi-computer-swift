@@ -25,8 +25,8 @@ cp Hartford/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
-# Copy .env
-cp .env "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
+# Copy .env.app (app runtime secrets only)
+cp .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
 
 echo "Dev build complete: $APP_BUNDLE"
 open "$APP_BUNDLE"
