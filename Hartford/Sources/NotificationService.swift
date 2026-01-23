@@ -5,7 +5,7 @@ class NotificationService {
     static let shared = NotificationService()
 
     private var lastNotificationTime: Date = .distantPast
-    private let cooldownSeconds: TimeInterval = 120.0
+    private let cooldownSeconds: TimeInterval = 60.0
 
     private init() {}
 
