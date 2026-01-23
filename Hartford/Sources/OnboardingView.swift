@@ -5,6 +5,15 @@ struct OnboardingView: View {
     @AppStorage("onboardingStep") private var currentStep = 0
     @Environment(\.dismiss) private var dismiss
 
+    // Track which permissions user has attempted to grant (to start polling)
+    // Persisted so polling resumes after app restart
+    @AppStorage("hasTriggeredNotification") private var hasTriggeredNotification = false
+    @AppStorage("hasTriggeredAutomation") private var hasTriggeredAutomation = false
+    @AppStorage("hasTriggeredScreenRecording") private var hasTriggeredScreenRecording = false
+
+    // Timer to periodically check permission status (only for triggered permissions)
+    let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
     let steps = ["Welcome", "Notifications", "Automation", "Screen Recording", "Done"]
 
     var body: some View {
@@ -18,29 +27,36 @@ struct OnboardingView: View {
             }
         }
         .frame(width: 400, height: 400)
+        .onReceive(permissionCheckTimer) { _ in
+            // Only poll for permissions that user has triggered
+            if hasTriggeredNotification {
+                appState.checkNotificationPermission()
+            }
+            if hasTriggeredAutomation {
+                appState.checkAutomationPermission()
+            }
+            if hasTriggeredScreenRecording {
+                appState.checkScreenRecordingPermission()
+            }
+        }
+    }
+
+    /// Check if current step's permission is granted
+    private var currentPermissionGranted: Bool {
+        switch currentStep {
+        case 1: return appState.hasNotificationPermission
+        case 2: return appState.hasAutomationPermission
+        case 3: return appState.hasScreenRecordingPermission
+        default: return true
+        }
     }
 
     private var onboardingContent: some View {
         VStack(spacing: 24) {
-            // Progress indicators with checkmarks for completed steps
+            // Progress indicators with checkmarks for granted permissions
             HStack(spacing: 12) {
                 ForEach(0..<steps.count, id: \.self) { index in
-                    if index < currentStep {
-                        // Completed step - show checkmark
-                        Image(systemName: "checkmark.circle.fill")
-                            .foregroundColor(.green)
-                            .font(.system(size: 12))
-                    } else if index == currentStep {
-                        // Current step - filled circle
-                        Circle()
-                            .fill(Color.accentColor)
-                            .frame(width: 10, height: 10)
-                    } else {
-                        // Future step - empty circle
-                        Circle()
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1.5)
-                            .frame(width: 10, height: 10)
-                    }
+                    progressIndicator(for: index)
                 }
             }
             .padding(.top, 20)
@@ -52,16 +68,41 @@ struct OnboardingView: View {
 
             Spacer()
 
-            // Continue button
-            Button(action: handleContinue) {
-                Text(buttonTitle)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .padding(.horizontal, 40)
-            .padding(.bottom, 20)
+            // Buttons
+            buttonSection
+        }
+    }
+
+    @ViewBuilder
+    private func progressIndicator(for index: Int) -> some View {
+        let isGranted = permissionGranted(for: index)
+
+        if index < currentStep || (index == currentStep && isGranted) {
+            // Completed or granted - show checkmark
+            Image(systemName: "checkmark.circle.fill")
+                .foregroundColor(.green)
+                .font(.system(size: 12))
+        } else if index == currentStep {
+            // Current step, not yet granted - filled circle
+            Circle()
+                .fill(Color.accentColor)
+                .frame(width: 10, height: 10)
+        } else {
+            // Future step - empty circle
+            Circle()
+                .stroke(Color.gray.opacity(0.3), lineWidth: 1.5)
+                .frame(width: 10, height: 10)
+        }
+    }
+
+    private func permissionGranted(for step: Int) -> Bool {
+        switch step {
+        case 0: return true // Welcome - always "granted"
+        case 1: return appState.hasNotificationPermission
+        case 2: return appState.hasAutomationPermission
+        case 3: return appState.hasScreenRecordingPermission
+        case 4: return true // Done - always "granted"
+        default: return false
         }
     }
 
@@ -76,21 +117,30 @@ struct OnboardingView: View {
             )
         case 1:
             stepView(
-                icon: "bell.badge",
+                icon: appState.hasNotificationPermission ? "checkmark.circle.fill" : "bell.badge",
+                iconColor: appState.hasNotificationPermission ? .green : .accentColor,
                 title: "Notifications",
-                description: "OMI sends you gentle notifications when it detects you're getting distracted from your work."
+                description: appState.hasNotificationPermission
+                    ? "Notifications are enabled! You'll receive focus alerts from OMI."
+                    : "OMI sends you gentle notifications when it detects you're getting distracted from your work."
             )
         case 2:
             stepView(
-                icon: "gearshape.2",
+                icon: appState.hasAutomationPermission ? "checkmark.circle.fill" : "gearshape.2",
+                iconColor: appState.hasAutomationPermission ? .green : .accentColor,
                 title: "Automation",
-                description: "OMI needs Automation permission to detect which app you're using.\n\nClick below to open System Settings, then enable OMI under Automation."
+                description: appState.hasAutomationPermission
+                    ? "Automation permission granted! OMI can now detect which app you're using."
+                    : "OMI needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
             )
         case 3:
             stepView(
-                icon: "rectangle.dashed.badge.record",
+                icon: appState.hasScreenRecordingPermission ? "checkmark.circle.fill" : "rectangle.dashed.badge.record",
+                iconColor: appState.hasScreenRecordingPermission ? .green : .accentColor,
                 title: "Screen Recording",
-                description: "OMI needs Screen Recording permission to capture your screen and analyze your focus.\n\nClick below to open System Settings, then enable OMI."
+                description: appState.hasScreenRecordingPermission
+                    ? "Screen Recording permission granted! OMI can now analyze your focus."
+                    : "OMI needs Screen Recording permission to capture your screen and analyze your focus.\n\nClick below to grant permission. You may need to restart the app."
             )
         case 4:
             stepView(
@@ -103,11 +153,11 @@ struct OnboardingView: View {
         }
     }
 
-    private func stepView(icon: String, title: String, description: String) -> some View {
+    private func stepView(icon: String, iconColor: Color = .accentColor, title: String, description: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.system(size: 48))
-                .foregroundColor(.accentColor)
+                .foregroundColor(iconColor)
 
             Text(title)
                 .font(.title2)
@@ -122,38 +172,73 @@ struct OnboardingView: View {
         }
     }
 
-    private var buttonTitle: String {
+    @ViewBuilder
+    private var buttonSection: some View {
+        VStack(spacing: 12) {
+            // Main action button
+            Button(action: handleMainAction) {
+                Text(mainButtonTitle)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .padding(.horizontal, 40)
+
+            // Continue button (shown when permission is granted but not on first/last step)
+            if currentPermissionGranted && currentStep > 0 && currentStep < 4 {
+                Button("Continue") {
+                    currentStep += 1
+                }
+                .buttonStyle(.borderless)
+                .foregroundColor(.accentColor)
+            }
+        }
+        .padding(.bottom, 20)
+    }
+
+    private var mainButtonTitle: String {
         switch currentStep {
         case 0:
-            return "Continue"
-        case 1:
-            return "Enable Notifications"
-        case 2:
-            return "Open Automation Settings"
-        case 3:
-            return "Open Screen Recording Settings"
-        case 4:
             return "Get Started"
+        case 1:
+            return appState.hasNotificationPermission ? "Continue" : "Enable Notifications"
+        case 2:
+            return appState.hasAutomationPermission ? "Continue" : "Grant Automation Access"
+        case 3:
+            return appState.hasScreenRecordingPermission ? "Continue" : "Grant Screen Recording"
+        case 4:
+            return "Start Using OMI"
         default:
             return "Continue"
         }
     }
 
-    private func handleContinue() {
+    private func handleMainAction() {
         switch currentStep {
         case 0:
             currentStep += 1
         case 1:
-            appState.requestNotificationPermission()
-            currentStep += 1
+            if appState.hasNotificationPermission {
+                currentStep += 1
+            } else {
+                hasTriggeredNotification = true
+                appState.requestNotificationPermission()
+            }
         case 2:
-            // Trigger automation permission prompt then open settings
-            appState.triggerAutomationPermission()
-            currentStep += 1
+            if appState.hasAutomationPermission {
+                currentStep += 1
+            } else {
+                hasTriggeredAutomation = true
+                appState.triggerAutomationPermission()
+            }
         case 3:
-            // Trigger screen recording permission prompt then open settings
-            appState.triggerScreenRecordingPermission()
-            currentStep += 1
+            if appState.hasScreenRecordingPermission {
+                currentStep += 1
+            } else {
+                hasTriggeredScreenRecording = true
+                appState.triggerScreenRecordingPermission()
+            }
         case 4:
             appState.hasCompletedOnboarding = true
             dismiss()
