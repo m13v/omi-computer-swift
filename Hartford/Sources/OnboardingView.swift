@@ -39,6 +39,27 @@ struct OnboardingView: View {
                 appState.checkScreenRecordingPermission()
             }
         }
+        // Bring app to front when permissions are granted
+        .onChange(of: appState.hasNotificationPermission) { _, granted in
+            if granted { bringToFront() }
+        }
+        .onChange(of: appState.hasAutomationPermission) { _, granted in
+            if granted { bringToFront() }
+        }
+        .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
+            if granted { bringToFront() }
+        }
+    }
+
+    private func bringToFront() {
+        NSApp.activate(ignoringOtherApps: true)
+        // Also bring the onboarding window to front
+        for window in NSApp.windows {
+            if window.title == "Welcome to OMI" {
+                window.makeKeyAndOrderFront(nil)
+                window.orderFrontRegardless()
+            }
+        }
     }
 
     /// Check if current step's permission is granted
@@ -174,8 +195,19 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var buttonSection: some View {
-        VStack(spacing: 12) {
-            // Main action button
+        HStack(spacing: 16) {
+            // Back button (not shown on first step)
+            if currentStep > 0 {
+                Button(action: { currentStep -= 1 }) {
+                    Text("Back")
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+            }
+
+            // Main action / Continue button
             Button(action: handleMainAction) {
                 Text(mainButtonTitle)
                     .frame(maxWidth: .infinity)
@@ -183,17 +215,8 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .padding(.horizontal, 40)
-
-            // Continue button (shown when permission is granted but not on first/last step)
-            if currentPermissionGranted && currentStep > 0 && currentStep < 4 {
-                Button("Continue") {
-                    currentStep += 1
-                }
-                .buttonStyle(.borderless)
-                .foregroundColor(.accentColor)
-            }
         }
+        .padding(.horizontal, 40)
         .padding(.bottom, 20)
     }
 
