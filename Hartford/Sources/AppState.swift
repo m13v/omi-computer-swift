@@ -179,9 +179,24 @@ class AppState: ObservableObject {
     }
 
     func requestNotificationPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, error in
+        // Activate app to ensure permission dialog appears
+        NSApp.activate(ignoringOtherApps: true)
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
             if let error = error {
                 print("Notification permission error: \(error)")
+                return
+            }
+
+            if granted {
+                // Send a test notification to confirm it works
+                DispatchQueue.main.async {
+                    NotificationService.shared.sendNotification(
+                        title: "Notifications Enabled",
+                        message: "You'll receive focus alerts from OMI.",
+                        applyCooldown: false
+                    )
+                }
             }
         }
     }
