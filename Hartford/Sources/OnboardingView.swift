@@ -2,7 +2,7 @@ import SwiftUI
 
 struct OnboardingView: View {
     @ObservedObject var appState: AppState
-    @State private var currentStep = 0
+    @AppStorage("onboardingStep") private var currentStep = 0
     @Environment(\.dismiss) private var dismiss
 
     let steps = ["Welcome", "Notifications", "Automation", "Screen Recording", "Done"]
@@ -22,12 +22,25 @@ struct OnboardingView: View {
 
     private var onboardingContent: some View {
         VStack(spacing: 24) {
-            // Progress dots
-            HStack(spacing: 8) {
+            // Progress indicators with checkmarks for completed steps
+            HStack(spacing: 12) {
                 ForEach(0..<steps.count, id: \.self) { index in
-                    Circle()
-                        .fill(index == currentStep ? Color.accentColor : Color.gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
+                    if index < currentStep {
+                        // Completed step - show checkmark
+                        Image(systemName: "checkmark.circle.fill")
+                            .foregroundColor(.green)
+                            .font(.system(size: 12))
+                    } else if index == currentStep {
+                        // Current step - filled circle
+                        Circle()
+                            .fill(Color.accentColor)
+                            .frame(width: 10, height: 10)
+                    } else {
+                        // Future step - empty circle
+                        Circle()
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1.5)
+                            .frame(width: 10, height: 10)
+                    }
                 }
             }
             .padding(.top, 20)
