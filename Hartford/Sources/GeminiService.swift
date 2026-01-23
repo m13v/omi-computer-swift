@@ -132,6 +132,7 @@ actor GeminiService {
     private let apiKey: String
     private let onAlert: (String) -> Void
     private let onStatusChange: ((FocusStatus) -> Void)?
+    private let onRefocus: (() -> Void)?
 
     private var isRunning = false
     private var frameQueue: [Frame] = []
@@ -174,7 +175,8 @@ actor GeminiService {
     init(
         apiKey: String? = nil,
         onAlert: @escaping (String) -> Void,
-        onStatusChange: ((FocusStatus) -> Void)? = nil
+        onStatusChange: ((FocusStatus) -> Void)? = nil,
+        onRefocus: (() -> Void)? = nil
     ) throws {
         guard let key = apiKey ?? ProcessInfo.processInfo.environment["GEMINI_API_KEY"] else {
             throw GeminiError.missingAPIKey
@@ -182,6 +184,7 @@ actor GeminiService {
         self.apiKey = key
         self.onAlert = onAlert
         self.onStatusChange = onStatusChange
+        self.onRefocus = onRefocus
 
         // Start processing loop in a task
         Task {
@@ -330,6 +333,9 @@ actor GeminiService {
                 }
             } else if justBecameFocused {
                 // Only notify once when transitioning TO focused state
+                // Trigger the glow effect
+                onRefocus?()
+
                 if let message = analysis.message {
                     log("Back on track: \(message)")
                     NotificationService.shared.sendNotification(
