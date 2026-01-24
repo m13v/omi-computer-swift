@@ -196,7 +196,7 @@ async def auth_token(
 async def _apple_auth_redirect(session_id: str):
     """Redirect to Apple OAuth"""
     client_id = os.getenv('APPLE_CLIENT_ID')
-    api_base_url = os.getenv('BASE_API_URL', 'http://localhost:8000')
+    api_base_url = os.getenv('BASE_API_URL', 'http://localhost:8080')
 
     if not client_id:
         raise HTTPException(status_code=500, detail="APPLE_CLIENT_ID not configured")
@@ -222,7 +222,7 @@ async def _exchange_apple_code(code: str, session_data: dict) -> str:
     team_id = os.getenv('APPLE_TEAM_ID')
     key_id = os.getenv('APPLE_KEY_ID')
     private_key_content = os.getenv('APPLE_PRIVATE_KEY')
-    api_base_url = os.getenv('BASE_API_URL', 'http://localhost:8000')
+    api_base_url = os.getenv('BASE_API_URL', 'http://localhost:8080')
 
     if not all([client_id, team_id, key_id, private_key_content]):
         raise HTTPException(status_code=500, detail="Apple auth not configured")
@@ -321,4 +321,4 @@ async def _generate_custom_token(provider: str, id_token: str, access_token: str
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
