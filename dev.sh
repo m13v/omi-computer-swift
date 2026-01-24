@@ -7,9 +7,15 @@ BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 BACKEND_DIR="$(dirname "$0")/backend"
 BACKEND_PID=""
+TUNNEL_PID=""
+TUNNEL_URL="https://omi-dev.m13v.com"
 
-# Cleanup function to stop backend on exit
+# Cleanup function to stop backend and tunnel on exit
 cleanup() {
+    if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
+        echo "Stopping tunnel (PID: $TUNNEL_PID)..."
+        kill "$TUNNEL_PID" 2>/dev/null || true
+    fi
     if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
         echo "Stopping backend (PID: $BACKEND_PID)..."
         kill "$BACKEND_PID" 2>/dev/null || true
@@ -19,7 +25,14 @@ trap cleanup EXIT
 
 # Kill existing instances
 pkill "$APP_NAME" 2>/dev/null || true
-lsof -ti:8000 | xargs kill -9 2>/dev/null || true
+pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
+lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+
+# Start Cloudflare tunnel
+echo "Starting Cloudflare tunnel..."
+cloudflared tunnel run omi-computer-dev &
+TUNNEL_PID=$!
+sleep 2
 
 # Start backend
 echo "Starting backend..."
@@ -39,7 +52,7 @@ cd - > /dev/null
 # Wait for backend to be ready
 echo "Waiting for backend to start..."
 for i in {1..30}; do
-    if curl -s http://localhost:8000 > /dev/null 2>&1; then
+    if curl -s http://localhost:8080 > /dev/null 2>&1; then
         echo "Backend is ready!"
         break
     fi
@@ -76,7 +89,12 @@ cp .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
 codesign --force --sign "Developer ID Application: Matthew Diakonov (S6DP5HF77G)" "$APP_BUNDLE"
 
 echo "Dev build complete: $APP_BUNDLE"
-echo "Backend running on http://localhost:8000 (PID: $BACKEND_PID)"
+echo ""
+echo "=== Services Running ==="
+echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
+echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
+echo "========================"
+echo ""
 open "$APP_BUNDLE"
 
 # Wait for backend process (keeps script running and shows logs)
