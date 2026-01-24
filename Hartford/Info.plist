@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>OMI</string>
+    <string>OMI-COMPUTER</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIconFile</key>
@@ -32,5 +32,16 @@
     <string>OMI needs screen recording permission to monitor your focus and detect distractions.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>OMI needs permission to detect which application is currently active.</string>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>OMI Computer Auth Callback</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>omi-computer</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>
