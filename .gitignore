@@ -12,6 +12,7 @@ DerivedData/
 # Backend credentials
 backend/.env
 backend/google-credentials.json
+backend/venv/
 
 # macOS
 .DS_Store
