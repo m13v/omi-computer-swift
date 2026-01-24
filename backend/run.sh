@@ -13,5 +13,5 @@ else
     source venv/bin/activate
 fi
 
-echo "Starting auth backend on http://localhost:8000"
+echo "Starting auth backend on http://localhost:8080"
 python main.py
