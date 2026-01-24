@@ -9,6 +9,10 @@ DerivedData/
 .env
 .env.app
 
+# Backend credentials
+backend/.env
+backend/google-credentials.json
+
 # macOS
 .DS_Store
 *.swp
