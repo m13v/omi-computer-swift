@@ -55,7 +55,7 @@ print('Connected to Firebase: based-hardware')
 
 ## API Endpoints
 - Production: `https://api.omi.me`
-- Local: `http://localhost:8000`
+- Local: `http://localhost:8080`
 
 ## Credentials
 See `.claude/settings.json` for connection details.
