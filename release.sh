@@ -19,7 +19,7 @@ VERSION="$1"
 
 # Configuration
 APP_NAME="OMI"
-BUNDLE_ID="com.omi.focusmonitor"
+BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 DMG_PATH="$BUILD_DIR/$APP_NAME.dmg"
@@ -68,6 +68,9 @@ cp Hartford/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 if [ -f "omi_icon.icns" ]; then
     cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 fi
+
+# Copy GoogleService-Info.plist for Firebase
+cp Hartford/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Update Info.plist with version and bundle info
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
