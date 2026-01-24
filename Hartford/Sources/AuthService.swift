@@ -31,8 +31,8 @@ class AuthService {
     private var oauthContinuation: CheckedContinuation<(code: String, state: String), Error>?
 
     // API Configuration
-    // Use cloudflare tunnel for local development (Apple OAuth requires HTTPS)
-    private let apiBaseURL: String = "https://short-powerful-codes-prospective.trycloudflare.com/"
+    // Use persistent cloudflare tunnel for local development (Apple OAuth requires HTTPS)
+    private let apiBaseURL: String = "https://omi-dev.m13v.com/"
     private let redirectURI: String = "omi-computer://auth/callback"
 
     init() {
