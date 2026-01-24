@@ -1,46 +1,141 @@
 #!/bin/bash
 set -e
 
-BUNDLE_ID="com.omi.focusmonitor"
-APP_PATH="/Applications/OMI.app"
+# App configuration
+APP_NAME="OMI-COMPUTER"
+BUNDLE_ID="com.omi.computer-macos"
+BUILD_DIR="build"
+APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
+APP_PATH="/Applications/$APP_NAME.app"
 SIGN_IDENTITY="Developer ID Application: Matthew Diakonov (S6DP5HF77G)"
 
-# Parse arguments
-SIGNED=false
-if [ "$1" = "--signed" ] || [ "$1" = "-s" ]; then
-    SIGNED=true
-fi
+# Backend configuration
+BACKEND_DIR="$(dirname "$0")/backend"
+BACKEND_PID=""
+TUNNEL_PID=""
+TUNNEL_URL="https://omi-dev.m13v.com"
 
-# Kill existing instance
-pkill OMI 2>/dev/null || true
+# Cleanup function to stop backend and tunnel on exit
+cleanup() {
+    if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
+        echo "Stopping tunnel (PID: $TUNNEL_PID)..."
+        kill "$TUNNEL_PID" 2>/dev/null || true
+    fi
+    if [ -n "$BACKEND_PID" ] && kill -0 "$BACKEND_PID" 2>/dev/null; then
+        echo "Stopping backend (PID: $BACKEND_PID)..."
+        kill "$BACKEND_PID" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
 
-echo "Building..."
-./build.sh
+# Kill existing instances
+echo "Killing existing instances..."
+pkill "$APP_NAME" 2>/dev/null || true
+pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
+lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 
-echo "Installing to /Applications..."
-cp -r build/OMI.app /Applications/
+# Start Cloudflare tunnel
+echo "Starting Cloudflare tunnel..."
+cloudflared tunnel run omi-computer-dev &
+TUNNEL_PID=$!
+sleep 2
 
-if [ "$SIGNED" = true ]; then
-    echo "Signing with Developer ID..."
-    codesign --force --options runtime \
-        --sign "$SIGN_IDENTITY" \
-        --entitlements Hartford/Hartford.entitlements \
-        "$APP_PATH"
+# Start backend
+echo "Starting backend..."
+cd "$BACKEND_DIR"
+if [ ! -d "venv" ]; then
+    echo "Creating Python virtual environment..."
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
 else
-    echo "Ad-hoc signing (use --signed for Developer ID)..."
-    codesign --force --deep --sign - "$APP_PATH"
+    source venv/bin/activate
 fi
+python main.py &
+BACKEND_PID=$!
+cd - > /dev/null
 
-echo "Resetting permissions and user defaults for $BUNDLE_ID..."
+# Wait for backend to be ready
+echo "Waiting for backend to start..."
+for i in {1..30}; do
+    if curl -s http://localhost:8080 > /dev/null 2>&1; then
+        echo "Backend is ready!"
+        break
+    fi
+    if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
+        echo "Backend failed to start"
+        exit 1
+    fi
+    sleep 0.5
+done
+
+# Build debug
+echo "Building app..."
+swift build -c debug
+
+# Create app bundle
+mkdir -p "$APP_BUNDLE/Contents/MacOS"
+mkdir -p "$APP_BUNDLE/Contents/Resources"
+
+# Copy binary
+cp ".build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+# Copy and fix Info.plist
+cp Hartford/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+
+# Copy GoogleService-Info.plist for Firebase
+cp Hartford/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
+
+# Copy .env.app (app runtime secrets only)
+cp .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
+
+# Copy app icon
+cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
+
+# Install to /Applications
+echo "Installing to /Applications..."
+rm -rf "$APP_PATH"
+cp -r "$APP_BUNDLE" /Applications/
+
+# Sign app (ad-hoc for dev, Developer ID causes launch issues with get-task-allow)
+echo "Signing app (ad-hoc for development)..."
+codesign --force --deep --sign - "$APP_PATH"
+
+# Reset permissions
+echo "Resetting permissions for $BUNDLE_ID..."
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
 tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
-# Note: Notification permissions can't be reset via tccutil - must be done manually in System Settings
+
+# Reset app data (UserDefaults, onboarding state, etc.)
+echo "Resetting app data..."
 defaults delete "$BUNDLE_ID" 2>/dev/null || true
 
-echo "Revealing app in Finder..."
-open -R "$APP_PATH"
+# Clear delivered notifications
+echo "Clearing notifications..."
+osascript -e "tell application \"System Events\" to tell process \"NotificationCenter\" to click button 1 of every window" 2>/dev/null || true
 
+# Note: Notification PERMISSIONS cannot be reset programmatically (Apple limitation)
+# To fully reset notification permissions, manually go to:
+# System Settings > Notifications > OMI-COMPUTER > Remove
+echo "Note: Notification permissions can only be reset manually in System Settings"
+
+echo ""
+echo "=== Services Running ==="
+echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
+echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
+echo "App:      $APP_PATH"
+echo "========================"
+echo ""
+
+# Remove quarantine and start app
 echo "Starting app..."
-open "$APP_PATH"
+xattr -cr "$APP_PATH"
+open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$APP_NAME" &
 
-echo "Done. Grant permissions when prompted."
+# Wait for backend process (keeps script running and shows logs)
+echo "Press Ctrl+C to stop all services..."
+wait "$BACKEND_PID"
