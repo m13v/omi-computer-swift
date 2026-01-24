@@ -243,6 +243,12 @@ struct OnboardingView: View {
             currentStep += 1
         case 1:
             if appState.hasNotificationPermission {
+                // Permission already granted - send test notification anyway and advance
+                NotificationService.shared.sendNotification(
+                    title: "Notifications Enabled",
+                    message: "You'll receive focus alerts from OMI.",
+                    applyCooldown: false
+                )
                 currentStep += 1
             } else {
                 hasTriggeredNotification = true
