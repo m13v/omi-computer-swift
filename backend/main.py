@@ -107,8 +107,10 @@ async def auth_authorize(
 
     if provider == 'apple':
         return await _apple_auth_redirect(session_id)
+    elif provider == 'google':
+        return await _google_auth_redirect(session_id)
     else:
-        raise HTTPException(status_code=400, detail="Only Apple auth supported currently")
+        raise HTTPException(status_code=400, detail="Unsupported provider")
 
 
 @app.post("/v1/auth/callback/apple")
@@ -135,6 +137,43 @@ async def auth_callback_apple_post(
 
     # Return HTML page that redirects to the app's custom URL scheme
     # FIXED: Pass redirect_uri to template instead of hardcoding
+    return templates.TemplateResponse(
+        "auth_callback.html",
+        {
+            "request": request,
+            "code": auth_code,
+            "state": session_data.get('state') or '',
+            "redirect_uri": session_data.get('redirect_uri', 'omi-computer://auth/callback'),
+        },
+    )
+
+
+@app.get("/v1/auth/callback/google")
+async def auth_callback_google(
+    request: Request,
+    code: Optional[str] = None,
+    state: Optional[str] = None,
+    error: Optional[str] = None,
+):
+    """Google OAuth callback (GET - redirect mode)"""
+    if error:
+        raise HTTPException(status_code=400, detail=f"Auth error: {error}")
+
+    if not code or not state:
+        raise HTTPException(status_code=400, detail="Missing code or state")
+
+    session_data = get_auth_session(state)
+    if not session_data:
+        raise HTTPException(status_code=400, detail="Invalid auth session")
+
+    # Exchange Google code for tokens
+    oauth_credentials = await _exchange_google_code(code, session_data)
+
+    # Create temporary auth code
+    auth_code = str(uuid.uuid4())
+    set_auth_code(auth_code, oauth_credentials, 300)
+
+    # Return HTML page that redirects to the app's custom URL scheme
     return templates.TemplateResponse(
         "auth_callback.html",
         {
@@ -216,6 +255,28 @@ async def _apple_auth_redirect(session_id: str):
     return RedirectResponse(url=apple_auth_url)
 
 
+async def _google_auth_redirect(session_id: str):
+    """Redirect to Google OAuth"""
+    client_id = os.getenv('GOOGLE_CLIENT_ID')
+    api_base_url = os.getenv('BASE_API_URL', 'http://localhost:8080')
+
+    if not client_id:
+        raise HTTPException(status_code=500, detail="GOOGLE_CLIENT_ID not configured")
+
+    callback_url = f"{api_base_url}/v1/auth/callback/google"
+
+    google_auth_url = (
+        f"https://accounts.google.com/o/oauth2/v2/auth?"
+        f"client_id={quote(client_id)}&"
+        f"redirect_uri={quote(callback_url)}&"
+        f"response_type=code&"
+        f"scope={quote('openid email profile')}&"
+        f"state={quote(session_id)}"
+    )
+
+    return RedirectResponse(url=google_auth_url)
+
+
 async def _exchange_apple_code(code: str, session_data: dict) -> str:
     """Exchange Apple authorization code for tokens"""
     client_id = os.getenv('APPLE_CLIENT_ID')
@@ -263,6 +324,47 @@ async def _exchange_apple_code(code: str, session_data: dict) -> str:
     })
 
 
+async def _exchange_google_code(code: str, session_data: dict) -> str:
+    """Exchange Google authorization code for tokens"""
+    client_id = os.getenv('GOOGLE_CLIENT_ID')
+    client_secret = os.getenv('GOOGLE_CLIENT_SECRET')
+    api_base_url = os.getenv('BASE_API_URL', 'http://localhost:8080')
+
+    if not all([client_id, client_secret]):
+        raise HTTPException(status_code=500, detail="Google auth not configured")
+
+    callback_url = f"{api_base_url}/v1/auth/callback/google"
+
+    token_response = requests.post(
+        "https://oauth2.googleapis.com/token",
+        data={
+            'code': code,
+            'client_id': client_id,
+            'client_secret': client_secret,
+            'redirect_uri': callback_url,
+            'grant_type': 'authorization_code',
+        },
+    )
+
+    if token_response.status_code != 200:
+        print(f"Google token exchange failed: {token_response.text}")
+        raise HTTPException(status_code=400, detail="Failed to exchange Google code")
+
+    token_json = token_response.json()
+    id_token = token_json.get('id_token')
+    access_token = token_json.get('access_token')
+
+    if not id_token:
+        raise HTTPException(status_code=400, detail="No ID token from Google")
+
+    return json.dumps({
+        'provider': 'google',
+        'id_token': id_token,
+        'access_token': access_token,
+        'provider_id': 'google.com',
+    })
+
+
 def _generate_apple_client_secret(client_id: str, team_id: str, key_id: str, private_key_content: str) -> str:
     """Generate Apple client secret JWT"""
     private_key = serialization.load_pem_private_key(
@@ -291,7 +393,15 @@ async def _generate_custom_token(provider: str, id_token: str, access_token: str
     # Sign in with OAuth credential using Firebase Auth REST API
     sign_in_url = f"https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key={firebase_api_key}"
 
-    post_body = f'id_token={id_token}&providerId=apple.com'
+    # Set provider ID based on provider
+    if provider == 'google':
+        provider_id = 'google.com'
+    elif provider == 'apple':
+        provider_id = 'apple.com'
+    else:
+        raise Exception(f"Unsupported provider: {provider}")
+
+    post_body = f'id_token={id_token}&providerId={provider_id}'
     if access_token:
         post_body += f'&access_token={access_token}'
 
