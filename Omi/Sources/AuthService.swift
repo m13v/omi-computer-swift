@@ -41,6 +41,12 @@ class AuthService {
     private let kAuthUserId = "auth_userId"
     private let kAuthGivenName = "auth_givenName"
     private let kAuthFamilyName = "auth_familyName"
+    private let kAuthIdToken = "auth_idToken"
+    private let kAuthRefreshToken = "auth_refreshToken"
+    private let kAuthTokenExpiry = "auth_tokenExpiry"
+
+    // Firebase Web API key (from GoogleService-Info.plist)
+    private let firebaseApiKey = "AIzaSyD9dzBdglc7IO9pPDIOvqnCoTis_xKkkC8"
 
     // MARK: - User Name Properties
 
@@ -206,36 +212,50 @@ class AuthService {
             }
             NSLog("OMI AUTH: Received valid authorization code")
 
-            // Step 6: Exchange code for custom token
+            // Step 6: Exchange code for custom token and user info
             NSLog("OMI AUTH: Exchanging code for Firebase token...")
-            let customToken = try await exchangeCodeForToken(code: code)
+            let tokenResult = try await exchangeCodeForToken(code: code)
             NSLog("OMI AUTH: Got Firebase custom token")
 
-            // Step 7: Sign in to Firebase with custom token
-            NSLog("OMI AUTH: Signing in to Firebase...")
+            // Save user info from OAuth response immediately (before Firebase sign-in)
+            // This ensures we have the name even if Firebase session doesn't persist
+            if let extractedGivenName = tokenResult.givenName, !extractedGivenName.isEmpty {
+                givenName = extractedGivenName
+                familyName = tokenResult.familyName ?? ""
+                NSLog("OMI AUTH: Saved name from OAuth: %@ %@", givenName, familyName)
+            }
+            if let extractedEmail = tokenResult.email {
+                AuthState.shared.userEmail = extractedEmail
+            }
+
+            // Step 7: Exchange custom token for ID token via REST API
+            // This bypasses keychain issues with Firebase SDK on dev builds
+            NSLog("OMI AUTH: Exchanging custom token for ID token via REST API...")
+            let firebaseTokens = try await exchangeCustomTokenForIdToken(customToken: tokenResult.customToken)
+            NSLog("OMI AUTH: Got Firebase ID token via REST API")
+
+            // Store tokens for API calls
+            saveTokens(idToken: firebaseTokens.idToken, refreshToken: firebaseTokens.refreshToken, expiresIn: firebaseTokens.expiresIn)
+
+            // Also try Firebase SDK sign-in (best effort for other Firebase features)
             do {
-                let authResult = try await Auth.auth().signIn(withCustomToken: customToken)
-                NSLog("OMI AUTH: Firebase sign-in SUCCESS - uid: %@", authResult.user.uid)
-                AuthState.shared.userEmail = authResult.user.email
+                let authResult = try await Auth.auth().signIn(withCustomToken: tokenResult.customToken)
+                NSLog("OMI AUTH: Firebase SDK sign-in SUCCESS - uid: %@", authResult.user.uid)
             } catch let firebaseError as NSError {
-                // Check if it's a keychain error - still mark as signed in since server auth succeeded
-                if firebaseError.domain == "NSCocoaErrorDomain" ||
-                   firebaseError.localizedDescription.contains("keychain") {
-                    NSLog("OMI AUTH: Keychain error (non-fatal for dev): %@", firebaseError.localizedDescription)
-                    // For development, we can proceed - the server-side auth succeeded
-                } else {
-                    throw firebaseError
-                }
+                // Keychain errors are expected on dev builds - we have REST API tokens as fallback
+                NSLog("OMI AUTH: Firebase SDK sign-in failed (using REST API tokens): %@", firebaseError.localizedDescription)
             }
 
             isSignedIn = true
 
-            // Save auth state immediately (don't rely on listener for dev builds)
-            let user = Auth.auth().currentUser
-            saveAuthState(isSignedIn: true, email: user?.email, userId: user?.uid)
+            // Save auth state immediately
+            let userId = firebaseTokens.localId
+            saveAuthState(isSignedIn: true, email: tokenResult.email, userId: userId)
 
-            // Try to load name from Firebase (OAuth may have provided it)
-            loadNameFromFirebaseIfNeeded()
+            // Try to load name from Firebase (as backup if OAuth didn't provide it)
+            if givenName.isEmpty {
+                loadNameFromFirebaseIfNeeded()
+            }
 
             // Track sign-in completed and identify user
             MixpanelManager.shared.signInCompleted(provider: provider)
@@ -322,7 +342,15 @@ class AuthService {
 
     // MARK: - Token Exchange
 
-    private func exchangeCodeForToken(code: String) async throws -> String {
+    /// Response from token exchange containing custom token and user info
+    struct TokenExchangeResult {
+        let customToken: String
+        let givenName: String?
+        let familyName: String?
+        let email: String?
+    }
+
+    private func exchangeCodeForToken(code: String) async throws -> TokenExchangeResult {
         guard let url = URL(string: "\(apiBaseURL)v1/auth/token") else {
             throw AuthError.invalidURL
         }
@@ -370,7 +398,60 @@ class AuthService {
             throw AuthError.missingCustomToken
         }
 
-        return customToken
+        // Extract user info from id_token (JWT)
+        var extractedGivenName: String?
+        var extractedFamilyName: String?
+        var extractedEmail: String?
+
+        if let idToken = json["id_token"] as? String {
+            if let userInfo = decodeJWT(idToken) {
+                extractedGivenName = userInfo["given_name"] as? String
+                extractedFamilyName = userInfo["family_name"] as? String
+                extractedEmail = userInfo["email"] as? String
+
+                // Fall back to "name" field if given_name not available
+                if extractedGivenName == nil, let fullName = userInfo["name"] as? String {
+                    let parts = fullName.split(separator: " ", maxSplits: 1)
+                    extractedGivenName = parts.first.map(String.init)
+                    extractedFamilyName = parts.count > 1 ? String(parts[1]) : nil
+                }
+
+                NSLog("OMI AUTH: Extracted from id_token - name: %@ %@, email: %@",
+                      extractedGivenName ?? "(none)",
+                      extractedFamilyName ?? "",
+                      extractedEmail ?? "(none)")
+            }
+        }
+
+        return TokenExchangeResult(
+            customToken: customToken,
+            givenName: extractedGivenName,
+            familyName: extractedFamilyName,
+            email: extractedEmail
+        )
+    }
+
+    /// Decode a JWT and return the payload as a dictionary
+    private func decodeJWT(_ jwt: String) -> [String: Any]? {
+        let parts = jwt.split(separator: ".")
+        guard parts.count >= 2 else { return nil }
+
+        // JWT payload is the second part, base64url encoded
+        var base64 = String(parts[1])
+            .replacingOccurrences(of: "-", with: "+")
+            .replacingOccurrences(of: "_", with: "/")
+
+        // Pad to multiple of 4
+        while base64.count % 4 != 0 {
+            base64 += "="
+        }
+
+        guard let data = Data(base64Encoded: base64),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+
+        return json
     }
 
     // MARK: - User Name Management
@@ -418,15 +499,163 @@ class AuthService {
         }
     }
 
-    // MARK: - Get ID Token (for API calls)
+    // MARK: - Token Storage
 
-    func getIdToken(forceRefresh: Bool = false) async throws -> String {
-        guard let user = Auth.auth().currentUser else {
+    private func saveTokens(idToken: String, refreshToken: String, expiresIn: Int) {
+        UserDefaults.standard.set(idToken, forKey: kAuthIdToken)
+        UserDefaults.standard.set(refreshToken, forKey: kAuthRefreshToken)
+        // Store expiry time (current time + expiresIn seconds, minus 5 min buffer)
+        let expiryTime = Date().addingTimeInterval(TimeInterval(expiresIn - 300))
+        UserDefaults.standard.set(expiryTime.timeIntervalSince1970, forKey: kAuthTokenExpiry)
+        NSLog("OMI AUTH: Saved tokens, expires at %@", expiryTime.description)
+    }
+
+    private func clearTokens() {
+        UserDefaults.standard.removeObject(forKey: kAuthIdToken)
+        UserDefaults.standard.removeObject(forKey: kAuthRefreshToken)
+        UserDefaults.standard.removeObject(forKey: kAuthTokenExpiry)
+    }
+
+    private var storedIdToken: String? {
+        UserDefaults.standard.string(forKey: kAuthIdToken)
+    }
+
+    private var storedRefreshToken: String? {
+        UserDefaults.standard.string(forKey: kAuthRefreshToken)
+    }
+
+    private var isTokenExpired: Bool {
+        let expiryTime = UserDefaults.standard.double(forKey: kAuthTokenExpiry)
+        guard expiryTime > 0 else { return true }
+        return Date().timeIntervalSince1970 > expiryTime
+    }
+
+    // MARK: - Firebase REST API Token Exchange
+
+    struct FirebaseTokenResult {
+        let idToken: String
+        let refreshToken: String
+        let expiresIn: Int
+        let localId: String
+    }
+
+    /// Exchange custom token for ID token using Firebase REST API
+    private func exchangeCustomTokenForIdToken(customToken: String) async throws -> FirebaseTokenResult {
+        let url = URL(string: "https://identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=\(firebaseApiKey)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "token": customToken,
+            "returnSecureToken": true
+        ])
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+            NSLog("OMI AUTH: Firebase REST API error: %@", errorBody)
+            throw AuthError.tokenExchangeFailed(httpResponse.statusCode)
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let idToken = json["idToken"] as? String,
+              let refreshToken = json["refreshToken"] as? String else {
+            NSLog("OMI AUTH: Failed to parse Firebase response: %@", String(data: data, encoding: .utf8) ?? "nil")
+            throw AuthError.invalidResponse
+        }
+
+        // expiresIn can be String or Int
+        let expiresIn: Int
+        if let expiresInStr = json["expiresIn"] as? String {
+            expiresIn = Int(expiresInStr) ?? 3600
+        } else if let expiresInInt = json["expiresIn"] as? Int {
+            expiresIn = expiresInInt
+        } else {
+            expiresIn = 3600
+        }
+
+        // localId might be missing
+        let localId = json["localId"] as? String ?? ""
+
+        return FirebaseTokenResult(
+            idToken: idToken,
+            refreshToken: refreshToken,
+            expiresIn: expiresIn,
+            localId: localId
+        )
+    }
+
+    /// Refresh the ID token using the refresh token
+    private func refreshIdToken() async throws -> String {
+        guard let refreshToken = storedRefreshToken else {
             throw AuthError.notSignedIn
         }
 
-        let tokenResult = try await user.getIDTokenResult(forcingRefresh: forceRefresh)
-        return tokenResult.token
+        let url = URL(string: "https://securetoken.googleapis.com/v1/token?key=\(firebaseApiKey)")!
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+        request.httpBody = "grant_type=refresh_token&refresh_token=\(refreshToken)".data(using: .utf8)
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw AuthError.invalidResponse
+        }
+
+        guard httpResponse.statusCode == 200 else {
+            let errorBody = String(data: data, encoding: .utf8) ?? "unknown"
+            NSLog("OMI AUTH: Token refresh error: %@", errorBody)
+            // Clear tokens and require re-sign-in
+            clearTokens()
+            throw AuthError.notSignedIn
+        }
+
+        guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let newIdToken = json["id_token"] as? String,
+              let newRefreshToken = json["refresh_token"] as? String,
+              let expiresIn = json["expires_in"] as? String else {
+            throw AuthError.invalidResponse
+        }
+
+        // Save new tokens
+        saveTokens(idToken: newIdToken, refreshToken: newRefreshToken, expiresIn: Int(expiresIn) ?? 3600)
+        NSLog("OMI AUTH: Refreshed ID token successfully")
+
+        return newIdToken
+    }
+
+    // MARK: - Get ID Token (for API calls)
+
+    func getIdToken(forceRefresh: Bool = false) async throws -> String {
+        // First try: Use stored token if valid
+        if !forceRefresh, let token = storedIdToken, !isTokenExpired {
+            return token
+        }
+
+        // Second try: Refresh using stored refresh token
+        if let _ = storedRefreshToken {
+            do {
+                return try await refreshIdToken()
+            } catch {
+                NSLog("OMI AUTH: Token refresh failed: %@", error.localizedDescription)
+            }
+        }
+
+        // Third try: Use Firebase SDK (might work if keychain persisted)
+        if let user = Auth.auth().currentUser {
+            let tokenResult = try await user.getIDTokenResult(forcingRefresh: forceRefresh)
+            return tokenResult.token
+        }
+
+        throw AuthError.notSignedIn
     }
 
     func getAuthHeader() async throws -> String {
@@ -470,8 +699,9 @@ class AuthService {
 
         try Auth.auth().signOut()
         isSignedIn = false
-        // Clear saved auth state
+        // Clear saved auth state and tokens
         saveAuthState(isSignedIn: false, email: nil, userId: nil)
+        clearTokens()
         NSLog("OMI AUTH: Signed out and cleared saved state")
     }
 
