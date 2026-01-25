@@ -1,4 +1,4 @@
-# Hartford (Swift)
+# OMI Desktop (Swift)
 
 A macOS menu bar app for focus monitoring and distraction detection. This is a Swift/SwiftUI rewrite of the original Python app.
 
@@ -34,7 +34,7 @@ A macOS menu bar app for focus monitoring and distraction detection. This is a S
 ./build.sh
 ```
 
-This creates `build/Hartford.app` which you can run directly or copy to Applications.
+This creates `build/OMI.app` which you can run directly or copy to Applications.
 
 ### Using Swift Package Manager
 
@@ -59,23 +59,23 @@ Then build and run from Xcode (⌘R).
 
 ```bash
 # Run the built app
-open build/Hartford.app
+open build/OMI.app
 
 # Or install to Applications
-cp -r build/Hartford.app /Applications/
+cp -r build/OMI.app /Applications/
 ```
 
 ## Project Structure
 
 ```
-HartfordSwift/
+omi-computer-swift/
 ├── Package.swift              # Swift package manifest
 ├── build.sh                   # Build script for .app bundle
-├── Hartford/
+├── Omi/
 │   ├── Info.plist            # App metadata and permissions
-│   ├── Hartford.entitlements # App entitlements
+│   ├── Omi.entitlements      # App entitlements
 │   └── Sources/
-│       ├── HartfordApp.swift         # Main app entry, MenuBarExtra
+│       ├── OmiApp.swift              # Main app entry, MenuBarExtra
 │       ├── AppState.swift            # Shared state management
 │       ├── ScreenCaptureService.swift # Window capture with CGWindowList
 │       ├── WindowMonitor.swift        # App switch observer
