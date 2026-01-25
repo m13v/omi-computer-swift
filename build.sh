@@ -2,8 +2,8 @@
 set -e
 
 # Build configuration
-APP_NAME="OMI"
-BUNDLE_ID="com.omi.focusmonitor"
+APP_NAME="OMI-COMPUTER"
+BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
