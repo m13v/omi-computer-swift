@@ -32,6 +32,8 @@
     <string>OMI needs screen recording permission to monitor your focus and detect distractions.</string>
     <key>NSAppleEventsUsageDescription</key>
     <string>OMI needs permission to detect which application is currently active.</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>OMI needs microphone access to transcribe your conversations in real-time.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
