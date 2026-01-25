@@ -6,12 +6,24 @@ import FirebaseAuth
 class AuthState: ObservableObject {
     static let shared = AuthState()
 
-    @Published var isSignedIn: Bool = false
+    // UserDefaults keys (must match AuthService)
+    private static let kAuthIsSignedIn = "auth_isSignedIn"
+    private static let kAuthUserEmail = "auth_userEmail"
+
+    @Published var isSignedIn: Bool
     @Published var isLoading: Bool = false
     @Published var error: String?
     @Published var userEmail: String?
 
-    private init() {}
+    private init() {
+        // Restore auth state from UserDefaults immediately on init (before UI renders)
+        let savedSignedIn = UserDefaults.standard.bool(forKey: Self.kAuthIsSignedIn)
+        let savedEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
+        self.isSignedIn = savedSignedIn
+        self.userEmail = savedEmail
+        NSLog("OMI AuthState: Initialized with savedSignedIn=%@, email=%@",
+              savedSignedIn ? "true" : "false", savedEmail ?? "nil")
+    }
 
     func update(isSignedIn: Bool, userEmail: String? = nil) {
         self.isSignedIn = isSignedIn
