@@ -11,15 +11,17 @@ struct OnboardingView: View {
     @AppStorage("hasTriggeredNotification") private var hasTriggeredNotification = false
     @AppStorage("hasTriggeredAutomation") private var hasTriggeredAutomation = false
     @AppStorage("hasTriggeredScreenRecording") private var hasTriggeredScreenRecording = false
+    @AppStorage("hasTriggeredMicrophone") private var hasTriggeredMicrophone = false
 
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    // Animation state for screen recording tutorial images
-    @State private var currentTutorialImage = 0
-    let tutorialImageTimer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
+    let steps = ["Welcome", "Name", "Notifications", "Automation", "Screen Recording", "Microphone", "Done"]
 
-    let steps = ["Welcome", "Notifications", "Automation", "Screen Recording", "Done"]
+    // State for name input
+    @State private var nameInput: String = ""
+    @State private var nameError: String = ""
+    @FocusState private var isNameFieldFocused: Bool
 
     var body: some View {
         Group {
@@ -36,7 +38,10 @@ struct OnboardingView: View {
                 onboardingContent
             }
         }
-        .frame(width: 400, height: currentStep == 3 && !appState.hasScreenRecordingPermission ? 480 : 400)
+        .frame(
+            width: currentStep == 4 && !appState.hasScreenRecordingPermission ? 500 : 400,
+            height: currentStep == 4 && !appState.hasScreenRecordingPermission ? 520 : 400
+        )
         .onReceive(permissionCheckTimer) { _ in
             // Only poll for permissions that user has triggered
             if hasTriggeredNotification {
@@ -48,6 +53,9 @@ struct OnboardingView: View {
             if hasTriggeredScreenRecording {
                 appState.checkScreenRecordingPermission()
             }
+            if hasTriggeredMicrophone {
+                appState.checkMicrophonePermission()
+            }
         }
         // Bring app to front when permissions are granted
         .onChange(of: appState.hasNotificationPermission) { _, granted in
@@ -57,6 +65,9 @@ struct OnboardingView: View {
             if granted { bringToFront() }
         }
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
+            if granted { bringToFront() }
+        }
+        .onChange(of: appState.hasMicrophonePermission) { _, granted in
             if granted { bringToFront() }
         }
     }
@@ -75,9 +86,11 @@ struct OnboardingView: View {
     /// Check if current step's permission is granted
     private var currentPermissionGranted: Bool {
         switch currentStep {
-        case 1: return appState.hasNotificationPermission
-        case 2: return appState.hasAutomationPermission
-        case 3: return appState.hasScreenRecordingPermission
+        case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
+        case 2: return appState.hasNotificationPermission
+        case 3: return appState.hasAutomationPermission
+        case 4: return appState.hasScreenRecordingPermission
+        case 5: return appState.hasMicrophonePermission
         default: return true
         }
     }
@@ -129,10 +142,12 @@ struct OnboardingView: View {
     private func permissionGranted(for step: Int) -> Bool {
         switch step {
         case 0: return true // Welcome - always "granted"
-        case 1: return appState.hasNotificationPermission
-        case 2: return appState.hasAutomationPermission
-        case 3: return appState.hasScreenRecordingPermission
-        case 4: return true // Done - always "granted"
+        case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step
+        case 2: return appState.hasNotificationPermission
+        case 3: return appState.hasAutomationPermission
+        case 4: return appState.hasScreenRecordingPermission
+        case 5: return appState.hasMicrophonePermission
+        case 6: return true // Done - always "granted"
         default: return false
         }
     }
@@ -147,6 +162,8 @@ struct OnboardingView: View {
                 description: "OMI helps you stay focused by monitoring your screen and alerting you when you get distracted.\n\nLet's set up a few permissions to get started."
             )
         case 1:
+            nameStepView
+        case 2:
             stepView(
                 icon: appState.hasNotificationPermission ? "checkmark.circle.fill" : "bell.badge",
                 iconColor: appState.hasNotificationPermission ? .green : .accentColor,
@@ -155,7 +172,7 @@ struct OnboardingView: View {
                     ? "Notifications are enabled! You'll receive focus alerts from OMI."
                     : "OMI sends you gentle notifications when it detects you're getting distracted from your work."
             )
-        case 2:
+        case 3:
             stepView(
                 icon: appState.hasAutomationPermission ? "checkmark.circle.fill" : "gearshape.2",
                 iconColor: appState.hasAutomationPermission ? .green : .accentColor,
@@ -164,9 +181,18 @@ struct OnboardingView: View {
                     ? "Automation permission granted! OMI can now detect which app you're using."
                     : "OMI needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
             )
-        case 3:
-            screenRecordingStepView
         case 4:
+            screenRecordingStepView
+        case 5:
+            stepView(
+                icon: appState.hasMicrophonePermission ? "checkmark.circle.fill" : "mic",
+                iconColor: appState.hasMicrophonePermission ? .green : .accentColor,
+                title: "Microphone",
+                description: appState.hasMicrophonePermission
+                    ? "Microphone access granted! OMI can now transcribe your conversations."
+                    : "OMI needs microphone access to transcribe your conversations and provide context-aware assistance."
+            )
+        case 6:
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
@@ -175,6 +201,76 @@ struct OnboardingView: View {
         default:
             EmptyView()
         }
+    }
+
+    // MARK: - Name Step View
+
+    private var nameStepView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "person.circle")
+                .font(.system(size: 48))
+                .foregroundColor(.accentColor)
+
+            Text("What's your name?")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Tell us how you'd like to be addressed.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Enter your name", text: $nameInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body)
+                    .frame(maxWidth: 280)
+                    .focused($isNameFieldFocused)
+                    .onSubmit {
+                        if isNameValid {
+                            handleMainAction()
+                        }
+                    }
+
+                if !nameError.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.circle")
+                            .font(.caption)
+                        Text(nameError)
+                            .font(.caption)
+                    }
+                    .foregroundColor(.red)
+                }
+
+                if !nameInput.isEmpty {
+                    Text("\(nameInput.count) characters")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+            .padding(.horizontal, 40)
+            .padding(.top, 8)
+        }
+        .onAppear {
+            // Pre-fill from Firebase if available
+            if nameInput.isEmpty {
+                let existingName = AuthService.shared.displayName
+                if !existingName.isEmpty {
+                    nameInput = existingName
+                }
+            }
+            // Focus the text field
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isNameFieldFocused = true
+            }
+        }
+    }
+
+    private var isNameValid: Bool {
+        let trimmed = nameInput.trimmingCharacters(in: .whitespaces)
+        return trimmed.count >= 2
     }
 
     private func stepView(icon: String, iconColor: Color = .accentColor, title: String, description: String) -> some View {
@@ -228,19 +324,23 @@ struct OnboardingView: View {
         case 0:
             return "Get Started"
         case 1:
-            return appState.hasNotificationPermission ? "Continue" : "Enable Notifications"
+            return "Continue"
         case 2:
-            return appState.hasAutomationPermission ? "Continue" : "Grant Automation Access"
+            return appState.hasNotificationPermission ? "Continue" : "Enable Notifications"
         case 3:
-            return appState.hasScreenRecordingPermission ? "Continue" : "Grant Screen Recording"
+            return appState.hasAutomationPermission ? "Continue" : "Grant Automation Access"
         case 4:
+            return appState.hasScreenRecordingPermission ? "Continue" : "Grant Screen Recording"
+        case 5:
+            return appState.hasMicrophonePermission ? "Continue" : "Enable Microphone"
+        case 6:
             return "Start Using OMI"
         default:
             return "Continue"
         }
     }
 
-    // MARK: - Screen Recording Step with Tutorial Images
+    // MARK: - Screen Recording Step with Tutorial GIF
 
     private var screenRecordingStepView: some View {
         VStack(spacing: 12) {
@@ -267,71 +367,35 @@ struct OnboardingView: View {
                     .font(.body)
                     .foregroundColor(.secondary)
 
-                // Tutorial image slideshow
-                ZStack {
-                    ForEach(0..<3, id: \.self) { index in
-                        tutorialImage(for: index)
-                            .opacity(currentTutorialImage == index ? 1 : 0)
-                            .animation(.easeInOut(duration: 0.5), value: currentTutorialImage)
-                    }
-                }
-                .frame(height: 180)
-                .onReceive(tutorialImageTimer) { _ in
-                    if !appState.hasScreenRecordingPermission {
-                        currentTutorialImage = (currentTutorialImage + 1) % 3
-                    }
-                }
-
-                // Step indicator dots
-                HStack(spacing: 8) {
-                    ForEach(0..<3, id: \.self) { index in
-                        Circle()
-                            .fill(currentTutorialImage == index ? Color.accentColor : Color.gray.opacity(0.3))
-                            .frame(width: 8, height: 8)
-                            .animation(.easeInOut(duration: 0.3), value: currentTutorialImage)
-                    }
-                }
-
-                // Step labels
-                Text(tutorialStepLabel)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .animation(.easeInOut(duration: 0.3), value: currentTutorialImage)
+                // Animated GIF tutorial
+                AnimatedGIFView(gifName: "permissions")
+                    .frame(maxWidth: 440, maxHeight: 350)
+                    .cornerRadius(8)
+                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
             }
-        }
-    }
-
-    private var tutorialStepLabel: String {
-        switch currentTutorialImage {
-        case 0: return "Step 1: Click \"Open System Settings\""
-        case 1: return "Step 2: Toggle ON for OMI-COMPUTER"
-        case 2: return "Step 3: Click \"Quit & Reopen\""
-        default: return ""
-        }
-    }
-
-    @ViewBuilder
-    private func tutorialImage(for index: Int) -> some View {
-        let imageName = "screen-recording-step\(index + 1)"
-        if let url = Bundle.module.url(forResource: imageName, withExtension: "png"),
-           let nsImage = NSImage(contentsOf: url) {
-            Image(nsImage: nsImage)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .cornerRadius(8)
-                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-        } else {
-            Rectangle()
-                .fill(Color.gray.opacity(0.2))
-                .overlay(Text("Image not found"))
         }
     }
 
     private func handleMainAction() {
         switch currentStep {
         case 0:
+            MixpanelManager.shared.onboardingStepCompleted(step: 0, stepName: "Welcome")
             currentStep += 1
         case 1:
+            // Name step - validate and save
+            let trimmedName = nameInput.trimmingCharacters(in: .whitespaces)
+            if trimmedName.count < 2 {
+                nameError = "Please enter at least 2 characters"
+                return
+            }
+            nameError = ""
+            // Save the name
+            Task {
+                await AuthService.shared.updateGivenName(trimmedName)
+            }
+            MixpanelManager.shared.onboardingStepCompleted(step: 1, stepName: "Name")
+            currentStep += 1
+        case 2:
             if appState.hasNotificationPermission {
                 // Permission already granted - send test notification anyway and advance
                 NotificationService.shared.sendNotification(
@@ -339,31 +403,77 @@ struct OnboardingView: View {
                     message: "You'll receive focus alerts from OMI.",
                     applyCooldown: false
                 )
+                MixpanelManager.shared.onboardingStepCompleted(step: 2, stepName: "Notifications")
+                MixpanelManager.shared.permissionGranted(permission: "notifications")
                 currentStep += 1
             } else {
+                MixpanelManager.shared.permissionRequested(permission: "notifications")
                 hasTriggeredNotification = true
                 appState.requestNotificationPermission()
             }
-        case 2:
+        case 3:
             if appState.hasAutomationPermission {
+                MixpanelManager.shared.onboardingStepCompleted(step: 3, stepName: "Automation")
+                MixpanelManager.shared.permissionGranted(permission: "automation")
                 currentStep += 1
             } else {
+                MixpanelManager.shared.permissionRequested(permission: "automation")
                 hasTriggeredAutomation = true
                 appState.triggerAutomationPermission()
             }
-        case 3:
+        case 4:
             if appState.hasScreenRecordingPermission {
+                MixpanelManager.shared.onboardingStepCompleted(step: 4, stepName: "Screen Recording")
+                MixpanelManager.shared.permissionGranted(permission: "screen_recording")
                 currentStep += 1
             } else {
+                MixpanelManager.shared.permissionRequested(permission: "screen_recording")
                 hasTriggeredScreenRecording = true
                 appState.triggerScreenRecordingPermission()
             }
-        case 4:
+        case 5:
+            if appState.hasMicrophonePermission {
+                MixpanelManager.shared.onboardingStepCompleted(step: 5, stepName: "Microphone")
+                MixpanelManager.shared.permissionGranted(permission: "microphone")
+                currentStep += 1
+            } else {
+                MixpanelManager.shared.permissionRequested(permission: "microphone")
+                hasTriggeredMicrophone = true
+                appState.requestMicrophonePermission()
+            }
+        case 6:
+            MixpanelManager.shared.onboardingStepCompleted(step: 6, stepName: "Done")
+            MixpanelManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             appState.startMonitoring()
             dismiss()
         default:
             break
         }
+    }
+}
+
+// MARK: - Animated GIF View
+
+struct AnimatedGIFView: NSViewRepresentable {
+    let gifName: String
+
+    func makeNSView(context: Context) -> NSImageView {
+        let imageView = NSImageView()
+        imageView.imageScaling = .scaleProportionallyDown
+        imageView.animates = true
+        imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+
+        if let url = Bundle.module.url(forResource: gifName, withExtension: "gif"),
+           let image = NSImage(contentsOf: url) {
+            imageView.image = image
+        }
+
+        return imageView
+    }
+
+    func updateNSView(_ nsView: NSImageView, context: Context) {
+        nsView.animates = true
     }
 }
