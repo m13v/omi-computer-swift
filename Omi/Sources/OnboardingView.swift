@@ -73,12 +73,17 @@ struct OnboardingView: View {
     }
 
     private func bringToFront() {
-        NSApp.activate(ignoringOtherApps: true)
-        // Also bring the onboarding window to front
-        for window in NSApp.windows {
-            if window.title == "Welcome to OMI" {
-                window.makeKeyAndOrderFront(nil)
-                window.orderFrontRegardless()
+        // Small delay to let window ordering settle after System Preferences closes
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            // Use NSRunningApplication to explicitly bring exactly our app to front
+            NSRunningApplication.current.activate()
+
+            // Also bring the onboarding window to front
+            for window in NSApp.windows {
+                if window.title == "Welcome to OMI" {
+                    window.makeKeyAndOrderFront(nil)
+                    window.orderFrontRegardless()
+                }
             }
         }
     }
