@@ -16,7 +16,7 @@ let package = Package(
                 .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
             ],
-            path: "Hartford/Sources",
+            path: "Omi/Sources",
             resources: [
                 .process("GoogleService-Info.plist")
             ]
