@@ -34,7 +34,7 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Copy Info.plist
-cp Hartford/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+cp Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy app icon
 cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
