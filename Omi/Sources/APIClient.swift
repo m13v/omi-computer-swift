@@ -15,8 +15,27 @@ actor APIClient {
         self.session = URLSession(configuration: config)
 
         self.decoder = JSONDecoder()
-        decoder.keyDecodingStrategy = .convertFromSnakeCase
-        decoder.dateDecodingStrategy = .iso8601
+        // Note: Don't use .convertFromSnakeCase - it conflicts with explicit CodingKeys
+        // Use custom date strategy to handle ISO8601 with fractional seconds
+        decoder.dateDecodingStrategy = .custom { decoder in
+            let container = try decoder.singleValueContainer()
+            let dateString = try container.decode(String.self)
+
+            // Try with fractional seconds first (API returns dates like "2026-01-25T22:51:07.159249Z")
+            let isoWithFractional = ISO8601DateFormatter()
+            isoWithFractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let date = isoWithFractional.date(from: dateString) {
+                return date
+            }
+
+            // Fallback to standard ISO8601 without fractional seconds
+            let iso = ISO8601DateFormatter()
+            if let date = iso.date(from: dateString) {
+                return date
+            }
+
+            throw DecodingError.dataCorruptedError(in: container, debugDescription: "Invalid date format: \(dateString)")
+        }
     }
 
     // MARK: - Request Building
@@ -140,7 +159,28 @@ actor APIClient {
             throw APIError.httpError(statusCode: httpResponse.statusCode)
         }
 
-        return try decoder.decode(T.self, from: data)
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch let decodingError as DecodingError {
+            // Log detailed decoding error for debugging
+            switch decodingError {
+            case .keyNotFound(let key, let context):
+                log("Decoding error - key '\(key.stringValue)' not found: \(context.debugDescription)")
+                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+            case .typeMismatch(let type, let context):
+                log("Decoding error - type mismatch for \(type): \(context.debugDescription)")
+                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+            case .valueNotFound(let type, let context):
+                log("Decoding error - value not found for \(type): \(context.debugDescription)")
+                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+            case .dataCorrupted(let context):
+                log("Decoding error - data corrupted: \(context.debugDescription)")
+                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+            @unknown default:
+                log("Decoding error: \(decodingError)")
+            }
+            throw decodingError
+        }
     }
 }
 
@@ -295,6 +335,14 @@ enum ConversationSource: String, Codable {
     case phone
     case desktop
     case limitless
+    case plaud
+    case unknown
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+        self = ConversationSource(rawValue: rawValue) ?? .unknown
+    }
 }
 
 struct ServerConversation: Codable, Identifiable {
