@@ -31,8 +31,31 @@ trap cleanup EXIT
 # Kill existing instances
 echo "Killing existing instances..."
 pkill "$APP_NAME" 2>/dev/null || true
+pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+
+# Clean up conflicting app bundles with same bundle ID
+echo "Cleaning up conflicting app bundles..."
+CONFLICTING_APPS=(
+    "/Applications/Omi.app"
+    "$HOME/Desktop/Omi.app"
+    "$HOME/Downloads/Omi.app"
+    "$(dirname "$0")/../omi/app/build/macos/Build/Products/Debug/Omi.app"
+    "$(dirname "$0")/../omi/app/build/macos/Build/Products/Release/Omi.app"
+    "$(dirname "$0")/../omi-computer/build/macos/Build/Products/Debug/Omi.app"
+    "$(dirname "$0")/../omi-computer/build/macos/Build/Products/Release/Omi.app"
+)
+for app in "${CONFLICTING_APPS[@]}"; do
+    if [ -d "$app" ]; then
+        echo "  Removing: $app"
+        rm -rf "$app"
+    fi
+done
+
+# Reset Launch Services database to clear cached bundle ID mappings
+echo "Resetting Launch Services database..."
+/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user 2>/dev/null || true
 
 # Start Cloudflare tunnel
 echo "Starting Cloudflare tunnel..."
