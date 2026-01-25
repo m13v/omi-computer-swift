@@ -62,7 +62,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-cp Hartford/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+cp Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy icon if exists
 if [ -f "omi_icon.icns" ]; then
@@ -70,7 +70,7 @@ if [ -f "omi_icon.icns" ]; then
 fi
 
 # Copy GoogleService-Info.plist for Firebase
-cp Hartford/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
+cp Omi/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Update Info.plist with version and bundle info
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
@@ -100,7 +100,7 @@ echo "[2/9] Signing app with Developer ID..."
 
 codesign --force --options runtime \
     --sign "$SIGN_IDENTITY" \
-    --entitlements Hartford/Hartford.entitlements \
+    --entitlements Omi/Omi.entitlements \
     "$APP_BUNDLE"
 
 codesign --verify --verbose=2 "$APP_BUNDLE" 2>&1 | head -3
