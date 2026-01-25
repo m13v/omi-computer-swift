@@ -18,7 +18,8 @@ let package = Package(
             ],
             path: "Omi/Sources",
             resources: [
-                .process("GoogleService-Info.plist")
+                .process("GoogleService-Info.plist"),
+                .process("Resources")
             ]
         )
     ]
