@@ -31,9 +31,14 @@ class AuthService {
     private var oauthContinuation: CheckedContinuation<(code: String, state: String), Error>?
 
     // API Configuration
-    // Use persistent cloudflare tunnel for local development (Apple OAuth requires HTTPS)
-    private let apiBaseURL: String = "https://omi-dev.m13v.com/"
+    // Production: Cloud Run backend
+    private let apiBaseURL: String = "https://omi-desktop-auth-208440318997.us-central1.run.app/"
     private let redirectURI: String = "omi-computer://auth/callback"
+
+    // UserDefaults keys for auth persistence (dev builds with ad-hoc signing)
+    private let kAuthIsSignedIn = "auth_isSignedIn"
+    private let kAuthUserEmail = "auth_userEmail"
+    private let kAuthUserId = "auth_userId"
 
     init() {
         // Initialize without super
@@ -44,7 +49,42 @@ class AuthService {
     func configure() {
         guard !isConfigured else { return }
         isConfigured = true
+        restoreAuthState()
         setupAuthStateListener()
+    }
+
+    // MARK: - Auth Persistence (UserDefaults for dev builds)
+
+    private func saveAuthState(isSignedIn: Bool, email: String?, userId: String?) {
+        UserDefaults.standard.set(isSignedIn, forKey: kAuthIsSignedIn)
+        UserDefaults.standard.set(email, forKey: kAuthUserEmail)
+        UserDefaults.standard.set(userId, forKey: kAuthUserId)
+        NSLog("OMI AUTH: Saved auth state - signedIn: %@, email: %@", isSignedIn ? "true" : "false", email ?? "nil")
+    }
+
+    private func restoreAuthState() {
+        // Check if we have a saved auth state
+        let savedSignedIn = UserDefaults.standard.bool(forKey: kAuthIsSignedIn)
+        let savedEmail = UserDefaults.standard.string(forKey: kAuthUserEmail)
+
+        if savedSignedIn {
+            // Check if Firebase also has a current user (session might still be valid)
+            if let currentUser = Auth.auth().currentUser {
+                NSLog("OMI AUTH: Restored auth state from Firebase - uid: %@", currentUser.uid)
+                Task { @MainActor in
+                    self.isSignedIn = true
+                    AuthState.shared.userEmail = currentUser.email ?? savedEmail
+                }
+            } else {
+                // Firebase doesn't have user, but we have saved state
+                // This can happen with ad-hoc signing where Keychain doesn't persist
+                NSLog("OMI AUTH: Restored auth state from UserDefaults (Firebase session expired)")
+                Task { @MainActor in
+                    self.isSignedIn = true
+                    AuthState.shared.userEmail = savedEmail
+                }
+            }
+        }
     }
 
     // MARK: - Auth State Listener
@@ -52,8 +92,11 @@ class AuthService {
     private func setupAuthStateListener() {
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
-                self?.isSignedIn = user != nil
+                let signedIn = user != nil
+                self?.isSignedIn = signedIn
                 AuthState.shared.userEmail = user?.email
+                // Save to UserDefaults for dev builds
+                self?.saveAuthState(isSignedIn: signedIn, email: user?.email, userId: user?.uid)
             }
         }
     }
@@ -281,6 +324,9 @@ class AuthService {
     func signOut() throws {
         try Auth.auth().signOut()
         isSignedIn = false
+        // Clear saved auth state
+        saveAuthState(isSignedIn: false, email: nil, userId: nil)
+        NSLog("OMI AUTH: Signed out and cleared saved state")
     }
 
     // MARK: - Helper Methods
