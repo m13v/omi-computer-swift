@@ -39,6 +39,36 @@ class AuthService {
     private let kAuthIsSignedIn = "auth_isSignedIn"
     private let kAuthUserEmail = "auth_userEmail"
     private let kAuthUserId = "auth_userId"
+    private let kAuthGivenName = "auth_givenName"
+    private let kAuthFamilyName = "auth_familyName"
+
+    // MARK: - User Name Properties
+
+    /// Get the user's given name (first name)
+    var givenName: String {
+        get { UserDefaults.standard.string(forKey: kAuthGivenName) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: kAuthGivenName) }
+    }
+
+    /// Get the user's family name (last name)
+    var familyName: String {
+        get { UserDefaults.standard.string(forKey: kAuthFamilyName) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: kAuthFamilyName) }
+    }
+
+    /// Get the user's full display name
+    var displayName: String {
+        let given = givenName
+        let family = familyName
+        if !given.isEmpty && !family.isEmpty {
+            return "\(given) \(family)"
+        } else if !given.isEmpty {
+            return given
+        } else if !family.isEmpty {
+            return family
+        }
+        return ""
+    }
 
     init() {
         // Initialize without super
@@ -78,6 +108,8 @@ class AuthService {
                 DispatchQueue.main.async {
                     self.isSignedIn = true
                     AuthState.shared.userEmail = currentUser.email ?? savedEmail
+                    // Load name from Firebase Auth displayName if we don't have it locally
+                    self.loadNameFromFirebaseIfNeeded()
                 }
             } else {
                 // Firebase doesn't have user, but we have saved state
@@ -99,11 +131,23 @@ class AuthService {
     private func setupAuthStateListener() {
         authStateHandle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             Task { @MainActor in
-                let signedIn = user != nil
-                self?.isSignedIn = signedIn
-                AuthState.shared.userEmail = user?.email
-                // Save to UserDefaults for dev builds
-                self?.saveAuthState(isSignedIn: signedIn, email: user?.email, userId: user?.uid)
+                if user != nil {
+                    // Firebase has a user - trust it
+                    self?.isSignedIn = true
+                    AuthState.shared.userEmail = user?.email
+                    self?.saveAuthState(isSignedIn: true, email: user?.email, userId: user?.uid)
+                    // Load name from Firebase Auth displayName if we don't have it locally
+                    self?.loadNameFromFirebaseIfNeeded()
+                } else {
+                    // Firebase has no user - check if we have a saved session (for dev builds where Keychain doesn't persist)
+                    let savedSignedIn = UserDefaults.standard.bool(forKey: self?.kAuthIsSignedIn ?? "")
+                    if !savedSignedIn {
+                        // No saved session either - user is truly signed out
+                        self?.isSignedIn = false
+                        AuthState.shared.userEmail = nil
+                    }
+                    // If savedSignedIn is true, don't overwrite - keep the saved session
+                }
             }
         }
     }
@@ -129,6 +173,9 @@ class AuthService {
         NSLog("OMI AUTH: Starting Sign in with %@ (Web OAuth)", provider)
         isLoading = true
         error = nil
+
+        // Track sign-in started
+        MixpanelManager.shared.signInStarted(provider: provider)
 
         defer { isLoading = false }
 
@@ -186,10 +233,22 @@ class AuthService {
             // Save auth state immediately (don't rely on listener for dev builds)
             let user = Auth.auth().currentUser
             saveAuthState(isSignedIn: true, email: user?.email, userId: user?.uid)
+
+            // Try to load name from Firebase (OAuth may have provided it)
+            loadNameFromFirebaseIfNeeded()
+
+            // Track sign-in completed and identify user
+            MixpanelManager.shared.signInCompleted(provider: provider)
+            MixpanelManager.shared.identify()
+
             NSLog("OMI AUTH: Sign in complete!")
+
+            // Fetch conversations after successful sign-in
+            fetchConversations()
 
         } catch {
             NSLog("OMI AUTH: Error during sign in: %@", error.localizedDescription)
+            MixpanelManager.shared.signInFailed(provider: provider, error: error.localizedDescription)
             self.error = error.localizedDescription
             throw error
         }
@@ -314,6 +373,51 @@ class AuthService {
         return customToken
     }
 
+    // MARK: - User Name Management
+
+    /// Update the user's given name (stores locally and optionally updates Firebase)
+    @MainActor
+    func updateGivenName(_ fullName: String) async {
+        let nameParts = fullName.trimmingCharacters(in: .whitespaces).split(separator: " ", maxSplits: 1)
+        let newGivenName = nameParts.first.map(String.init) ?? fullName.trimmingCharacters(in: .whitespaces)
+        let newFamilyName = nameParts.count > 1 ? String(nameParts[1]) : ""
+
+        // Save locally
+        givenName = newGivenName
+        familyName = newFamilyName
+        NSLog("OMI AUTH: Updated name locally - given: %@, family: %@", newGivenName, newFamilyName)
+
+        // Try to update Firebase profile (best effort)
+        if let user = Auth.auth().currentUser {
+            do {
+                let changeRequest = user.createProfileChangeRequest()
+                changeRequest.displayName = fullName.trimmingCharacters(in: .whitespaces)
+                try await changeRequest.commitChanges()
+                NSLog("OMI AUTH: Updated Firebase displayName to: %@", fullName)
+            } catch {
+                NSLog("OMI AUTH: Failed to update Firebase displayName (non-fatal): %@", error.localizedDescription)
+            }
+        }
+    }
+
+    /// Try to get name from Firebase user (after OAuth sign-in)
+    func getNameFromFirebase() -> String? {
+        if let displayName = Auth.auth().currentUser?.displayName, !displayName.isEmpty {
+            return displayName
+        }
+        return nil
+    }
+
+    /// Load name from Firebase if local name is empty
+    func loadNameFromFirebaseIfNeeded() {
+        if givenName.isEmpty, let firebaseName = getNameFromFirebase() {
+            let nameParts = firebaseName.split(separator: " ", maxSplits: 1)
+            givenName = nameParts.first.map(String.init) ?? firebaseName
+            familyName = nameParts.count > 1 ? String(nameParts[1]) : ""
+            NSLog("OMI AUTH: Loaded name from Firebase - given: %@, family: %@", givenName, familyName)
+        }
+    }
+
     // MARK: - Get ID Token (for API calls)
 
     func getIdToken(forceRefresh: Bool = false) async throws -> String {
@@ -330,9 +434,40 @@ class AuthService {
         return "Bearer \(token)"
     }
 
+    // MARK: - Fetch User Conversations
+
+    /// Fetches and logs user conversations (called after sign-in or on startup)
+    func fetchConversations() {
+        Task {
+            do {
+                log("Fetching user conversations...")
+                let conversations = try await APIClient.shared.getConversations(limit: 10)
+                log("Fetched \(conversations.count) conversations")
+
+                for (index, conversation) in conversations.prefix(5).enumerated() {
+                    log("[\(index + 1)] \(conversation.structured.emoji) \(conversation.title) (\(conversation.formattedDuration))")
+                    if !conversation.overview.isEmpty {
+                        let preview = String(conversation.overview.prefix(100))
+                        log("    Summary: \(preview)\(conversation.overview.count > 100 ? "..." : "")")
+                    }
+                }
+
+                if conversations.count > 5 {
+                    log("... and \(conversations.count - 5) more conversations")
+                }
+            } catch {
+                log("Failed to fetch conversations: \(error.localizedDescription)")
+            }
+        }
+    }
+
     // MARK: - Sign Out
 
     func signOut() throws {
+        // Track sign out and reset MixPanel
+        MixpanelManager.shared.signedOut()
+        MixpanelManager.shared.reset()
+
         try Auth.auth().signOut()
         isSignedIn = false
         // Clear saved auth state
