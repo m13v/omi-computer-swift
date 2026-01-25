@@ -67,11 +67,15 @@ class AuthService {
         let savedSignedIn = UserDefaults.standard.bool(forKey: kAuthIsSignedIn)
         let savedEmail = UserDefaults.standard.string(forKey: kAuthUserEmail)
 
+        NSLog("OMI AUTH: Checking saved auth state - savedSignedIn: %@, savedEmail: %@",
+              savedSignedIn ? "true" : "false", savedEmail ?? "nil")
+
         if savedSignedIn {
             // Check if Firebase also has a current user (session might still be valid)
             if let currentUser = Auth.auth().currentUser {
                 NSLog("OMI AUTH: Restored auth state from Firebase - uid: %@", currentUser.uid)
-                Task { @MainActor in
+                // Update synchronously since we're called from main thread
+                DispatchQueue.main.async {
                     self.isSignedIn = true
                     AuthState.shared.userEmail = currentUser.email ?? savedEmail
                 }
@@ -79,11 +83,14 @@ class AuthService {
                 // Firebase doesn't have user, but we have saved state
                 // This can happen with ad-hoc signing where Keychain doesn't persist
                 NSLog("OMI AUTH: Restored auth state from UserDefaults (Firebase session expired)")
-                Task { @MainActor in
+                // Update synchronously since we're called from main thread
+                DispatchQueue.main.async {
                     self.isSignedIn = true
                     AuthState.shared.userEmail = savedEmail
                 }
             }
+        } else {
+            NSLog("OMI AUTH: No saved auth state found")
         }
     }
 
