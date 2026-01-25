@@ -20,8 +20,9 @@ struct SignInView: View {
 
             Spacer()
 
-            // Sign in with Apple button
-            VStack(spacing: 16) {
+            // Sign in buttons
+            VStack(spacing: 12) {
+                // Sign in with Apple
                 Button(action: {
                     Task {
                         do {
@@ -47,13 +48,51 @@ struct SignInView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(authState.isLoading)
-                .overlay {
-                    if authState.isLoading {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white.opacity(0.8))
-                        ProgressView()
-                            .progressViewStyle(CircularProgressViewStyle(tint: .black))
+
+                // Sign in with Google
+                Button(action: {
+                    Task {
+                        do {
+                            try await AuthService.shared.signInWithGoogle()
+                        } catch {
+                            let errorMsg = "Error: \(error.localizedDescription)"
+                            authState.error = errorMsg
+                            NSLog("OMI Sign in error: %@", errorMsg)
+                        }
                     }
+                }) {
+                    HStack(spacing: 8) {
+                        // Google "G" logo using SF Symbol or text
+                        Text("G")
+                            .font(.system(size: 20, weight: .bold))
+                            .foregroundStyle(
+                                LinearGradient(
+                                    colors: [.blue, .green, .yellow, .red],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        Text("Sign in with Google")
+                            .font(.system(size: 17, weight: .medium))
+                    }
+                    .foregroundColor(.black)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 50)
+                    .background(Color.white)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(authState.isLoading)
+
+                // Loading overlay for both buttons
+                if authState.isLoading {
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                        .padding(.top, 8)
                 }
 
                 if let error = authState.error {
@@ -61,6 +100,7 @@ struct SignInView: View {
                         .font(.caption)
                         .foregroundColor(.red)
                         .multilineTextAlignment(.center)
+                        .padding(.top, 4)
                 }
             }
             .padding(.horizontal, 40)
