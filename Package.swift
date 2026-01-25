@@ -8,6 +8,7 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/firebase/firebase-ios-sdk.git", from: "11.0.0"),
+        .package(url: "https://github.com/mixpanel/mixpanel-swift.git", from: "4.0.0"),
     ],
     targets: [
         .executableTarget(
@@ -15,6 +16,7 @@ let package = Package(
             dependencies: [
                 .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
+                .product(name: "Mixpanel", package: "mixpanel-swift"),
             ],
             path: "Omi/Sources",
             resources: [
