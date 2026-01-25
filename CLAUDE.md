@@ -1,7 +1,7 @@
 # Claude Project Context
 
 ## Project Overview
-Hartford - OMI Desktop App for macOS (Swift)
+OMI Desktop App for macOS (Swift)
 
 ## Related Repositories
 - **OMI Main Repo**: `/Users/matthewdi/omi`
