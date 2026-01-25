@@ -1,6 +1,7 @@
 import SwiftUI
 import FirebaseCore
 import FirebaseAuth
+import Mixpanel
 
 // Simple observable state without Firebase types
 class AuthState: ObservableObject {
@@ -91,6 +92,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AuthService.shared.configure()
         }
 
+        // Initialize MixPanel analytics
+        MixpanelManager.shared.initialize()
+        MixpanelManager.shared.appLaunched()
+
+        // Identify user if already signed in
+        if AuthState.shared.isSignedIn {
+            MixpanelManager.shared.identify()
+            // Fetch conversations on startup
+            AuthService.shared.fetchConversations()
+        }
+
         // Register for Apple Events to handle URL scheme
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -133,6 +145,19 @@ struct MenuBarView: View {
                 appState.toggleMonitoring()
             }
             .keyboardShortcut("m", modifiers: .command)
+
+            Button(appState.isTranscribing ? "Stop Transcription" : "Start Transcription") {
+                appState.toggleTranscription()
+            }
+            .keyboardShortcut("t", modifiers: .command)
+
+            if appState.isTranscribing {
+                Text("🎙️ Recording...")
+                    .font(.caption)
+                    .foregroundColor(.red)
+            }
+
+            Divider()
 
             Button("Grant Screen Permission") {
                 appState.openScreenRecordingPreferences()
