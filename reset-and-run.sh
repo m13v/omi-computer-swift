@@ -73,6 +73,9 @@ done
 echo "Building app..."
 swift build -c debug
 
+# Remove old app bundle to avoid permission issues with signed apps
+rm -rf "$APP_BUNDLE"
+
 # Create app bundle
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
@@ -100,7 +103,7 @@ echo "Installing to /Applications..."
 rm -rf "$APP_PATH"
 cp -r "$APP_BUNDLE" /Applications/
 
-# Sign app (ad-hoc for dev, Developer ID causes launch issues with get-task-allow)
+# Sign app (ad-hoc for dev - Developer ID requires notarization)
 echo "Signing app (ad-hoc for development)..."
 codesign --force --deep --sign - "$APP_PATH"
 
