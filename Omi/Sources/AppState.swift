@@ -1,6 +1,7 @@
 import SwiftUI
 import Combine
 import UserNotifications
+import AVFoundation
 
 @MainActor
 class AppState: ObservableObject {
@@ -9,6 +10,11 @@ class AppState: ObservableObject {
     @Published var currentApp: String?
     @Published var currentWindowTitle: String?
     @Published var lastStatus: FocusStatus?
+
+    // Transcription state
+    @Published var isTranscribing = false
+    @Published var currentTranscript: String = ""
+    @Published var hasMicrophonePermission = false
 
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
@@ -19,6 +25,10 @@ class AppState: ObservableObject {
     private var windowMonitor: WindowMonitor?
     private var geminiService: GeminiService?
     private var captureTimer: Timer?
+
+    // Transcription services
+    private var audioCaptureService: AudioCaptureService?
+    private var transcriptionService: TranscriptionService?
 
     // Smart analysis filtering state
     private var lastAnalyzedApp: String?
@@ -33,26 +43,44 @@ class AppState: ObservableObject {
     }
 
     private func loadEnvironment() {
-        // Try to load from .env file in bundle or current directory
+        // Try to load from .env file in various locations
         let envPaths = [
             Bundle.main.path(forResource: ".env", ofType: nil),
             FileManager.default.currentDirectoryPath + "/.env",
-            NSHomeDirectory() + "/.hartford.env"
+            NSHomeDirectory() + "/.hartford.env",
+            NSHomeDirectory() + "/.omi.env",
+            // Explicit paths for development
+            "/Users/matthewdi/omi-computer-swift/.env",
+            "/Users/matthewdi/omi/backend/.env"
         ].compactMap { $0 }
 
         for path in envPaths {
             if let contents = try? String(contentsOfFile: path, encoding: .utf8) {
+                log("Loading environment from: \(path)")
                 for line in contents.components(separatedBy: .newlines) {
                     let parts = line.split(separator: "=", maxSplits: 1)
                     if parts.count == 2 {
                         let key = String(parts[0]).trimmingCharacters(in: .whitespaces)
+                        // Skip comments
+                        guard !key.hasPrefix("#") else { continue }
                         let value = String(parts[1]).trimmingCharacters(in: .whitespaces)
                             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
                         setenv(key, value, 1)
+                        // Log key names (not values for security)
+                        if key.contains("API_KEY") || key.contains("KEY") {
+                            log("  Set \(key)=***")
+                        }
                     }
                 }
-                break
+                // Don't break - load all .env files to merge keys
             }
+        }
+
+        // Log final state of important keys
+        if ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"] != nil {
+            log("DEEPGRAM_API_KEY is set")
+        } else {
+            log("WARNING: DEEPGRAM_API_KEY is NOT set")
         }
     }
 
@@ -88,9 +116,11 @@ class AppState: ObservableObject {
                         self?.lastStatus = status
                     }
                 },
-                onRefocus: {
+                onRefocus: { [weak self] in
                     Task { @MainActor in
                         GlowOverlayController.shared.showGlowAroundActiveWindow()
+                        // Track focus restored
+                        MixpanelManager.shared.focusRestored(app: self?.currentApp ?? "unknown")
                     }
                 },
                 onDistraction: { [weak self] in
@@ -99,6 +129,12 @@ class AppState: ObservableObject {
                         // Start cool-down period after distraction detected
                         self?.analysisCooldownEndTime = Date().addingTimeInterval(self?.distractionCooldownSeconds ?? 60.0)
                         log("Distraction cool-down started for \(self?.distractionCooldownSeconds ?? 60)s")
+
+                        // Track distraction event
+                        MixpanelManager.shared.distractionDetected(
+                            app: self?.currentApp ?? "unknown",
+                            windowTitle: self?.currentWindowTitle
+                        )
                     }
                 }
             )
@@ -133,6 +169,9 @@ class AppState: ObservableObject {
         }
 
         isMonitoring = true
+
+        // Track monitoring started
+        MixpanelManager.shared.monitoringStarted()
 
         NotificationService.shared.sendNotification(
             title: "Monitoring Started",
@@ -171,6 +210,9 @@ class AppState: ObservableObject {
         lastAnalyzedWindowTitle = nil
         analysisCooldownEndTime = nil
         pendingContextSwitch = false
+
+        // Track monitoring stopped
+        MixpanelManager.shared.monitoringStopped()
 
         NotificationService.shared.sendNotification(
             title: "Monitoring Stopped",
@@ -331,6 +373,7 @@ class AppState: ObservableObject {
         checkNotificationPermission()
         checkScreenRecordingPermission()
         checkAutomationPermission()
+        checkMicrophonePermission()
     }
 
     /// Check notification permission status
@@ -381,5 +424,151 @@ class AppState: ObservableObject {
         alert.alertStyle = .warning
         alert.addButton(withTitle: "OK")
         alert.runModal()
+    }
+
+    // MARK: - Transcription
+
+    /// Toggle transcription on/off
+    func toggleTranscription() {
+        if isTranscribing {
+            stopTranscription()
+        } else {
+            startTranscription()
+        }
+    }
+
+    /// Start real-time transcription
+    func startTranscription() {
+        guard !isTranscribing else { return }
+
+        // Check microphone permission
+        guard AudioCaptureService.checkPermission() else {
+            requestMicrophonePermission()
+            return
+        }
+
+        do {
+            // Initialize transcription service
+            transcriptionService = try TranscriptionService()
+
+            // Initialize audio capture service
+            audioCaptureService = AudioCaptureService()
+
+            // Start transcription service first
+            transcriptionService?.start(
+                onTranscript: { [weak self] segment in
+                    Task { @MainActor in
+                        self?.handleTranscriptSegment(segment)
+                    }
+                },
+                onError: { [weak self] error in
+                    Task { @MainActor in
+                        log("Transcription error: \(error.localizedDescription)")
+                        MixpanelManager.shared.recordingError(error: error.localizedDescription)
+                        self?.stopTranscription()
+                    }
+                },
+                onConnected: { [weak self] in
+                    Task { @MainActor in
+                        log("Transcription: Connected to DeepGram")
+                        // Start audio capture once connected
+                        self?.startAudioCapture()
+                    }
+                },
+                onDisconnected: {
+                    log("Transcription: Disconnected from DeepGram")
+                }
+            )
+
+            isTranscribing = true
+            currentTranscript = ""
+
+            // Track transcription started
+            MixpanelManager.shared.transcriptionStarted()
+
+            log("Transcription: Starting...")
+
+        } catch {
+            MixpanelManager.shared.recordingError(error: error.localizedDescription)
+            showAlert(title: "Transcription Error", message: error.localizedDescription)
+        }
+    }
+
+    /// Start audio capture and pipe to transcription service
+    private func startAudioCapture() {
+        guard let audioCaptureService = audioCaptureService else { return }
+
+        do {
+            try audioCaptureService.startCapture { [weak self] audioData in
+                self?.transcriptionService?.sendAudio(audioData)
+            }
+            log("Transcription: Audio capture started")
+        } catch {
+            log("Transcription: Failed to start audio capture - \(error.localizedDescription)")
+            stopTranscription()
+        }
+    }
+
+    /// Stop real-time transcription
+    func stopTranscription() {
+        // Calculate word count before stopping
+        let wordCount = currentTranscript.split(separator: " ").count
+
+        audioCaptureService?.stopCapture()
+        audioCaptureService = nil
+
+        transcriptionService?.stop()
+        transcriptionService = nil
+
+        isTranscribing = false
+
+        // Track transcription stopped
+        MixpanelManager.shared.transcriptionStopped(wordCount: wordCount)
+
+        log("Transcription: Stopped")
+    }
+
+    /// Handle incoming transcript segment
+    private func handleTranscriptSegment(_ segment: TranscriptionService.TranscriptSegment) {
+        let text = segment.text
+
+        if segment.speechFinal {
+            // Final transcript for this utterance - append with newline
+            if !currentTranscript.isEmpty {
+                currentTranscript += "\n"
+            }
+            currentTranscript += text
+            log("Transcript [FINAL]: \(text)")
+        } else if segment.isFinal {
+            // Interim final - update current line
+            // For now, just log it
+            log("Transcript [interim]: \(text)")
+        }
+    }
+
+    /// Request microphone permission
+    func requestMicrophonePermission() {
+        Task {
+            let granted = await AudioCaptureService.requestPermission()
+            await MainActor.run {
+                self.hasMicrophonePermission = granted
+                if granted {
+                    log("Microphone permission granted")
+                    // Try starting transcription again
+                    self.startTranscription()
+                } else {
+                    log("Microphone permission denied")
+                    self.showAlert(
+                        title: "Microphone Access Required",
+                        message: "Please enable microphone access in System Settings > Privacy & Security > Microphone"
+                    )
+                }
+            }
+        }
+    }
+
+    /// Check microphone permission status
+    func checkMicrophonePermission() {
+        hasMicrophonePermission = AudioCaptureService.checkPermission()
     }
 }
