@@ -18,7 +18,7 @@ fi
 VERSION="$1"
 
 # Configuration
-APP_NAME="OMI"
+APP_NAME="OMI-COMPUTER"
 BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
@@ -80,6 +80,7 @@ cp Omi/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
 /usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 15.0" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy .env.app (app runtime secrets only - not build secrets)
 if [ -f ".env.app" ]; then
@@ -100,7 +101,7 @@ echo "[2/9] Signing app with Developer ID..."
 
 codesign --force --options runtime \
     --sign "$SIGN_IDENTITY" \
-    --entitlements Omi/Omi.entitlements \
+    --entitlements Omi/Omi-Release.entitlements \
     "$APP_BUNDLE"
 
 codesign --verify --verbose=2 "$APP_BUNDLE" 2>&1 | head -3
@@ -139,6 +140,13 @@ echo "[5/9] Creating installer DMG..."
 
 rm -f "$DMG_PATH"
 
+# Copy app to temp staging directory to avoid permission issues
+STAGING_DIR="/tmp/omi-dmg-staging-$$"
+rm -rf "$STAGING_DIR"
+mkdir -p "$STAGING_DIR"
+cp -R "$APP_BUNDLE" "$STAGING_DIR/"
+STAGED_APP="$STAGING_DIR/$APP_NAME.app"
+
 # Use create-dmg for a proper installer DMG with Applications shortcut
 if command -v create-dmg &> /dev/null; then
     # Use background image if available
@@ -148,8 +156,8 @@ if command -v create-dmg &> /dev/null; then
     fi
 
     create-dmg \
-        --volname "Install $APP_NAME" \
-        --volicon "$APP_BUNDLE/Contents/Resources/AppIcon.icns" \
+        --volname "Application" \
+        --volicon "$STAGED_APP/Contents/Resources/AppIcon.icns" \
         --window-pos 200 120 \
         --window-size 610 365 \
         --icon-size 80 \
@@ -159,15 +167,18 @@ if command -v create-dmg &> /dev/null; then
         --no-internet-enable \
         $BG_ARGS \
         "$DMG_PATH" \
-        "$APP_BUNDLE"
+        "$STAGED_APP"
 else
     # Fallback to basic hdiutil if create-dmg not available
     echo "  Warning: create-dmg not found, using basic DMG creation"
     hdiutil create -volname "$APP_NAME" \
-        -srcfolder "$APP_BUNDLE" \
+        -srcfolder "$STAGED_APP" \
         -ov -format UDZO \
         "$DMG_PATH"
 fi
+
+# Clean up staging directory
+rm -rf "$STAGING_DIR"
 
 echo "  ✓ DMG created"
 
