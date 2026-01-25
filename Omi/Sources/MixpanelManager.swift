@@ -21,7 +21,7 @@ class MixpanelManager {
         guard !isInitialized else { return }
 
         guard let token = getToken() else {
-            NSLog("MixPanel: No project token found. Set MIXPANEL_PROJECT_TOKEN environment variable.")
+            log("MixPanel: No project token found. Set MIXPANEL_PROJECT_TOKEN environment variable.")
             return
         }
 
@@ -29,7 +29,7 @@ class MixpanelManager {
         Mixpanel.mainInstance().loggingEnabled = false
 
         isInitialized = true
-        NSLog("MixPanel: Initialized successfully")
+        log("MixPanel: Initialized successfully")
     }
 
     /// Get the MixPanel token from environment or .env file
@@ -77,7 +77,7 @@ class MixpanelManager {
         guard isInitialized else { return }
 
         guard let user = Auth.auth().currentUser else {
-            NSLog("MixPanel: Cannot identify - no user signed in")
+            log("MixPanel: Cannot identify - no user signed in")
             return
         }
 
@@ -86,7 +86,7 @@ class MixpanelManager {
         // Set user profile properties
         setPeopleValues(user: user)
 
-        NSLog("MixPanel: Identified user %@", user.uid)
+        log("MixPanel: Identified user \(user.uid)")
     }
 
     /// Set user profile properties
@@ -119,7 +119,7 @@ class MixpanelManager {
     func track(_ eventName: String, properties: [String: MixpanelType]? = nil) {
         guard isInitialized else { return }
         Mixpanel.mainInstance().track(event: eventName, properties: properties)
-        NSLog("MixPanel: Tracked event '%@'", eventName)
+        log("MixPanel: Tracked event '\(eventName)'")
     }
 
     /// Start timing an event (call track with same name to finish)
@@ -154,7 +154,7 @@ class MixpanelManager {
     func reset() {
         guard isInitialized else { return }
         Mixpanel.mainInstance().reset()
-        NSLog("MixPanel: Reset user")
+        log("MixPanel: Reset user")
     }
 }
 
