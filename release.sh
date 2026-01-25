@@ -4,18 +4,10 @@ set -e
 # =============================================================================
 # OMI Release Script
 # Full pipeline: build → sign → notarize → package DMG → publish to CrabNebula
-# Usage: ./release.sh <version>
+# Usage: ./release.sh [version]
 # Example: ./release.sh 0.0.3
+# If no version specified, auto-increments patch version from latest release
 # =============================================================================
-
-# Check version argument
-if [ -z "$1" ]; then
-    echo "Usage: ./release.sh <version>"
-    echo "Example: ./release.sh 0.0.3"
-    exit 1
-fi
-
-VERSION="$1"
 
 # Configuration
 APP_NAME="OMI-COMPUTER"
@@ -35,6 +27,41 @@ CN_CLI="${CN_CLI:-$HOME/.local/bin/cn}"
 CN_ORG="mediar"
 CN_APP="omi-computer"
 export CN_API_KEY="${CN_API_KEY:-cn_4j2Us_EaFAXfV-IKtesjLt7T6tecbKMuKJWRMVfX45e0GMz4mQWwOYoNG_TMZxa6Fw7YDV-sNM3NRuWPMczNAg}"
+
+# -----------------------------------------------------------------------------
+# Version handling: auto-increment if not specified
+# -----------------------------------------------------------------------------
+if [ -z "$1" ]; then
+    echo "No version specified, checking latest release..."
+
+    # Try to get latest version from CrabNebula
+    if [ -f "$CN_CLI" ]; then
+        LATEST=$("$CN_CLI" release list "$CN_ORG/$CN_APP" 2>/dev/null | grep -E '^\s*[0-9]+\.[0-9]+\.[0-9]+' | head -1 | awk '{print $1}' || echo "")
+    fi
+
+    # Fallback to git tags if CN fails
+    if [ -z "$LATEST" ]; then
+        LATEST=$(git tag -l 'v*' 2>/dev/null | sort -V | tail -1 | sed 's/^v//' || echo "")
+    fi
+
+    # Default to 0.0.0 if no previous version found
+    if [ -z "$LATEST" ]; then
+        LATEST="0.0.0"
+        echo "  No previous version found, starting at 0.0.1"
+    else
+        echo "  Latest version: $LATEST"
+    fi
+
+    # Parse and increment patch version
+    MAJOR=$(echo "$LATEST" | cut -d. -f1)
+    MINOR=$(echo "$LATEST" | cut -d. -f2)
+    PATCH=$(echo "$LATEST" | cut -d. -f3)
+    PATCH=$((PATCH + 1))
+    VERSION="$MAJOR.$MINOR.$PATCH"
+    echo "  Auto-incrementing to: $VERSION"
+else
+    VERSION="$1"
+fi
 
 echo "=============================================="
 echo "  OMI Release Pipeline v$VERSION"
