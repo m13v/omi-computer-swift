@@ -182,6 +182,10 @@ class AuthService {
             }
 
             isSignedIn = true
+
+            // Save auth state immediately (don't rely on listener for dev builds)
+            let user = Auth.auth().currentUser
+            saveAuthState(isSignedIn: true, email: user?.email, userId: user?.uid)
             NSLog("OMI AUTH: Sign in complete!")
 
         } catch {
