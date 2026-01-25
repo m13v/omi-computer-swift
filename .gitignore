@@ -4,6 +4,9 @@ build/
 DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
+*.d
+*.o
+*.swiftdeps
 
 # Environment (both contain secrets)
 .env
