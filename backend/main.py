@@ -33,13 +33,24 @@ auth_sessions = {}
 auth_codes = {}
 
 # Initialize Firebase Admin SDK
+# Support both file path (local dev) and JSON string (Cloud Run)
 firebase_creds_path = os.getenv('GOOGLE_APPLICATION_CREDENTIALS')
-if firebase_creds_path and os.path.exists(firebase_creds_path):
+firebase_creds_json = os.getenv('FIREBASE_CREDENTIALS_JSON')
+
+if firebase_creds_json:
+    # Cloud Run: credentials as JSON string
+    import json as json_module
+    cred_dict = json_module.loads(firebase_creds_json)
+    cred = credentials.Certificate(cred_dict)
+    firebase_admin.initialize_app(cred)
+    print("Firebase Admin SDK initialized from FIREBASE_CREDENTIALS_JSON")
+elif firebase_creds_path and os.path.exists(firebase_creds_path):
+    # Local dev: credentials as file path
     cred = credentials.Certificate(firebase_creds_path)
     firebase_admin.initialize_app(cred)
     print(f"Firebase Admin SDK initialized with {firebase_creds_path}")
 else:
-    print("Warning: GOOGLE_APPLICATION_CREDENTIALS not set or file not found")
+    print("Warning: Firebase credentials not configured")
 
 
 def set_auth_session(session_id: str, data: dict, ttl: int = 300):
