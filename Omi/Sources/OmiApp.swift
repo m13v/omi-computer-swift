@@ -133,7 +133,23 @@ struct MenuBarView: View {
             Divider()
 
             Button("Sign Out") {
+                // Stop monitoring if running
+                if appState.isMonitoring {
+                    appState.stopMonitoring()
+                }
+                // Sign out
                 try? AuthService.shared.signOut()
+                // Open sign-in window and bring to front
+                openOnboarding()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    NSApp.activate(ignoringOtherApps: true)
+                    for window in NSApp.windows {
+                        if window.title == "Welcome to OMI-COMPUTER" {
+                            window.makeKeyAndOrderFront(nil)
+                            window.orderFrontRegardless()
+                        }
+                    }
+                }
             }
         } else {
             Button("Sign In") {
