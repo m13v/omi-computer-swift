@@ -45,6 +45,10 @@ class AudioCaptureService {
     private var targetFormat: AVAudioFormat?
     private var detectedSampleRate: Double = 0.0
 
+    // Device change handling
+    private var configChangeObserver: NSObjectProtocol?
+    private var isReconfiguring = false
+
     // MARK: - Public Methods
 
     /// Check if microphone permission is granted
@@ -122,15 +126,101 @@ class AudioCaptureService {
             inputNode.removeTap(onBus: 0)
             throw AudioCaptureError.engineStartFailed(error)
         }
+
+        // Listen for audio device/configuration changes
+        setupConfigurationChangeObserver()
+    }
+
+    /// Set up observer for audio configuration changes (device switches, format changes)
+    private func setupConfigurationChangeObserver() {
+        // Remove any existing observer
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+
+        configChangeObserver = NotificationCenter.default.addObserver(
+            forName: .AVAudioEngineConfigurationChange,
+            object: audioEngine,
+            queue: nil
+        ) { [weak self] _ in
+            // IMPORTANT: Don't do work directly in callback - use async to avoid deadlock
+            DispatchQueue.main.async {
+                self?.handleConfigurationChange()
+            }
+        }
+    }
+
+    /// Handle audio configuration change (e.g., user switched microphone)
+    private func handleConfigurationChange() {
+        guard isCapturing, !isReconfiguring else { return }
+        isReconfiguring = true
+
+        log("AudioCapture: Configuration changed, restarting with new device...")
+
+        // Save the current callback
+        let savedCallback = onAudioChunk
+
+        // Remove old tap (engine is already stopped by the system)
+        audioEngine.inputNode.removeTap(onBus: 0)
+
+        // Get the NEW hardware format (may have changed)
+        let inputNode = audioEngine.inputNode
+        let newHwFormat = inputNode.inputFormat(forBus: 0)
+
+        guard newHwFormat.channelCount > 0 else {
+            log("AudioCapture: No input available after config change")
+            isReconfiguring = false
+            return
+        }
+
+        log("AudioCapture: New hardware format - \(newHwFormat.sampleRate)Hz, \(newHwFormat.channelCount) channels")
+
+        // Update stored format info
+        detectedSampleRate = newHwFormat.sampleRate
+        inputFormat = newHwFormat
+
+        // Recreate converter with new input format
+        guard let targetFmt = targetFormat,
+              let newConverter = AVAudioConverter(from: newHwFormat, to: targetFmt) else {
+            log("AudioCapture: Failed to create converter for new format")
+            isReconfiguring = false
+            return
+        }
+        audioConverter = newConverter
+
+        // Reinstall tap with new format
+        let bufferSize: AVAudioFrameCount = 512
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: newHwFormat) { [weak self] buffer, time in
+            self?.processAudioBuffer(buffer)
+        }
+
+        // Restart the engine
+        do {
+            try audioEngine.start()
+            log("AudioCapture: Restarted with new configuration")
+        } catch {
+            log("AudioCapture: Failed to restart after config change - \(error.localizedDescription)")
+            // Try to restore callback for potential retry
+            onAudioChunk = savedCallback
+        }
+
+        isReconfiguring = false
     }
 
     /// Stop capturing audio
     func stopCapture() {
         guard isCapturing else { return }
 
+        // Remove configuration change observer
+        if let observer = configChangeObserver {
+            NotificationCenter.default.removeObserver(observer)
+            configChangeObserver = nil
+        }
+
         audioEngine.inputNode.removeTap(onBus: 0)
         audioEngine.stop()
         isCapturing = false
+        isReconfiguring = false
         onAudioChunk = nil
 
         // Clean up converter
