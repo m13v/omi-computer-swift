@@ -139,6 +139,7 @@ tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
 # Reset app data (UserDefaults, onboarding state, etc.)
 echo "Resetting app data..."
 defaults delete "$BUNDLE_ID" 2>/dev/null || true
+rm -f /tmp/omi.log 2>/dev/null || true
 
 # Clear delivered notifications
 echo "Clearing notifications..."
