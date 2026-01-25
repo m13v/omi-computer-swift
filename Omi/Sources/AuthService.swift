@@ -62,7 +62,21 @@ class AuthService {
 
     @MainActor
     func signInWithApple() async throws {
-        NSLog("OMI AUTH: Starting Sign in with Apple (Web OAuth)")
+        try await signIn(provider: "apple")
+    }
+
+    // MARK: - Sign in with Google (Web OAuth Flow)
+
+    @MainActor
+    func signInWithGoogle() async throws {
+        try await signIn(provider: "google")
+    }
+
+    // MARK: - Generic OAuth Sign In
+
+    @MainActor
+    private func signIn(provider: String) async throws {
+        NSLog("OMI AUTH: Starting Sign in with %@ (Web OAuth)", provider)
         isLoading = true
         error = nil
 
@@ -75,7 +89,7 @@ class AuthService {
             NSLog("OMI AUTH: Generated OAuth state")
 
             // Step 2: Build authorization URL
-            let authURL = buildAuthorizationURL(provider: "apple", state: state)
+            let authURL = buildAuthorizationURL(provider: provider, state: state)
             NSLog("OMI AUTH: Opening browser for authentication")
 
             // Step 3: Open browser for authentication
