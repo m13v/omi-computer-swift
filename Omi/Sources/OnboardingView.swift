@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 struct OnboardingView: View {
     @ObservedObject var appState: AppState
@@ -13,6 +14,10 @@ struct OnboardingView: View {
 
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
+
+    // Animation state for screen recording tutorial images
+    @State private var currentTutorialImage = 0
+    let tutorialImageTimer = Timer.publish(every: 2.5, on: .main, in: .common).autoconnect()
 
     let steps = ["Welcome", "Notifications", "Automation", "Screen Recording", "Done"]
 
@@ -31,7 +36,7 @@ struct OnboardingView: View {
                 onboardingContent
             }
         }
-        .frame(width: 400, height: 400)
+        .frame(width: 400, height: currentStep == 3 && !appState.hasScreenRecordingPermission ? 480 : 400)
         .onReceive(permissionCheckTimer) { _ in
             // Only poll for permissions that user has triggered
             if hasTriggeredNotification {
@@ -160,14 +165,7 @@ struct OnboardingView: View {
                     : "OMI needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
             )
         case 3:
-            stepView(
-                icon: appState.hasScreenRecordingPermission ? "checkmark.circle.fill" : "rectangle.dashed.badge.record",
-                iconColor: appState.hasScreenRecordingPermission ? .green : .accentColor,
-                title: "Screen Recording",
-                description: appState.hasScreenRecordingPermission
-                    ? "Screen Recording permission granted! OMI can now analyze your focus."
-                    : "OMI needs Screen Recording permission to capture your screen and analyze your focus.\n\nClick below to grant permission. You may need to restart the app."
-            )
+            screenRecordingStepView
         case 4:
             stepView(
                 icon: "checkmark.circle",
@@ -239,6 +237,93 @@ struct OnboardingView: View {
             return "Start Using OMI"
         default:
             return "Continue"
+        }
+    }
+
+    // MARK: - Screen Recording Step with Tutorial Images
+
+    private var screenRecordingStepView: some View {
+        VStack(spacing: 12) {
+            if appState.hasScreenRecordingPermission {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.green)
+
+                Text("Screen Recording")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Screen Recording permission granted! OMI can now analyze your focus.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else {
+                Text("Screen Recording")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Follow these steps to grant permission:")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+
+                // Tutorial image slideshow
+                ZStack {
+                    ForEach(0..<3, id: \.self) { index in
+                        tutorialImage(for: index)
+                            .opacity(currentTutorialImage == index ? 1 : 0)
+                            .animation(.easeInOut(duration: 0.5), value: currentTutorialImage)
+                    }
+                }
+                .frame(height: 180)
+                .onReceive(tutorialImageTimer) { _ in
+                    if !appState.hasScreenRecordingPermission {
+                        currentTutorialImage = (currentTutorialImage + 1) % 3
+                    }
+                }
+
+                // Step indicator dots
+                HStack(spacing: 8) {
+                    ForEach(0..<3, id: \.self) { index in
+                        Circle()
+                            .fill(currentTutorialImage == index ? Color.accentColor : Color.gray.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                            .animation(.easeInOut(duration: 0.3), value: currentTutorialImage)
+                    }
+                }
+
+                // Step labels
+                Text(tutorialStepLabel)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .animation(.easeInOut(duration: 0.3), value: currentTutorialImage)
+            }
+        }
+    }
+
+    private var tutorialStepLabel: String {
+        switch currentTutorialImage {
+        case 0: return "Step 1: Click \"Open System Settings\""
+        case 1: return "Step 2: Toggle ON for OMI-COMPUTER"
+        case 2: return "Step 3: Click \"Quit & Reopen\""
+        default: return ""
+        }
+    }
+
+    @ViewBuilder
+    private func tutorialImage(for index: Int) -> some View {
+        let imageName = "screen-recording-step\(index + 1)"
+        if let url = Bundle.module.url(forResource: imageName, withExtension: "png"),
+           let nsImage = NSImage(contentsOf: url) {
+            Image(nsImage: nsImage)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .cornerRadius(8)
+                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+        } else {
+            Rectangle()
+                .fill(Color.gray.opacity(0.2))
+                .overlay(Text("Image not found"))
         }
     }
 
