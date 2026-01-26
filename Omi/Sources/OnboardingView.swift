@@ -59,32 +59,58 @@ struct OnboardingView: View {
         }
         // Bring app to front when permissions are granted
         .onChange(of: appState.hasNotificationPermission) { _, granted in
-            if granted { bringToFront() }
+            if granted {
+                log("Notification permission granted, bringing to front")
+                bringToFront()
+            }
         }
         .onChange(of: appState.hasAutomationPermission) { _, granted in
-            if granted { bringToFront() }
+            if granted {
+                log("Automation permission granted, bringing to front")
+                bringToFront()
+            }
         }
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
-            if granted { bringToFront() }
+            if granted {
+                log("Screen recording permission granted, bringing to front")
+                bringToFront()
+            }
         }
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
-            if granted { bringToFront() }
+            if granted {
+                log("Microphone permission granted, bringing to front")
+                bringToFront()
+            }
         }
     }
 
     private func bringToFront() {
+        log("bringToFront() called, scheduling activation in 0.3s")
+        log("Current app is active: \(NSApp.isActive ? "YES" : "NO")")
+
         // Small delay to let window ordering settle after System Preferences closes
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-            // Use NSRunningApplication to explicitly bring exactly our app to front
-            NSRunningApplication.current.activate()
+            log("Executing activation after delay")
+
+            // Use NSApp.activate which works even when app is not active
+            NSApp.activate(ignoringOtherApps: true)
+            log("Called NSApp.activate(ignoringOtherApps: true)")
 
             // Also bring the onboarding window to front
+            var foundWindow = false
             for window in NSApp.windows {
-                if window.title == "Welcome to OMI" {
+                if window.title == "Welcome to OMI-COMPUTER" {
+                    foundWindow = true
+                    log("Found 'Welcome to OMI-COMPUTER' window, making key and ordering front")
                     window.makeKeyAndOrderFront(nil)
                     window.orderFrontRegardless()
                 }
             }
+            if !foundWindow {
+                log("WARNING - Could not find 'Welcome to OMI-COMPUTER' window!")
+            }
+
+            log("After activation - app is active: \(NSApp.isActive ? "YES" : "NO")")
         }
     }
 
