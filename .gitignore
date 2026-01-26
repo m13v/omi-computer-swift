@@ -16,6 +16,7 @@ DerivedData/
 backend/.env
 backend/google-credentials.json
 backend/venv/
+__pycache__/
 
 # macOS
 .DS_Store
