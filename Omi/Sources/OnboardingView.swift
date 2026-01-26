@@ -567,6 +567,7 @@ struct OnboardingView: View {
             MixpanelManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             appState.startMonitoring()
+            appState.startTranscription()
             dismiss()
         default:
             break
