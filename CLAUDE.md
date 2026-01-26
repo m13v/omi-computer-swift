@@ -3,6 +3,9 @@
 ## Project Overview
 OMI Desktop App for macOS (Swift)
 
+## Logs
+- **App log file**: `/private/tmp/omi.log`
+
 ## Related Repositories
 - **OMI Main Repo**: `/Users/matthewdi/omi`
   - Backend: `/Users/matthewdi/omi/backend` (FastAPI Python)
