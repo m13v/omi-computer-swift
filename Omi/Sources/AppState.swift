@@ -169,11 +169,15 @@ class AppState: ObservableObject {
     }
 
     func startMonitoring() {
-        // Check screen recording permission
+        // Check screen recording permission with actual capture test
+        // CGPreflightScreenCaptureAccess can return stale data after rebuilds
+        log("Checking screen recording permission...")
         guard ScreenCaptureService.checkPermission() else {
+            log("Screen recording permission check FAILED - showing alert")
             showPermissionAlert()
             return
         }
+        log("Screen recording permission verified")
 
         // Initialize services
         screenCaptureService = ScreenCaptureService()
@@ -300,8 +304,16 @@ class AppState: ObservableObject {
     }
 
     private func onAppActivated(appName: String) {
-        // Ignore our own app - don't monitor ourselves (causes flickering with menu bar)
-        guard appName != "OMI-COMPUTER" else { return }
+        // Ignore our own app and system dialogs - don't monitor these (causes flickering)
+        let ignoredApps = [
+            "OMI-COMPUTER",           // Our own app
+            "universalAccessAuthWarn", // macOS permission dialog
+            "System Settings",         // System Settings app
+            "System Preferences",      // Older macOS name
+            "SecurityAgent",           // Security prompts
+            "UserNotificationCenter"   // Notification center
+        ]
+        guard !ignoredApps.contains(appName) else { return }
         guard appName != currentApp else { return }
         currentApp = appName
         geminiService?.onAppSwitch(newApp: appName)
