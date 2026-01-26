@@ -185,7 +185,7 @@ class TranscriptionService {
             URLQueryItem(name: "smart_format", value: "true"),
             URLQueryItem(name: "punctuate", value: "true"),
             URLQueryItem(name: "no_delay", value: "true"),         // Don't buffer - send immediately
-            URLQueryItem(name: "diarize", value: "false"),         // Disable for lower latency
+            URLQueryItem(name: "diarize", value: "true"),          // Enable speaker diarization
             URLQueryItem(name: "interim_results", value: "true"),  // Get real-time partial results
             URLQueryItem(name: "endpointing", value: "300"),       // 300ms silence detection
             URLQueryItem(name: "utterance_end_ms", value: "1000"), // Backup silence detection
