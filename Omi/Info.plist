@@ -34,6 +34,8 @@
     <string>OMI needs permission to detect which application is currently active.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>OMI needs microphone access to transcribe your conversations in real-time.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>OMI needs permission to capture system audio for transcription of calls and meetings.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
