@@ -3,6 +3,14 @@ import Combine
 import UserNotifications
 import AVFoundation
 
+/// Speaker segment for diarized transcription
+struct SpeakerSegment {
+    var speaker: Int
+    var text: String
+    var start: Double
+    var end: Double
+}
+
 @MainActor
 class AppState: ObservableObject {
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
@@ -29,6 +37,9 @@ class AppState: ObservableObject {
     // Transcription services
     private var audioCaptureService: AudioCaptureService?
     private var transcriptionService: TranscriptionService?
+
+    // Speaker segments for diarized transcription
+    private var speakerSegments: [SpeakerSegment] = []
 
     // Smart analysis filtering state
     private var lastAnalyzedApp: String?
@@ -482,6 +493,7 @@ class AppState: ObservableObject {
 
             isTranscribing = true
             currentTranscript = ""
+            speakerSegments = []
 
             // Track transcription started
             MixpanelManager.shared.transcriptionStarted()
@@ -522,28 +534,86 @@ class AppState: ObservableObject {
 
         isTranscribing = false
 
+        log("Transcription: Final segments count: \(speakerSegments.count)")
+        speakerSegments = []
+
         // Track transcription stopped
         MixpanelManager.shared.transcriptionStopped(wordCount: wordCount)
 
         log("Transcription: Stopped")
     }
 
-    /// Handle incoming transcript segment
+    /// Handle incoming transcript segment with speaker diarization
     private func handleTranscriptSegment(_ segment: TranscriptionService.TranscriptSegment) {
-        let text = segment.text
+        // Only process final segments (speechFinal or isFinal)
+        guard segment.speechFinal || segment.isFinal else { return }
+
+        // Process words and merge by speaker
+        let words = segment.words
+        guard !words.isEmpty else {
+            // Fallback: no words, just append text
+            if segment.speechFinal && !segment.text.isEmpty {
+                appendToTranscript(segment.text)
+                log("Transcript [FINAL no words]: \(segment.text)")
+            }
+            return
+        }
+
+        // Word-to-segment aggregation: merge consecutive words from same speaker
+        var newSegments: [SpeakerSegment] = []
+        for word in words {
+            let speaker = word.speaker ?? 0
+
+            if let last = newSegments.last, last.speaker == speaker {
+                // Same speaker - append word to existing segment
+                newSegments[newSegments.count - 1].text += " " + word.punctuatedWord
+                newSegments[newSegments.count - 1].end = word.end
+            } else {
+                // Different speaker - create new segment
+                newSegments.append(SpeakerSegment(
+                    speaker: speaker,
+                    text: word.punctuatedWord,
+                    start: word.start,
+                    end: word.end
+                ))
+            }
+        }
+
+        // Gap-based merging: combine with existing segments if same speaker and gap < 3 seconds
+        for newSeg in newSegments {
+            if let lastIdx = speakerSegments.indices.last,
+               speakerSegments[lastIdx].speaker == newSeg.speaker,
+               newSeg.start - speakerSegments[lastIdx].end < 3.0 {
+                // Same speaker and gap < 3s - merge
+                speakerSegments[lastIdx].text += " " + newSeg.text
+                speakerSegments[lastIdx].end = newSeg.end
+            } else {
+                // Different speaker or gap >= 3s - add as new segment
+                speakerSegments.append(newSeg)
+            }
+        }
+
+        // Update display transcript
+        updateTranscriptDisplay()
 
         if segment.speechFinal {
-            // Final transcript for this utterance - append with newline
-            if !currentTranscript.isEmpty {
-                currentTranscript += "\n"
-            }
-            currentTranscript += text
-            log("Transcript [FINAL]: \(text)")
-        } else if segment.isFinal {
-            // Interim final - update current line
-            // For now, just log it
-            log("Transcript [interim]: \(text)")
+            log("Transcript [FINAL]: speakers=\(Set(words.compactMap { $0.speaker }).sorted()), text=\(segment.text)")
         }
+    }
+
+    /// Update the display transcript from speaker segments
+    private func updateTranscriptDisplay() {
+        currentTranscript = speakerSegments.map { seg in
+            "Speaker \(seg.speaker): \(seg.text)"
+        }.joined(separator: "\n")
+    }
+
+    /// Append text to transcript (fallback when no word-level data)
+    private func appendToTranscript(_ text: String) {
+        if !currentTranscript.isEmpty {
+            currentTranscript += "\n"
+        }
+        currentTranscript += text
     }
 
     /// Request microphone permission
