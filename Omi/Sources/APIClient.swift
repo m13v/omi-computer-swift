@@ -631,6 +631,72 @@ struct ConversationSearchResult: Codable {
     }
 }
 
+// MARK: - Create Conversation API
+
+extension APIClient {
+
+    /// Request model for creating a conversation from transcript segments
+    struct CreateConversationFromSegmentsRequest: Encodable {
+        let transcriptSegments: [TranscriptSegmentRequest]
+        let source: String
+        let startedAt: String
+        let finishedAt: String
+        let language: String
+
+        enum CodingKeys: String, CodingKey {
+            case transcriptSegments = "transcript_segments"
+            case source
+            case startedAt = "started_at"
+            case finishedAt = "finished_at"
+            case language
+        }
+    }
+
+    struct TranscriptSegmentRequest: Encodable {
+        let text: String
+        let speaker: String
+        let speakerId: Int
+        let isUser: Bool
+        let start: Double
+        let end: Double
+
+        enum CodingKeys: String, CodingKey {
+            case text, speaker
+            case speakerId = "speaker_id"
+            case isUser = "is_user"
+            case start, end
+        }
+    }
+
+    struct CreateConversationResponse: Decodable {
+        let id: String
+        let status: String
+        let discarded: Bool
+    }
+
+    /// Creates a conversation from transcript segments
+    /// Endpoint: POST /v1/dev/user/conversations/from-segments
+    func createConversationFromSegments(
+        segments: [TranscriptSegmentRequest],
+        startedAt: Date,
+        finishedAt: Date,
+        language: String = "en"
+    ) async throws -> CreateConversationResponse {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let request = CreateConversationFromSegmentsRequest(
+            transcriptSegments: segments,
+            source: "desktop",
+            startedAt: formatter.string(from: startedAt),
+            finishedAt: formatter.string(from: finishedAt),
+            language: language
+        )
+
+        return try await post("v1/dev/user/conversations/from-segments", body: request)
+    }
+}
+
 // MARK: - Common API Models
 
 struct UserProfile: Codable {
