@@ -6,6 +6,9 @@ actor APIClient {
     // OMI Backend base URL (same as Flutter app)
     let baseURL = "https://api.omi.me/"
 
+    // Local backend URL for conversation creation
+    let localBackendURL = "https://omi-dev.m13v.com/"
+
     let session: URLSession
     private let decoder: JSONDecoder
 
@@ -73,9 +76,11 @@ actor APIClient {
     func post<T: Decodable, B: Encodable>(
         _ endpoint: String,
         body: B,
-        requireAuth: Bool = true
+        requireAuth: Bool = true,
+        customBaseURL: String? = nil
     ) async throws -> T {
-        let url = URL(string: baseURL + endpoint)!
+        let base = customBaseURL ?? baseURL
+        let url = URL(string: base + endpoint)!
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.allHTTPHeaderFields = try await buildHeaders(requireAuth: requireAuth)
@@ -642,6 +647,7 @@ extension APIClient {
         let startedAt: String
         let finishedAt: String
         let language: String
+        let timezone: String
 
         enum CodingKeys: String, CodingKey {
             case transcriptSegments = "transcript_segments"
@@ -649,6 +655,7 @@ extension APIClient {
             case startedAt = "started_at"
             case finishedAt = "finished_at"
             case language
+            case timezone
         }
     }
 
@@ -675,12 +682,13 @@ extension APIClient {
     }
 
     /// Creates a conversation from transcript segments
-    /// Endpoint: POST /v1/dev/user/conversations/from-segments
+    /// Endpoint: POST /v1/conversations/from-segments (local backend)
     func createConversationFromSegments(
         segments: [TranscriptSegmentRequest],
         startedAt: Date,
         finishedAt: Date,
-        language: String = "en"
+        language: String = "en",
+        timezone: String = "UTC"
     ) async throws -> CreateConversationResponse {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -690,10 +698,11 @@ extension APIClient {
             source: "desktop",
             startedAt: formatter.string(from: startedAt),
             finishedAt: formatter.string(from: finishedAt),
-            language: language
+            language: language,
+            timezone: timezone
         )
 
-        return try await post("v1/dev/user/conversations/from-segments", body: request)
+        return try await post("v1/conversations/from-segments", body: request, customBaseURL: localBackendURL)
     }
 }
 
