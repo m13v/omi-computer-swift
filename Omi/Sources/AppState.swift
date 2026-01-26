@@ -41,6 +41,15 @@ class AppState: ObservableObject {
     // Speaker segments for diarized transcription
     private var speakerSegments: [SpeakerSegment] = []
 
+    // Conversation tracking for auto-save
+    private var recordingStartTime: Date?
+    private var maxRecordingTimer: Timer?
+    private let maxRecordingDuration: TimeInterval = 4 * 60 * 60  // 4 hours
+
+    // Observers for app lifecycle
+    private var willTerminateObserver: NSObjectProtocol?
+    private var willSleepObserver: NSObjectProtocol?
+
     // Smart analysis filtering state
     private var lastAnalyzedApp: String?
     private var lastAnalyzedWindowTitle: String?
@@ -51,6 +60,52 @@ class AppState: ObservableObject {
     init() {
         // Load API key from environment or .env file
         loadEnvironment()
+
+        // Setup lifecycle observers for saving conversations
+        setupLifecycleObservers()
+    }
+
+    /// Setup observers for app quit and system sleep to finalize conversations
+    private func setupLifecycleObservers() {
+        // App is about to quit
+        willTerminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            Task { @MainActor in
+                if self.isTranscribing {
+                    log("App terminating - finalizing conversation")
+                    await self.finalizeConversation()
+                }
+            }
+        }
+
+        // Computer is about to sleep
+        willSleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self = self else { return }
+            Task { @MainActor in
+                if self.isTranscribing {
+                    log("Computer sleeping - finalizing conversation")
+                    await self.finalizeConversation()
+                    self.stopTranscriptionServices()
+                }
+            }
+        }
+    }
+
+    deinit {
+        if let observer = willTerminateObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = willSleepObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
     }
 
     private func loadEnvironment() {
@@ -494,6 +549,19 @@ class AppState: ObservableObject {
             isTranscribing = true
             currentTranscript = ""
             speakerSegments = []
+            recordingStartTime = Date()
+
+            // Start 4-hour max recording timer
+            maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: maxRecordingDuration, repeats: false) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self = self, self.isTranscribing else { return }
+                    log("Transcription: 4-hour limit reached - finalizing conversation")
+                    await self.finalizeConversation()
+                    // Start a new recording session automatically
+                    self.stopTranscriptionServices()
+                    self.startTranscription()
+                }
+            }
 
             // Track transcription started
             MixpanelManager.shared.transcriptionStarted()
@@ -521,10 +589,22 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Stop real-time transcription
+    /// Stop real-time transcription and finalize the conversation
     func stopTranscription() {
+        Task {
+            await finalizeConversation()
+            stopTranscriptionServices()
+        }
+    }
+
+    /// Stop transcription services without finalizing (internal use)
+    private func stopTranscriptionServices() {
         // Calculate word count before stopping
         let wordCount = currentTranscript.split(separator: " ").count
+
+        // Cancel the max recording timer
+        maxRecordingTimer?.invalidate()
+        maxRecordingTimer = nil
 
         audioCaptureService?.stopCapture()
         audioCaptureService = nil
@@ -535,12 +615,64 @@ class AppState: ObservableObject {
         isTranscribing = false
 
         log("Transcription: Final segments count: \(speakerSegments.count)")
+
+        // Clear segments after finalization
         speakerSegments = []
+        recordingStartTime = nil
 
         // Track transcription stopped
         MixpanelManager.shared.transcriptionStopped(wordCount: wordCount)
 
         log("Transcription: Stopped")
+    }
+
+    /// Finalize and save the current conversation to the backend
+    private func finalizeConversation() async {
+        guard !speakerSegments.isEmpty, let startTime = recordingStartTime else {
+            log("Transcription: No segments to save")
+            return
+        }
+
+        let endTime = Date()
+        log("Transcription: Finalizing conversation with \(speakerSegments.count) segments")
+
+        // Convert SpeakerSegment to API request format
+        let apiSegments = speakerSegments.map { segment in
+            APIClient.TranscriptSegmentRequest(
+                text: segment.text,
+                speaker: "SPEAKER_\(String(format: "%02d", segment.speaker))",
+                speakerId: segment.speaker,
+                isUser: segment.speaker == 0,  // Assume speaker 0 is the user
+                start: segment.start,
+                end: segment.end
+            )
+        }
+
+        do {
+            let response = try await APIClient.shared.createConversationFromSegments(
+                segments: apiSegments,
+                startedAt: startTime,
+                finishedAt: endTime
+            )
+            log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded)")
+
+            // Show notification to user
+            NotificationService.shared.sendNotification(
+                title: "Conversation Saved",
+                message: response.discarded ? "Conversation was too short and was discarded" : "Your conversation has been processed",
+                applyCooldown: false
+            )
+        } catch {
+            log("Transcription: Failed to save conversation - \(error.localizedDescription)")
+            MixpanelManager.shared.recordingError(error: "Failed to save: \(error.localizedDescription)")
+
+            // Show error notification
+            NotificationService.shared.sendNotification(
+                title: "Save Failed",
+                message: "Could not save conversation: \(error.localizedDescription)",
+                applyCooldown: false
+            )
+        }
     }
 
     /// Handle incoming transcript segment with speaker diarization
@@ -579,26 +711,41 @@ class AppState: ObservableObject {
             }
         }
 
+        // Log new segments from this chunk
+        for seg in newSegments {
+            log("Transcript [NEW] Speaker \(seg.speaker) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
+        }
+
         // Gap-based merging: combine with existing segments if same speaker and gap < 3 seconds
         for newSeg in newSegments {
             if let lastIdx = speakerSegments.indices.last,
                speakerSegments[lastIdx].speaker == newSeg.speaker,
                newSeg.start - speakerSegments[lastIdx].end < 3.0 {
                 // Same speaker and gap < 3s - merge
+                let gap = newSeg.start - speakerSegments[lastIdx].end
+                log("Transcript [MERGE] Speaker \(newSeg.speaker) gap=\(String(format: "%.2f", gap))s: merging into existing segment")
                 speakerSegments[lastIdx].text += " " + newSeg.text
                 speakerSegments[lastIdx].end = newSeg.end
             } else {
                 // Different speaker or gap >= 3s - add as new segment
+                if let lastIdx = speakerSegments.indices.last {
+                    let gap = newSeg.start - speakerSegments[lastIdx].end
+                    log("Transcript [ADD] Speaker \(newSeg.speaker) gap=\(String(format: "%.2f", gap))s: new segment (different speaker or gap >= 3s)")
+                } else {
+                    log("Transcript [ADD] Speaker \(newSeg.speaker): first segment")
+                }
                 speakerSegments.append(newSeg)
             }
         }
 
+        // Log current segments summary
+        log("Transcript [SEGMENTS] Total: \(speakerSegments.count) segments")
+        for (i, seg) in speakerSegments.enumerated() {
+            log("  [\(i)] Speaker \(seg.speaker) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
+        }
+
         // Update display transcript
         updateTranscriptDisplay()
-
-        if segment.speechFinal {
-            log("Transcript [FINAL]: speakers=\(Set(words.compactMap { $0.speaker }).sorted()), text=\(segment.text)")
-        }
     }
 
     /// Update the display transcript from speaker segments
