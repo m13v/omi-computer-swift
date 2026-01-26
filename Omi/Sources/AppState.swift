@@ -69,9 +69,9 @@ class AppState: ObservableObject {
         setupLifecycleObservers()
 
         // Check if system audio capture is supported (macOS 14.4+)
+        // Note: hasSystemAudioPermission stays false until actually tested during onboarding
         if #available(macOS 14.4, *) {
             isSystemAudioSupported = true
-            hasSystemAudioPermission = SystemAudioCaptureService.checkPermission()
         }
     }
 
