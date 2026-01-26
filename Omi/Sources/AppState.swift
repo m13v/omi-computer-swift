@@ -300,6 +300,8 @@ class AppState: ObservableObject {
     }
 
     private func onAppActivated(appName: String) {
+        // Ignore our own app - don't monitor ourselves (causes flickering with menu bar)
+        guard appName != "OMI-COMPUTER" else { return }
         guard appName != currentApp else { return }
         currentApp = appName
         geminiService?.onAppSwitch(newApp: appName)
