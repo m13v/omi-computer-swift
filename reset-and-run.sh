@@ -131,8 +131,9 @@ echo "Signing app (ad-hoc for development)..."
 codesign --force --deep --sign - "$APP_PATH"
 
 # Reset permissions
+# Note: System audio capture (Core Audio Taps) uses the same ScreenCapture permission
 echo "Resetting permissions for $BUNDLE_ID..."
-tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true  # Also resets system audio access
 tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
 tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
 
