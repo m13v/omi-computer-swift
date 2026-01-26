@@ -6,8 +6,12 @@ import os
 import json
 from datetime import datetime
 from typing import List
+from dotenv import load_dotenv
 from openai import OpenAI
 from models import TranscriptSegment, Structured, ActionItem, Event, CategoryEnum
+
+# Load .env with override to ensure we get the correct key
+load_dotenv(override=True)
 
 client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
 
