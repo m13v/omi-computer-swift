@@ -23,6 +23,8 @@ class AppState: ObservableObject {
     @Published var isTranscribing = false
     @Published var currentTranscript: String = ""
     @Published var hasMicrophonePermission = false
+    @Published var hasSystemAudioPermission = false
+    @Published var isSystemAudioSupported = false
 
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
@@ -37,6 +39,8 @@ class AppState: ObservableObject {
     // Transcription services
     private var audioCaptureService: AudioCaptureService?
     private var transcriptionService: TranscriptionService?
+    private var systemAudioCaptureService: Any?  // SystemAudioCaptureService (macOS 14.4+)
+    private var audioMixer: AudioMixer?
 
     // Speaker segments for diarized transcription
     private var speakerSegments: [SpeakerSegment] = []
@@ -63,6 +67,12 @@ class AppState: ObservableObject {
 
         // Setup lifecycle observers for saving conversations
         setupLifecycleObservers()
+
+        // Check if system audio capture is supported (macOS 14.4+)
+        if #available(macOS 14.4, *) {
+            isSystemAudioSupported = true
+            hasSystemAudioPermission = SystemAudioCaptureService.checkPermission()
+        }
     }
 
     /// Setup observers for app quit and system sleep to finalize conversations
@@ -440,6 +450,7 @@ class AppState: ObservableObject {
         checkScreenRecordingPermission()
         checkAutomationPermission()
         checkMicrophonePermission()
+        checkSystemAudioPermission()
     }
 
     /// Check notification permission status
@@ -520,6 +531,17 @@ class AppState: ObservableObject {
             // Initialize audio capture service
             audioCaptureService = AudioCaptureService()
 
+            // Initialize audio mixer for combining mic and system audio
+            audioMixer = AudioMixer()
+
+            // Initialize system audio capture if supported (macOS 14.4+)
+            if #available(macOS 14.4, *) {
+                systemAudioCaptureService = SystemAudioCaptureService()
+                log("Transcription: System audio capture initialized (macOS 14.4+)")
+            } else {
+                log("Transcription: System audio capture not available (requires macOS 14.4+)")
+            }
+
             // Start transcription service first
             transcriptionService?.start(
                 onTranscript: { [weak self] segment in
@@ -576,13 +598,37 @@ class AppState: ObservableObject {
 
     /// Start audio capture and pipe to transcription service
     private func startAudioCapture() {
-        guard let audioCaptureService = audioCaptureService else { return }
+        guard let audioCaptureService = audioCaptureService,
+              let audioMixer = audioMixer else { return }
+
+        // Start the audio mixer - it will send stereo audio to transcription service
+        audioMixer.start { [weak self] stereoData in
+            self?.transcriptionService?.sendAudio(stereoData)
+        }
 
         do {
+            // Start microphone capture - sends to mixer channel 0 (left/user)
             try audioCaptureService.startCapture { [weak self] audioData in
-                self?.transcriptionService?.sendAudio(audioData)
+                self?.audioMixer?.setMicAudio(audioData)
             }
-            log("Transcription: Audio capture started")
+            log("Transcription: Microphone capture started")
+
+            // Start system audio capture if available (macOS 14.4+)
+            if #available(macOS 14.4, *) {
+                if let systemService = systemAudioCaptureService as? SystemAudioCaptureService {
+                    do {
+                        try systemService.startCapture { [weak self] audioData in
+                            self?.audioMixer?.setSystemAudio(audioData)
+                        }
+                        log("Transcription: System audio capture started")
+                    } catch {
+                        // System audio is optional - continue with mic only
+                        log("Transcription: System audio capture failed (continuing with mic only) - \(error.localizedDescription)")
+                    }
+                }
+            }
+
+            log("Transcription: Audio capture started (multichannel)")
         } catch {
             log("Transcription: Failed to start audio capture - \(error.localizedDescription)")
             stopTranscription()
@@ -606,9 +652,23 @@ class AppState: ObservableObject {
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
 
+        // Stop system audio capture first (if available)
+        if #available(macOS 14.4, *) {
+            if let systemService = systemAudioCaptureService as? SystemAudioCaptureService {
+                systemService.stopCapture()
+            }
+        }
+        systemAudioCaptureService = nil
+
+        // Stop microphone capture
         audioCaptureService?.stopCapture()
         audioCaptureService = nil
 
+        // Stop audio mixer
+        audioMixer?.stop()
+        audioMixer = nil
+
+        // Stop transcription service
         transcriptionService?.stop()
         transcriptionService = nil
 
@@ -676,25 +736,44 @@ class AppState: ObservableObject {
     }
 
     /// Handle incoming transcript segment with speaker diarization
+    /// Uses channel index for primary speaker attribution:
+    ///   - Channel 0 = microphone = user (speaker 0)
+    ///   - Channel 1 = system audio = others (speaker 1+)
     private func handleTranscriptSegment(_ segment: TranscriptionService.TranscriptSegment) {
         // Only process final segments (speechFinal or isFinal)
         guard segment.speechFinal || segment.isFinal else { return }
 
+        // Determine speaker based on channel index
+        // Channel 0 = mic = user (speaker 0)
+        // Channel 1 = system audio = others (speaker 1+)
+        let channelBasedSpeaker = segment.channelIndex == 0 ? 0 : 1
+
         // Process words and merge by speaker
         let words = segment.words
         guard !words.isEmpty else {
-            // Fallback: no words, just append text
+            // Fallback: no words, just append text with channel-based speaker
             if segment.speechFinal && !segment.text.isEmpty {
                 appendToTranscript(segment.text)
-                log("Transcript [FINAL no words]: \(segment.text)")
+                log("Transcript [FINAL no words] Ch\(segment.channelIndex) Speaker \(channelBasedSpeaker): \(segment.text)")
             }
             return
         }
 
         // Word-to-segment aggregation: merge consecutive words from same speaker
+        // For channel 1 (system audio), use diarization speaker ID + 1 to distinguish multiple remote speakers
         var newSegments: [SpeakerSegment] = []
         for word in words {
-            let speaker = word.speaker ?? 0
+            // Speaker assignment:
+            // - Channel 0 (mic): Always speaker 0 (user)
+            // - Channel 1 (system): Use diarization speaker + 1, or default to 1
+            let speaker: Int
+            if segment.channelIndex == 0 {
+                speaker = 0  // Mic is always user
+            } else {
+                // System audio: offset diarization speakers by 1
+                // This allows distinguishing multiple remote speakers (1, 2, 3, etc.)
+                speaker = (word.speaker ?? 0) + 1
+            }
 
             if let last = newSegments.last, last.speaker == speaker {
                 // Same speaker - append word to existing segment
@@ -713,7 +792,8 @@ class AppState: ObservableObject {
 
         // Log new segments from this chunk
         for seg in newSegments {
-            log("Transcript [NEW] Speaker \(seg.speaker) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
+            let channelLabel = segment.channelIndex == 0 ? "mic" : "sys"
+            log("Transcript [NEW] Ch\(segment.channelIndex)(\(channelLabel)) Speaker \(seg.speaker) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
         }
 
         // Gap-based merging: combine with existing segments if same speaker and gap < 3 seconds
@@ -741,7 +821,8 @@ class AppState: ObservableObject {
         // Log current segments summary
         log("Transcript [SEGMENTS] Total: \(speakerSegments.count) segments")
         for (i, seg) in speakerSegments.enumerated() {
-            log("  [\(i)] Speaker \(seg.speaker) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
+            let speakerLabel = seg.speaker == 0 ? "user" : "other"
+            log("  [\(i)] Speaker \(seg.speaker)(\(speakerLabel)) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
         }
 
         // Update display transcript
@@ -751,7 +832,8 @@ class AppState: ObservableObject {
     /// Update the display transcript from speaker segments
     private func updateTranscriptDisplay() {
         currentTranscript = speakerSegments.map { seg in
-            "Speaker \(seg.speaker): \(seg.text)"
+            let speakerLabel = seg.speaker == 0 ? "You" : "Speaker \(seg.speaker)"
+            return "\(speakerLabel): \(seg.text)"
         }.joined(separator: "\n")
     }
 
@@ -771,8 +853,11 @@ class AppState: ObservableObject {
                 self.hasMicrophonePermission = granted
                 if granted {
                     log("Microphone permission granted")
-                    // Try starting transcription again
-                    self.startTranscription()
+                    // Only start transcription if onboarding is complete
+                    // During onboarding, we just update the permission state
+                    if self.hasCompletedOnboarding {
+                        self.startTranscription()
+                    }
                 } else {
                     log("Microphone permission denied")
                     self.showAlert(
@@ -787,5 +872,37 @@ class AppState: ObservableObject {
     /// Check microphone permission status
     func checkMicrophonePermission() {
         hasMicrophonePermission = AudioCaptureService.checkPermission()
+    }
+
+    /// Check system audio permission status
+    /// System audio capture uses Core Audio Taps which require Screen Recording permission
+    func checkSystemAudioPermission() {
+        guard #available(macOS 14.4, *) else {
+            hasSystemAudioPermission = false
+            return
+        }
+        // Core Audio Taps use the same Screen Recording permission
+        // If screen recording is granted, system audio should work
+        hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
+    }
+
+    /// Trigger system audio permission
+    /// Since Core Audio Taps use Screen Recording permission, we verify it's granted
+    func triggerSystemAudioPermission() {
+        guard #available(macOS 14.4, *) else {
+            log("System audio not supported on this macOS version")
+            return
+        }
+
+        // System audio uses the same permission as screen recording
+        // If screen recording is already granted, we're good
+        if CGPreflightScreenCaptureAccess() {
+            hasSystemAudioPermission = true
+            log("System audio: Screen Recording permission already granted")
+        } else {
+            // Request screen recording permission (which enables system audio too)
+            CGRequestScreenCaptureAccess()
+            log("System audio: Requesting Screen Recording permission")
+        }
     }
 }
