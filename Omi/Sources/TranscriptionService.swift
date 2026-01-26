@@ -13,6 +13,7 @@ class TranscriptionService {
         let speechFinal: Bool
         let confidence: Double
         let words: [Word]
+        let channelIndex: Int  // 0 = mic (user), 1 = system audio (others)
 
         struct Word {
             let word: String
@@ -68,7 +69,7 @@ class TranscriptionService {
     private let language = "en"
     private let sampleRate = 16000
     private let encoding = "linear16"
-    private let channels = 1
+    private let channels = 2  // Stereo: channel 0 = mic (user), channel 1 = system audio (others)
 
     // Reconnection
     private var reconnectAttempts = 0
@@ -193,6 +194,7 @@ class TranscriptionService {
             URLQueryItem(name: "encoding", value: encoding),
             URLQueryItem(name: "sample_rate", value: String(sampleRate)),
             URLQueryItem(name: "channels", value: String(channels)),
+            URLQueryItem(name: "multichannel", value: "true"),  // Enable per-channel transcription
         ]
 
         guard let url = components.url else {
@@ -378,12 +380,17 @@ class TranscriptionService {
             )
         } ?? []
 
+        // Extract channel index from response
+        // channel_index is [channelNum, totalChannels], e.g., [0, 2] or [1, 2]
+        let channelIndex = response.channel_index?.first ?? 0
+
         return TranscriptSegment(
             text: text,
             isFinal: response.is_final ?? false,
             speechFinal: response.speech_final ?? false,
             confidence: alternative.confidence,
-            words: words
+            words: words,
+            channelIndex: channelIndex
         )
     }
 }
