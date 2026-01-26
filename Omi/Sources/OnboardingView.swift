@@ -12,11 +12,12 @@ struct OnboardingView: View {
     @AppStorage("hasTriggeredAutomation") private var hasTriggeredAutomation = false
     @AppStorage("hasTriggeredScreenRecording") private var hasTriggeredScreenRecording = false
     @AppStorage("hasTriggeredMicrophone") private var hasTriggeredMicrophone = false
+    @AppStorage("hasTriggeredSystemAudio") private var hasTriggeredSystemAudio = false
 
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Welcome", "Name", "Notifications", "Automation", "Screen Recording", "Microphone", "Done"]
+    let steps = ["Welcome", "Name", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -56,6 +57,9 @@ struct OnboardingView: View {
             if hasTriggeredMicrophone {
                 appState.checkMicrophonePermission()
             }
+            if hasTriggeredSystemAudio {
+                appState.checkSystemAudioPermission()
+            }
         }
         // Bring app to front when permissions are granted
         .onChange(of: appState.hasNotificationPermission) { _, granted in
@@ -79,6 +83,12 @@ struct OnboardingView: View {
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
             if granted {
                 log("Microphone permission granted, bringing to front")
+                bringToFront()
+            }
+        }
+        .onChange(of: appState.hasSystemAudioPermission) { _, granted in
+            if granted {
+                log("System audio permission granted, bringing to front")
                 bringToFront()
             }
         }
@@ -122,6 +132,7 @@ struct OnboardingView: View {
         case 3: return appState.hasAutomationPermission
         case 4: return appState.hasScreenRecordingPermission
         case 5: return appState.hasMicrophonePermission
+        case 6: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
         default: return true
         }
     }
@@ -178,7 +189,8 @@ struct OnboardingView: View {
         case 3: return appState.hasAutomationPermission
         case 4: return appState.hasScreenRecordingPermission
         case 5: return appState.hasMicrophonePermission
-        case 6: return true // Done - always "granted"
+        case 6: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
+        case 7: return true // Done - always "granted"
         default: return false
         }
     }
@@ -224,6 +236,8 @@ struct OnboardingView: View {
                     : "OMI needs microphone access to transcribe your conversations and provide context-aware assistance."
             )
         case 6:
+            systemAudioStepView
+        case 7:
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
@@ -365,10 +379,19 @@ struct OnboardingView: View {
         case 5:
             return appState.hasMicrophonePermission ? "Continue" : "Enable Microphone"
         case 6:
+            return systemAudioButtonTitle
+        case 7:
             return "Start Using OMI"
         default:
             return "Continue"
         }
+    }
+
+    private var systemAudioButtonTitle: String {
+        if !appState.isSystemAudioSupported {
+            return "Continue"  // Not supported on this macOS version
+        }
+        return appState.hasSystemAudioPermission ? "Continue" : "Enable System Audio"
     }
 
     // MARK: - Screen Recording Step with Tutorial GIF
@@ -403,6 +426,58 @@ struct OnboardingView: View {
                     .frame(maxWidth: 440, maxHeight: 350)
                     .cornerRadius(8)
                     .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+            }
+        }
+    }
+
+    // MARK: - System Audio Step View
+
+    private var systemAudioStepView: some View {
+        VStack(spacing: 16) {
+            if !appState.isSystemAudioSupported {
+                // macOS version doesn't support system audio capture
+                Image(systemName: "speaker.slash")
+                    .font(.system(size: 48))
+                    .foregroundColor(.secondary)
+
+                Text("System Audio")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("System audio capture requires macOS 14.4 or later.\n\nYou can still use OMI with microphone-only transcription.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else if appState.hasSystemAudioPermission {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.green)
+
+                Text("System Audio")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("System audio capture is ready! OMI can now capture audio from your meetings and media.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else {
+                Image(systemName: "speaker.wave.2")
+                    .font(.system(size: 48))
+                    .foregroundColor(.accentColor)
+
+                Text("System Audio")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("OMI can capture system audio to transcribe meetings, videos, and other media playing on your Mac.\n\nThis uses the same Screen Recording permission you already granted.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -473,7 +548,22 @@ struct OnboardingView: View {
                 appState.requestMicrophonePermission()
             }
         case 6:
-            MixpanelManager.shared.onboardingStepCompleted(step: 6, stepName: "Done")
+            // System Audio step
+            if !appState.isSystemAudioSupported {
+                // Not supported on this macOS version - just continue
+                MixpanelManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
+                currentStep += 1
+            } else if appState.hasSystemAudioPermission {
+                MixpanelManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
+                MixpanelManager.shared.permissionGranted(permission: "system_audio")
+                currentStep += 1
+            } else {
+                MixpanelManager.shared.permissionRequested(permission: "system_audio")
+                hasTriggeredSystemAudio = true
+                appState.triggerSystemAudioPermission()
+            }
+        case 7:
+            MixpanelManager.shared.onboardingStepCompleted(step: 7, stepName: "Done")
             MixpanelManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             appState.startMonitoring()
