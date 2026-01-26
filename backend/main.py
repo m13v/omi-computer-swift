@@ -1,6 +1,7 @@
 """
 Local auth backend for OMI Computer macOS app.
 This fixes the hardcoded redirect_uri issue in the production backend.
+Also handles conversation creation from transcript segments.
 """
 import os
 import uuid
@@ -8,10 +9,12 @@ import json
 import time
 import requests
 import jwt
+from datetime import datetime, timezone
 from typing import Optional
 from urllib.parse import quote
 from cryptography.hazmat.primitives import serialization
-from fastapi import FastAPI, Request, HTTPException, Form
+from fastapi import FastAPI, Request, HTTPException, Form, Depends
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from fastapi.responses import RedirectResponse, PlainTextResponse
 from fastapi.templating import Jinja2Templates
 from dotenv import load_dotenv
@@ -19,10 +22,32 @@ import firebase_admin
 from firebase_admin import credentials, auth as firebase_auth
 import pathlib
 
+from models import CreateConversationRequest, CreateConversationResponse, TranscriptSegment
+from llm import generate_structure, segments_to_transcript_text
+from database import save_conversation
+
 # Load environment variables
 load_dotenv()
 
 app = FastAPI(title="OMI Computer Auth Backend")
+
+# Security scheme for Bearer token auth
+bearer_scheme = HTTPBearer()
+
+
+async def get_current_user_uid(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+) -> str:
+    """Verify Firebase ID token and return the user's UID."""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    try:
+        id_token = credentials.credentials
+        decoded_token = firebase_auth.verify_id_token(id_token)
+        return decoded_token["uid"]
+    except Exception as e:
+        print(f"Error verifying Firebase ID token: {e}")
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
 
 # Set up Jinja2 templates
 templates_path = pathlib.Path(__file__).parent / "templates"
@@ -438,6 +463,61 @@ async def _generate_custom_token(provider: str, id_token: str, access_token: str
     # Create custom token
     custom_token = firebase_auth.create_custom_token(firebase_uid)
     return custom_token.decode('utf-8') if isinstance(custom_token, bytes) else custom_token
+
+
+@app.post("/v1/conversations/from-segments", response_model=CreateConversationResponse)
+async def create_conversation_from_segments(
+    request: CreateConversationRequest,
+    uid: str = Depends(get_current_user_uid),
+):
+    """
+    Create a conversation from transcript segments.
+    Processes with LLM to extract title, overview, action items, etc.
+    Saves to Firestore.
+    """
+    # Convert segments to transcript text
+    transcript_text = segments_to_transcript_text(request.transcript_segments)
+    print(f"Processing conversation for user {uid}, {len(request.transcript_segments)} segments, {len(transcript_text)} chars")
+
+    # Generate structured data using LLM
+    structured = generate_structure(
+        transcript_text=transcript_text,
+        started_at=request.started_at,
+        language=request.language,
+        tz=request.timezone
+    )
+
+    discarded = structured.pop('discarded', False)
+
+    # Create conversation document
+    conversation_id = str(uuid.uuid4())
+    now = datetime.now(timezone.utc)
+
+    conversation_data = {
+        'id': conversation_id,
+        'created_at': now.isoformat(),
+        'started_at': request.started_at.isoformat(),
+        'finished_at': request.finished_at.isoformat(),
+        'source': 'desktop',
+        'language': request.language,
+        'status': 'completed',
+        'discarded': discarded,
+        'structured': structured,
+        'transcript_segments': [seg.model_dump() for seg in request.transcript_segments],
+    }
+
+    # Save to Firestore
+    try:
+        save_conversation(uid, conversation_data)
+    except Exception as e:
+        print(f"Error saving conversation: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to save conversation: {str(e)}")
+
+    return CreateConversationResponse(
+        id=conversation_id,
+        status='completed',
+        discarded=discarded
+    )
 
 
 if __name__ == "__main__":
