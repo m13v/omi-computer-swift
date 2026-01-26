@@ -875,34 +875,51 @@ class AppState: ObservableObject {
     }
 
     /// Check system audio permission status
-    /// System audio capture uses Core Audio Taps which require Screen Recording permission
+    /// This checks if the test capture was successful (set by triggerSystemAudioPermission)
     func checkSystemAudioPermission() {
-        guard #available(macOS 14.4, *) else {
-            hasSystemAudioPermission = false
-            return
-        }
-        // Core Audio Taps use the same Screen Recording permission
-        // If screen recording is granted, system audio should work
-        hasSystemAudioPermission = CGPreflightScreenCaptureAccess()
+        // Permission is set by triggerSystemAudioPermission after successful test
+        // No-op here - we rely on the test result
     }
 
-    /// Trigger system audio permission
-    /// Since Core Audio Taps use Screen Recording permission, we verify it's granted
+    /// Trigger system audio permission by actually testing capture
+    /// This verifies system audio works by briefly starting and stopping capture
     func triggerSystemAudioPermission() {
         guard #available(macOS 14.4, *) else {
             log("System audio not supported on this macOS version")
+            hasSystemAudioPermission = false
             return
         }
 
-        // System audio uses the same permission as screen recording
-        // If screen recording is already granted, we're good
-        if CGPreflightScreenCaptureAccess() {
+        log("System audio: Testing capture...")
+
+        // Create a test capture service
+        let testService = SystemAudioCaptureService()
+
+        do {
+            // Try to start capture - this will fail if permission is not granted
+            try testService.startCapture { _ in
+                // We don't need the audio data, just testing if it works
+            }
+
+            // If we get here, capture started successfully
+            log("System audio: Test capture started successfully")
+
+            // Stop the test capture
+            testService.stopCapture()
+            log("System audio: Test capture stopped")
+
+            // Mark permission as granted
             hasSystemAudioPermission = true
-            log("System audio: Screen Recording permission already granted")
-        } else {
-            // Request screen recording permission (which enables system audio too)
-            CGRequestScreenCaptureAccess()
-            log("System audio: Requesting Screen Recording permission")
+            log("System audio: Permission verified")
+
+        } catch {
+            log("System audio: Test capture failed - \(error.localizedDescription)")
+            hasSystemAudioPermission = false
+
+            // Open System Settings to Screen Recording section
+            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                NSWorkspace.shared.open(url)
+            }
         }
     }
 }
