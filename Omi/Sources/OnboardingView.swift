@@ -30,8 +30,8 @@ struct OnboardingView: View {
                 // Auto-start monitoring and dismiss
                 Color.clear
                     .onAppear {
-                        if !appState.isMonitoring {
-                            appState.startMonitoring()
+                        if !ProactiveAssistantsPlugin.shared.isMonitoring {
+                            ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
                         }
                         dismiss()
                     }
@@ -566,7 +566,7 @@ struct OnboardingView: View {
             MixpanelManager.shared.onboardingStepCompleted(step: 7, stepName: "Done")
             MixpanelManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
-            appState.startMonitoring()
+            ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
             appState.startTranscription()
             dismiss()
         default:
