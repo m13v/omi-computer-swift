@@ -10,7 +10,7 @@ APP_PATH="/Applications/$APP_NAME.app"
 SIGN_IDENTITY="Developer ID Application: Matthew Diakonov (S6DP5HF77G)"
 
 # Backend configuration (Rust)
-BACKEND_DIR="$(dirname "$0")/backend-rust"
+BACKEND_DIR="$(dirname "$0")/Backend-Rust"
 BACKEND_PID=""
 TUNNEL_PID=""
 TUNNEL_URL="https://omi-dev.m13v.com"
@@ -68,13 +68,13 @@ echo "Starting Rust backend..."
 cd "$BACKEND_DIR"
 
 # Copy .env if not present
-if [ ! -f ".env" ] && [ -f "../backend/.env" ]; then
-    cp "../backend/.env" ".env"
+if [ ! -f ".env" ] && [ -f "../Backend/.env" ]; then
+    cp "../Backend/.env" ".env"
 fi
 
 # Symlink google-credentials.json if not present
-if [ ! -f "google-credentials.json" ] && [ -f "../backend/google-credentials.json" ]; then
-    ln -sf "../backend/google-credentials.json" "google-credentials.json"
+if [ ! -f "google-credentials.json" ] && [ -f "../Backend/google-credentials.json" ]; then
+    ln -sf "../Backend/google-credentials.json" "google-credentials.json"
 fi
 
 # Build if binary doesn't exist or source is newer
@@ -103,7 +103,7 @@ done
 
 # Build debug
 echo "Building app..."
-swift build -c debug
+swift build -c debug --package-path Desktop
 
 # Remove old app bundle to avoid permission issues with signed apps
 rm -rf "$APP_BUNDLE"
@@ -113,16 +113,16 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy binary
-cp ".build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Copy and fix Info.plist
-cp Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy GoogleService-Info.plist for Firebase
-cp Omi/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
+cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Copy .env.app (app runtime secrets only)
 cp .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
