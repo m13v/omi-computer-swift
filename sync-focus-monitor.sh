@@ -5,11 +5,11 @@ set -e
 #
 # Source of truth:
 #   - Flutter app (omi/app/macos/Runner/FocusMonitor/) has latest crash fixes and features
-#   - Swift app (omi-computer-swift/Omi/Sources/) has notification foreground fix
+#   - Swift app (omi-computer-swift/Desktop/Sources/) has notification foreground fix
 #
 # This script syncs files bidirectionally based on which repo has the latest fixes.
 
-SWIFT_APP="/Users/matthewdi/omi-computer-swift/Omi/Sources"
+SWIFT_APP="/Users/matthewdi/omi-computer-swift/Desktop/Sources"
 FLUTTER_APP="/Users/matthewdi/omi/app/macos/Runner/FocusMonitor"
 
 # Colors for output
