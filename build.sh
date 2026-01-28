@@ -14,10 +14,10 @@ rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # Build release binary
-swift build -c release
+swift build -c release --package-path Desktop
 
 # Get the built binary path
-BINARY_PATH=$(swift build -c release --show-bin-path)/$APP_NAME
+BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/$APP_NAME
 
 if [ ! -f "$BINARY_PATH" ]; then
     echo "Error: Binary not found at $BINARY_PATH"
@@ -34,7 +34,7 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Copy Info.plist
-cp Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy app icon
 cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
