@@ -92,52 +92,45 @@ done
 echo "Building app..."
 swift build -c debug
 
-# Remove old app bundle to avoid permission issues with signed apps
-rm -rf "$APP_BUNDLE"
-
-# Create app bundle
+# Create/update app bundle in place (preserves TCC permissions)
+echo "Creating app bundle..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy binary
-cp ".build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp -f ".build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
 # Copy and fix Info.plist
-cp Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+cp -f Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy GoogleService-Info.plist for Firebase
-cp Omi/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
+cp -f Omi/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Copy .env.app (app runtime secrets only)
-cp .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
+cp -f .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
 
 # Copy app icon
-cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
+cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
 
-# Install to /Applications
-echo "Installing to /Applications..."
-rm -rf "$APP_PATH"
-cp -r "$APP_BUNDLE" /Applications/
-
-# Sign app (ad-hoc for dev - Developer ID requires notarization)
-echo "Signing app (ad-hoc for development)..."
-codesign --force --deep --sign - "$APP_PATH"
+# Sign app with ad-hoc signature (for local development)
+echo "Signing app (ad-hoc)..."
+codesign --force --deep --sign - "$APP_BUNDLE"
 
 echo ""
 echo "=== Services Running ==="
 echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
 echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
-echo "App:      $APP_PATH"
+echo "App:      $APP_BUNDLE (running from build directory)"
 echo "========================"
 echo ""
 
-# Remove quarantine and start app
+# Remove quarantine and start app from build directory
 echo "Starting app..."
-xattr -cr "$APP_PATH"
-open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$APP_NAME" &
+xattr -cr "$APP_BUNDLE"
+open "$APP_BUNDLE" || "$APP_BUNDLE/Contents/MacOS/$APP_NAME" &
 
 # Wait for backend process (keeps script running and shows logs)
 echo "Press Ctrl+C to stop all services..."
