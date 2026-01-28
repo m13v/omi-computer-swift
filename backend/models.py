@@ -50,6 +50,18 @@ class ActionItem(BaseModel):
     due_at: Optional[datetime] = Field(default=None, description="When the action item is due")
 
 
+class MemoryCategory(str, Enum):
+    """Categories for extracted memories."""
+    system = "system"          # Facts ABOUT the user (preferences, network, projects)
+    interesting = "interesting"  # External wisdom WITH attribution from others
+
+
+class Memory(BaseModel):
+    """A memory extracted from conversation - long-term knowledge about the user."""
+    content: str = Field(description="The memory content (max 15 words)")
+    category: MemoryCategory = Field(description="The category of the memory")
+
+
 class Event(BaseModel):
     title: str = Field(description="The title of the event")
     description: str = Field(description="A brief description of the event", default='')
