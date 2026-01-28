@@ -399,12 +399,15 @@ class TranscriptionService {
 
 private struct DeepgramResponse: Decodable {
     let type: String?
-    let channel: Channel?
+    let channel: Channel?           // For Results messages (object with alternatives)
+    let channelArray: [Int]?        // For SpeechStarted/UtteranceEnd (array like [0, 2])
     let is_final: Bool?
     let speech_final: Bool?
     let channel_index: [Int]?
     let duration: Double?
     let start: Double?
+    let timestamp: Double?          // For SpeechStarted
+    let last_word_end: Double?      // For UtteranceEnd
 
     struct Channel: Decodable {
         let alternatives: [Alternative]
@@ -423,5 +426,42 @@ private struct DeepgramResponse: Decodable {
         let confidence: Double
         let speaker: Int?
         let punctuated_word: String?
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case type, channel, is_final, speech_final, channel_index, duration, start, timestamp, last_word_end
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        type = try container.decodeIfPresent(String.self, forKey: .type)
+        is_final = try container.decodeIfPresent(Bool.self, forKey: .is_final)
+        speech_final = try container.decodeIfPresent(Bool.self, forKey: .speech_final)
+        channel_index = try container.decodeIfPresent([Int].self, forKey: .channel_index)
+        duration = try container.decodeIfPresent(Double.self, forKey: .duration)
+        start = try container.decodeIfPresent(Double.self, forKey: .start)
+        timestamp = try container.decodeIfPresent(Double.self, forKey: .timestamp)
+        last_word_end = try container.decodeIfPresent(Double.self, forKey: .last_word_end)
+
+        // Handle "channel" which can be either an object (Results) or array (SpeechStarted/UtteranceEnd)
+        if container.contains(.channel) {
+            // Try decoding as Channel object first (for Results messages)
+            if let channelObj = try? container.decode(Channel.self, forKey: .channel) {
+                channel = channelObj
+                channelArray = nil
+            }
+            // Otherwise try as [Int] array (for SpeechStarted/UtteranceEnd)
+            else if let channelArr = try? container.decode([Int].self, forKey: .channel) {
+                channel = nil
+                channelArray = channelArr
+            } else {
+                channel = nil
+                channelArray = nil
+            }
+        } else {
+            channel = nil
+            channelArray = nil
+        }
     }
 }
