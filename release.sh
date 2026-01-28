@@ -76,9 +76,9 @@ echo "[1/9] Building $APP_NAME..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-swift build -c release
+swift build -c release --package-path Desktop
 
-BINARY_PATH=$(swift build -c release --show-bin-path)/$APP_NAME
+BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/$APP_NAME
 if [ ! -f "$BINARY_PATH" ]; then
     echo "Error: Binary not found at $BINARY_PATH"
     exit 1
@@ -89,7 +89,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
-cp Omi/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy icon if exists
 if [ -f "omi_icon.icns" ]; then
@@ -97,7 +97,7 @@ if [ -f "omi_icon.icns" ]; then
 fi
 
 # Copy GoogleService-Info.plist for Firebase
-cp Omi/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
+cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Update Info.plist with version and bundle info
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
@@ -128,7 +128,7 @@ echo "[2/9] Signing app with Developer ID..."
 
 codesign --force --options runtime \
     --sign "$SIGN_IDENTITY" \
-    --entitlements Omi/Omi-Release.entitlements \
+    --entitlements Desktop/Omi-Release.entitlements \
     "$APP_BUNDLE"
 
 codesign --verify --verbose=2 "$APP_BUNDLE" 2>&1 | head -3
