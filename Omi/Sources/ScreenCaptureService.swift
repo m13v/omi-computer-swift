@@ -9,11 +9,52 @@ class ScreenCaptureService {
 
     init() {}
 
-    /// Check if we have screen recording permission
+    /// Check if we have screen recording permission by actually testing capture
+    /// CGPreflightScreenCaptureAccess can return stale data after code signing changes
     static func checkPermission() -> Bool {
-        // Always return true - let capture fail if no permission
-        // This avoids unreliable permission checks on newer macOS
-        return true
+        // First quick check - if CGPreflight says no, definitely no permission
+        if !CGPreflightScreenCaptureAccess() {
+            log("Screen capture: CGPreflight says no permission")
+            return false
+        }
+
+        // CGPreflight can return stale data after rebuilds, so test actual capture
+        return testCapturePermission()
+    }
+
+    /// Test if screen capture actually works by attempting a real capture
+    /// This verifies the app has permission, not just cached permission data
+    static func testCapturePermission() -> Bool {
+        let tempPath = NSTemporaryDirectory() + "omi_permission_test_\(UUID().uuidString).jpg"
+        defer { try? FileManager.default.removeItem(atPath: tempPath) }
+
+        // Try to capture the screen using screencapture CLI
+        // This requires Screen Recording permission to succeed
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-x", tempPath]  // Silent capture of entire screen
+
+        // Suppress any error output
+        process.standardError = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            // Check if capture succeeded and file was created with content
+            if process.terminationStatus == 0,
+               let data = try? Data(contentsOf: URL(fileURLWithPath: tempPath)),
+               data.count > 100 {
+                log("Screen capture test: SUCCESS")
+                return true
+            }
+            log("Screen capture test: FAILED (exit code: \(process.terminationStatus))")
+            return false
+        } catch {
+            log("Screen capture test: ERROR - \(error.localizedDescription)")
+            return false
+        }
     }
 
     /// Open System Preferences to Screen Recording settings
