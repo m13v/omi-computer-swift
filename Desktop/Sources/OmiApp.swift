@@ -89,8 +89,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             options.dsn = "https://8f700584deda57b26041ff015539c8c1@o4507617161314304.ingest.us.sentry.io/4510790686277632"
             options.debug = false
             options.enableAutoSessionTracking = true
-            options.attachScreenshot = true
-            options.attachViewHierarchy = true
             // Set environment based on build configuration
             #if DEBUG
             options.environment = "development"
@@ -189,6 +187,12 @@ struct MenuBarView: View {
 
             Button("Show Onboarding") {
                 openOnboarding()
+            }
+
+            Divider()
+
+            Button("Report Issue...") {
+                FeedbackWindow.show(userEmail: authState.userEmail)
             }
 
             Divider()
