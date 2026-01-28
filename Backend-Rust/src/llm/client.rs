@@ -1,0 +1,645 @@
+// LLM Client - OpenAI and Gemini API integration
+// Port from Python backend (llm.py)
+
+use chrono::{DateTime, Utc};
+use reqwest::Client;
+use serde::{Deserialize, Serialize};
+
+use super::prompts::*;
+use crate::models::{ActionItem, Category, Event, Memory, MemoryCategory, MemoryDB, Structured, TranscriptSegment};
+
+/// LLM Provider
+#[derive(Debug, Clone)]
+pub enum LlmProvider {
+    OpenAI,
+    Gemini,
+}
+
+/// Calendar participant for meeting context
+#[derive(Debug, Clone, Default)]
+pub struct CalendarParticipant {
+    pub name: Option<String>,
+    pub email: Option<String>,
+}
+
+/// Context from a calendar meeting for better conversation analysis
+#[derive(Debug, Clone, Default)]
+pub struct CalendarMeetingContext {
+    pub title: String,
+    pub start_time: Option<DateTime<Utc>>,
+    pub duration_minutes: i32,
+    pub platform: Option<String>,
+    pub participants: Vec<CalendarParticipant>,
+    pub notes: Option<String>,
+    pub meeting_link: Option<String>,
+}
+
+impl CalendarMeetingContext {
+    /// Build the calendar context string for the prompt
+    pub fn to_context_string(&self) -> String {
+        if self.title.is_empty() {
+            return String::new();
+        }
+
+        let participants_str = self.participants.iter()
+            .map(|p| {
+                match (&p.name, &p.email) {
+                    (Some(name), Some(email)) => format!("{} <{}>", name, email),
+                    (Some(name), None) => name.clone(),
+                    (None, Some(email)) => email.clone(),
+                    (None, None) => "Unknown".to_string(),
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        let start_time_str = self.start_time
+            .map(|t| t.format("%Y-%m-%d %H:%M UTC").to_string())
+            .unwrap_or_else(|| "Not specified".to_string());
+
+        let mut context = format!(
+            "CALENDAR MEETING CONTEXT:\n- Meeting Title: {}\n- Scheduled Time: {}\n- Duration: {} minutes\n- Platform: {}\n- Participants: {}",
+            self.title,
+            start_time_str,
+            self.duration_minutes,
+            self.platform.as_deref().unwrap_or("Not specified"),
+            if participants_str.is_empty() { "None listed" } else { &participants_str }
+        );
+
+        if let Some(notes) = &self.notes {
+            context.push_str(&format!("\n- Meeting Notes: {}", notes));
+        }
+        if let Some(link) = &self.meeting_link {
+            context.push_str(&format!("\n- Meeting Link: {}", link));
+        }
+
+        context
+    }
+}
+
+/// LLM Client for calling OpenAI or Gemini
+pub struct LlmClient {
+    client: Client,
+    provider: LlmProvider,
+    api_key: String,
+    model: String,
+}
+
+// OpenAI API types
+#[derive(Debug, Serialize)]
+struct OpenAIRequest {
+    model: String,
+    messages: Vec<OpenAIMessage>,
+    response_format: Option<OpenAIResponseFormat>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<i32>,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAIMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Serialize)]
+struct OpenAIResponseFormat {
+    #[serde(rename = "type")]
+    format_type: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIResponse {
+    choices: Vec<OpenAIChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIChoice {
+    message: OpenAIMessageResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct OpenAIMessageResponse {
+    content: String,
+}
+
+// Gemini API types
+#[derive(Debug, Serialize)]
+struct GeminiRequest {
+    contents: Vec<GeminiContent>,
+    #[serde(rename = "generationConfig")]
+    generation_config: Option<GeminiGenerationConfig>,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiPart {
+    text: String,
+}
+
+#[derive(Debug, Serialize)]
+struct GeminiGenerationConfig {
+    #[serde(rename = "responseMimeType")]
+    response_mime_type: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "maxOutputTokens")]
+    max_output_tokens: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiResponse {
+    candidates: Vec<GeminiCandidate>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiCandidate {
+    content: GeminiContentResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiContentResponse {
+    parts: Vec<GeminiPartResponse>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiPartResponse {
+    text: String,
+}
+
+impl LlmClient {
+    /// Create a new OpenAI client
+    pub fn openai(api_key: String) -> Self {
+        Self {
+            client: Client::new(),
+            provider: LlmProvider::OpenAI,
+            api_key,
+            model: DEFAULT_MODEL.to_string(),
+        }
+    }
+
+    /// Create a new Gemini client
+    pub fn gemini(api_key: String) -> Self {
+        Self {
+            client: Client::new(),
+            provider: LlmProvider::Gemini,
+            api_key,
+            model: "gemini-2.0-flash".to_string(),
+        }
+    }
+
+    /// Set the model to use
+    #[allow(dead_code)]
+    pub fn with_model(mut self, model: &str) -> Self {
+        self.model = model.to_string();
+        self
+    }
+
+    /// Call the LLM and get a response
+    async fn call(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        match self.provider {
+            LlmProvider::OpenAI => self.call_openai(prompt, temperature, max_tokens).await,
+            LlmProvider::Gemini => self.call_gemini(prompt, temperature, max_tokens).await,
+        }
+    }
+
+    /// Call OpenAI API
+    async fn call_openai(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let request = OpenAIRequest {
+            model: self.model.clone(),
+            messages: vec![OpenAIMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            }],
+            response_format: Some(OpenAIResponseFormat {
+                format_type: "json_object".to_string(),
+            }),
+            temperature,
+            max_completion_tokens: max_tokens,
+        };
+
+        let response = self
+            .client
+            .post("https://api.openai.com/v1/chat/completions")
+            .bearer_auth(&self.api_key)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error = response.text().await?;
+            return Err(format!("OpenAI API error: {}", error).into());
+        }
+
+        let result: OpenAIResponse = response.json().await?;
+        Ok(result.choices.first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default())
+    }
+
+    /// Call Gemini API
+    async fn call_gemini(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let request = GeminiRequest {
+            contents: vec![GeminiContent {
+                parts: vec![GeminiPart {
+                    text: prompt.to_string(),
+                }],
+            }],
+            generation_config: Some(GeminiGenerationConfig {
+                response_mime_type: "application/json".to_string(),
+                temperature,
+                max_output_tokens: max_tokens,
+            }),
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            self.model, self.api_key
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error = response.text().await?;
+            return Err(format!("Gemini API error: {}", error).into());
+        }
+
+        let result: GeminiResponse = response.json().await?;
+        Ok(result.candidates.first()
+            .and_then(|c| c.content.parts.first())
+            .map(|p| p.text.clone())
+            .unwrap_or_default())
+    }
+
+    // =========================================================================
+    // CONVERSATION PROCESSING - Port from Python llm.py
+    // =========================================================================
+
+    /// Check if a conversation should be discarded
+    /// Copied from Python should_discard_conversation
+    pub async fn should_discard(&self, transcript: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        // Quick optimization: long transcripts are very unlikely to be discarded
+        let word_count = transcript.split_whitespace().count();
+        if word_count > 100 {
+            return Ok(false);
+        }
+
+        // Check word count first - if too short, discard without LLM call
+        if word_count < MIN_WORD_COUNT {
+            tracing::info!("Discarding: word count {} < {}", word_count, MIN_WORD_COUNT);
+            return Ok(true);
+        }
+
+        let prompt = DISCARD_CHECK_PROMPT.replace("{transcript_text}", transcript);
+        let response = self.call(&prompt, Some(0.3), Some(100)).await?;
+
+        #[derive(Deserialize)]
+        struct DiscardResponse {
+            discard: bool,
+        }
+
+        let result: DiscardResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse discard response: {} - {}", e, response))?;
+
+        Ok(result.discard)
+    }
+
+    /// Extract structure from transcript (title, overview, emoji, category, events)
+    /// Copied from Python extract_transcript_structure
+    pub async fn extract_structure(
+        &self,
+        transcript: &str,
+        started_at: &str,
+        timezone: &str,
+        language: &str,
+        calendar_context: Option<&CalendarMeetingContext>,
+    ) -> Result<Structured, Box<dyn std::error::Error + Send + Sync>> {
+        // Build calendar context section
+        let calendar_prompt_section = match calendar_context {
+            Some(ctx) if !ctx.title.is_empty() => {
+                STRUCTURE_CALENDAR_SECTION.replace("{calendar_context_str}", &ctx.to_context_string())
+            }
+            _ => String::new(),
+        };
+
+        let prompt = STRUCTURE_PROMPT
+            .replace("{transcript_text}", transcript)
+            .replace("{started_at}", started_at)
+            .replace("{tz}", timezone)
+            .replace("{language}", language)
+            .replace("{categories}", &Category::all_as_string())
+            .replace("{calendar_prompt_section}", &calendar_prompt_section);
+
+        let response = self.call(&prompt, Some(0.7), Some(1500)).await?;
+
+        #[derive(Deserialize)]
+        struct StructureResponse {
+            title: String,
+            overview: String,
+            emoji: String,
+            category: String,
+            #[serde(default)]
+            events: Vec<EventResponse>,
+        }
+
+        #[derive(Deserialize)]
+        struct EventResponse {
+            title: String,
+            #[serde(default)]
+            description: String,
+            start: String,
+            #[serde(default = "default_duration")]
+            duration: i32,
+        }
+
+        fn default_duration() -> i32 { 30 }
+
+        let result: StructureResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse structure response: {} - {}", e, response))?;
+
+        let events: Vec<Event> = result.events.into_iter().filter_map(|e| {
+            chrono::DateTime::parse_from_rfc3339(&e.start).ok().map(|dt| Event {
+                title: e.title,
+                description: e.description,
+                start: dt.with_timezone(&chrono::Utc),
+                // Cap duration at 180 minutes
+                duration: e.duration.min(180),
+            })
+        }).collect();
+
+        let category = serde_json::from_str(&format!("\"{}\"", result.category))
+            .unwrap_or(Category::Other);
+
+        Ok(Structured {
+            title: result.title,
+            overview: result.overview,
+            emoji: result.emoji,
+            category,
+            action_items: vec![], // Extracted separately
+            events,
+        })
+    }
+
+    /// Extract action items from transcript
+    /// Copied from Python extract_action_items
+    pub async fn extract_action_items(
+        &self,
+        transcript: &str,
+        started_at: &str,
+        timezone: &str,
+        language: &str,
+        existing_items: &[ActionItem],
+        calendar_context: Option<&CalendarMeetingContext>,
+    ) -> Result<Vec<ActionItem>, Box<dyn std::error::Error + Send + Sync>> {
+        if transcript.is_empty() || transcript.trim().is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Build existing items context for deduplication
+        let existing_items_context = if existing_items.is_empty() {
+            String::new()
+        } else {
+            let items_list: Vec<String> = existing_items.iter()
+                .map(|item| {
+                    let due_str = item.due_at
+                        .map(|d| d.to_rfc3339())
+                        .unwrap_or_else(|| "No due date".to_string());
+                    let completed = if item.completed { "✓ Completed" } else { "Pending" };
+                    format!("  • {} (Due: {}) [{}]", item.description, due_str, completed)
+                })
+                .collect();
+            format!("\n\nEXISTING ACTION ITEMS FROM PAST 2 DAYS ({} items):\n{}",
+                items_list.len(),
+                items_list.join("\n"))
+        };
+
+        // Build calendar context section
+        let calendar_prompt_section = match calendar_context {
+            Some(ctx) if !ctx.title.is_empty() => {
+                ACTION_ITEMS_CALENDAR_SECTION.replace("{calendar_context_str}", &ctx.to_context_string())
+            }
+            _ => String::new(),
+        };
+
+        let prompt = ACTION_ITEMS_PROMPT
+            .replace("{transcript_text}", transcript)
+            .replace("{started_at}", started_at)
+            .replace("{tz}", timezone)
+            .replace("{language}", language)
+            .replace("{existing_items_context}", &existing_items_context)
+            .replace("{calendar_prompt_section}", &calendar_prompt_section);
+
+        let response = self.call(&prompt, Some(0.7), Some(1500)).await?;
+
+        #[derive(Deserialize)]
+        struct ActionItemsResponse {
+            action_items: Vec<ActionItemResponse>,
+        }
+
+        #[derive(Deserialize)]
+        struct ActionItemResponse {
+            description: String,
+            due_at: Option<String>,
+        }
+
+        let result: ActionItemsResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse action items response: {} - {}", e, response))?;
+
+        Ok(result.action_items.into_iter().map(|item| ActionItem {
+            description: item.description,
+            completed: false,
+            due_at: item.due_at.and_then(|d| chrono::DateTime::parse_from_rfc3339(&d).ok())
+                .map(|dt| dt.with_timezone(&chrono::Utc)),
+        }).collect())
+    }
+
+    /// Extract memories from transcript
+    /// Copied from Python extract_memories
+    pub async fn extract_memories(
+        &self,
+        transcript: &str,
+        user_name: &str,
+        existing_memories: &[MemoryDB],
+    ) -> Result<Vec<Memory>, Box<dyn std::error::Error + Send + Sync>> {
+        if transcript.is_empty() || transcript.trim().is_empty() {
+            return Ok(vec![]);
+        }
+
+        // Build existing memories context for deduplication
+        let existing_memories_str = if existing_memories.is_empty() {
+            "(No existing memories)".to_string()
+        } else {
+            existing_memories.iter()
+                .take(100) // Limit context size
+                .map(|m| format!("- [{}] {}",
+                    match m.category {
+                        MemoryCategory::System => "system",
+                        MemoryCategory::Interesting => "interesting",
+                        MemoryCategory::Manual => "manual",
+                    },
+                    m.content
+                ))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let prompt = MEMORIES_PROMPT
+            .replace("{transcript_text}", transcript)
+            .replace("{user_name}", user_name)
+            .replace("{existing_memories_str}", &existing_memories_str);
+
+        let response = self.call(&prompt, Some(0.5), Some(500)).await?;
+
+        #[derive(Deserialize)]
+        struct MemoriesResponse {
+            memories: Vec<MemoryResponse>,
+        }
+
+        #[derive(Deserialize)]
+        struct MemoryResponse {
+            content: String,
+            category: String,
+        }
+
+        let result: MemoriesResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse memories response: {} - {}", e, response))?;
+
+        // Validate categories and enforce limits: max 2 interesting + max 2 system
+        let mut valid_memories = Vec::new();
+        let mut interesting_count = 0;
+        let mut system_count = 0;
+
+        for m in result.memories {
+            let content = m.content.trim().to_string();
+            if content.is_empty() {
+                continue;
+            }
+
+            let category = match m.category.as_str() {
+                "interesting" => MemoryCategory::Interesting,
+                "system" => MemoryCategory::System,
+                _ => MemoryCategory::System,
+            };
+
+            // Enforce per-category limits
+            match category {
+                MemoryCategory::Interesting => {
+                    if interesting_count >= 2 {
+                        continue;
+                    }
+                    interesting_count += 1;
+                }
+                MemoryCategory::System | MemoryCategory::Manual => {
+                    if system_count >= 2 {
+                        continue;
+                    }
+                    system_count += 1;
+                }
+            }
+
+            valid_memories.push(Memory {
+                content,
+                category,
+            });
+        }
+
+        Ok(valid_memories)
+    }
+
+    /// Full conversation processing pipeline
+    /// Copied from Python generate_structure
+    pub async fn process_conversation(
+        &self,
+        segments: &[TranscriptSegment],
+        started_at: &str,
+        timezone: &str,
+        language: &str,
+        user_name: &str,
+        existing_action_items: &[ActionItem],
+        existing_memories: &[MemoryDB],
+    ) -> Result<ProcessedConversation, Box<dyn std::error::Error + Send + Sync>> {
+        self.process_conversation_with_calendar(
+            segments,
+            started_at,
+            timezone,
+            language,
+            user_name,
+            existing_action_items,
+            existing_memories,
+            None,
+        ).await
+    }
+
+    /// Full conversation processing pipeline with calendar context
+    pub async fn process_conversation_with_calendar(
+        &self,
+        segments: &[TranscriptSegment],
+        started_at: &str,
+        timezone: &str,
+        language: &str,
+        user_name: &str,
+        existing_action_items: &[ActionItem],
+        existing_memories: &[MemoryDB],
+        calendar_context: Option<&CalendarMeetingContext>,
+    ) -> Result<ProcessedConversation, Box<dyn std::error::Error + Send + Sync>> {
+        let transcript = TranscriptSegment::to_transcript_text(segments);
+
+        // Step 1: Check if should discard
+        let should_discard = self.should_discard(&transcript).await?;
+        if should_discard {
+            tracing::info!("Conversation discarded by LLM");
+            return Ok(ProcessedConversation {
+                discarded: true,
+                structured: Structured::default(),
+                action_items: vec![],
+                memories: vec![],
+            });
+        }
+
+        // Step 2: Extract structure (title, overview, emoji, category, events)
+        let structured = self.extract_structure(&transcript, started_at, timezone, language, calendar_context).await?;
+
+        // Step 3: Extract action items
+        let action_items = self.extract_action_items(
+            &transcript,
+            started_at,
+            timezone,
+            language,
+            existing_action_items,
+            calendar_context,
+        ).await?;
+
+        // Step 4: Extract memories
+        let memories = self.extract_memories(&transcript, user_name, existing_memories).await?;
+
+        Ok(ProcessedConversation {
+            discarded: false,
+            structured: Structured {
+                action_items: action_items.clone(),
+                ..structured
+            },
+            action_items,
+            memories,
+        })
+    }
+}
+
+/// Result of processing a conversation
+#[derive(Debug)]
+pub struct ProcessedConversation {
+    pub discarded: bool,
+    pub structured: Structured,
+    pub action_items: Vec<ActionItem>,
+    pub memories: Vec<Memory>,
+}
