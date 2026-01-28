@@ -136,6 +136,9 @@ echo "App:      $APP_BUNDLE (running from build directory)"
 echo "========================"
 echo ""
 
+# Clear log file for fresh run
+rm -f /tmp/omi.log 2>/dev/null || true
+
 # Remove quarantine and start app from build directory
 echo "Starting app..."
 xattr -cr "$APP_BUNDLE"
