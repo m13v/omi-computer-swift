@@ -24,7 +24,7 @@ import pathlib
 
 from models import CreateConversationRequest, CreateConversationResponse, TranscriptSegment
 from llm import generate_structure, segments_to_transcript_text
-from database import save_conversation
+from database import save_conversation, save_action_items, save_memories, get_memories
 
 # Load environment variables
 load_dotenv()
@@ -472,22 +472,32 @@ async def create_conversation_from_segments(
 ):
     """
     Create a conversation from transcript segments.
-    Processes with LLM to extract title, overview, action items, etc.
+    Processes with LLM to extract title, overview, action items, memories, etc.
     Saves to Firestore.
     """
     # Convert segments to transcript text
     transcript_text = segments_to_transcript_text(request.transcript_segments)
     print(f"Processing conversation for user {uid}, {len(request.transcript_segments)} segments, {len(transcript_text)} chars")
 
+    # Get existing memories for deduplication context
+    existing_memories = []
+    try:
+        existing_memories = get_memories(uid, limit=100)
+    except Exception as e:
+        print(f"Error fetching existing memories: {e}")
+        # Continue without existing memories
+
     # Generate structured data using LLM
     structured = generate_structure(
         transcript_text=transcript_text,
         started_at=request.started_at,
         language=request.language,
-        tz=request.timezone
+        tz=request.timezone,
+        existing_memories=existing_memories,
     )
 
     discarded = structured.pop('discarded', False)
+    memories = structured.pop('memories', [])
 
     # Create conversation document
     conversation_id = str(uuid.uuid4())
@@ -512,6 +522,23 @@ async def create_conversation_from_segments(
     except Exception as e:
         print(f"Error saving conversation: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to save conversation: {str(e)}")
+
+    # Save action items to separate collection
+    action_items = structured.get('action_items', [])
+    if action_items and not discarded:
+        try:
+            save_action_items(uid, conversation_id, action_items)
+        except Exception as e:
+            print(f"Error saving action items: {e}")
+            # Don't fail the request, just log the error
+
+    # Save memories to separate collection
+    if memories and not discarded:
+        try:
+            save_memories(uid, conversation_id, memories)
+        except Exception as e:
+            print(f"Error saving memories: {e}")
+            # Don't fail the request, just log the error
 
     return CreateConversationResponse(
         id=conversation_id,
