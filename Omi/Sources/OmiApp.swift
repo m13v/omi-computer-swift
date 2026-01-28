@@ -141,11 +141,6 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button(appState.isMonitoring ? "Stop Monitoring" : "Start Monitoring") {
-                appState.toggleMonitoring()
-            }
-            .keyboardShortcut("m", modifiers: .command)
-
             Button(appState.isTranscribing ? "Stop Transcription" : "Start Transcription") {
                 appState.toggleTranscription()
             }
@@ -159,8 +154,13 @@ struct MenuBarView: View {
 
             Divider()
 
+            Button("Proactive Assistant Settings") {
+                SettingsWindow.show()
+            }
+            .keyboardShortcut(",", modifiers: .command)
+
             Button("Grant Screen Permission") {
-                appState.openScreenRecordingPreferences()
+                ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
             }
 
             Button("Show Onboarding") {
@@ -171,9 +171,7 @@ struct MenuBarView: View {
 
             Button("Sign Out") {
                 // Stop monitoring if running
-                if appState.isMonitoring {
-                    appState.stopMonitoring()
-                }
+                ProactiveAssistantsPlugin.shared.stopMonitoring()
                 // Sign out
                 try? AuthService.shared.signOut()
                 // Open sign-in window and bring to front
