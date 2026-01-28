@@ -39,3 +39,6 @@ xcuserdata/
 *.ipa
 *.dSYM.zip
 *.dSYM
+
+# Local scripts (untracked)
+local/
