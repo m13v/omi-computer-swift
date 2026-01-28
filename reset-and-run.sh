@@ -9,8 +9,8 @@ APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
 SIGN_IDENTITY="Developer ID Application: Matthew Diakonov (S6DP5HF77G)"
 
-# Backend configuration
-BACKEND_DIR="$(dirname "$0")/backend"
+# Backend configuration (Rust)
+BACKEND_DIR="$(dirname "$0")/backend-rust"
 BACKEND_PID=""
 TUNNEL_PID=""
 TUNNEL_URL="https://omi-dev.m13v.com"
@@ -63,18 +63,27 @@ cloudflared tunnel run omi-computer-dev &
 TUNNEL_PID=$!
 sleep 2
 
-# Start backend
-echo "Starting backend..."
+# Start Rust backend
+echo "Starting Rust backend..."
 cd "$BACKEND_DIR"
-if [ ! -d "venv" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv venv
-    source venv/bin/activate
-    pip install -r requirements.txt
-else
-    source venv/bin/activate
+
+# Copy .env if not present
+if [ ! -f ".env" ] && [ -f "../backend/.env" ]; then
+    cp "../backend/.env" ".env"
 fi
-python main.py &
+
+# Symlink google-credentials.json if not present
+if [ ! -f "google-credentials.json" ] && [ -f "../backend/google-credentials.json" ]; then
+    ln -sf "../backend/google-credentials.json" "google-credentials.json"
+fi
+
+# Build if binary doesn't exist or source is newer
+if [ ! -f "target/release/omi-desktop-backend" ] || [ -n "$(find src -newer target/release/omi-desktop-backend 2>/dev/null)" ]; then
+    echo "Building Rust backend..."
+    cargo build --release
+fi
+
+./target/release/omi-desktop-backend &
 BACKEND_PID=$!
 cd - > /dev/null
 
