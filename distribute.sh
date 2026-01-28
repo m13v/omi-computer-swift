@@ -24,7 +24,7 @@ echo "=== Signing with Developer ID ==="
 # Sign with Developer ID and hardened runtime
 codesign --force --options runtime \
     --sign "$SIGN_IDENTITY" \
-    --entitlements Omi/Omi.entitlements \
+    --entitlements Desktop/Omi.entitlements \
     "$APP_BUNDLE"
 
 # Verify signature
