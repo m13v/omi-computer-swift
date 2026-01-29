@@ -163,8 +163,7 @@ actor TaskAssistant: ProactiveAssistant {
             NotificationService.shared.sendNotification(
                 title: "Task",
                 message: message,
-                assistantId: identifier,
-                applyCooldown: false
+                assistantId: identifier
             )
         }
     }
