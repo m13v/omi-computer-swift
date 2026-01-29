@@ -2,14 +2,15 @@
 // Port from Python backend (main.py)
 
 use axum::Router;
-use std::fmt::Write;
 use std::fs::OpenOptions;
+use std::io::{LineWriter, Write as IoWrite};
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use std::fmt::Write as FmtWrite;
 
 /// Custom time formatter: [HH:mm:ss] [backend]
 #[derive(Clone)]
@@ -44,11 +45,16 @@ pub struct AppState {
 #[tokio::main]
 async fn main() {
     // Open log file (same as Swift app: /tmp/omi.log)
+    // Wrap in LineWriter to flush after each line (ensures logs appear immediately)
     let log_file = OpenOptions::new()
         .create(true)
         .append(true)
         .open("/tmp/omi.log")
         .expect("Failed to open log file");
+    let line_writer = LineWriter::new(log_file);
+
+    // Use non_blocking for proper async file writing
+    let (non_blocking, _guard) = tracing_appender::non_blocking(line_writer);
 
     // Initialize tracing with both stdout and file output
     // Format: [HH:mm:ss] [backend] message
@@ -72,7 +78,7 @@ async fn main() {
                 .with_target(false)
                 .with_level(false)
                 .with_ansi(false)
-                .with_writer(log_file)
+                .with_writer(non_blocking)
         )
         .init();
 
