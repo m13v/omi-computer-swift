@@ -14,7 +14,7 @@ DerivedData/
 
 # Backend credentials
 backend/.env
-backend/google-credentials.json
+**/google-credentials.json
 backend/venv/
 __pycache__/
 
