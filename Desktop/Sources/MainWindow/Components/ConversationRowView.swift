@@ -14,28 +14,19 @@ struct ConversationRowView: View {
 
     var body: some View {
         Button(action: onTap) {
-            HStack(spacing: 14) {
-                // Emoji avatar
-                Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
-                    .font(.system(size: 24))
-                    .frame(width: 40, height: 40)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(OmiColors.backgroundQuaternary)
-                    )
-
-                // Title and category
+            HStack(spacing: 12) {
+                // Title and overview
                 VStack(alignment: .leading, spacing: 4) {
                     Text(conversation.title)
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(OmiColors.textPrimary)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
+                        .lineLimit(1)
 
-                    if !conversation.structured.category.isEmpty && conversation.structured.category != "other" {
-                        Text(conversation.structured.category.capitalized)
+                    if !conversation.overview.isEmpty {
+                        Text(conversation.overview)
                             .font(.system(size: 12))
                             .foregroundColor(OmiColors.textTertiary)
+                            .lineLimit(2)
                     }
                 }
 
@@ -52,9 +43,9 @@ struct ConversationRowView: View {
                         .foregroundColor(OmiColors.textQuaternary)
                 }
             }
-            .padding(14)
+            .padding(12)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(OmiColors.backgroundTertiary)
             )
             .contentShape(Rectangle())
