@@ -2,6 +2,7 @@ import SwiftUI
 import Sentry
 
 /// Window controller for the feedback dialog
+@MainActor
 class FeedbackWindow {
     private static var window: NSWindow?
 
