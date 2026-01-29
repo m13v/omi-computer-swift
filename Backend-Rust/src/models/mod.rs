@@ -4,6 +4,7 @@ pub mod action_item;
 pub mod app;
 pub mod category;
 pub mod conversation;
+pub mod focus_session;
 pub mod memory;
 pub mod message;
 pub mod request;
@@ -13,7 +14,7 @@ pub use action_item::{ActionItemDB, ActionItemStatusResponse, CreateActionItemRe
 pub use app::{
     App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ChatTool, ExternalIntegration,
     ListAppsQuery, ProactiveNotification, SearchAppsQuery, SubmitReviewRequest, ToggleAppRequest,
-    ToggleAppResponse, UserEnabledApp, get_app_capabilities, get_app_categories,
+    ToggleAppResponse, TriggerEvent, UserEnabledApp, get_app_capabilities, get_app_categories,
 };
 pub use category::{Category, MemoryCategory};
 pub use conversation::{
@@ -29,6 +30,10 @@ pub use message::{
     SendMessageRequest,
 };
 pub use request::{CreateConversationRequest, CreateConversationResponse};
+pub use focus_session::{
+    CreateFocusSessionRequest, DistractionEntry, FocusSessionDB, FocusSessionStatusResponse,
+    FocusStats, FocusStatus, GetFocusSessionsQuery, GetFocusStatsQuery,
+};
 pub use user_settings::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
     SetPrivateCloudSyncRequest, SetRecordingPermissionRequest, TranscriptionPreferences,
