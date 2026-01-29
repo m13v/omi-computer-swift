@@ -117,7 +117,7 @@ struct SettingsView: View {
                 isMonitoring = state
             }
         }
-        .onChange(of: selectedTab) { _ in
+        .onChange(of: selectedTab) { _, _ in
             resizeWindowToFit()
         }
         .animation(.easeInOut(duration: 0.2), value: selectedTab)
@@ -153,7 +153,7 @@ struct SettingsView: View {
                 Toggle("", isOn: $isMonitoring)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                    .onChange(of: isMonitoring) { newValue in
+                    .onChange(of: isMonitoring) { _, newValue in
                         toggleMonitoring(enabled: newValue)
                     }
             }
@@ -231,7 +231,7 @@ struct SettingsView: View {
                 Toggle("", isOn: $focusEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                    .onChange(of: focusEnabled) { newValue in
+                    .onChange(of: focusEnabled) { _, newValue in
                         FocusAssistantSettings.shared.isEnabled = newValue
                     }
             }
@@ -252,7 +252,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 120)
-                .onChange(of: analysisDelay) { newValue in
+                .onChange(of: analysisDelay) { _, newValue in
                     AssistantSettings.shared.analysisDelay = newValue
                 }
             }
@@ -273,7 +273,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 120)
-                .onChange(of: cooldownInterval) { newValue in
+                .onChange(of: cooldownInterval) { _, newValue in
                     FocusAssistantSettings.shared.cooldownInterval = newValue
                 }
             }
@@ -291,7 +291,7 @@ struct SettingsView: View {
                     .toggleStyle(.switch)
                     .labelsHidden()
                     .disabled(isPreviewRunning)
-                    .onChange(of: glowOverlayEnabled) { newValue in
+                    .onChange(of: glowOverlayEnabled) { _, newValue in
                         AssistantSettings.shared.glowOverlayEnabled = newValue
                         if newValue {
                             startGlowPreview()
@@ -337,7 +337,7 @@ struct SettingsView: View {
                 Toggle("", isOn: $taskEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                    .onChange(of: taskEnabled) { newValue in
+                    .onChange(of: taskEnabled) { _, newValue in
                         TaskAssistantSettings.shared.isEnabled = newValue
                     }
             }
@@ -358,7 +358,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 120)
-                .onChange(of: taskExtractionInterval) { newValue in
+                .onChange(of: taskExtractionInterval) { _, newValue in
                     TaskAssistantSettings.shared.extractionInterval = newValue
                 }
             }
@@ -393,7 +393,7 @@ struct SettingsView: View {
                 }
 
                 Slider(value: $taskMinConfidence, in: 0.3...0.9, step: 0.1)
-                    .onChange(of: taskMinConfidence) { newValue in
+                    .onChange(of: taskMinConfidence) { _, newValue in
                         TaskAssistantSettings.shared.minConfidence = newValue
                     }
             }
@@ -436,7 +436,7 @@ struct SettingsView: View {
                 Toggle("", isOn: $adviceEnabled)
                     .toggleStyle(.switch)
                     .labelsHidden()
-                    .onChange(of: adviceEnabled) { newValue in
+                    .onChange(of: adviceEnabled) { _, newValue in
                         AdviceAssistantSettings.shared.isEnabled = newValue
                     }
             }
@@ -457,7 +457,7 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.menu)
                 .frame(width: 120)
-                .onChange(of: adviceExtractionInterval) { newValue in
+                .onChange(of: adviceExtractionInterval) { _, newValue in
                     AdviceAssistantSettings.shared.extractionInterval = newValue
                 }
             }
@@ -492,7 +492,7 @@ struct SettingsView: View {
                 }
 
                 Slider(value: $adviceMinConfidence, in: 0.5...0.95, step: 0.05)
-                    .onChange(of: adviceMinConfidence) { newValue in
+                    .onChange(of: adviceMinConfidence) { _, newValue in
                         AdviceAssistantSettings.shared.minConfidence = newValue
                     }
             }
