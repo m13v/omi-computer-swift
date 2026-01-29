@@ -943,6 +943,50 @@ extension APIClient {
     func deleteActionItem(id: String) async throws {
         try await delete("v1/action-items/\(id)")
     }
+
+    /// Creates a new action item
+    func createActionItem(
+        description: String,
+        dueAt: Date? = nil,
+        source: String? = nil,
+        priority: String? = nil,
+        metadata: [String: Any]? = nil
+    ) async throws -> TaskActionItem {
+        struct CreateRequest: Encodable {
+            let description: String
+            let dueAt: String?
+            let source: String?
+            let priority: String?
+            let metadata: String?
+
+            enum CodingKeys: String, CodingKey {
+                case description
+                case dueAt = "due_at"
+                case source, priority, metadata
+            }
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var metadataString: String? = nil
+        if let metadata = metadata {
+            if let data = try? JSONSerialization.data(withJSONObject: metadata),
+               let str = String(data: data, encoding: .utf8) {
+                metadataString = str
+            }
+        }
+
+        let request = CreateRequest(
+            description: description,
+            dueAt: dueAt.map { formatter.string(from: $0) },
+            source: source,
+            priority: priority,
+            metadata: metadataString
+        )
+
+        return try await post("v1/action-items", body: request)
+    }
 }
 
 // MARK: - Action Item Model (Standalone)
@@ -958,9 +1002,15 @@ struct TaskActionItem: Codable, Identifiable {
     let dueAt: Date?
     let completedAt: Date?
     let conversationId: String?
+    /// Source of the task: "screenshot", "transcription:omi", "transcription:desktop", "manual"
+    let source: String?
+    /// Priority: "high", "medium", "low"
+    let priority: String?
+    /// JSON metadata string containing extra info like source_app, confidence
+    let metadata: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, description, completed
+        case id, description, completed, source, priority, metadata
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case dueAt = "due_at"
@@ -978,6 +1028,55 @@ struct TaskActionItem: Codable, Identifiable {
         dueAt = try container.decodeIfPresent(Date.self, forKey: .dueAt)
         completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
         conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
+        priority = try container.decodeIfPresent(String.self, forKey: .priority)
+        metadata = try container.decodeIfPresent(String.self, forKey: .metadata)
+    }
+
+    /// Parse metadata JSON to extract source app name
+    var sourceApp: String? {
+        guard let metadata = metadata,
+              let data = metadata.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json["source_app"] as? String
+    }
+
+    /// Parse metadata JSON to extract confidence score
+    var confidence: Double? {
+        guard let metadata = metadata,
+              let data = metadata.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json["confidence"] as? Double
+    }
+
+    /// Display-friendly source label
+    var sourceLabel: String {
+        guard let source = source else { return "Task" }
+        switch source {
+        case "screenshot": return "Screen"
+        case "transcription:omi": return "OMI"
+        case "transcription:desktop": return "Desktop"
+        case "transcription:phone": return "Phone"
+        case "manual": return "Manual"
+        default: return "Task"
+        }
+    }
+
+    /// System icon name for source
+    var sourceIcon: String {
+        guard let source = source else { return "list.bullet" }
+        switch source {
+        case "screenshot": return "camera.fill"
+        case "transcription:omi": return "waveform"
+        case "transcription:desktop": return "desktopcomputer"
+        case "transcription:phone": return "iphone"
+        case "manual": return "square.and.pencil"
+        default: return "list.bullet"
+        }
     }
 }
 
@@ -1309,5 +1408,176 @@ extension APIClient {
     /// Fetches all app capabilities
     func getAppCapabilities() async throws -> [OmiAppCapability] {
         return try await get("v1/app-capabilities")
+    }
+
+    // MARK: - Conversation Reprocessing
+
+    /// Reprocess a conversation with a specific app
+    func reprocessConversation(conversationId: String, appId: String) async throws {
+        struct ReprocessRequest: Encodable {
+            let app_id: String
+        }
+        struct ReprocessResponse: Decodable {
+            let success: Bool
+            let message: String
+        }
+        let body = ReprocessRequest(app_id: appId)
+        let _: ReprocessResponse = try await post("v1/conversations/\(conversationId)/reprocess", body: body)
+    }
+}
+
+// MARK: - Chat API
+
+extension APIClient {
+
+    /// Fetches chat messages for the current user
+    func getChatMessages(appId: String? = nil, limit: Int = 50) async throws -> [ServerChatMessage] {
+        var queryItems: [String] = ["limit=\(limit)"]
+        if let appId = appId {
+            queryItems.append("app_id=\(appId)")
+        }
+        let endpoint = "v2/messages?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Sends a chat message and returns the AI response
+    func sendChatMessage(text: String, appId: String? = nil) async throws -> ServerChatMessage {
+        struct SendRequest: Encodable {
+            let text: String
+            let file_ids: [String]
+        }
+        struct SendResponse: Decodable {
+            let id: String
+            let text: String
+            let createdAt: Date
+            let sender: MessageSenderType
+            let appId: String?
+            let type: MessageTypeValue
+            let memoriesId: [String]
+            let chatSessionId: String?
+
+            enum CodingKeys: String, CodingKey {
+                case id, text, sender, type
+                case createdAt = "created_at"
+                case appId = "app_id"
+                case memoriesId = "memories_id"
+                case chatSessionId = "chat_session_id"
+            }
+
+            var asServerChatMessage: ServerChatMessage {
+                ServerChatMessage(
+                    id: id,
+                    text: text,
+                    createdAt: createdAt,
+                    sender: sender,
+                    appId: appId,
+                    type: type,
+                    memoriesId: memoriesId,
+                    chatSessionId: chatSessionId
+                )
+            }
+        }
+
+        var endpoint = "v2/messages"
+        if let appId = appId {
+            endpoint += "?app_id=\(appId)"
+        }
+
+        let body = SendRequest(text: text, file_ids: [])
+        let response: SendResponse = try await post(endpoint, body: body)
+        return response.asServerChatMessage
+    }
+
+    /// Clears chat messages and returns the initial greeting message
+    func clearChatMessages(appId: String? = nil) async throws -> ClearChatResponse {
+        var endpoint = "v2/messages"
+        if let appId = appId {
+            endpoint += "?app_id=\(appId)"
+        }
+
+        let url = URL(string: baseURL + endpoint)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return try decoder.decode(ClearChatResponse.self, from: data)
+    }
+}
+
+// MARK: - Chat Models
+
+enum MessageSenderType: String, Codable {
+    case ai
+    case human
+}
+
+enum MessageTypeValue: String, Codable {
+    case text
+    case daySummary = "day_summary"
+}
+
+struct ServerChatMessage: Codable, Identifiable {
+    let id: String
+    let text: String
+    let createdAt: Date
+    let sender: MessageSenderType
+    let appId: String?
+    let type: MessageTypeValue
+    let memoriesId: [String]
+    let chatSessionId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, sender, type
+        case createdAt = "created_at"
+        case appId = "app_id"
+        case memoriesId = "memories_id"
+        case chatSessionId = "chat_session_id"
+    }
+
+    init(id: String, text: String, createdAt: Date, sender: MessageSenderType, appId: String?, type: MessageTypeValue, memoriesId: [String], chatSessionId: String?) {
+        self.id = id
+        self.text = text
+        self.createdAt = createdAt
+        self.sender = sender
+        self.appId = appId
+        self.type = type
+        self.memoriesId = memoriesId
+        self.chatSessionId = chatSessionId
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        sender = try container.decodeIfPresent(MessageSenderType.self, forKey: .sender) ?? .human
+        appId = try container.decodeIfPresent(String.self, forKey: .appId)
+        type = try container.decodeIfPresent(MessageTypeValue.self, forKey: .type) ?? .text
+        memoriesId = try container.decodeIfPresent([String].self, forKey: .memoriesId) ?? []
+        chatSessionId = try container.decodeIfPresent(String.self, forKey: .chatSessionId)
+    }
+}
+
+struct ClearChatResponse: Codable {
+    let deletedCount: Int
+    let initialMessage: ServerChatMessage?
+
+    enum CodingKeys: String, CodingKey {
+        case deletedCount = "deleted_count"
+        case initialMessage = "initial_message"
     }
 }
