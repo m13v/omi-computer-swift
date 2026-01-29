@@ -718,7 +718,17 @@ class AuthService {
         // Clear saved auth state and tokens
         saveAuthState(isSignedIn: false, email: nil, userId: nil)
         clearTokens()
-        NSLog("OMI AUTH: Signed out and cleared saved state")
+
+        // Clear onboarding state so user goes through onboarding again on next sign in
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        UserDefaults.standard.removeObject(forKey: "onboardingStep")
+        UserDefaults.standard.removeObject(forKey: "hasTriggeredNotification")
+        UserDefaults.standard.removeObject(forKey: "hasTriggeredAutomation")
+        UserDefaults.standard.removeObject(forKey: "hasTriggeredScreenRecording")
+        UserDefaults.standard.removeObject(forKey: "hasTriggeredMicrophone")
+        UserDefaults.standard.removeObject(forKey: "hasTriggeredSystemAudio")
+
+        NSLog("OMI AUTH: Signed out and cleared saved state + onboarding")
     }
 
     // MARK: - Helper Methods
