@@ -57,12 +57,55 @@ struct SettingsContentView: View {
     // Selected section
     @State private var selectedSection: SettingsSection = .proactiveAssistant
 
+    // Notification settings (from backend)
+    @State private var dailySummaryEnabled: Bool = true
+    @State private var dailySummaryHour: Int = 22
+    @State private var notificationsEnabled: Bool = true
+    @State private var notificationFrequency: Int = 3
+
+    // Privacy settings (from backend)
+    @State private var recordingPermissionEnabled: Bool = false
+    @State private var privateCloudSyncEnabled: Bool = true
+
+    // Transcription settings (from backend)
+    @State private var singleLanguageMode: Bool = false
+    @State private var customVocabulary: String = ""
+
+    // Language setting
+    @State private var userLanguage: String = "en"
+
+    // Loading states
+    @State private var isLoadingSettings: Bool = false
+
     private let cooldownOptions = [1, 2, 5, 10, 15, 30, 60]
     private let analysisDelayOptions = [0, 60, 300] // seconds: instant, 1 min, 5 min
     private let extractionIntervalOptions: [Double] = [10.0, 600.0, 3600.0] // 10s, 10min, 1hr
+    private let hourOptions = Array(0...23)
+    private let frequencyOptions = [
+        (0, "Off"),
+        (1, "Minimal"),
+        (2, "Low"),
+        (3, "Balanced"),
+        (4, "High"),
+        (5, "Maximum")
+    ]
+    private let languageOptions = [
+        ("en", "English"),
+        ("es", "Spanish"),
+        ("fr", "French"),
+        ("de", "German"),
+        ("it", "Italian"),
+        ("pt", "Portuguese"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("zh", "Chinese"),
+        ("vi", "Vietnamese")
+    ]
 
     enum SettingsSection: String, CaseIterable {
         case proactiveAssistant = "Proactive Assistant"
+        case notifications = "Notifications"
+        case privacy = "Privacy"
         case account = "Account"
         case about = "About"
     }
@@ -112,11 +155,18 @@ struct SettingsContentView: View {
             switch selectedSection {
             case .proactiveAssistant:
                 proactiveAssistantSection
+            case .notifications:
+                notificationsSection
+            case .privacy:
+                privacySection
             case .account:
                 accountSection
             case .about:
                 aboutSection
             }
+        }
+        .onAppear {
+            loadBackendSettings()
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             if let userInfo = notification.userInfo, let state = userInfo["isMonitoring"] as? Bool {
@@ -456,6 +506,279 @@ struct SettingsContentView: View {
         }
     }
 
+    // MARK: - Notifications Section
+
+    private var notificationsSection: some View {
+        VStack(spacing: 20) {
+            // Daily Summary
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "text.badge.checkmark")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Daily Summary")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $dailySummaryEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: dailySummaryEnabled) { _, newValue in
+                                updateDailySummarySettings(enabled: newValue)
+                            }
+                    }
+
+                    Text("Receive a daily summary of your conversations and activities")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if dailySummaryEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        settingRow(title: "Summary Time", subtitle: "When to send your daily summary") {
+                            Picker("", selection: $dailySummaryHour) {
+                                ForEach(hourOptions, id: \.self) { hour in
+                                    Text(formatHour(hour)).tag(hour)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 100)
+                            .onChange(of: dailySummaryHour) { _, newValue in
+                                updateDailySummarySettings(hour: newValue)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Notification Frequency
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "bell.badge.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Notifications")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $notificationsEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: notificationsEnabled) { _, newValue in
+                                updateNotificationSettings(enabled: newValue)
+                            }
+                    }
+
+                    Text("Control how often you receive notifications")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if notificationsEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        settingRow(title: "Frequency", subtitle: "How often to receive notifications") {
+                            Picker("", selection: $notificationFrequency) {
+                                ForEach(frequencyOptions, id: \.0) { option in
+                                    Text(option.1).tag(option.0)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 120)
+                            .onChange(of: notificationFrequency) { _, newValue in
+                                updateNotificationSettings(frequency: newValue)
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Language
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.purplePrimary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Language")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Preferred language for transcription and summaries")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Picker("", selection: $userLanguage) {
+                        ForEach(languageOptions, id: \.0) { option in
+                            Text(option.1).tag(option.0)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 130)
+                    .onChange(of: userLanguage) { _, newValue in
+                        updateLanguage(newValue)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Privacy Section
+
+    private var privacySection: some View {
+        VStack(spacing: 20) {
+            // Recording Permission
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "mic.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Store Recordings")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Allow Omi to store audio recordings of your conversations")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $recordingPermissionEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: recordingPermissionEnabled) { _, newValue in
+                                updateRecordingPermission(newValue)
+                            }
+                    }
+                }
+            }
+
+            // Private Cloud Sync
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "cloud.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Private Cloud Sync")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Sync your data securely to your private cloud storage")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $privateCloudSyncEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: privateCloudSyncEnabled) { _, newValue in
+                                updatePrivateCloudSync(newValue)
+                            }
+                    }
+                }
+            }
+
+            // Transcription Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Transcription")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Text("Configure how Omi transcribes your conversations")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Single Language Mode", subtitle: "Disable automatic language translation") {
+                        Toggle("", isOn: $singleLanguageMode)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: singleLanguageMode) { _, newValue in
+                                updateTranscriptionPreferences(singleLanguageMode: newValue)
+                            }
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Custom Vocabulary")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        Text("Add words to improve transcription accuracy (comma-separated)")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        TextField("e.g., Omi, Claude, API", text: $customVocabulary)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                updateTranscriptionPreferences(vocabulary: customVocabulary)
+                            }
+                    }
+                }
+            }
+
+            // Data Management
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.purplePrimary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Data & Privacy")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Manage your data and privacy settings")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Button("Manage") {
+                        if let url = URL(string: "https://omi.me/privacy") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
     // MARK: - Account Section
 
     private var accountSection: some View {
@@ -723,6 +1046,132 @@ struct SettingsContentView: View {
         } else {
             let hours = Int(seconds / 3600)
             return hours == 1 ? "1 hour" : "\(hours) hours"
+        }
+    }
+
+    private func formatHour(_ hour: Int) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "h:00 a"
+        var components = DateComponents()
+        components.hour = hour
+        if let date = Calendar.current.date(from: components) {
+            return formatter.string(from: date)
+        }
+        return "\(hour):00"
+    }
+
+    // MARK: - Backend Settings
+
+    private func loadBackendSettings() {
+        guard !isLoadingSettings else { return }
+        isLoadingSettings = true
+
+        Task {
+            do {
+                // Load all settings in parallel
+                async let dailySummaryTask = APIClient.shared.getDailySummarySettings()
+                async let notificationsTask = APIClient.shared.getNotificationSettings()
+                async let languageTask = APIClient.shared.getUserLanguage()
+                async let recordingTask = APIClient.shared.getRecordingPermission()
+                async let cloudSyncTask = APIClient.shared.getPrivateCloudSync()
+                async let transcriptionTask = APIClient.shared.getTranscriptionPreferences()
+
+                let (dailySummary, notifications, language, recording, cloudSync, transcription) = try await (
+                    dailySummaryTask,
+                    notificationsTask,
+                    languageTask,
+                    recordingTask,
+                    cloudSyncTask,
+                    transcriptionTask
+                )
+
+                await MainActor.run {
+                    dailySummaryEnabled = dailySummary.enabled
+                    dailySummaryHour = dailySummary.hour
+                    notificationsEnabled = notifications.enabled
+                    notificationFrequency = notifications.frequency
+                    userLanguage = language.language
+                    recordingPermissionEnabled = recording.enabled
+                    privateCloudSyncEnabled = cloudSync.enabled
+                    singleLanguageMode = transcription.singleLanguageMode
+                    customVocabulary = transcription.vocabulary.joined(separator: ", ")
+                    isLoadingSettings = false
+                }
+            } catch {
+                logError("Failed to load backend settings", error: error)
+                await MainActor.run {
+                    isLoadingSettings = false
+                }
+            }
+        }
+    }
+
+    private func updateDailySummarySettings(enabled: Bool? = nil, hour: Int? = nil) {
+        Task {
+            do {
+                let _ = try await APIClient.shared.updateDailySummarySettings(enabled: enabled, hour: hour)
+            } catch {
+                logError("Failed to update daily summary settings", error: error)
+            }
+        }
+    }
+
+    private func updateNotificationSettings(enabled: Bool? = nil, frequency: Int? = nil) {
+        Task {
+            do {
+                let _ = try await APIClient.shared.updateNotificationSettings(enabled: enabled, frequency: frequency)
+            } catch {
+                logError("Failed to update notification settings", error: error)
+            }
+        }
+    }
+
+    private func updateLanguage(_ language: String) {
+        Task {
+            do {
+                let _ = try await APIClient.shared.updateUserLanguage(language)
+            } catch {
+                logError("Failed to update language", error: error)
+            }
+        }
+    }
+
+    private func updateRecordingPermission(_ enabled: Bool) {
+        Task {
+            do {
+                try await APIClient.shared.setRecordingPermission(enabled: enabled)
+            } catch {
+                logError("Failed to update recording permission", error: error)
+            }
+        }
+    }
+
+    private func updatePrivateCloudSync(_ enabled: Bool) {
+        Task {
+            do {
+                try await APIClient.shared.setPrivateCloudSync(enabled: enabled)
+            } catch {
+                logError("Failed to update private cloud sync", error: error)
+            }
+        }
+    }
+
+    private func updateTranscriptionPreferences(singleLanguageMode: Bool? = nil, vocabulary: String? = nil) {
+        Task {
+            do {
+                var vocabArray: [String]? = nil
+                if let vocab = vocabulary {
+                    vocabArray = vocab.split(separator: ",")
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { !$0.isEmpty }
+                }
+                let _ = try await APIClient.shared.updateTranscriptionPreferences(
+                    singleLanguageMode: singleLanguageMode,
+                    vocabulary: vocabArray
+                )
+            } catch {
+                logError("Failed to update transcription preferences", error: error)
+            }
         }
     }
 }
