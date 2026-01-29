@@ -645,6 +645,72 @@ struct ConversationSearchResult: Codable {
     }
 }
 
+// MARK: - Memory Models
+
+enum MemoryCategory: String, Codable, CaseIterable {
+    case system
+    case interesting
+    case manual
+
+    var displayName: String {
+        switch self {
+        case .system: return "System"
+        case .interesting: return "Interesting"
+        case .manual: return "Manual"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .system: return "gearshape"
+        case .interesting: return "sparkles"
+        case .manual: return "square.and.pencil"
+        }
+    }
+}
+
+struct ServerMemory: Codable, Identifiable {
+    let id: String
+    let content: String
+    let category: MemoryCategory
+    let createdAt: Date
+    let updatedAt: Date
+    let conversationId: String?
+    let reviewed: Bool
+    let userReview: Bool?
+    let visibility: String
+    let manuallyAdded: Bool
+    let scoring: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, content, category, reviewed, visibility, scoring
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case conversationId = "conversation_id"
+        case userReview = "user_review"
+        case manuallyAdded = "manually_added"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        content = try container.decode(String.self, forKey: .content)
+        category = try container.decodeIfPresent(MemoryCategory.self, forKey: .category) ?? .system
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
+        reviewed = try container.decodeIfPresent(Bool.self, forKey: .reviewed) ?? false
+        userReview = try container.decodeIfPresent(Bool.self, forKey: .userReview)
+        visibility = try container.decodeIfPresent(String.self, forKey: .visibility) ?? "private"
+        manuallyAdded = try container.decodeIfPresent(Bool.self, forKey: .manuallyAdded) ?? false
+        scoring = try container.decodeIfPresent(String.self, forKey: .scoring)
+    }
+
+    var isPublic: Bool {
+        visibility == "public"
+    }
+}
+
 // MARK: - Create Conversation API
 
 extension APIClient {
@@ -715,6 +781,102 @@ extension APIClient {
     }
 }
 
+// MARK: - Memories API
+
+extension APIClient {
+
+    /// Fetches memories from the API
+    func getMemories(limit: Int = 100, offset: Int = 0) async throws -> [ServerMemory] {
+        let endpoint = "v3/memories?limit=\(limit)&offset=\(offset)"
+        return try await get(endpoint)
+    }
+
+    /// Creates a new manual memory
+    func createMemory(content: String, visibility: String = "private") async throws -> CreateMemoryResponse {
+        struct CreateRequest: Encodable {
+            let content: String
+            let visibility: String
+        }
+        let body = CreateRequest(content: content, visibility: visibility)
+        return try await post("v3/memories", body: body)
+    }
+
+    /// Deletes a memory by ID
+    func deleteMemory(id: String) async throws {
+        try await delete("v3/memories/\(id)")
+    }
+
+    /// Edits a memory's content
+    func editMemory(id: String, content: String) async throws {
+        struct EditRequest: Encodable {
+            let value: String
+        }
+        let body = EditRequest(value: content)
+        let _: MemoryStatusResponse = try await patch("v3/memories/\(id)", body: body)
+    }
+
+    /// Updates a memory's visibility
+    func updateMemoryVisibility(id: String, visibility: String) async throws {
+        struct VisibilityRequest: Encodable {
+            let value: String
+        }
+        let body = VisibilityRequest(value: visibility)
+        let _: MemoryStatusResponse = try await patch("v3/memories/\(id)/visibility", body: body)
+    }
+
+    /// Reviews/approves a memory
+    func reviewMemory(id: String, value: Bool) async throws {
+        struct ReviewRequest: Encodable {
+            let value: Bool
+        }
+        let body = ReviewRequest(value: value)
+        let _: MemoryStatusResponse = try await post("v3/memories/\(id)/review", body: body)
+    }
+
+    // MARK: - PATCH helper
+
+    func patch<T: Decodable, B: Encodable>(
+        _ endpoint: String,
+        body: B,
+        requireAuth: Bool = true
+    ) async throws -> T {
+        let url = URL(string: baseURL + endpoint)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: requireAuth)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        return try await performPatchRequest(request)
+    }
+
+    private func performPatchRequest<T: Decodable>(_ request: URLRequest) async throws -> T {
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return try decoder.decode(T.self, from: data)
+    }
+}
+
+struct CreateMemoryResponse: Codable {
+    let id: String
+    let message: String
+}
+
+struct MemoryStatusResponse: Codable {
+    let status: String
+}
+
 // MARK: - Common API Models
 
 struct UserProfile: Codable {
@@ -722,4 +884,99 @@ struct UserProfile: Codable {
     let email: String?
     let name: String?
     let createdAt: Date?
+}
+
+// MARK: - Action Items API
+
+extension APIClient {
+
+    /// Fetches action items from the API with optional filtering
+    func getActionItems(
+        limit: Int = 100,
+        offset: Int = 0,
+        completed: Bool? = nil
+    ) async throws -> [TaskActionItem] {
+        var queryItems: [String] = [
+            "limit=\(limit)",
+            "offset=\(offset)"
+        ]
+
+        if let completed = completed {
+            queryItems.append("completed=\(completed)")
+        }
+
+        let endpoint = "v1/action-items?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Updates an action item
+    func updateActionItem(
+        id: String,
+        completed: Bool? = nil,
+        description: String? = nil,
+        dueAt: Date? = nil
+    ) async throws -> TaskActionItem {
+        struct UpdateRequest: Encodable {
+            let completed: Bool?
+            let description: String?
+            let dueAt: String?
+
+            enum CodingKeys: String, CodingKey {
+                case completed, description
+                case dueAt = "due_at"
+            }
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let request = UpdateRequest(
+            completed: completed,
+            description: description,
+            dueAt: dueAt.map { formatter.string(from: $0) }
+        )
+
+        return try await patch("v1/action-items/\(id)", body: request)
+    }
+
+    /// Deletes an action item
+    func deleteActionItem(id: String) async throws {
+        try await delete("v1/action-items/\(id)")
+    }
+}
+
+// MARK: - Action Item Model (Standalone)
+
+/// Standalone action item stored in Firestore subcollection
+/// Different from ActionItem which is embedded in conversation structured data
+struct TaskActionItem: Codable, Identifiable {
+    let id: String
+    let description: String
+    let completed: Bool
+    let createdAt: Date
+    let updatedAt: Date?
+    let dueAt: Date?
+    let completedAt: Date?
+    let conversationId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, description, completed
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case dueAt = "due_at"
+        case completedAt = "completed_at"
+        case conversationId = "conversation_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        completed = try container.decodeIfPresent(Bool.self, forKey: .completed) ?? false
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        dueAt = try container.decodeIfPresent(Date.self, forKey: .dueAt)
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
+        conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
+    }
 }
