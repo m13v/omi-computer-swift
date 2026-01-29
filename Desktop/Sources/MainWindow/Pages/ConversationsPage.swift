@@ -1,4 +1,26 @@
 import SwiftUI
+import Combine
+
+// MARK: - Search Debouncer
+
+/// Debounces search queries to avoid excessive API calls
+class SearchDebouncer: ObservableObject {
+    @Published var debouncedQuery: String = ""
+    private var cancellables = Set<AnyCancellable>()
+
+    init() {
+        // Observe changes to debouncedQuery with 500ms delay
+        $debouncedQuery
+            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+            .removeDuplicates()
+            .sink { [weak self] _ in
+                // This triggers the search via onChange in the view
+            }
+            .store(in: &cancellables)
+    }
+}
+
+// MARK: - Conversations Page
 
 struct ConversationsPage: View {
     @ObservedObject var appState: AppState
@@ -12,6 +34,13 @@ struct ConversationsPage: View {
 
     // Success state after finishing conversation
     @State private var showSavedSuccess: Bool = false
+
+    // Search state
+    @State private var searchQuery: String = ""
+    @State private var searchResults: [ServerConversation] = []
+    @State private var isSearching: Bool = false
+    @State private var searchError: String? = nil
+    @StateObject private var searchDebouncer = SearchDebouncer()
 
     var body: some View {
         Group {
@@ -118,6 +147,7 @@ struct ConversationsPage: View {
             .buttonStyle(.plain)
         }
         .frame(height: 14)
+        .contentShape(Rectangle())
         .gesture(
             DragGesture()
                 .onChanged { value in
@@ -127,10 +157,13 @@ struct ConversationsPage: View {
                     }
                 }
         )
-        .onHover { hovering in
-            if hovering && !isTranscriptCollapsed {
-                NSCursor.resizeUpDown.push()
-            } else {
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                if !isTranscriptCollapsed {
+                    NSCursor.resizeUpDown.push()
+                }
+            case .ended:
                 NSCursor.pop()
             }
         }
@@ -140,36 +173,177 @@ struct ConversationsPage: View {
 
     private var conversationListSection: some View {
         VStack(spacing: 0) {
-            // Section header
-            HStack {
-                Text("Past Conversations")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(OmiColors.textSecondary)
+            // Section header with search bar
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Past Conversations")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(OmiColors.textSecondary)
 
-                Spacer()
+                    if searchQuery.isEmpty {
+                        Text("(\(appState.conversations.count))")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                    } else {
+                        Text("(\(searchResults.count) results)")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
 
-                if appState.isLoadingConversations {
-                    ProgressView()
-                        .scaleEffect(0.6)
+                    Spacer()
+
+                    if appState.isLoadingConversations || isSearching {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                    }
                 }
+
+                // Search bar
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    TextField("Search conversations...", text: $searchQuery)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .onChange(of: searchQuery) { _, newValue in
+                            searchDebouncer.debouncedQuery = newValue
+                        }
+                        .onChange(of: searchDebouncer.debouncedQuery) { _, newValue in
+                            performSearch(query: newValue)
+                        }
+
+                    if !searchQuery.isEmpty {
+                        Button(action: {
+                            searchQuery = ""
+                            searchResults = []
+                            searchError = nil
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(OmiColors.backgroundTertiary.opacity(0.5))
+                )
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
 
-            // List
-            ConversationListView(
-                conversations: appState.conversations,
-                isLoading: appState.isLoadingConversations,
-                error: appState.conversationsError,
-                onSelect: { conversation in
-                    selectedConversation = conversation
-                },
-                onRefresh: {
-                    Task {
-                        await appState.refreshConversations()
+            // List - show search results or regular conversations
+            if !searchQuery.isEmpty {
+                // Search results view
+                searchResultsView
+            } else {
+                // Regular conversation list
+                ConversationListView(
+                    conversations: appState.conversations,
+                    isLoading: appState.isLoadingConversations,
+                    error: appState.conversationsError,
+                    onSelect: { conversation in
+                        selectedConversation = conversation
+                    },
+                    onRefresh: {
+                        Task {
+                            await appState.refreshConversations()
+                        }
                     }
+                )
+            }
+        }
+    }
+
+    // MARK: - Search Results View
+
+    private var searchResultsView: some View {
+        Group {
+            if isSearching {
+                VStack(spacing: 12) {
+                    ProgressView()
+                    Text("Searching...")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
                 }
-            )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = searchError {
+                VStack(spacing: 12) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(.system(size: 32))
+                        .foregroundColor(OmiColors.textTertiary)
+                    Text(error)
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            } else if searchResults.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 32))
+                        .foregroundColor(OmiColors.textTertiary.opacity(0.5))
+                    Text("No conversations found")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+                    Text("Try a different search term")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textQuaternary)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(searchResults) { conversation in
+                            ConversationRowView(
+                                conversation: conversation,
+                                onTap: {
+                                    selectedConversation = conversation
+                                }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 16)
+                }
+            }
+        }
+    }
+
+    // MARK: - Search
+
+    private func performSearch(query: String) {
+        guard !query.isEmpty else {
+            searchResults = []
+            searchError = nil
+            return
+        }
+
+        isSearching = true
+        searchError = nil
+
+        Task {
+            do {
+                let result = try await APIClient.shared.searchConversations(
+                    query: query,
+                    page: 1,
+                    perPage: 50,
+                    includeDiscarded: false
+                )
+                searchResults = result.items
+                isSearching = false
+            } catch {
+                searchError = error.localizedDescription
+                searchResults = []
+                isSearching = false
+            }
         }
     }
 
