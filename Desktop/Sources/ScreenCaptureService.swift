@@ -52,7 +52,7 @@ class ScreenCaptureService {
             log("Screen capture test: FAILED (exit code: \(process.terminationStatus))")
             return false
         } catch {
-            log("Screen capture test: ERROR - \(error.localizedDescription)")
+            logError("Screen capture test failed", error: error)
             return false
         }
     }
@@ -151,7 +151,7 @@ class ScreenCaptureService {
 
             return jpegData(from: image)
         } catch {
-            log("ScreenCaptureKit error: \(error)")
+            logError("ScreenCaptureKit error", error: error)
             return nil
         }
     }
@@ -193,7 +193,7 @@ class ScreenCaptureService {
             process.waitUntilExit()
 
             if process.terminationStatus != 0 {
-                log("screencapture failed with exit code: \(process.terminationStatus)")
+                logError("screencapture failed with exit code: \(process.terminationStatus)")
                 return nil
             }
 
