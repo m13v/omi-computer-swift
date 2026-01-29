@@ -129,14 +129,16 @@ struct FeedbackView: View {
         // Create a Sentry event ID (capture a message to attach feedback to)
         let eventId = SentrySDK.capture(message: "User Feedback Submitted")
 
-        // Create user feedback
-        let userFeedback = UserFeedback(eventId: eventId)
-        userFeedback.comments = feedbackText.trimmingCharacters(in: .whitespacesAndNewlines)
-        userFeedback.email = email.trimmingCharacters(in: .whitespacesAndNewlines)
-        userFeedback.name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Create feedback using new API
+        let feedback = SentryFeedback(
+            message: feedbackText.trimmingCharacters(in: .whitespacesAndNewlines),
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+            associatedEventId: eventId
+        )
 
         // Submit to Sentry
-        SentrySDK.capture(userFeedback: userFeedback)
+        SentrySDK.capture(feedback: feedback)
 
         log("User feedback submitted to Sentry")
 
