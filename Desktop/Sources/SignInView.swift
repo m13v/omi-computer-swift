@@ -9,7 +9,7 @@ struct SignInView: View {
 
             // Logo/Title
             VStack(spacing: 16) {
-                Text("OMI")
+                Text("Omi")
                     .font(.system(size: 48, weight: .bold))
                     .foregroundColor(.white)
 
