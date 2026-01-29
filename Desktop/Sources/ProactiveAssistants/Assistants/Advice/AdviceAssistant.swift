@@ -153,13 +153,11 @@ actor AdviceAssistant: ProactiveAssistant {
     private func sendAdviceNotification(advice: ExtractedAdvice) async {
         let message = advice.advice
 
-        // No cooldown needed - extraction interval already limits frequency
         await MainActor.run {
             NotificationService.shared.sendNotification(
                 title: "Tip",
                 message: message,
-                assistantId: identifier,
-                applyCooldown: false
+                assistantId: identifier
             )
         }
     }
