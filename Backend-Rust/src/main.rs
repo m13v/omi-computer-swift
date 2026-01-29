@@ -32,7 +32,7 @@ mod services;
 
 use auth::{firebase_auth_extension, FirebaseAuth};
 use config::Config;
-use routes::{auth_routes, conversations_routes, health_routes, memories_routes};
+use routes::{action_items_routes, auth_routes, conversations_routes, health_routes, memories_routes};
 use services::FirestoreService;
 
 /// Application state shared across handlers
@@ -132,6 +132,7 @@ async fn main() {
         .merge(health_routes())
         .merge(memories_routes())
         .merge(conversations_routes())
+        .merge(action_items_routes())
         .with_state(state);
 
     // Merge both (now both are Router<()>), then add layers
