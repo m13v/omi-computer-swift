@@ -37,6 +37,9 @@ time = { version = "0.3.36", features = ["macros", "formatting", "local-offset"]
 futures = "0.3"
 async-stream = "0.3"
 
+# Compression (for transcript decompression)
+flate2 = "1.0"
+
 # URL encoding for OAuth
 urlencoding = "2.1"
 
