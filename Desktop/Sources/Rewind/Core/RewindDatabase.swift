@@ -111,11 +111,11 @@ actor RewindDatabase {
             throw RewindError.databaseNotInitialized
         }
 
-        var mutableScreenshot = screenshot
-        try dbQueue.write { db in
-            try mutableScreenshot.insert(db)
+        return try dbQueue.write { db -> Screenshot in
+            var record = screenshot
+            try record.insert(db)
+            return record
         }
-        return mutableScreenshot
     }
 
     /// Update OCR text for a screenshot
