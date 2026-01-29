@@ -9,6 +9,7 @@ enum GlowDemoPhase {
 }
 
 /// Observable object to manage demo window state
+@MainActor
 class GlowDemoState: ObservableObject {
     static let shared = GlowDemoState()
     @Published var phase: GlowDemoPhase = .none
