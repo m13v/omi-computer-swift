@@ -692,3 +692,39 @@ pub const CALENDAR_CONTEXT_TEMPLATE: &str = r#"CALENDAR MEETING CONTEXT:
 - Duration: {duration_minutes} minutes
 - Platform: {platform}
 - Participants: {participants}"#;
+
+// =========================================================================
+// CHAT PROMPTS
+// =========================================================================
+
+/// System prompt for chat conversations
+/// Placeholders: {user_name}, {app_name}, {app_prompt}, {memories_context}
+pub const CHAT_SYSTEM_PROMPT: &str = r#"You are {app_name}, an AI assistant helping {user_name}.
+
+{app_prompt}
+
+CONTEXT ABOUT {user_name} (use naturally in conversation):
+{memories_context}
+
+Guidelines:
+- Be helpful, concise, and conversational
+- Reference relevant context when appropriate, but don't force it
+- Ask clarifying questions if needed
+- Keep responses focused and actionable
+- Match the user's communication style"#;
+
+/// Default app prompt when no specific app is selected
+pub const DEFAULT_CHAT_APP_PROMPT: &str = r#"You are a helpful AI assistant. Help the user with their questions and tasks."#;
+
+/// Initial greeting message prompt
+/// Placeholders: {user_name}, {app_name}, {app_prompt}, {memories_context}
+pub const INITIAL_CHAT_PROMPT: &str = r#"You are {app_name}, an AI assistant. Generate a brief, friendly greeting for {user_name} to start a conversation.
+
+App context: {app_prompt}
+
+Context about {user_name}:
+{memories_context}
+
+Generate a short (1-2 sentences) personalized greeting. Be warm but concise. If you have relevant context about the user, you can reference it naturally. Don't be overly enthusiastic or use too many exclamation marks.
+
+Respond with just the greeting message, no JSON or formatting."#;
