@@ -10,6 +10,9 @@ struct ConversationsPage: View {
     private let minTranscriptHeight: CGFloat = 60
     private let maxTranscriptHeight: CGFloat = 400
 
+    // Success state after finishing conversation
+    @State private var showSavedSuccess: Bool = false
+
     var body: some View {
         Group {
             if let selected = selectedConversation {
@@ -87,66 +90,49 @@ struct ConversationsPage: View {
     }
 
     private var splitterHandle: some View {
-        VStack(spacing: 0) {
-            // Visual handle
-            HStack {
-                Spacer()
+        // Draggable splitter bar with centered chevron button
+        ZStack {
+            // The splitter line itself - thick enough to grab
+            Rectangle()
+                .fill(OmiColors.backgroundTertiary)
 
-                // Collapse/expand button
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isTranscriptCollapsed.toggle()
-                    }
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: isTranscriptCollapsed ? "chevron.down" : "chevron.up")
-                            .font(.system(size: 10, weight: .semibold))
-
-                        Text(isTranscriptCollapsed ? "Show Transcript" : "Hide Transcript")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+            // Centered chevron button
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isTranscriptCollapsed.toggle()
+                }
+            }) {
+                Image(systemName: isTranscriptCollapsed ? "chevron.down" : "chevron.up")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .frame(width: 28, height: 14)
                     .background(
                         Capsule()
-                            .fill(OmiColors.backgroundTertiary)
+                            .fill(OmiColors.backgroundSecondary)
+                            .overlay(
+                                Capsule()
+                                    .strokeBorder(OmiColors.textQuaternary.opacity(0.3), lineWidth: 0.5)
+                            )
                     )
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                // Drag handle indicator
-                if !isTranscriptCollapsed {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(OmiColors.textTertiary.opacity(0.4))
-                        .frame(width: 40, height: 4)
-                }
-
-                Spacer()
             }
-            .frame(height: 28)
-            .background(OmiColors.backgroundSecondary.opacity(0.5))
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        if !isTranscriptCollapsed {
-                            let newHeight = transcriptHeight + value.translation.height
-                            transcriptHeight = min(max(newHeight, minTranscriptHeight), maxTranscriptHeight)
-                        }
+            .buttonStyle(.plain)
+        }
+        .frame(height: 14)
+        .gesture(
+            DragGesture()
+                .onChanged { value in
+                    if !isTranscriptCollapsed {
+                        let newHeight = transcriptHeight + value.translation.height
+                        transcriptHeight = min(max(newHeight, minTranscriptHeight), maxTranscriptHeight)
                     }
-            )
-            .onHover { hovering in
-                if hovering && !isTranscriptCollapsed {
-                    NSCursor.resizeUpDown.push()
-                } else {
-                    NSCursor.pop()
                 }
+        )
+        .onHover { hovering in
+            if hovering && !isTranscriptCollapsed {
+                NSCursor.resizeUpDown.push()
+            } else {
+                NSCursor.pop()
             }
-
-            Divider()
-                .background(OmiColors.backgroundTertiary)
         }
     }
 
@@ -222,17 +208,17 @@ struct ConversationsPage: View {
     @State private var isPulsing = false
 
     private var recordingIndicator: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             // Pulsing dot
             ZStack {
                 Circle()
-                    .fill(OmiColors.error.opacity(0.3))
+                    .fill(OmiColors.purplePrimary.opacity(0.3))
                     .frame(width: 20, height: 20)
                     .scaleEffect(isPulsing ? 1.6 : 1.0)
                     .opacity(isPulsing ? 0.0 : 0.6)
 
                 Circle()
-                    .fill(OmiColors.error)
+                    .fill(OmiColors.purplePrimary)
                     .frame(width: 10, height: 10)
             }
             .animation(
@@ -242,41 +228,33 @@ struct ConversationsPage: View {
             )
             .onAppear { isPulsing = true }
 
-            Text("Recording")
+            Text("Listening")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(OmiColors.textPrimary)
 
-            // Audio level indicators
-            HStack(spacing: 12) {
-                audioLevelIndicator(
-                    icon: "mic.fill",
-                    level: appState.microphoneAudioLevel
-                )
+            // Audio level waveforms (restored original animation)
+            HStack(spacing: 16) {
+                HStack(spacing: 6) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                    AudioLevelWaveformView(
+                        level: appState.microphoneAudioLevel,
+                        barCount: 8,
+                        isActive: appState.isTranscribing
+                    )
+                }
 
-                audioLevelIndicator(
-                    icon: "speaker.wave.2.fill",
-                    level: appState.systemAudioLevel
-                )
-            }
-            .padding(.leading, 8)
-        }
-    }
-
-    private func audioLevelIndicator(icon: String, level: Float) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.system(size: 11))
-                .foregroundColor(level > 0.1 ? OmiColors.success : OmiColors.textTertiary)
-
-            // Simple level bar
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(OmiColors.backgroundTertiary)
-                    .frame(width: 40, height: 4)
-
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(level > 0.5 ? OmiColors.success : OmiColors.purplePrimary)
-                    .frame(width: 40 * CGFloat(min(level, 1.0)), height: 4)
+                HStack(spacing: 6) {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                    AudioLevelWaveformView(
+                        level: appState.systemAudioLevel,
+                        barCount: 8,
+                        isActive: appState.isTranscribing
+                    )
+                }
             }
         }
     }
@@ -287,11 +265,24 @@ struct ConversationsPage: View {
 
     private var finishButton: some View {
         Button(action: {
-            guard !isFinishing else { return }
+            guard !isFinishing && !showSavedSuccess else { return }
             isFinishing = true
             Task {
                 await appState.finishConversation()
                 isFinishing = false
+
+                // Show success state
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showSavedSuccess = true
+                }
+
+                // After 2.5 seconds, collapse transcript and reset
+                try? await Task.sleep(for: .seconds(2.5))
+
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    showSavedSuccess = false
+                    isTranscriptCollapsed = true
+                }
             }
         }) {
             HStack(spacing: 6) {
@@ -299,11 +290,14 @@ struct ConversationsPage: View {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: 12, height: 12)
+                } else if showSavedSuccess {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .bold))
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                 }
-                Text(isFinishing ? "Finishing..." : "Finish")
+                Text(isFinishing ? "Saving..." : (showSavedSuccess ? "Saved!" : "Finish"))
                     .font(.system(size: 13, weight: .medium))
             }
             .foregroundColor(.white)
@@ -311,11 +305,11 @@ struct ConversationsPage: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(isFinishing ? OmiColors.textTertiary : OmiColors.purplePrimary)
+                    .fill(isFinishing ? OmiColors.textTertiary : (showSavedSuccess ? OmiColors.success : OmiColors.purplePrimary))
             )
         }
         .buttonStyle(.plain)
-        .disabled(isFinishing || appState.liveSpeakerSegments.isEmpty)
+        .disabled(isFinishing || showSavedSuccess || appState.liveSpeakerSegments.isEmpty)
     }
 
     private var startRecordingButton: some View {
