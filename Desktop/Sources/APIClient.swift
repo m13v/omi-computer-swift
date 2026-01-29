@@ -1776,3 +1776,36 @@ struct UserProfileResponse: Codable {
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
     }
 }
+
+// MARK: - Focus Sessions API
+
+extension APIClient {
+
+    /// Fetch focus sessions with optional date filter
+    func getFocusSessions(limit: Int = 100, date: String? = nil) async throws -> [FocusSessionResponse] {
+        var endpoint = "v1/focus-sessions?limit=\(limit)"
+        if let date = date {
+            endpoint += "&date=\(date)"
+        }
+        return try await get(endpoint)
+    }
+
+    /// Create a new focus session
+    func createFocusSession(_ request: CreateFocusSessionRequest) async throws -> FocusSessionResponse {
+        return try await post("v1/focus-sessions", body: request)
+    }
+
+    /// Delete a focus session
+    func deleteFocusSession(_ id: String) async throws {
+        try await delete("v1/focus-sessions/\(id)")
+    }
+
+    /// Get focus statistics for a date
+    func getFocusStats(date: String? = nil) async throws -> FocusStatsResponse {
+        var endpoint = "v1/focus-stats"
+        if let date = date {
+            endpoint += "?date=\(date)"
+        }
+        return try await get(endpoint)
+    }
+}
