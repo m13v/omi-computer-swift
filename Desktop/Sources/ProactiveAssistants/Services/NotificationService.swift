@@ -4,20 +4,6 @@ import UserNotifications
 class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationService()
 
-    /// Per-assistant cooldown tracking
-    private var lastNotificationTimes: [String: Date] = [:]
-
-    /// Get cooldown seconds for a specific assistant
-    private func cooldownSeconds(for assistantId: String) -> TimeInterval {
-        switch assistantId {
-        case "focus":
-            return FocusAssistantSettings.shared.cooldownIntervalSeconds
-        default:
-            // Other assistants use extraction interval instead of notification cooldown
-            return AssistantSettings.shared.cooldownIntervalSeconds
-        }
-    }
-
     private override init() {
         super.init()
         // Set ourselves as the delegate to show notifications even when app is in foreground
@@ -41,21 +27,7 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         completionHandler()
     }
 
-    @discardableResult
-    func sendNotification(title: String, message: String, assistantId: String = "default", applyCooldown: Bool = true) -> Bool {
-        if applyCooldown {
-            let lastTime = lastNotificationTimes[assistantId] ?? .distantPast
-            let timeSinceLast = Date().timeIntervalSince(lastTime)
-            let cooldown = cooldownSeconds(for: assistantId)
-
-            if timeSinceLast < cooldown {
-                let remaining = cooldown - timeSinceLast
-                log("[\(assistantId)] Notification in cooldown (\(String(format: "%.1f", remaining))s remaining), skipping: \(message)")
-                return false
-            }
-            lastNotificationTimes[assistantId] = Date()
-        }
-
+    func sendNotification(title: String, message: String, assistantId: String = "default") {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = message
@@ -76,6 +48,5 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                 print("Notification sent successfully")
             }
         }
-        return true
     }
 }
