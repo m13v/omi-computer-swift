@@ -1,6 +1,7 @@
 import Foundation
 
 /// Manages Focus Assistant-specific settings stored in UserDefaults
+@MainActor
 class FocusAssistantSettings {
     static let shared = FocusAssistantSettings()
 
