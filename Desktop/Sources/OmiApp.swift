@@ -41,8 +41,16 @@ struct OMIApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
+        // Main desktop window
+        Window("Omi", id: "main") {
+            DesktopHomeView()
+        }
+        .windowStyle(.titleBar)
+        .defaultSize(width: 1200, height: 800)
+
+        // Menu bar
         MenuBarExtra {
-            MenuBarView(appState: appState, authState: authState, openOnboarding: { openWindow(id: "onboarding") })
+            MenuBarView(appState: appState, authState: authState, openOnboarding: { openWindow(id: "onboarding") }, openMain: { openWindow(id: "main") })
         } label: {
             Text("Omi")
         }
@@ -51,7 +59,26 @@ struct OMIApp: App {
         Window("Welcome to Omi Computer", id: "onboarding") {
             Group {
                 if authState.isSignedIn {
-                    OnboardingView(appState: appState)
+                    OnboardingView(appState: appState, onComplete: {
+                        // Open main window and close onboarding
+                        openWindow(id: "main")
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                            // Close onboarding window
+                            for window in NSApp.windows {
+                                if window.title == "Welcome to Omi Computer" {
+                                    window.close()
+                                }
+                            }
+                            // Activate main window
+                            for window in NSApp.windows {
+                                if window.title == "Omi" {
+                                    window.makeKeyAndOrderFront(nil)
+                                    window.appearance = NSAppearance(named: .darkAqua)
+                                }
+                            }
+                            NSApp.activate(ignoringOtherApps: true)
+                        }
+                    })
                 } else {
                     SignInView(authState: authState)
                 }
@@ -176,9 +203,20 @@ struct MenuBarView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var authState: AuthState
     var openOnboarding: () -> Void = {}
+    var openMain: () -> Void = {}
 
     var body: some View {
         if authState.isSignedIn {
+            Button("Open Omi") {
+                openMain()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+            .keyboardShortcut("o", modifiers: .command)
+
+            Divider()
+
             if let email = authState.userEmail {
                 Text("Signed in as \(email)")
                     .font(.caption)
