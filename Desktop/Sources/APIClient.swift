@@ -980,3 +980,334 @@ struct TaskActionItem: Codable, Identifiable {
         conversationId = try container.decodeIfPresent(String.self, forKey: .conversationId)
     }
 }
+
+// MARK: - App Models
+
+/// App summary for list views (lightweight)
+struct OmiApp: Codable, Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    let image: String
+    let category: String
+    let author: String
+    let capabilities: [String]
+    let approved: Bool
+    let `private`: Bool
+    let installs: Int
+    let ratingAvg: Double?
+    let ratingCount: Int
+    let isPaid: Bool
+    let price: Double?
+    var enabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, image, category, author, capabilities
+        case approved
+        case `private`
+        case installs
+        case ratingAvg = "rating_avg"
+        case ratingCount = "rating_count"
+        case isPaid = "is_paid"
+        case price
+        case enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        image = try container.decodeIfPresent(String.self, forKey: .image) ?? ""
+        category = try container.decodeIfPresent(String.self, forKey: .category) ?? "other"
+        author = try container.decodeIfPresent(String.self, forKey: .author) ?? ""
+        capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+        approved = try container.decodeIfPresent(Bool.self, forKey: .approved) ?? false
+        `private` = try container.decodeIfPresent(Bool.self, forKey: .private) ?? false
+        installs = try container.decodeIfPresent(Int.self, forKey: .installs) ?? 0
+        ratingAvg = try container.decodeIfPresent(Double.self, forKey: .ratingAvg)
+        ratingCount = try container.decodeIfPresent(Int.self, forKey: .ratingCount) ?? 0
+        isPaid = try container.decodeIfPresent(Bool.self, forKey: .isPaid) ?? false
+        price = try container.decodeIfPresent(Double.self, forKey: .price)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+    }
+
+    /// Check if app works with chat
+    var worksWithChat: Bool {
+        capabilities.contains("chat") || capabilities.contains("persona")
+    }
+
+    /// Check if app works with memories/conversations
+    var worksWithMemories: Bool {
+        capabilities.contains("memories")
+    }
+
+    /// Check if app has external integration
+    var worksExternally: Bool {
+        capabilities.contains("external_integration")
+    }
+
+    /// Formatted rating string
+    var formattedRating: String? {
+        guard let rating = ratingAvg else { return nil }
+        return String(format: "%.1f", rating)
+    }
+}
+
+/// Full app details
+struct OmiAppDetails: Codable, Identifiable {
+    let id: String
+    let name: String
+    let description: String
+    let image: String
+    let category: String
+    let author: String
+    let email: String?
+    let capabilities: [String]
+    let uid: String?
+    let approved: Bool
+    let `private`: Bool
+    let status: String
+    let chatPrompt: String?
+    let memoryPrompt: String?
+    let personaPrompt: String?
+    let installs: Int
+    let ratingAvg: Double?
+    let ratingCount: Int
+    let isPaid: Bool
+    let price: Double?
+    let paymentPlan: String?
+    let username: String?
+    let twitter: String?
+    let createdAt: Date?
+    var enabled: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, image, category, author, email, capabilities
+        case uid, approved
+        case `private`
+        case status
+        case chatPrompt = "chat_prompt"
+        case memoryPrompt = "memory_prompt"
+        case personaPrompt = "persona_prompt"
+        case installs
+        case ratingAvg = "rating_avg"
+        case ratingCount = "rating_count"
+        case isPaid = "is_paid"
+        case price
+        case paymentPlan = "payment_plan"
+        case username, twitter
+        case createdAt = "created_at"
+        case enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
+        image = try container.decodeIfPresent(String.self, forKey: .image) ?? ""
+        category = try container.decodeIfPresent(String.self, forKey: .category) ?? "other"
+        author = try container.decodeIfPresent(String.self, forKey: .author) ?? ""
+        email = try container.decodeIfPresent(String.self, forKey: .email)
+        capabilities = try container.decodeIfPresent([String].self, forKey: .capabilities) ?? []
+        uid = try container.decodeIfPresent(String.self, forKey: .uid)
+        approved = try container.decodeIfPresent(Bool.self, forKey: .approved) ?? false
+        `private` = try container.decodeIfPresent(Bool.self, forKey: .private) ?? false
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "under-review"
+        chatPrompt = try container.decodeIfPresent(String.self, forKey: .chatPrompt)
+        memoryPrompt = try container.decodeIfPresent(String.self, forKey: .memoryPrompt)
+        personaPrompt = try container.decodeIfPresent(String.self, forKey: .personaPrompt)
+        installs = try container.decodeIfPresent(Int.self, forKey: .installs) ?? 0
+        ratingAvg = try container.decodeIfPresent(Double.self, forKey: .ratingAvg)
+        ratingCount = try container.decodeIfPresent(Int.self, forKey: .ratingCount) ?? 0
+        isPaid = try container.decodeIfPresent(Bool.self, forKey: .isPaid) ?? false
+        price = try container.decodeIfPresent(Double.self, forKey: .price)
+        paymentPlan = try container.decodeIfPresent(String.self, forKey: .paymentPlan)
+        username = try container.decodeIfPresent(String.self, forKey: .username)
+        twitter = try container.decodeIfPresent(String.self, forKey: .twitter)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        enabled = try container.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+    }
+}
+
+/// App category
+struct OmiAppCategory: Codable, Identifiable {
+    let id: String
+    let title: String
+}
+
+/// App capability definition
+struct OmiAppCapability: Codable, Identifiable {
+    let id: String
+    let title: String
+    let description: String
+}
+
+/// App review
+struct OmiAppReview: Codable, Identifiable {
+    var id: String { uid }
+    let uid: String
+    let score: Int
+    let review: String
+    let response: String?
+    let ratedAt: Date
+    let editedAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case uid, score, review, response
+        case ratedAt = "rated_at"
+        case editedAt = "edited_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uid = try container.decode(String.self, forKey: .uid)
+        score = try container.decodeIfPresent(Int.self, forKey: .score) ?? 0
+        review = try container.decodeIfPresent(String.self, forKey: .review) ?? ""
+        response = try container.decodeIfPresent(String.self, forKey: .response)
+        ratedAt = try container.decodeIfPresent(Date.self, forKey: .ratedAt) ?? Date()
+        editedAt = try container.decodeIfPresent(Date.self, forKey: .editedAt)
+    }
+}
+
+// MARK: - Apps API
+
+extension APIClient {
+
+    /// Fetches apps from the API
+    func getApps(
+        capability: String? = nil,
+        category: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> [OmiApp] {
+        var queryItems: [String] = [
+            "limit=\(limit)",
+            "offset=\(offset)"
+        ]
+
+        if let capability = capability {
+            queryItems.append("capability=\(capability)")
+        }
+
+        if let category = category {
+            queryItems.append("category=\(category)")
+        }
+
+        let endpoint = "v1/apps?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Fetches popular apps
+    func getPopularApps() async throws -> [OmiApp] {
+        return try await get("v1/apps/popular")
+    }
+
+    /// Fetches approved public apps
+    func getApprovedApps(limit: Int = 50, offset: Int = 0) async throws -> [OmiApp] {
+        let endpoint = "v1/approved-apps?limit=\(limit)&offset=\(offset)"
+        return try await get(endpoint)
+    }
+
+    /// Searches apps with filters
+    func searchApps(
+        query: String? = nil,
+        category: String? = nil,
+        capability: String? = nil,
+        minRating: Int? = nil,
+        installedOnly: Bool = false,
+        limit: Int = 50,
+        offset: Int = 0
+    ) async throws -> [OmiApp] {
+        var queryItems: [String] = [
+            "limit=\(limit)",
+            "offset=\(offset)"
+        ]
+
+        if let query = query, !query.isEmpty {
+            queryItems.append("query=\(query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query)")
+        }
+
+        if let category = category {
+            queryItems.append("category=\(category)")
+        }
+
+        if let capability = capability {
+            queryItems.append("capability=\(capability)")
+        }
+
+        if let minRating = minRating {
+            queryItems.append("rating=\(minRating)")
+        }
+
+        if installedOnly {
+            queryItems.append("installed_apps=true")
+        }
+
+        let endpoint = "v2/apps/search?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Fetches app details by ID
+    func getAppDetails(appId: String) async throws -> OmiAppDetails {
+        return try await get("v1/apps/\(appId)")
+    }
+
+    /// Fetches app reviews
+    func getAppReviews(appId: String) async throws -> [OmiAppReview] {
+        return try await get("v1/apps/\(appId)/reviews")
+    }
+
+    /// Fetches user's enabled apps
+    func getEnabledApps() async throws -> [OmiApp] {
+        return try await get("v1/apps/enabled")
+    }
+
+    /// Enables an app for the current user
+    func enableApp(appId: String) async throws {
+        struct EnableRequest: Encodable {
+            let app_id: String
+        }
+        struct ToggleResponse: Decodable {
+            let success: Bool
+            let message: String
+        }
+        let body = EnableRequest(app_id: appId)
+        let _: ToggleResponse = try await post("v1/apps/enable", body: body)
+    }
+
+    /// Disables an app for the current user
+    func disableApp(appId: String) async throws {
+        struct DisableRequest: Encodable {
+            let app_id: String
+        }
+        struct ToggleResponse: Decodable {
+            let success: Bool
+            let message: String
+        }
+        let body = DisableRequest(app_id: appId)
+        let _: ToggleResponse = try await post("v1/apps/disable", body: body)
+    }
+
+    /// Submits a review for an app
+    func submitAppReview(appId: String, score: Int, review: String) async throws -> OmiAppReview {
+        struct ReviewRequest: Encodable {
+            let app_id: String
+            let score: Int
+            let review: String
+        }
+        let body = ReviewRequest(app_id: appId, score: score, review: review)
+        return try await post("v1/apps/review", body: body)
+    }
+
+    /// Fetches all app categories
+    func getAppCategories() async throws -> [OmiAppCategory] {
+        return try await get("v1/app-categories")
+    }
+
+    /// Fetches all app capabilities
+    func getAppCapabilities() async throws -> [OmiAppCapability] {
+        return try await get("v1/app-capabilities")
+    }
+}
