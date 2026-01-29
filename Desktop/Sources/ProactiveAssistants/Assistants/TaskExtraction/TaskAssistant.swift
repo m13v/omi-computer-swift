@@ -143,6 +143,9 @@ actor TaskAssistant: ProactiveAssistant {
             previousTasks.removeLast()
         }
 
+        // Save task to backend
+        await saveTaskToBackend(task: task)
+
         // Send notification
         await sendTaskNotification(task: task)
 
@@ -152,6 +155,28 @@ actor TaskAssistant: ProactiveAssistant {
             "task": task.toDictionary(),
             "contextSummary": taskResult.contextSummary
         ])
+    }
+
+    /// Save extracted task to backend API
+    private func saveTaskToBackend(task: ExtractedTask) async {
+        do {
+            let metadata: [String: Any] = [
+                "source_app": task.sourceApp,
+                "confidence": task.confidence
+            ]
+
+            let _ = try await APIClient.shared.createActionItem(
+                description: task.title,
+                dueAt: nil, // Could parse task.inferredDeadline if available
+                source: "screenshot",
+                priority: task.priority.rawValue,
+                metadata: metadata
+            )
+
+            log("Task: Saved to backend: \"\(task.title)\"")
+        } catch {
+            logError("Task: Failed to save task to backend", error: error)
+        }
     }
 
     /// Send a notification for the extracted task
