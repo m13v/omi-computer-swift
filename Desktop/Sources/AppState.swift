@@ -2,6 +2,7 @@ import SwiftUI
 import Combine
 import UserNotifications
 import AVFoundation
+@preconcurrency import ObjectiveC
 
 /// Speaker segment for diarized transcription
 struct SpeakerSegment {
@@ -441,6 +442,33 @@ class AppState: ObservableObject {
             await finalizeConversation()
             stopTranscriptionServices()
         }
+    }
+
+    /// Finish the current conversation but keep recording for the next one
+    @MainActor
+    func finishConversation() async {
+        guard !speakerSegments.isEmpty else {
+            log("Transcription: No segments to finish")
+            return
+        }
+
+        log("Transcription: Finishing conversation, keeping recording active")
+
+        // Process the current conversation
+        await finalizeConversation()
+
+        // Clear segments for the next conversation but keep recording
+        speakerSegments = []
+        liveSpeakerSegments = []
+
+        // Reset the recording start time for the next conversation
+        recordingStartTime = Date()
+        recordingDuration = 0
+
+        // Refresh the conversations list to show the new conversation
+        await refreshConversations()
+
+        log("Transcription: Ready for next conversation")
     }
 
     /// Stop transcription services without finalizing (internal use)
