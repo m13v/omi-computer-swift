@@ -6,10 +6,11 @@ enum SidebarNavItem: Int, CaseIterable {
     case chat = 1
     case memories = 2
     case tasks = 3
-    case advice = 4
-    case rewind = 5
-    case apps = 6
-    case settings = 7
+    case focus = 4
+    case advice = 5
+    case rewind = 6
+    case apps = 7
+    case settings = 8
 
     var title: String {
         switch self {
@@ -17,6 +18,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .chat: return "Chat"
         case .memories: return "Memories"
         case .tasks: return "Tasks"
+        case .focus: return "Focus"
         case .advice: return "Advice"
         case .rewind: return "Rewind"
         case .apps: return "Apps"
@@ -30,6 +32,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .chat: return "bubble.left.and.bubble.right.fill"
         case .memories: return "brain.head.profile"
         case .tasks: return "checkmark.square.fill"
+        case .focus: return "eye.fill"
         case .advice: return "lightbulb.fill"
         case .rewind: return "clock.arrow.circlepath"
         case .apps: return "square.grid.2x2.fill"
@@ -39,7 +42,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.conversations, .chat, .memories, .tasks, .advice, .rewind, .apps]
+        [.conversations, .chat, .memories, .tasks, .focus, .advice, .rewind, .apps]
     }
 }
 
@@ -49,6 +52,7 @@ struct SidebarView: View {
     @Binding var isCollapsed: Bool
     @ObservedObject var appState: AppState
     @ObservedObject private var adviceStorage = AdviceStorage.shared
+    @ObservedObject private var focusStorage = FocusStorage.shared
 
     // State for Get Omi Widget
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
@@ -64,6 +68,12 @@ struct SidebarView: View {
 
     private var currentWidth: CGFloat {
         isCollapsed ? collapsedWidth : expandedWidth
+    }
+
+    /// Color for focus status indicator (green = focused, orange = distracted, nil = no status)
+    private var focusStatusColor: Color? {
+        guard let status = focusStorage.currentStatus else { return nil }
+        return status == .focused ? Color.green : Color.orange
     }
 
     var body: some View {
@@ -90,6 +100,7 @@ struct SidebarView: View {
                             isCollapsed: isCollapsed,
                             iconWidth: iconWidth,
                             badge: item == .advice ? adviceStorage.unreadCount : 0,
+                            statusColor: item == .focus ? focusStatusColor : nil,
                             onTap: { selectedIndex = item.rawValue }
                         )
                     }
@@ -370,6 +381,7 @@ struct NavItemView: View {
     let isCollapsed: Bool
     let iconWidth: CGFloat
     var badge: Int = 0
+    var statusColor: Color? = nil
     let onTap: () -> Void
 
     @State private var isHovered = false
@@ -390,6 +402,14 @@ struct NavItemView: View {
                             .frame(width: 8, height: 8)
                             .offset(x: 4, y: -4)
                     }
+
+                    // Status indicator when collapsed (for Focus)
+                    if isCollapsed, let color = statusColor {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -4)
+                    }
                 }
 
                 if !isCollapsed {
@@ -398,6 +418,13 @@ struct NavItemView: View {
                         .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
 
                     Spacer()
+
+                    // Status indicator when expanded (for Focus)
+                    if let color = statusColor {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 8, height: 8)
+                    }
 
                     // Badge count when expanded
                     if badge > 0 {
