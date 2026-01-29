@@ -1,5 +1,5 @@
 import Foundation
-import FirebaseAuth
+@preconcurrency import FirebaseAuth
 import CryptoKit
 import AppKit
 import Sentry
