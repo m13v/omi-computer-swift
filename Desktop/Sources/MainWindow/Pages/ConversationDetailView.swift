@@ -5,6 +5,11 @@ struct ConversationDetailView: View {
     let conversation: ServerConversation
     let onBack: () -> Void
 
+    @StateObject private var appProvider = AppProvider()
+    @State private var showAppSelector = false
+    @State private var isReprocessing = false
+    @State private var selectedAppForReprocess: OmiApp?
+
     /// Format date for display
     private var formattedDate: String {
         let formatter = DateFormatter()
@@ -35,6 +40,14 @@ struct ConversationDetailView: View {
                     // Metadata chips
                     metadataSection
 
+                    // App Results section
+                    if !conversation.appsResults.isEmpty {
+                        appResultsSection
+                    }
+
+                    // Suggested apps section
+                    suggestedAppsSection
+
                     // Transcript section
                     if !conversation.transcriptSegments.isEmpty {
                         transcriptSection
@@ -47,6 +60,22 @@ struct ConversationDetailView: View {
                 }
                 .padding(24)
             }
+        }
+        .task {
+            await appProvider.fetchApps()
+        }
+        .sheet(isPresented: $showAppSelector) {
+            AppSelectorSheet(
+                apps: appProvider.apps.filter { $0.capabilities.contains("memories") },
+                isLoading: isReprocessing,
+                onSelect: { app in
+                    selectedAppForReprocess = app
+                    Task {
+                        await reprocessWithApp(app)
+                    }
+                },
+                onDismiss: { showAppSelector = false }
+            )
         }
     }
 
@@ -201,6 +230,109 @@ struct ConversationDetailView: View {
         }
     }
 
+    // MARK: - App Results Section
+
+    private var appResultsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("App Insights")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                Spacer()
+
+                Button(action: { showAppSelector = true }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 11))
+                        Text("Reprocess")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(OmiColors.purplePrimary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isReprocessing)
+            }
+
+            ForEach(conversation.appsResults) { result in
+                AppResultCard(
+                    result: result,
+                    app: appProvider.apps.first { $0.id == result.appId }
+                )
+            }
+        }
+    }
+
+    // MARK: - Suggested Apps Section
+
+    private var suggestedAppsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Try with Apps")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                Spacer()
+            }
+
+            let memoryApps = appProvider.apps.filter {
+                $0.capabilities.contains("memories") &&
+                !conversation.appsResults.contains(where: { $0.appId == $0.id })
+            }.prefix(4)
+
+            if memoryApps.isEmpty && !appProvider.isLoading {
+                Text("Enable apps with memory capability to get additional insights")
+                    .font(.system(size: 13))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .padding()
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(OmiColors.backgroundSecondary)
+                    )
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(Array(memoryApps)) { app in
+                            SuggestedAppCard(
+                                app: app,
+                                isLoading: selectedAppForReprocess?.id == app.id && isReprocessing,
+                                onTap: {
+                                    selectedAppForReprocess = app
+                                    Task {
+                                        await reprocessWithApp(app)
+                                    }
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Reprocess
+
+    private func reprocessWithApp(_ app: OmiApp) async {
+        isReprocessing = true
+        defer {
+            isReprocessing = false
+            selectedAppForReprocess = nil
+            showAppSelector = false
+        }
+
+        do {
+            try await APIClient.shared.reprocessConversation(
+                conversationId: conversation.id,
+                appId: app.id
+            )
+            // The conversation will need to be refreshed to show new results
+            // This would typically be handled by the parent view
+        } catch {
+            logError("Failed to reprocess conversation", error: error)
+        }
+    }
+
     // MARK: - Action Items Section
 
     private var actionItemsSection: some View {
@@ -256,5 +388,275 @@ extension ServerConversation {
         // This would need to be implemented with a proper initializer
         // For now, previews won't work without mock data
         fatalError("Preview not implemented")
+    }
+}
+
+// MARK: - App Result Card
+
+struct AppResultCard: View {
+    let result: AppResponse
+    let app: OmiApp?
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            // Header
+            HStack(spacing: 10) {
+                if let app = app {
+                    AsyncImage(url: URL(string: app.image)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        default:
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(OmiColors.backgroundTertiary)
+                        }
+                    }
+                    .frame(width: 32, height: 32)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(app.name)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(app.author)
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                } else {
+                    Image(systemName: "app.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 32, height: 32)
+                        .background(OmiColors.backgroundTertiary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                    Text("App")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textPrimary)
+                }
+
+                Spacer()
+
+                Button(action: { withAnimation { isExpanded.toggle() } }) {
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Content
+            if isExpanded || result.content.count < 200 {
+                Text(result.content)
+                    .font(.system(size: 13))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .lineSpacing(4)
+            } else {
+                Text(result.content.prefix(200) + "...")
+                    .font(.system(size: 13))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .lineSpacing(4)
+            }
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(OmiColors.backgroundSecondary)
+        )
+    }
+}
+
+// MARK: - Suggested App Card
+
+struct SuggestedAppCard: View {
+    let app: OmiApp
+    let isLoading: Bool
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 8) {
+                ZStack {
+                    AsyncImage(url: URL(string: app.image)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image
+                                .resizable()
+                                .aspectRatio(contentMode: .fill)
+                        default:
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(OmiColors.backgroundTertiary)
+                        }
+                    }
+                    .frame(width: 56, height: 56)
+                    .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                    if isLoading {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(Color.black.opacity(0.5))
+                            .frame(width: 56, height: 56)
+
+                        ProgressView()
+                            .scaleEffect(0.7)
+                            .tint(.white)
+                    }
+                }
+
+                Text(app.name)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(OmiColors.textPrimary)
+                    .lineLimit(1)
+            }
+            .frame(width: 80)
+            .padding(.vertical, 10)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isHovering ? OmiColors.backgroundTertiary : OmiColors.backgroundSecondary)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .onHover { isHovering = $0 }
+    }
+}
+
+// MARK: - App Selector Sheet
+
+struct AppSelectorSheet: View {
+    let apps: [OmiApp]
+    let isLoading: Bool
+    let onSelect: (OmiApp) -> Void
+    let onDismiss: () -> Void
+
+    @State private var selectedAppId: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Select App")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 20))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding()
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Apps list
+            if apps.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "square.grid.2x2")
+                        .font(.system(size: 40))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    Text("No Apps Available")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    Text("Enable apps with memory capability to reprocess conversations")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 2) {
+                        ForEach(apps) { app in
+                            AppSelectorRow(
+                                app: app,
+                                isSelected: selectedAppId == app.id,
+                                isLoading: isLoading && selectedAppId == app.id
+                            ) {
+                                selectedAppId = app.id
+                                onSelect(app)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+        .frame(width: 320, height: 400)
+        .background(OmiColors.backgroundPrimary)
+    }
+}
+
+struct AppSelectorRow: View {
+    let app: OmiApp
+    let isSelected: Bool
+    let isLoading: Bool
+    let onSelect: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: app.image)) { phase in
+                    switch phase {
+                    case .success(let image):
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    default:
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(OmiColors.backgroundTertiary)
+                    }
+                }
+                .frame(width: 44, height: 44)
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(app.name)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Text(app.author)
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                } else if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected || isHovering ? OmiColors.backgroundTertiary : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isLoading)
+        .onHover { isHovering = $0 }
     }
 }
