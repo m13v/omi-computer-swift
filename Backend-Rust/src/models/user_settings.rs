@@ -1,0 +1,154 @@
+// User settings models - stored in Firestore user document
+// Path: users/{uid}
+
+use serde::{Deserialize, Serialize};
+
+/// Daily summary notification settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DailySummarySettings {
+    /// Whether daily summary notifications are enabled
+    #[serde(default = "default_daily_summary_enabled")]
+    pub enabled: bool,
+    /// Preferred hour in local timezone (0-23)
+    #[serde(default = "default_daily_summary_hour")]
+    pub hour: i32,
+}
+
+fn default_daily_summary_enabled() -> bool {
+    true
+}
+
+fn default_daily_summary_hour() -> i32 {
+    22 // 10 PM
+}
+
+/// Request to update daily summary settings
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateDailySummaryRequest {
+    pub enabled: Option<bool>,
+    pub hour: Option<i32>,
+}
+
+/// Transcription preferences
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TranscriptionPreferences {
+    /// Whether to use single language mode (disables translation)
+    #[serde(default)]
+    pub single_language_mode: bool,
+    /// Custom vocabulary words for better transcription accuracy
+    #[serde(default)]
+    pub vocabulary: Vec<String>,
+}
+
+/// Request to update transcription preferences
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateTranscriptionPreferencesRequest {
+    pub single_language_mode: Option<bool>,
+    pub vocabulary: Option<Vec<String>>,
+}
+
+/// User language preference
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserLanguage {
+    /// Language code (e.g., "en", "es", "vi")
+    pub language: String,
+}
+
+/// Request to update language
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateLanguageRequest {
+    pub language: String,
+}
+
+/// Recording permission status
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecordingPermission {
+    /// Whether the user has granted permission to store recordings
+    pub enabled: bool,
+}
+
+/// Request to set recording permission
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetRecordingPermissionRequest {
+    pub value: bool,
+}
+
+/// Private cloud sync settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrivateCloudSync {
+    /// Whether private cloud sync is enabled
+    #[serde(default = "default_private_cloud_sync")]
+    pub enabled: bool,
+}
+
+fn default_private_cloud_sync() -> bool {
+    true
+}
+
+/// Request to set private cloud sync
+#[derive(Debug, Clone, Deserialize)]
+pub struct SetPrivateCloudSyncRequest {
+    pub value: bool,
+}
+
+/// Notification settings
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NotificationSettings {
+    /// Global notifications toggle
+    #[serde(default = "default_notifications_enabled")]
+    pub enabled: bool,
+    /// Notification frequency (0-5: Off, Minimal, Low, Balanced, High, Maximum)
+    #[serde(default = "default_notification_frequency")]
+    pub frequency: i32,
+}
+
+fn default_notifications_enabled() -> bool {
+    true
+}
+
+fn default_notification_frequency() -> i32 {
+    3 // Balanced
+}
+
+/// Request to update notification settings
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateNotificationSettingsRequest {
+    pub enabled: Option<bool>,
+    pub frequency: Option<i32>,
+}
+
+/// User profile from Firestore
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserProfile {
+    /// User ID
+    pub uid: String,
+    /// User's email
+    #[serde(default)]
+    pub email: Option<String>,
+    /// User's display name
+    #[serde(default)]
+    pub name: Option<String>,
+    /// User's timezone
+    #[serde(default)]
+    pub time_zone: Option<String>,
+    /// When the user was created
+    #[serde(default)]
+    pub created_at: Option<String>,
+}
+
+/// Complete user settings response (aggregated)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserSettingsResponse {
+    pub daily_summary: DailySummarySettings,
+    pub transcription: TranscriptionPreferences,
+    pub language: String,
+    pub recording_permission: bool,
+    pub private_cloud_sync: bool,
+    pub notifications: NotificationSettings,
+}
+
+/// Generic status response
+#[derive(Debug, Clone, Serialize)]
+pub struct UserSettingsStatusResponse {
+    pub status: String,
+}
