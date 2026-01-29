@@ -1,14 +1,14 @@
 // Conversations routes - Port from Python backend
-// Endpoints: GET /v1/conversations, POST /v1/conversations/from-segments
+// Endpoints: GET /v1/conversations, POST /v1/conversations/from-segments, POST /v1/conversations/:id/reprocess
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
 use chrono::Utc;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::auth::AuthUser;
 use crate::llm::LlmClient;
@@ -155,6 +155,7 @@ async fn create_conversation_from_segments(
         discarded: false,
         structured: processed.structured,
         transcript_segments: request.transcript_segments.clone(),
+        apps_results: vec![],
     };
 
     // Save conversation
@@ -192,11 +193,129 @@ async fn create_conversation_from_segments(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct ReprocessRequest {
+    app_id: String,
+}
+
+#[derive(Serialize)]
+pub struct ReprocessResponse {
+    success: bool,
+    message: String,
+    content: Option<String>,
+}
+
+/// POST /v1/conversations/:id/reprocess - Reprocess conversation with a specific app
+async fn reprocess_conversation(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<ReprocessRequest>,
+) -> Result<Json<ReprocessResponse>, (StatusCode, String)> {
+    tracing::info!(
+        "Reprocessing conversation {} with app {} for user {}",
+        conversation_id,
+        request.app_id,
+        user.uid
+    );
+
+    // Fetch the conversation
+    let conversation = state
+        .firestore
+        .get_conversation(&user.uid, &conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get conversation: {}", e);
+            (StatusCode::NOT_FOUND, format!("Conversation not found: {}", e))
+        })?
+        .ok_or_else(|| {
+            (StatusCode::NOT_FOUND, "Conversation not found".to_string())
+        })?;
+
+    // Fetch the app
+    let app = state
+        .firestore
+        .get_app(&user.uid, &request.app_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get app: {}", e);
+            (StatusCode::NOT_FOUND, format!("App not found: {}", e))
+        })?
+        .ok_or_else(|| {
+            (StatusCode::NOT_FOUND, "App not found".to_string())
+        })?;
+
+    // Check if app has memories capability
+    if !app.capabilities.contains(&"memories".to_string()) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "App does not have memories capability".to_string(),
+        ));
+    }
+
+    // Get the app's memory prompt
+    let memory_prompt = app.memory_prompt.unwrap_or_else(|| {
+        "Analyze this conversation and provide insights.".to_string()
+    });
+
+    // Get LLM client
+    let llm_client = if let Some(api_key) = &state.config.gemini_api_key {
+        LlmClient::gemini(api_key.clone())
+    } else if let Some(api_key) = &state.config.openai_api_key {
+        LlmClient::openai(api_key.clone())
+    } else {
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "No LLM API key configured".to_string(),
+        ));
+    };
+
+    // Build transcript text
+    let transcript_text: String = conversation
+        .transcript_segments
+        .iter()
+        .map(|s| {
+            let speaker = if s.is_user { "User".to_string() } else { format!("Speaker {}", s.speaker_id) };
+            format!("{}: {}", speaker, s.text)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Run the app's memory prompt against the conversation
+    let result = llm_client
+        .run_memory_prompt(&memory_prompt, &transcript_text, &conversation.structured)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to run memory prompt: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to process: {}", e))
+        })?;
+
+    // Save the app result to the conversation
+    if let Err(e) = state
+        .firestore
+        .add_app_result(&user.uid, &conversation_id, &request.app_id, &result)
+        .await
+    {
+        tracing::error!("Failed to save app result: {}", e);
+        // Continue anyway, just log the error
+    }
+
+    Ok(Json(ReprocessResponse {
+        success: true,
+        message: format!("Conversation reprocessed with {}", app.name),
+        content: Some(result),
+    }))
+}
+
 pub fn conversations_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/conversations", get(get_conversations))
         .route(
             "/v1/conversations/from-segments",
             post(create_conversation_from_segments),
+        )
+        .route(
+            "/v1/conversations/:id/reprocess",
+            post(reprocess_conversation),
         )
 }
