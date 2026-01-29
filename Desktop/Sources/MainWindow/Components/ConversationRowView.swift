@@ -46,18 +46,6 @@ struct ConversationRowView: View {
         }
     }
 
-    /// Color for the conversation source
-    private var sourceColor: Color {
-        switch conversation.source {
-        case .desktop: return OmiColors.purplePrimary
-        case .omi: return OmiColors.success
-        case .phone, .appleWatch: return OmiColors.info
-        case .workflow: return OmiColors.warning
-        case .screenpipe: return OmiColors.textSecondary
-        default: return OmiColors.textTertiary
-        }
-    }
-
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -83,7 +71,7 @@ struct ConversationRowView: View {
                     HStack(spacing: 6) {
                         Text(sourceLabel)
                             .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(sourceColor)
+                            .foregroundColor(OmiColors.textTertiary)
 
                         Text(formattedTimestamp)
                             .font(.system(size: 12))
