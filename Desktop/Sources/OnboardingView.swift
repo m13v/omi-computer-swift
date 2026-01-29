@@ -120,15 +120,15 @@ struct OnboardingView: View {
             // Also bring the onboarding window to front
             var foundWindow = false
             for window in NSApp.windows {
-                if window.title == "Welcome to OMI-COMPUTER" {
+                if window.title == "Welcome to Omi Computer" {
                     foundWindow = true
-                    log("Found 'Welcome to OMI-COMPUTER' window, making key and ordering front")
+                    log("Found 'Welcome to Omi Computer' window, making key and ordering front")
                     window.makeKeyAndOrderFront(nil)
                     window.orderFrontRegardless()
                 }
             }
             if !foundWindow {
-                log("WARNING - Could not find 'Welcome to OMI-COMPUTER' window!")
+                log("WARNING - Could not find 'Welcome to Omi Computer' window!")
             }
 
             log("After activation - app is active: \(NSApp.isActive ? "YES" : "NO")")
