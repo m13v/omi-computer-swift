@@ -266,4 +266,139 @@ actor GeminiClient {
 
         return text
     }
+
+    /// Send a multi-turn chat request with streaming response
+    /// - Parameters:
+    ///   - messages: Array of chat messages (role: user/model, text)
+    ///   - systemPrompt: System instructions for the model
+    ///   - onChunk: Callback for each text chunk received
+    /// - Returns: The complete text response
+    func sendChatStreamRequest(
+        messages: [ChatMessage],
+        systemPrompt: String,
+        onChunk: @escaping (String) -> Void
+    ) async throws -> String {
+        // Build contents from chat messages
+        let contents = messages.map { message in
+            GeminiChatRequest.Content(
+                role: message.role,
+                parts: [GeminiChatRequest.Part(text: message.text)]
+            )
+        }
+
+        let request = GeminiChatRequest(
+            contents: contents,
+            systemInstruction: GeminiChatRequest.SystemInstruction(
+                parts: [GeminiChatRequest.SystemInstruction.TextPart(text: systemPrompt)]
+            ),
+            generationConfig: GeminiChatRequest.GenerationConfig(
+                temperature: 0.7,
+                maxOutputTokens: 8192
+            )
+        )
+
+        // Use streamGenerateContent endpoint for streaming
+        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):streamGenerateContent?alt=sse&key=\(apiKey)")!
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 300
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        var fullText = ""
+
+        // Use URLSession bytes for streaming
+        let (bytes, response) = try await URLSession.shared.bytes(for: urlRequest)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw GeminiClientError.invalidResponse
+        }
+
+        if httpResponse.statusCode != 200 {
+            throw GeminiClientError.apiError("HTTP \(httpResponse.statusCode)")
+        }
+
+        // Parse SSE stream
+        for try await line in bytes.lines {
+            // SSE format: "data: {json}"
+            if line.hasPrefix("data: ") {
+                let jsonString = String(line.dropFirst(6))
+                if let data = jsonString.data(using: .utf8) {
+                    if let chunk = try? JSONDecoder().decode(GeminiStreamChunk.self, from: data) {
+                        if let text = chunk.candidates?.first?.content?.parts?.first?.text {
+                            fullText += text
+                            onChunk(text)
+                        }
+                    }
+                }
+            }
+        }
+
+        return fullText
+    }
+
+    /// Chat message for multi-turn conversation
+    struct ChatMessage {
+        let role: String  // "user" or "model"
+        let text: String
+    }
+}
+
+// MARK: - Gemini Chat Request (multi-turn with roles)
+
+struct GeminiChatRequest: Encodable {
+    let contents: [Content]
+    let systemInstruction: SystemInstruction?
+    let generationConfig: GenerationConfig?
+
+    enum CodingKeys: String, CodingKey {
+        case contents
+        case systemInstruction = "system_instruction"
+        case generationConfig = "generation_config"
+    }
+
+    struct Content: Encodable {
+        let role: String  // "user" or "model"
+        let parts: [Part]
+    }
+
+    struct Part: Encodable {
+        let text: String
+    }
+
+    struct SystemInstruction: Encodable {
+        let parts: [TextPart]
+
+        struct TextPart: Encodable {
+            let text: String
+        }
+    }
+
+    struct GenerationConfig: Encodable {
+        let temperature: Double?
+        let maxOutputTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case temperature
+            case maxOutputTokens = "max_output_tokens"
+        }
+    }
+}
+
+// MARK: - Gemini Stream Chunk Response
+
+struct GeminiStreamChunk: Decodable {
+    let candidates: [Candidate]?
+
+    struct Candidate: Decodable {
+        let content: Content?
+
+        struct Content: Decodable {
+            let parts: [Part]?
+
+            struct Part: Decodable {
+                let text: String?
+            }
+        }
+    }
 }
