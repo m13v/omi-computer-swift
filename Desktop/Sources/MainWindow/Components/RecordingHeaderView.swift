@@ -21,18 +21,18 @@ struct RecordingHeaderView: View {
         VStack(spacing: 16) {
             // Recording status and timer
             HStack {
-                // Pulsing recording indicator with glow
+                // Pulsing listening indicator with glow
                 ZStack {
                     // Glow effect
                     Circle()
-                        .fill(OmiColors.error.opacity(0.3))
+                        .fill(OmiColors.purplePrimary.opacity(0.3))
                         .frame(width: 24, height: 24)
                         .scaleEffect(isPulsing ? 1.8 : 1.0)
                         .opacity(isPulsing ? 0.0 : 0.6)
 
                     // Main dot
                     Circle()
-                        .fill(OmiColors.error)
+                        .fill(OmiColors.purplePrimary)
                         .frame(width: 12, height: 12)
                         .scaleEffect(isPulsing ? 1.3 : 1.0)
                 }
@@ -42,7 +42,7 @@ struct RecordingHeaderView: View {
                     value: isPulsing
                 )
 
-                Text("Recording")
+                Text("Listening")
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(OmiColors.textPrimary)
 
