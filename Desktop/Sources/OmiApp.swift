@@ -41,65 +41,21 @@ struct OMIApp: App {
     @Environment(\.openWindow) private var openWindow
 
     var body: some Scene {
-        // Main desktop window
+        // Main desktop window - handles sign in, onboarding, and main content
         Window("Omi", id: "main") {
             DesktopHomeView()
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1200, height: 800)
+        .defaultLaunchBehavior(.presented)
 
         // Menu bar
         MenuBarExtra {
-            MenuBarView(appState: appState, authState: authState, openOnboarding: { openWindow(id: "onboarding") }, openMain: { openWindow(id: "main") })
+            MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
         } label: {
             Text("Omi")
         }
         .menuBarExtraStyle(.menu)
-
-        Window("Welcome to Omi Computer", id: "onboarding") {
-            Group {
-                if authState.isSignedIn {
-                    OnboardingView(appState: appState, onComplete: {
-                        // Open main window and close onboarding
-                        openWindow(id: "main")
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                            // Close onboarding window
-                            for window in NSApp.windows {
-                                if window.title == "Welcome to Omi Computer" {
-                                    window.close()
-                                }
-                            }
-                            // Activate main window
-                            for window in NSApp.windows {
-                                if window.title == "Omi" {
-                                    window.makeKeyAndOrderFront(nil)
-                                    window.appearance = NSAppearance(named: .darkAqua)
-                                }
-                            }
-                            NSApp.activate(ignoringOtherApps: true)
-                        }
-                    })
-                } else {
-                    SignInView(authState: authState)
-                }
-            }
-            .onAppear {
-                // Center and activate the window after a brief delay
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    for window in NSApp.windows {
-                        if window.title == "Welcome to Omi Computer" || window.contentView?.subviews.first != nil {
-                            window.center()
-                            window.makeKeyAndOrderFront(nil)
-                            window.orderFrontRegardless()
-                        }
-                    }
-                    NSApp.activate(ignoringOtherApps: true)
-                }
-            }
-            // Note: OAuth callback URLs are handled by AppDelegate.handleGetURLEvent
-        }
-        .windowResizability(.contentSize)
-        .defaultLaunchBehavior(.presented)
     }
 }
 
@@ -158,6 +114,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
+
+        // Force dark appearance on main window after a brief delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            for window in NSApp.windows {
+                if window.title == "Omi" {
+                    window.appearance = NSAppearance(named: .darkAqua)
+                }
+            }
+        }
     }
 
     /// Start a timer that sends Sentry session snapshots every 5 minutes
@@ -202,21 +167,26 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var authState: AuthState
-    var openOnboarding: () -> Void = {}
     var openMain: () -> Void = {}
 
     var body: some View {
-        if authState.isSignedIn {
-            Button("Open Omi") {
-                openMain()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    NSApp.activate(ignoringOtherApps: true)
+        Button("Open Omi") {
+            openMain()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NSApp.activate(ignoringOtherApps: true)
+                for window in NSApp.windows {
+                    if window.title == "Omi" {
+                        window.makeKeyAndOrderFront(nil)
+                        window.appearance = NSAppearance(named: .darkAqua)
+                    }
                 }
             }
-            .keyboardShortcut("o", modifiers: .command)
+        }
+        .keyboardShortcut("o", modifiers: .command)
 
-            Divider()
+        Divider()
 
+        if authState.isSignedIn {
             if let email = authState.userEmail {
                 Text("Signed in as \(email)")
                     .font(.caption)
@@ -231,7 +201,7 @@ struct MenuBarView: View {
             .keyboardShortcut("t", modifiers: .command)
 
             if appState.isTranscribing {
-                Text("🎙️ Recording...")
+                Text("Recording...")
                     .font(.caption)
                     .foregroundColor(.red)
             }
@@ -247,10 +217,6 @@ struct MenuBarView: View {
                 ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
             }
 
-            Button("Show Onboarding") {
-                openOnboarding()
-            }
-
             Divider()
 
             Button("Report Issue...") {
@@ -264,31 +230,11 @@ struct MenuBarView: View {
                 ProactiveAssistantsPlugin.shared.stopMonitoring()
                 // Sign out
                 try? AuthService.shared.signOut()
-                // Open sign-in window and bring to front
-                openOnboarding()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    NSApp.activate(ignoringOtherApps: true)
-                    for window in NSApp.windows {
-                        if window.title == "Welcome to Omi Computer" {
-                            window.makeKeyAndOrderFront(nil)
-                            window.orderFrontRegardless()
-                        }
-                    }
-                }
             }
         } else {
-            Button("Sign In") {
-                openOnboarding()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    NSApp.activate(ignoringOtherApps: true)
-                    for window in NSApp.windows {
-                        if window.title == "Welcome to Omi Computer" {
-                            window.makeKeyAndOrderFront(nil)
-                            window.orderFrontRegardless()
-                        }
-                    }
-                }
-            }
+            Text("Not signed in")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
 
         Divider()
