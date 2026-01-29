@@ -388,6 +388,11 @@ public class ProactiveAssistantsPlugin: NSObject {
             if !isInDelayPeriod {
                 AssistantCoordinator.shared.distributeFrame(frame)
             }
+
+            // Store frame for Rewind search (independent of delay period)
+            Task {
+                await RewindIndexer.shared.processFrame(frame)
+            }
         }
     }
 
