@@ -1,6 +1,7 @@
 // Models module
 
 pub mod action_item;
+pub mod advice;
 pub mod app;
 pub mod category;
 pub mod conversation;
@@ -11,6 +12,7 @@ pub mod request;
 pub mod user_settings;
 
 pub use action_item::{ActionItemDB, ActionItemStatusResponse, CreateActionItemRequest, UpdateActionItemRequest};
+pub use advice::{AdviceCategory, AdviceDB, AdviceStatusResponse, CreateAdviceRequest, GetAdviceQuery, UpdateAdviceRequest};
 pub use app::{
     App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ChatTool, ExternalIntegration,
     ListAppsQuery, ProactiveNotification, SearchAppsQuery, SubmitReviewRequest, ToggleAppRequest,
