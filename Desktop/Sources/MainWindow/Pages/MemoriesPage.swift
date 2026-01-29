@@ -219,6 +219,21 @@ struct MemoriesPage: View {
                     .foregroundColor(OmiColors.info)
                 }
 
+                // Source badge
+                if let sourceName = memory.sourceName {
+                    HStack(spacing: 4) {
+                        Image(systemName: memory.sourceIcon)
+                            .font(.system(size: 10))
+                        Text(sourceName)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(OmiColors.backgroundQuaternary)
+                    .cornerRadius(4)
+                }
+
                 Spacer()
 
                 // Date
