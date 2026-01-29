@@ -61,35 +61,46 @@ struct OnboardingView: View {
                 appState.checkSystemAudioPermission()
             }
         }
-        // Bring app to front when permissions are granted
+        // Bring app to front when the CURRENT step's permission is granted
+        // Only bring to front if we're on the step that requires this permission
         .onChange(of: appState.hasNotificationPermission) { _, granted in
-            if granted {
-                log("Notification permission granted, bringing to front")
+            if granted && currentStep == 2 {
+                log("Notification permission granted (current step), bringing to front")
                 bringToFront()
+            } else if granted {
+                log("Notification permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
         .onChange(of: appState.hasAutomationPermission) { _, granted in
-            if granted {
-                log("Automation permission granted, bringing to front")
+            if granted && currentStep == 3 {
+                log("Automation permission granted (current step), bringing to front")
                 bringToFront()
+            } else if granted {
+                log("Automation permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
-            if granted {
-                log("Screen recording permission granted, bringing to front")
+            if granted && currentStep == 4 {
+                log("Screen recording permission granted (current step), bringing to front")
                 bringToFront()
+            } else if granted {
+                log("Screen recording permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
-            if granted {
-                log("Microphone permission granted, bringing to front")
+            if granted && currentStep == 5 {
+                log("Microphone permission granted (current step), bringing to front")
                 bringToFront()
+            } else if granted {
+                log("Microphone permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
         .onChange(of: appState.hasSystemAudioPermission) { _, granted in
-            if granted {
-                log("System audio permission granted, bringing to front")
+            if granted && currentStep == 6 {
+                log("System audio permission granted (current step), bringing to front")
                 bringToFront()
+            } else if granted {
+                log("System audio permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
     }
