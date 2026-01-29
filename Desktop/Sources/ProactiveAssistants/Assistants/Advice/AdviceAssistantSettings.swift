@@ -10,14 +10,12 @@ class AdviceAssistantSettings {
     private let analysisPromptKey = "adviceAnalysisPrompt"
     private let extractionIntervalKey = "adviceExtractionInterval"
     private let minConfidenceKey = "adviceMinConfidence"
-    private let cooldownIntervalKey = "adviceCooldownInterval"
 
     // MARK: - Default Values
 
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes between analyses
     private let defaultMinConfidence: Double = 0.85 // High threshold - only show when very confident
-    private let defaultCooldownInterval: TimeInterval = 600.0 // 10 minutes between notifications
 
     /// Default system prompt for advice extraction
     static let defaultAnalysisPrompt = """
@@ -83,7 +81,6 @@ class AdviceAssistantSettings {
             enabledKey: defaultEnabled,
             extractionIntervalKey: defaultExtractionInterval,
             minConfidenceKey: defaultMinConfidence,
-            cooldownIntervalKey: defaultCooldownInterval,
         ])
     }
 
@@ -140,24 +137,6 @@ class AdviceAssistantSettings {
         }
     }
 
-    /// Cooldown interval between advice notifications in seconds
-    var cooldownInterval: TimeInterval {
-        get {
-            let value = UserDefaults.standard.double(forKey: cooldownIntervalKey)
-            return value > 0 ? value : defaultCooldownInterval
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: cooldownIntervalKey)
-            log("Advice cooldown interval updated to \(newValue) seconds")
-            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
-        }
-    }
-
-    /// Cooldown in seconds (for NotificationService compatibility)
-    var cooldownIntervalSeconds: TimeInterval {
-        return cooldownInterval
-    }
-
     /// Reset only the analysis prompt to default
     func resetPromptToDefault() {
         UserDefaults.standard.removeObject(forKey: analysisPromptKey)
@@ -170,7 +149,6 @@ class AdviceAssistantSettings {
         isEnabled = defaultEnabled
         extractionInterval = defaultExtractionInterval
         minConfidence = defaultMinConfidence
-        cooldownInterval = defaultCooldownInterval
         resetPromptToDefault()
     }
 }
