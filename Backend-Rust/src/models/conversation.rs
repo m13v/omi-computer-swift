@@ -152,6 +152,13 @@ impl Default for ConversationSource {
     }
 }
 
+/// App processing result stored with a conversation
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AppResult {
+    pub app_id: Option<String>,
+    pub content: String,
+}
+
 /// Full conversation document as stored in Firestore
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Conversation {
@@ -170,4 +177,6 @@ pub struct Conversation {
     pub structured: Structured,
     #[serde(default)]
     pub transcript_segments: Vec<TranscriptSegment>,
+    #[serde(default)]
+    pub apps_results: Vec<AppResult>,
 }
