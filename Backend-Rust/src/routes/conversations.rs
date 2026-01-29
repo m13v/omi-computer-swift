@@ -24,12 +24,22 @@ pub struct GetConversationsQuery {
     pub limit: usize,
     #[serde(default)]
     pub offset: usize,
-    #[serde(default)]
+    #[serde(default = "default_include_discarded")]
     pub include_discarded: bool,
+    #[serde(default = "default_statuses")]
+    pub statuses: String,
 }
 
 fn default_limit() -> usize {
-    50
+    100 // Match Python default
+}
+
+fn default_include_discarded() -> bool {
+    true // Match Python router default
+}
+
+fn default_statuses() -> String {
+    "processing,completed".to_string() // Match Python default
 }
 
 /// GET /v1/conversations - Fetch user conversations
@@ -37,24 +47,32 @@ async fn get_conversations(
     State(state): State<AppState>,
     user: AuthUser,
     Query(query): Query<GetConversationsQuery>,
-) -> Json<Vec<Conversation>> {
+) -> Result<Json<Vec<Conversation>>, (StatusCode, String)> {
+    // Parse statuses from comma-separated string (match Python behavior)
+    let statuses: Vec<String> = if query.statuses.is_empty() {
+        vec![]
+    } else {
+        query.statuses.split(',').map(|s| s.trim().to_string()).collect()
+    };
+
     tracing::info!(
-        "Getting conversations for user {} with limit={}, offset={}, include_discarded={}",
+        "Getting conversations for user {} with limit={}, offset={}, include_discarded={}, statuses={:?}",
         user.uid,
         query.limit,
         query.offset,
-        query.include_discarded
+        query.include_discarded,
+        statuses
     );
 
     match state
         .firestore
-        .get_conversations(&user.uid, query.limit, query.offset, query.include_discarded)
+        .get_conversations(&user.uid, query.limit, query.offset, query.include_discarded, &statuses)
         .await
     {
-        Ok(conversations) => Json(conversations),
+        Ok(conversations) => Ok(Json(conversations)),
         Err(e) => {
             tracing::error!("Failed to get conversations: {}", e);
-            Json(vec![])
+            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get conversations: {}", e)))
         }
     }
 }
