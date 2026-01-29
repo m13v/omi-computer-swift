@@ -33,17 +33,21 @@ struct OnboardingView: View {
 
             Group {
                 if appState.hasCompletedOnboarding {
-                    // Auto-start monitoring
+                    // Onboarding complete - this view will be replaced by DesktopHomeView's mainContent
+                    // Don't call dismiss() here as it can close the window unexpectedly
                     Color.clear
                         .onAppear {
+                            log("OnboardingView: hasCompletedOnboarding=true, starting monitoring")
                             if !ProactiveAssistantsPlugin.shared.isMonitoring {
                                 ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
                             }
-                            // If we have a completion handler, call it; otherwise dismiss
+                            // Only call completion handler if provided (for sheet presentations)
+                            // Don't dismiss - DesktopHomeView will automatically show mainContent
                             if let onComplete = onComplete {
+                                log("OnboardingView: Calling onComplete handler")
                                 onComplete()
                             } else {
-                                dismiss()
+                                log("OnboardingView: No onComplete handler, view will transition via DesktopHomeView")
                             }
                         }
                 } else {
@@ -602,16 +606,19 @@ struct OnboardingView: View {
                 appState.triggerSystemAudioPermission()
             }
         case 7:
+            log("OnboardingView: Step 7 - Completing onboarding")
             MixpanelManager.shared.onboardingStepCompleted(step: 7, stepName: "Done")
             MixpanelManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
             appState.startTranscription()
-            // Call completion handler to open main window
+            // Only call completion handler if provided (for sheet presentations)
+            // Don't dismiss - DesktopHomeView will automatically transition to mainContent
             if let onComplete = onComplete {
+                log("OnboardingView: Calling onComplete handler")
                 onComplete()
             } else {
-                dismiss()
+                log("OnboardingView: Onboarding complete, DesktopHomeView will show mainContent")
             }
         default:
             break
