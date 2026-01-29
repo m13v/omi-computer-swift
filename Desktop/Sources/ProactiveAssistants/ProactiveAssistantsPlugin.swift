@@ -22,6 +22,7 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var isInDelayPeriod = false
 
     private(set) var isMonitoring = false
+    private var _hasScreenRecordingPermission: Bool?  // Cached permission state
     private var currentApp: String?
     private var currentWindowID: CGWindowID?
     private var currentWindowTitle: String?
@@ -95,8 +96,9 @@ public class ProactiveAssistantsPlugin: NSObject {
             return
         }
 
-        // Check screen recording permission
-        guard ScreenCaptureService.checkPermission() else {
+        // Check screen recording permission (and update cache)
+        refreshScreenRecordingPermission()
+        guard hasScreenRecordingPermission else {
             completion(false, "Screen recording permission not granted")
             return
         }
@@ -271,15 +273,27 @@ public class ProactiveAssistantsPlugin: NSObject {
         } else {
             startMonitoring { success, error in
                 if !success, let error = error {
-                    log("Failed to start monitoring: \(error)")
+                    logError("Failed to start monitoring: \(error)")
                 }
             }
         }
     }
 
     /// Check if screen recording permission is granted
+    /// Uses cached value to avoid excessive permission check logging
     public var hasScreenRecordingPermission: Bool {
-        return ScreenCaptureService.checkPermission()
+        if let cached = _hasScreenRecordingPermission {
+            return cached
+        }
+        // First access - check and cache
+        let result = ScreenCaptureService.checkPermission()
+        _hasScreenRecordingPermission = result
+        return result
+    }
+
+    /// Refresh the cached screen recording permission state
+    public func refreshScreenRecordingPermission() {
+        _hasScreenRecordingPermission = ScreenCaptureService.checkPermission()
     }
 
     /// Get current monitoring status
@@ -290,6 +304,16 @@ public class ProactiveAssistantsPlugin: NSObject {
     // MARK: - Frame Capture
 
     private func onAppActivated(appName: String) {
+        // Ignore our own app and system dialogs - don't monitor these (causes flickering)
+        let ignoredApps = [
+            "OMI-COMPUTER",           // Our own app
+            "universalAccessAuthWarn", // macOS permission dialog
+            "System Settings",         // System Settings app
+            "System Preferences",      // Older macOS name
+            "SecurityAgent",           // Security prompts
+            "UserNotificationCenter"   // Notification center
+        ]
+        guard !ignoredApps.contains(appName) else { return }
         guard appName != currentApp else { return }
         currentApp = appName
         currentWindowID = nil
@@ -350,8 +374,7 @@ public class ProactiveAssistantsPlugin: NSObject {
             currentWindowTitle = windowTitle
         }
 
-        guard !isInDelayPeriod else { return }
-
+        // Always capture frames (other features may need them)
         if let jpegData = await screenCaptureService.captureActiveWindowAsync(),
            let appName = currentApp {
             frameCount += 1
@@ -363,8 +386,10 @@ public class ProactiveAssistantsPlugin: NSObject {
                 frameNumber: frameCount
             )
 
-            // Distribute to all assistants via coordinator
-            AssistantCoordinator.shared.distributeFrame(frame)
+            // Only distribute to assistants if not in delay period
+            if !isInDelayPeriod {
+                AssistantCoordinator.shared.distributeFrame(frame)
+            }
         }
     }
 
