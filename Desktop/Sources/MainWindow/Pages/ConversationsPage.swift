@@ -4,6 +4,12 @@ struct ConversationsPage: View {
     @ObservedObject var appState: AppState
     @State private var selectedConversation: ServerConversation? = nil
 
+    // Splitter state - height of transcript section
+    @State private var transcriptHeight: CGFloat = 180
+    @State private var isTranscriptCollapsed: Bool = false
+    private let minTranscriptHeight: CGFloat = 60
+    private let maxTranscriptHeight: CGFloat = 400
+
     var body: some View {
         Group {
             if let selected = selectedConversation {
@@ -40,16 +46,131 @@ struct ConversationsPage: View {
             Divider()
                 .background(OmiColors.backgroundTertiary)
 
-            // Live transcript when recording
-            if appState.isTranscribing && !appState.liveSpeakerSegments.isEmpty {
-                LiveTranscriptView(segments: appState.liveSpeakerSegments)
-                    .frame(maxHeight: 200)
-
-                Divider()
-                    .background(OmiColors.backgroundTertiary)
+            // Live transcript when recording (with draggable splitter)
+            if appState.isTranscribing {
+                transcriptSection
             }
 
             // Conversation list (always visible below)
+            conversationListSection
+        }
+    }
+
+    // MARK: - Transcript Section with Splitter
+
+    private var transcriptSection: some View {
+        VStack(spacing: 0) {
+            // Collapsible transcript area
+            if !isTranscriptCollapsed {
+                if appState.liveSpeakerSegments.isEmpty {
+                    // Empty state
+                    VStack(spacing: 12) {
+                        Image(systemName: "waveform")
+                            .font(.system(size: 32))
+                            .foregroundColor(OmiColors.textTertiary.opacity(0.5))
+
+                        Text("Listening...")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .frame(height: transcriptHeight)
+                    .frame(maxWidth: .infinity)
+                } else {
+                    LiveTranscriptView(segments: appState.liveSpeakerSegments)
+                        .frame(height: transcriptHeight)
+                }
+            }
+
+            // Draggable splitter
+            splitterHandle
+        }
+    }
+
+    private var splitterHandle: some View {
+        VStack(spacing: 0) {
+            // Visual handle
+            HStack {
+                Spacer()
+
+                // Collapse/expand button
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isTranscriptCollapsed.toggle()
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: isTranscriptCollapsed ? "chevron.down" : "chevron.up")
+                            .font(.system(size: 10, weight: .semibold))
+
+                        Text(isTranscriptCollapsed ? "Show Transcript" : "Hide Transcript")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(OmiColors.backgroundTertiary)
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                // Drag handle indicator
+                if !isTranscriptCollapsed {
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(OmiColors.textTertiary.opacity(0.4))
+                        .frame(width: 40, height: 4)
+                }
+
+                Spacer()
+            }
+            .frame(height: 28)
+            .background(OmiColors.backgroundSecondary.opacity(0.5))
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        if !isTranscriptCollapsed {
+                            let newHeight = transcriptHeight + value.translation.height
+                            transcriptHeight = min(max(newHeight, minTranscriptHeight), maxTranscriptHeight)
+                        }
+                    }
+            )
+            .onHover { hovering in
+                if hovering && !isTranscriptCollapsed {
+                    NSCursor.resizeUpDown.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+        }
+    }
+
+    // MARK: - Conversation List Section
+
+    private var conversationListSection: some View {
+        VStack(spacing: 0) {
+            // Section header
+            HStack {
+                Text("Past Conversations")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                Spacer()
+
+                if appState.isLoadingConversations {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            // List
             ConversationListView(
                 conversations: appState.conversations,
                 isLoading: appState.isLoadingConversations,
@@ -77,7 +198,7 @@ struct ConversationsPage: View {
                 Spacer()
 
                 // Duration
-                Text(formattedDuration)
+                Text(recordingDurationFormatted)
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .foregroundColor(OmiColors.textSecondary)
 
@@ -129,38 +250,34 @@ struct ConversationsPage: View {
             HStack(spacing: 12) {
                 audioLevelIndicator(
                     icon: "mic.fill",
-                    level: appState.microphoneAudioLevel,
-                    label: "Mic"
+                    level: appState.microphoneAudioLevel
                 )
 
                 audioLevelIndicator(
                     icon: "speaker.wave.2.fill",
-                    level: appState.systemAudioLevel,
-                    label: "System"
+                    level: appState.systemAudioLevel
                 )
             }
             .padding(.leading, 8)
         }
     }
 
-    private func audioLevelIndicator(icon: String, level: Float, label: String) -> some View {
+    private func audioLevelIndicator(icon: String, level: Float) -> some View {
         HStack(spacing: 4) {
             Image(systemName: icon)
                 .font(.system(size: 11))
                 .foregroundColor(level > 0.1 ? OmiColors.success : OmiColors.textTertiary)
 
             // Simple level bar
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(OmiColors.backgroundTertiary)
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(OmiColors.backgroundTertiary)
+                    .frame(width: 40, height: 4)
 
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(level > 0.5 ? OmiColors.success : OmiColors.purplePrimary)
-                        .frame(width: geo.size.width * CGFloat(min(level, 1.0)))
-                }
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(level > 0.5 ? OmiColors.success : OmiColors.purplePrimary)
+                    .frame(width: 40 * CGFloat(min(level, 1.0)), height: 4)
             }
-            .frame(width: 40, height: 4)
         }
     }
 
@@ -224,7 +341,8 @@ struct ConversationsPage: View {
 
     // MARK: - Helpers
 
-    private var formattedDuration: String {
+    /// Recording duration formatted - separate from conversation duration
+    private var recordingDurationFormatted: String {
         let duration = Int(appState.recordingDuration)
         let hours = duration / 3600
         let minutes = (duration % 3600) / 60
