@@ -50,7 +50,7 @@ struct SettingsView: View {
 
         // Focus settings
         _focusEnabled = State(initialValue: FocusAssistantSettings.shared.isEnabled)
-        _cooldownInterval = State(initialValue: settings.cooldownInterval)
+        _cooldownInterval = State(initialValue: FocusAssistantSettings.shared.cooldownInterval)
         _glowOverlayEnabled = State(initialValue: settings.glowOverlayEnabled)
         _analysisDelay = State(initialValue: settings.analysisDelay)
 
@@ -260,9 +260,9 @@ struct SettingsView: View {
             Divider()
                 .background(Color.primary.opacity(0.1))
 
-            // Cooldown Interval
+            // Focus Cooldown
             settingRow(
-                title: "Notification Cooldown",
+                title: "Focus Cooldown",
                 subtitle: "Minimum time between distraction alerts",
                 icon: "timer"
             ) {
@@ -274,7 +274,7 @@ struct SettingsView: View {
                 .pickerStyle(.menu)
                 .frame(width: 120)
                 .onChange(of: cooldownInterval) { newValue in
-                    AssistantSettings.shared.cooldownInterval = newValue
+                    FocusAssistantSettings.shared.cooldownInterval = newValue
                 }
             }
 
