@@ -169,8 +169,7 @@ class AppState: ObservableObject {
                 DispatchQueue.main.async {
                     NotificationService.shared.sendNotification(
                         title: "Notifications Enabled",
-                        message: "You'll receive focus alerts from OMI.",
-                        applyCooldown: false
+                        message: "You'll receive focus alerts from OMI."
                     )
                 }
             }
@@ -482,8 +481,7 @@ class AppState: ObservableObject {
             // Show notification to user
             NotificationService.shared.sendNotification(
                 title: "Conversation Saved",
-                message: response.discarded ? "Conversation was too short and was discarded" : "Your conversation has been processed",
-                applyCooldown: false
+                message: response.discarded ? "Conversation was too short and was discarded" : "Your conversation has been processed"
             )
         } catch {
             logError("Transcription: Failed to save conversation", error: error)
@@ -492,8 +490,7 @@ class AppState: ObservableObject {
             // Show error notification
             NotificationService.shared.sendNotification(
                 title: "Save Failed",
-                message: "Could not save conversation: \(error.localizedDescription)",
-                applyCooldown: false
+                message: "Could not save conversation: \(error.localizedDescription)"
             )
         }
     }
