@@ -170,19 +170,15 @@ actor APIClient {
             // Log detailed decoding error for debugging
             switch decodingError {
             case .keyNotFound(let key, let context):
-                log("Decoding error - key '\(key.stringValue)' not found: \(context.debugDescription)")
-                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                logError("Decoding error - key '\(key.stringValue)' not found: \(context.debugDescription)", error: decodingError)
             case .typeMismatch(let type, let context):
-                log("Decoding error - type mismatch for \(type): \(context.debugDescription)")
-                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                logError("Decoding error - type mismatch for \(type): \(context.debugDescription)", error: decodingError)
             case .valueNotFound(let type, let context):
-                log("Decoding error - value not found for \(type): \(context.debugDescription)")
-                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                logError("Decoding error - value not found for \(type): \(context.debugDescription)", error: decodingError)
             case .dataCorrupted(let context):
-                log("Decoding error - data corrupted: \(context.debugDescription)")
-                log("  Coding path: \(context.codingPath.map { $0.stringValue }.joined(separator: " -> "))")
+                logError("Decoding error - data corrupted: \(context.debugDescription)", error: decodingError)
             @unknown default:
-                log("Decoding error: \(decodingError)")
+                logError("Decoding error", error: decodingError)
             }
             throw decodingError
         }
