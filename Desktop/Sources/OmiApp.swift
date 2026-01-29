@@ -121,14 +121,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
 
-        // Force dark appearance on main window after a brief delay
+        // Activate app and show main window after a brief delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             log("AppDelegate: Checking windows after 0.2s delay, count=\(NSApp.windows.count)")
+            NSApp.activate(ignoringOtherApps: true)
             var foundOmiWindow = false
             for window in NSApp.windows {
                 log("AppDelegate: Window title='\(window.title)', isVisible=\(window.isVisible)")
                 if window.title == "Omi" {
                     foundOmiWindow = true
+                    window.makeKeyAndOrderFront(nil)
                     window.appearance = NSAppearance(named: .darkAqua)
                 }
             }
