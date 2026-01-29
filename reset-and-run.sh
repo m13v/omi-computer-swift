@@ -5,7 +5,7 @@ set -e
 unset OPENAI_API_KEY
 
 # App configuration
-APP_NAME="OMI-COMPUTER"
+APP_NAME="Omi Computer"
 BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
@@ -37,6 +37,9 @@ pkill "$APP_NAME" 2>/dev/null || true
 pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+
+# Clear log file for fresh run (must be before backend starts)
+rm -f /tmp/omi.log 2>/dev/null || true
 
 # Clean up conflicting app bundles with same bundle ID
 echo "Cleaning up conflicting app bundles..."
@@ -122,7 +125,7 @@ cp "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy GoogleService-Info.plist for Firebase
 cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
@@ -152,7 +155,6 @@ tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
 # Reset app data (UserDefaults, onboarding state, etc.)
 echo "Resetting app data..."
 defaults delete "$BUNDLE_ID" 2>/dev/null || true
-rm -f /tmp/omi.log 2>/dev/null || true
 
 # Clear delivered notifications
 echo "Clearing notifications..."
@@ -160,7 +162,7 @@ osascript -e "tell application \"System Events\" to tell process \"NotificationC
 
 # Note: Notification PERMISSIONS cannot be reset programmatically (Apple limitation)
 # To fully reset notification permissions, manually go to:
-# System Settings > Notifications > OMI-COMPUTER > Remove
+# System Settings > Notifications > Omi Computer > Remove
 echo "Note: Notification permissions can only be reset manually in System Settings"
 
 echo ""
