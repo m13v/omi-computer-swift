@@ -84,6 +84,9 @@ pub struct MemoryDB {
     pub manually_added: bool,
     /// Scoring string for sorting: "{manual_boost}_{category_boost}_{timestamp}"
     pub scoring: Option<String>,
+    /// Source device (enriched from linked conversation, not stored in Firestore)
+    #[serde(skip_deserializing)]
+    pub source: Option<String>,
 }
 
 fn default_visibility() -> String {
