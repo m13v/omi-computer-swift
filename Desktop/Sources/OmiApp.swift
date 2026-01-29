@@ -83,6 +83,8 @@ struct OMIApp: App {
 }
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var sentryHeartbeatTimer: Timer?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Initialize Sentry for crash reporting and error tracking
         SentrySDK.start { options in
@@ -132,6 +134,34 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             forEventClass: AEEventClass(kInternetEventClass),
             andEventID: AEEventID(kAEGetURL)
         )
+
+        // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
+        startSentryHeartbeat()
+    }
+
+    /// Start a timer that sends Sentry session snapshots every 5 minutes
+    /// This ensures we have breadcrumbs captured even without errors
+    private func startSentryHeartbeat() {
+        sentryHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
+            // Capture a session heartbeat event with current breadcrumbs
+            SentrySDK.capture(message: "Session Heartbeat") { scope in
+                scope.setLevel(.info)
+                scope.setTag(value: "heartbeat", key: "event_type")
+            }
+            log("Sentry: Session heartbeat captured")
+        }
+    }
+
+    func applicationWillTerminate(_ notification: Notification) {
+        // Stop heartbeat timer
+        sentryHeartbeatTimer?.invalidate()
+        sentryHeartbeatTimer = nil
+
+        // Capture final session snapshot before termination
+        SentrySDK.capture(message: "App Terminating") { scope in
+            scope.setLevel(.info)
+            scope.setTag(value: "lifecycle", key: "event_type")
+        }
     }
 
     @objc func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
