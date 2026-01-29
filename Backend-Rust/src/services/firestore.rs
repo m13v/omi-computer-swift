@@ -270,37 +270,74 @@ impl FirestoreService {
 
     /// Get conversations for a user
     /// Path: users/{uid}/conversations
+    /// Ported from Python: database/conversations.py get_conversations()
     pub async fn get_conversations(
         &self,
         uid: &str,
         limit: usize,
         offset: usize,
         include_discarded: bool,
+        statuses: &[String],
     ) -> Result<Vec<Conversation>, Box<dyn std::error::Error + Send + Sync>> {
-        let url = format!(
-            "{}/{}/{}/{}/{}",
-            self.base_url(),
-            USERS_COLLECTION,
-            uid,
-            CONVERSATIONS_SUBCOLLECTION,
-            ""
-        );
+        // Build filters array (match Python behavior)
+        let mut filters: Vec<Value> = Vec::new();
+
+        // Python: if not include_discarded: where(discarded == False)
+        // Only filter when include_discarded is false
+        if !include_discarded {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "discarded"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": false}
+                }
+            }));
+        }
+
+        // Python: if len(statuses) > 0: where(status in statuses)
+        if !statuses.is_empty() {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "status"},
+                    "op": "IN",
+                    "value": {
+                        "arrayValue": {
+                            "values": statuses.iter().map(|s| json!({"stringValue": s})).collect::<Vec<_>>()
+                        }
+                    }
+                }
+            }));
+        }
+
+        // Build the where clause based on number of filters
+        let where_clause = if filters.is_empty() {
+            None
+        } else if filters.len() == 1 {
+            Some(filters.into_iter().next().unwrap())
+        } else {
+            // Multiple filters need compositeFilter with AND
+            Some(json!({
+                "compositeFilter": {
+                    "op": "AND",
+                    "filters": filters
+                }
+            }))
+        };
 
         // Build structured query
+        let mut structured_query = json!({
+            "from": [{"collectionId": CONVERSATIONS_SUBCOLLECTION}],
+            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
+            "limit": limit,
+            "offset": offset
+        });
+
+        if let Some(where_filter) = where_clause {
+            structured_query["where"] = where_filter;
+        }
+
         let query = json!({
-            "structuredQuery": {
-                "from": [{"collectionId": CONVERSATIONS_SUBCOLLECTION}],
-                "where": {
-                    "fieldFilter": {
-                        "field": {"fieldPath": "discarded"},
-                        "op": "EQUAL",
-                        "value": {"booleanValue": include_discarded}
-                    }
-                },
-                "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
-                "limit": limit,
-                "offset": offset
-            }
+            "structuredQuery": structured_query
         });
 
         let parent = format!(
@@ -309,6 +346,8 @@ impl FirestoreService {
             USERS_COLLECTION,
             uid
         );
+
+        tracing::debug!("Firestore query: {}", serde_json::to_string_pretty(&query).unwrap_or_default());
 
         let response = self
             .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
@@ -320,18 +359,25 @@ impl FirestoreService {
         if !response.status().is_success() {
             let error_text = response.text().await?;
             tracing::error!("Firestore query error: {}", error_text);
-            return Ok(vec![]);
+            return Err(format!("Firestore query failed: {}", error_text).into());
         }
 
         let results: Vec<Value> = response.json().await?;
-        let conversations = results
+        let conversations: Vec<Conversation> = results
             .into_iter()
             .filter_map(|doc| {
                 doc.get("document")
-                    .and_then(|d| self.parse_conversation(d).ok())
+                    .and_then(|d| match self.parse_conversation(d) {
+                        Ok(conv) => Some(conv),
+                        Err(e) => {
+                            tracing::warn!("Failed to parse conversation: {}", e);
+                            None
+                        }
+                    })
             })
             .collect();
 
+        tracing::info!("Retrieved {} conversations for user {}", conversations.len(), uid);
         Ok(conversations)
     }
 
@@ -593,11 +639,19 @@ impl FirestoreService {
         let name = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let id = name.split('/').last().unwrap_or("").to_string();
 
+        // Use created_at as fallback for missing timestamps
+        let created_at = self.parse_timestamp_optional(fields, "created_at")
+            .unwrap_or_else(Utc::now);
+        let started_at = self.parse_timestamp_optional(fields, "started_at")
+            .unwrap_or(created_at);
+        let finished_at = self.parse_timestamp_optional(fields, "finished_at")
+            .unwrap_or(created_at);
+
         Ok(Conversation {
             id,
-            created_at: self.parse_timestamp(fields, "created_at")?,
-            started_at: self.parse_timestamp(fields, "started_at")?,
-            finished_at: self.parse_timestamp(fields, "finished_at")?,
+            created_at,
+            started_at,
+            finished_at,
             source: self.parse_string(fields, "source")
                 .and_then(|s| serde_json::from_str(&format!("\"{}\"", s)).ok())
                 .unwrap_or_default(),
@@ -662,12 +716,29 @@ impl FirestoreService {
     }
 
     /// Parse transcript segments
+    /// Note: Python stores segments as encrypted+compressed strings for enhanced protection.
+    /// This implementation handles plain arrays; encrypted segments return empty vec.
+    /// TODO: Implement decryption for full parity with Python backend.
     fn parse_transcript_segments(
         &self,
         fields: &Value,
     ) -> Result<Vec<TranscriptSegment>, Box<dyn std::error::Error + Send + Sync>> {
-        let segments = fields
-            .get("transcript_segments")
+        let transcript_field = fields.get("transcript_segments");
+
+        // Check if transcript is a string (encrypted/compressed) - not yet supported
+        if let Some(string_val) = transcript_field.and_then(|t| t.get("stringValue")) {
+            tracing::debug!("Transcript segments are encrypted/compressed (string format), returning empty");
+            return Ok(vec![]);
+        }
+
+        // Check if transcript is bytes (compressed) - not yet supported
+        if let Some(bytes_val) = transcript_field.and_then(|t| t.get("bytesValue")) {
+            tracing::debug!("Transcript segments are compressed (bytes format), returning empty");
+            return Ok(vec![]);
+        }
+
+        // Handle plain array format
+        let segments = transcript_field
             .and_then(|s| s.get("arrayValue"))
             .and_then(|a| a.get("values"))
             .and_then(|v| v.as_array());
@@ -774,6 +845,15 @@ impl FirestoreService {
         DateTime::parse_from_rfc3339(ts)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| format!("Invalid timestamp {}: {}", key, e).into())
+    }
+
+    fn parse_timestamp_optional(&self, fields: &Value, key: &str) -> Option<DateTime<Utc>> {
+        fields
+            .get(key)
+            .and_then(|v| v.get("timestampValue"))
+            .and_then(|v| v.as_str())
+            .and_then(|ts| DateTime::parse_from_rfc3339(ts).ok())
+            .map(|dt| dt.with_timezone(&Utc))
     }
 }
 
