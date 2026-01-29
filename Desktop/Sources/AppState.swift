@@ -314,7 +314,7 @@ class AppState: ObservableObject {
                 },
                 onError: { [weak self] error in
                     Task { @MainActor in
-                        log("Transcription error: \(error.localizedDescription)")
+                        logError("Transcription error", error: error)
                         MixpanelManager.shared.recordingError(error: error.localizedDescription)
                         self?.stopTranscription()
                     }
@@ -386,14 +386,14 @@ class AppState: ObservableObject {
                         log("Transcription: System audio capture started")
                     } catch {
                         // System audio is optional - continue with mic only
-                        log("Transcription: System audio capture failed (continuing with mic only) - \(error.localizedDescription)")
+                        logError("Transcription: System audio capture failed (continuing with mic only)", error: error)
                     }
                 }
             }
 
             log("Transcription: Audio capture started (multichannel)")
         } catch {
-            log("Transcription: Failed to start audio capture - \(error.localizedDescription)")
+            logError("Transcription: Failed to start audio capture", error: error)
             stopTranscription()
         }
     }
@@ -486,7 +486,7 @@ class AppState: ObservableObject {
                 applyCooldown: false
             )
         } catch {
-            log("Transcription: Failed to save conversation - \(error.localizedDescription)")
+            logError("Transcription: Failed to save conversation", error: error)
             MixpanelManager.shared.recordingError(error: "Failed to save: \(error.localizedDescription)")
 
             // Show error notification
@@ -676,7 +676,7 @@ class AppState: ObservableObject {
             log("System audio: Permission verified")
 
         } catch {
-            log("System audio: Test capture failed - \(error.localizedDescription)")
+            logError("System audio: Test capture failed", error: error)
             hasSystemAudioPermission = false
 
             // Open System Settings to Screen Recording section
