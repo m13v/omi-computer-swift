@@ -4,7 +4,7 @@ import GRDB
 // MARK: - Screenshot Model
 
 /// Represents a captured screenshot stored in the Rewind database
-struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable {
+struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Equatable {
     /// Database row ID (auto-generated)
     var id: Int64?
 
