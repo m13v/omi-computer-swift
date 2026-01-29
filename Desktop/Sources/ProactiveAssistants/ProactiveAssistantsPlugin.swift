@@ -195,8 +195,7 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         NotificationService.shared.sendNotification(
             title: "OMI Assistants",
-            message: "Monitoring started",
-            applyCooldown: false
+            message: "Monitoring started"
         )
 
         sendEvent(type: "monitoringStarted", data: [:])
@@ -253,8 +252,7 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         NotificationService.shared.sendNotification(
             title: "OMI Assistants",
-            message: "Monitoring stopped",
-            applyCooldown: false
+            message: "Monitoring stopped"
         )
 
         sendEvent(type: "monitoringStopped", data: [:])
