@@ -22,6 +22,22 @@ class AppState: ObservableObject {
     @Published var hasSystemAudioPermission = false
     @Published var isSystemAudioSupported = false
 
+    // Audio levels for visualization (0.0 - 1.0)
+    @Published var microphoneAudioLevel: Float = 0.0
+    @Published var systemAudioLevel: Float = 0.0
+
+    // Recording timer
+    @Published var recordingDuration: TimeInterval = 0
+    private var recordingDisplayTimer: Timer?
+
+    // Exposed speaker segments for live transcript display
+    @Published var liveSpeakerSegments: [SpeakerSegment] = []
+
+    // Conversation state
+    @Published var conversations: [ServerConversation] = []
+    @Published var isLoadingConversations: Bool = false
+    @Published var conversationsError: String? = nil
+
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
     @Published var hasScreenRecordingPermission = false
@@ -333,7 +349,19 @@ class AppState: ObservableObject {
             isTranscribing = true
             currentTranscript = ""
             speakerSegments = []
+            liveSpeakerSegments = []
             recordingStartTime = Date()
+            recordingDuration = 0
+            microphoneAudioLevel = 0.0
+            systemAudioLevel = 0.0
+
+            // Start display timer for recording duration
+            recordingDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    guard let self = self, let startTime = self.recordingStartTime else { return }
+                    self.recordingDuration = Date().timeIntervalSince(startTime)
+                }
+            }
 
             // Start 4-hour max recording timer
             maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: maxRecordingDuration, repeats: false) { [weak self] _ in
@@ -370,18 +398,28 @@ class AppState: ObservableObject {
 
         do {
             // Start microphone capture - sends to mixer channel 0 (left/user)
-            try audioCaptureService.startCapture { [weak self] audioData in
-                self?.audioMixer?.setMicAudio(audioData)
-            }
+            try audioCaptureService.startCapture(
+                onAudioChunk: { [weak self] audioData in
+                    self?.audioMixer?.setMicAudio(audioData)
+                },
+                onAudioLevel: { [weak self] level in
+                    self?.microphoneAudioLevel = level
+                }
+            )
             log("Transcription: Microphone capture started")
 
             // Start system audio capture if available (macOS 14.4+)
             if #available(macOS 14.4, *) {
                 if let systemService = systemAudioCaptureService as? SystemAudioCaptureService {
                     do {
-                        try systemService.startCapture { [weak self] audioData in
-                            self?.audioMixer?.setSystemAudio(audioData)
-                        }
+                        try systemService.startCapture(
+                            onAudioChunk: { [weak self] audioData in
+                                self?.audioMixer?.setSystemAudio(audioData)
+                            },
+                            onAudioLevel: { [weak self] level in
+                                self?.systemAudioLevel = level
+                            }
+                        )
                         log("Transcription: System audio capture started")
                     } catch {
                         // System audio is optional - continue with mic only
@@ -410,9 +448,15 @@ class AppState: ObservableObject {
         // Calculate word count before stopping
         let wordCount = currentTranscript.split(separator: " ").count
 
-        // Cancel the max recording timer
+        // Cancel timers
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
+        recordingDisplayTimer?.invalidate()
+        recordingDisplayTimer = nil
+
+        // Reset audio levels
+        microphoneAudioLevel = 0.0
+        systemAudioLevel = 0.0
 
         // Stop system audio capture first (if available)
         if #available(macOS 14.4, *) {
@@ -440,12 +484,49 @@ class AppState: ObservableObject {
 
         // Clear segments after finalization
         speakerSegments = []
+        liveSpeakerSegments = []
         recordingStartTime = nil
 
         // Track transcription stopped
         MixpanelManager.shared.transcriptionStopped(wordCount: wordCount)
 
         log("Transcription: Stopped")
+
+        // Refresh conversations after stopping
+        Task {
+            await loadConversations()
+        }
+    }
+
+    // MARK: - Conversations
+
+    /// Load conversations from the API
+    func loadConversations() async {
+        guard !isLoadingConversations else { return }
+
+        isLoadingConversations = true
+        conversationsError = nil
+
+        do {
+            let fetchedConversations = try await APIClient.shared.getConversations(
+                limit: 50,
+                offset: 0,
+                statuses: [.completed, .processing],
+                includeDiscarded: false
+            )
+            conversations = fetchedConversations
+            log("Conversations: Loaded \(fetchedConversations.count) conversations")
+        } catch {
+            logError("Conversations: Failed to load", error: error)
+            conversationsError = error.localizedDescription
+        }
+
+        isLoadingConversations = false
+    }
+
+    /// Refresh conversations (for pull-to-refresh)
+    func refreshConversations() async {
+        await loadConversations()
     }
 
     /// Finalize and save the current conversation to the backend
@@ -584,6 +665,9 @@ class AppState: ObservableObject {
             let speakerLabel = seg.speaker == 0 ? "user" : "other"
             log("  [\(i)] Speaker \(seg.speaker)(\(speakerLabel)) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
         }
+
+        // Update published segments for UI
+        liveSpeakerSegments = speakerSegments
 
         // Update display transcript
         updateTranscriptDisplay()
