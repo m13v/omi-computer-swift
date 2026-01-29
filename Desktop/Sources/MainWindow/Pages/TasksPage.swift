@@ -296,10 +296,15 @@ struct TasksPage: View {
             LazyVStack(spacing: 8) {
                 ForEach(viewModel.filteredTasks) { task in
                     TaskRow(task: task, viewModel: viewModel)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .slide),
+                            removal: .opacity.combined(with: .move(edge: .trailing))
+                        ))
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .animation(.easeInOut(duration: 0.3), value: viewModel.filteredTasks.map(\.id))
         }
         .refreshable {
             await viewModel.loadTasks()
@@ -314,18 +319,36 @@ struct TaskRow: View {
     @ObservedObject var viewModel: TasksViewModel
     @State private var isHovering = false
     @State private var showDeleteConfirmation = false
+    @State private var isCompletingAnimation = false
+    @State private var checkmarkScale: CGFloat = 1.0
+    @State private var rowOpacity: Double = 1.0
+    @State private var rowOffset: CGFloat = 0
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            // Checkbox
+            // Checkbox with animation
             Button(action: {
-                Task {
-                    await viewModel.toggleTask(task)
-                }
+                handleToggle()
             }) {
-                Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 20))
-                    .foregroundColor(task.completed ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                ZStack {
+                    // Background circle
+                    Circle()
+                        .stroke(isCompletingAnimation || task.completed ? OmiColors.purplePrimary : OmiColors.textTertiary, lineWidth: 1.5)
+                        .frame(width: 20, height: 20)
+
+                    // Filled circle and checkmark
+                    if isCompletingAnimation || task.completed {
+                        Circle()
+                            .fill(OmiColors.purplePrimary)
+                            .frame(width: 20, height: 20)
+                            .scaleEffect(checkmarkScale)
+
+                        Image(systemName: "checkmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundColor(.white)
+                            .scaleEffect(checkmarkScale)
+                    }
+                }
             }
             .buttonStyle(.plain)
             .padding(.top, 2)
@@ -388,6 +411,8 @@ struct TaskRow: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(isHovering ? OmiColors.backgroundTertiary : Color.clear)
         )
+        .opacity(rowOpacity)
+        .offset(x: rowOffset)
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
@@ -406,6 +431,46 @@ struct TaskRow: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("Are you sure you want to delete this task? This action cannot be undone.")
+        }
+    }
+
+    private func handleToggle() {
+        // If already completed, just toggle without animation
+        if task.completed {
+            Task {
+                await viewModel.toggleTask(task)
+            }
+            return
+        }
+
+        // Animate the completion
+        isCompletingAnimation = true
+
+        // Checkmark pop animation
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
+            checkmarkScale = 1.2
+        }
+
+        // Scale back down
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
+                checkmarkScale = 1.0
+            }
+        }
+
+        // Slide and fade out after a brief moment
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            withAnimation(.easeInOut(duration: 0.3)) {
+                rowOpacity = 0.0
+                rowOffset = 50
+            }
+        }
+
+        // Actually toggle the task after animation
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            Task {
+                await viewModel.toggleTask(task)
+            }
         }
     }
 }
