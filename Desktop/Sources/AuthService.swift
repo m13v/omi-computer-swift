@@ -692,7 +692,7 @@ class AuthService {
                     log("... and \(conversations.count - 5) more conversations")
                 }
             } catch {
-                log("Failed to fetch conversations: \(error.localizedDescription)")
+                logError("Failed to fetch conversations", error: error)
             }
         }
     }
