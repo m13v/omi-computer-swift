@@ -288,7 +288,7 @@ class SystemAudioCaptureService {
         converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
 
         if let error = error {
-            log("SystemAudioCapture: Conversion error - \(error.localizedDescription)")
+            logError("SystemAudioCapture: Conversion error", error: error)
             return
         }
 
