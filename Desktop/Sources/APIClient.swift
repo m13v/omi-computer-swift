@@ -681,9 +681,10 @@ struct ServerMemory: Codable, Identifiable {
     let visibility: String
     let manuallyAdded: Bool
     let scoring: String?
+    let source: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, content, category, reviewed, visibility, scoring
+        case id, content, category, reviewed, visibility, scoring, source
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case conversationId = "conversation_id"
@@ -704,10 +705,51 @@ struct ServerMemory: Codable, Identifiable {
         visibility = try container.decodeIfPresent(String.self, forKey: .visibility) ?? "private"
         manuallyAdded = try container.decodeIfPresent(Bool.self, forKey: .manuallyAdded) ?? false
         scoring = try container.decodeIfPresent(String.self, forKey: .scoring)
+        source = try container.decodeIfPresent(String.self, forKey: .source)
     }
 
     var isPublic: Bool {
         visibility == "public"
+    }
+
+    /// Human-readable source name
+    var sourceName: String? {
+        guard let source = source else { return nil }
+        switch source {
+        case "omi": return "OMI"
+        case "desktop": return "Desktop"
+        case "phone": return "Phone"
+        case "frame": return "Frame"
+        case "friend", "friend_com": return "Friend"
+        case "apple_watch": return "Apple Watch"
+        case "bee": return "Bee"
+        case "plaud": return "Plaud"
+        case "limitless": return "Limitless"
+        case "screenpipe": return "Screenpipe"
+        case "workflow": return "Integration"
+        case "openglass": return "OpenGlass"
+        default: return source.capitalized
+        }
+    }
+
+    /// SF Symbol for source device
+    var sourceIcon: String {
+        guard let source = source else { return "questionmark.circle" }
+        switch source {
+        case "omi": return "wave.3.right.circle"
+        case "desktop": return "desktopcomputer"
+        case "phone": return "iphone"
+        case "frame": return "eyeglasses"
+        case "friend", "friend_com": return "person.wave.2"
+        case "apple_watch": return "applewatch"
+        case "bee": return "ant"
+        case "plaud": return "mic"
+        case "limitless": return "infinity"
+        case "screenpipe": return "rectangle.on.rectangle"
+        case "workflow": return "arrow.triangle.branch"
+        case "openglass": return "eyeglasses"
+        default: return "circle"
+        }
     }
 }
 
