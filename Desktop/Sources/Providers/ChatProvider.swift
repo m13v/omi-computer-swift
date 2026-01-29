@@ -1,109 +1,171 @@
 import SwiftUI
 
-/// State management for chat functionality
+/// A single chat message
+struct ChatMessage: Identifiable {
+    let id: String
+    var text: String
+    let createdAt: Date
+    let sender: ChatSender
+    var isStreaming: Bool
+
+    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false) {
+        self.id = id
+        self.text = text
+        self.createdAt = createdAt
+        self.sender = sender
+        self.isStreaming = isStreaming
+    }
+}
+
+enum ChatSender {
+    case user
+    case ai
+}
+
+/// State management for chat functionality with client-side Gemini
 @MainActor
 class ChatProvider: ObservableObject {
-    @Published var messages: [ServerChatMessage] = []
+    @Published var messages: [ChatMessage] = []
     @Published var isLoading = false
     @Published var isSending = false
     @Published var errorMessage: String?
     @Published var selectedAppId: String?
 
-    private let apiClient = APIClient.shared
+    private var geminiClient: GeminiClient?
+
+    private let systemPrompt = """
+    You are OMI, a friendly and helpful personal AI assistant. You have access to the user's memories and context from their daily activities.
+
+    Guidelines:
+    - Be conversational, warm, and helpful
+    - Keep responses concise but informative (2-4 sentences for simple questions, longer for complex topics)
+    - Use the user's context and memories when relevant
+    - If you don't have enough context, ask clarifying questions
+    - Never make up information about the user's life or activities
+    - Be proactive in offering helpful suggestions when appropriate
+    """
+
+    init() {
+        do {
+            self.geminiClient = try GeminiClient()
+            log("ChatProvider initialized with Gemini client")
+        } catch {
+            logError("Failed to initialize Gemini client", error: error)
+            self.errorMessage = "AI not available: \(error.localizedDescription)"
+        }
+    }
 
     // MARK: - Fetch Messages
 
-    /// Fetch chat messages for the current app
+    /// Fetch chat messages (currently just clears for fresh start)
     func fetchMessages() async {
-        isLoading = true
+        // For client-side chat, we start fresh each session
+        // In the future, we could persist locally or sync with backend
+        messages.removeAll()
         errorMessage = nil
-        defer { isLoading = false }
-
-        do {
-            messages = try await apiClient.getChatMessages(appId: selectedAppId, limit: 100)
-            log("Fetched \(messages.count) messages for app: \(selectedAppId ?? "default")")
-        } catch {
-            logError("Failed to fetch messages", error: error)
-            errorMessage = "Failed to load messages: \(error.localizedDescription)"
-        }
     }
 
     // MARK: - Send Message
 
-    /// Send a message and get AI response
+    /// Send a message and get streaming AI response
     func sendMessage(_ text: String) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
+        guard let client = geminiClient else {
+            errorMessage = "AI not available"
+            return
+        }
+
         isSending = true
         errorMessage = nil
-        defer { isSending = false }
 
-        // Add optimistic human message
-        let tempHumanMessage = ServerChatMessage(
-            id: UUID().uuidString,
+        // Add user message
+        let userMessage = ChatMessage(
             text: trimmedText,
-            createdAt: Date(),
-            sender: .human,
-            appId: selectedAppId,
-            type: .text,
-            memoriesId: [],
-            chatSessionId: nil
+            sender: .user
         )
-        messages.append(tempHumanMessage)
+        messages.append(userMessage)
+
+        // Create placeholder AI message for streaming
+        let aiMessageId = UUID().uuidString
+        let aiMessage = ChatMessage(
+            id: aiMessageId,
+            text: "",
+            sender: .ai,
+            isStreaming: true
+        )
+        messages.append(aiMessage)
 
         do {
-            // Send message and get AI response
-            let aiResponse = try await apiClient.sendChatMessage(text: trimmedText, appId: selectedAppId)
+            // Build chat history for Gemini
+            let chatHistory = buildChatHistory()
 
-            // The API returns only the AI response, so we keep the human message and add AI response
-            messages.append(aiResponse)
+            // Stream response from Gemini
+            let _ = try await client.sendChatStreamRequest(
+                messages: chatHistory,
+                systemPrompt: systemPrompt,
+                onChunk: { [weak self] chunk in
+                    Task { @MainActor in
+                        self?.appendToMessage(id: aiMessageId, text: chunk)
+                    }
+                }
+            )
 
-            log("Sent message, received AI response")
+            // Mark streaming complete
+            if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                messages[index].isStreaming = false
+            }
+
+            log("Chat response complete")
         } catch {
-            // Remove optimistic message on error
-            messages.removeAll { $0.id == tempHumanMessage.id }
+            // Remove AI message placeholder on error
+            messages.removeAll { $0.id == aiMessageId }
 
-            logError("Failed to send message", error: error)
-            errorMessage = "Failed to send message: \(error.localizedDescription)"
+            logError("Failed to get AI response", error: error)
+            errorMessage = "Failed to get response: \(error.localizedDescription)"
+        }
+
+        isSending = false
+    }
+
+    /// Append text to a streaming message
+    private func appendToMessage(id: String, text: String) {
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index].text += text
+        }
+    }
+
+    /// Build chat history in Gemini format
+    private func buildChatHistory() -> [GeminiClient.ChatMessage] {
+        return messages.compactMap { message in
+            // Skip empty AI messages (streaming placeholder)
+            if message.sender == .ai && message.text.isEmpty {
+                return nil
+            }
+            return GeminiClient.ChatMessage(
+                role: message.sender == .user ? "user" : "model",
+                text: message.text
+            )
         }
     }
 
     // MARK: - Clear Chat
 
-    /// Clear all messages and get initial greeting
+    /// Clear all messages
     func clearChat() async {
-        isLoading = true
+        messages.removeAll()
         errorMessage = nil
-        defer { isLoading = false }
-
-        do {
-            let response = try await apiClient.clearChatMessages(appId: selectedAppId)
-            messages.removeAll()
-
-            // Add initial greeting if provided
-            if let initialMessage = response.initialMessage {
-                messages.append(initialMessage)
-            }
-
-            log("Cleared \(response.deletedCount) messages")
-        } catch {
-            logError("Failed to clear chat", error: error)
-            errorMessage = "Failed to clear chat: \(error.localizedDescription)"
-        }
+        log("Chat cleared")
     }
 
     // MARK: - App Selection
 
-    /// Select a chat app
+    /// Select a chat app (for future app-specific chat)
     func selectApp(_ appId: String?) {
         guard selectedAppId != appId else { return }
         selectedAppId = appId
         messages.removeAll()
-
-        // Fetch messages for the new app
-        Task {
-            await fetchMessages()
-        }
+        errorMessage = nil
     }
 }
