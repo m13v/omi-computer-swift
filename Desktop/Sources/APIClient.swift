@@ -1581,3 +1581,198 @@ struct ClearChatResponse: Codable {
         case initialMessage = "initial_message"
     }
 }
+
+// MARK: - User Settings API
+
+extension APIClient {
+
+    /// Fetches daily summary settings
+    func getDailySummarySettings() async throws -> DailySummarySettings {
+        return try await get("v1/users/daily-summary-settings")
+    }
+
+    /// Updates daily summary settings
+    func updateDailySummarySettings(enabled: Bool? = nil, hour: Int? = nil) async throws -> DailySummarySettings {
+        struct UpdateRequest: Encodable {
+            let enabled: Bool?
+            let hour: Int?
+        }
+        let body = UpdateRequest(enabled: enabled, hour: hour)
+        return try await patch("v1/users/daily-summary-settings", body: body)
+    }
+
+    /// Fetches transcription preferences
+    func getTranscriptionPreferences() async throws -> TranscriptionPreferences {
+        return try await get("v1/users/transcription-preferences")
+    }
+
+    /// Updates transcription preferences
+    func updateTranscriptionPreferences(singleLanguageMode: Bool? = nil, vocabulary: [String]? = nil) async throws -> TranscriptionPreferences {
+        struct UpdateRequest: Encodable {
+            let singleLanguageMode: Bool?
+            let vocabulary: [String]?
+
+            enum CodingKeys: String, CodingKey {
+                case singleLanguageMode = "single_language_mode"
+                case vocabulary
+            }
+        }
+        let body = UpdateRequest(singleLanguageMode: singleLanguageMode, vocabulary: vocabulary)
+        return try await patch("v1/users/transcription-preferences", body: body)
+    }
+
+    /// Fetches user language preference
+    func getUserLanguage() async throws -> UserLanguageResponse {
+        return try await get("v1/users/language")
+    }
+
+    /// Updates user language preference
+    func updateUserLanguage(_ language: String) async throws -> UserLanguageResponse {
+        struct UpdateRequest: Encodable {
+            let language: String
+        }
+        let body = UpdateRequest(language: language)
+        return try await patch("v1/users/language", body: body)
+    }
+
+    /// Fetches recording permission status
+    func getRecordingPermission() async throws -> RecordingPermissionResponse {
+        return try await get("v1/users/store-recording-permission")
+    }
+
+    /// Sets recording permission
+    func setRecordingPermission(enabled: Bool) async throws {
+        let url = URL(string: baseURL + "v1/users/store-recording-permission?value=\(enabled)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+    }
+
+    /// Fetches private cloud sync setting
+    func getPrivateCloudSync() async throws -> PrivateCloudSyncResponse {
+        return try await get("v1/users/private-cloud-sync")
+    }
+
+    /// Sets private cloud sync
+    func setPrivateCloudSync(enabled: Bool) async throws {
+        let url = URL(string: baseURL + "v1/users/private-cloud-sync?value=\(enabled)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+    }
+
+    /// Fetches notification settings
+    func getNotificationSettings() async throws -> NotificationSettingsResponse {
+        return try await get("v1/users/notification-settings")
+    }
+
+    /// Updates notification settings
+    func updateNotificationSettings(enabled: Bool? = nil, frequency: Int? = nil) async throws -> NotificationSettingsResponse {
+        struct UpdateRequest: Encodable {
+            let enabled: Bool?
+            let frequency: Int?
+        }
+        let body = UpdateRequest(enabled: enabled, frequency: frequency)
+        return try await patch("v1/users/notification-settings", body: body)
+    }
+
+    /// Fetches user profile
+    func getUserProfile() async throws -> UserProfileResponse {
+        return try await get("v1/users/profile")
+    }
+}
+
+// MARK: - User Settings Models
+
+/// Daily summary notification settings
+struct DailySummarySettings: Codable {
+    let enabled: Bool
+    let hour: Int
+}
+
+/// Transcription preferences
+struct TranscriptionPreferences: Codable {
+    let singleLanguageMode: Bool
+    let vocabulary: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case singleLanguageMode = "single_language_mode"
+        case vocabulary
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        singleLanguageMode = try container.decodeIfPresent(Bool.self, forKey: .singleLanguageMode) ?? false
+        vocabulary = try container.decodeIfPresent([String].self, forKey: .vocabulary) ?? []
+    }
+}
+
+/// User language response
+struct UserLanguageResponse: Codable {
+    let language: String
+}
+
+/// Recording permission response
+struct RecordingPermissionResponse: Codable {
+    let enabled: Bool
+}
+
+/// Private cloud sync response
+struct PrivateCloudSyncResponse: Codable {
+    let enabled: Bool
+}
+
+/// Notification settings response
+struct NotificationSettingsResponse: Codable {
+    let enabled: Bool
+    let frequency: Int
+
+    /// Frequency level description
+    var frequencyDescription: String {
+        switch frequency {
+        case 0: return "Off"
+        case 1: return "Minimal"
+        case 2: return "Low"
+        case 3: return "Balanced"
+        case 4: return "High"
+        case 5: return "Maximum"
+        default: return "Unknown"
+        }
+    }
+}
+
+/// User profile response
+struct UserProfileResponse: Codable {
+    let uid: String
+    let email: String?
+    let name: String?
+    let timeZone: String?
+    let createdAt: String?
+
+    enum CodingKeys: String, CodingKey {
+        case uid, email, name
+        case timeZone = "time_zone"
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        uid = try container.decode(String.self, forKey: .uid)
+        email = try container.decodeIfPresent(String.self, forKey: .email)
+        name = try container.decodeIfPresent(String.self, forKey: .name)
+        timeZone = try container.decodeIfPresent(String.self, forKey: .timeZone)
+        createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+}
