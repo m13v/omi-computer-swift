@@ -44,7 +44,7 @@ struct OMIApp: App {
         MenuBarExtra {
             MenuBarView(appState: appState, authState: authState, openOnboarding: { openWindow(id: "onboarding") })
         } label: {
-            Text("OMI")
+            Text("Omi")
         }
         .menuBarExtraStyle(.menu)
 
