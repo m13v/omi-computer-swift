@@ -64,7 +64,7 @@ actor APIClient {
         ]
 
         if requireAuth {
-            let authService = await AuthService.shared
+            let authService = AuthService.shared
             let authHeader = try await authService.getAuthHeader()
             headers["Authorization"] = authHeader
         }
@@ -150,7 +150,7 @@ actor APIClient {
         // Handle 401 - token might be expired
         if httpResponse.statusCode == 401 {
             // Try to refresh token and retry once
-            let authService = await AuthService.shared
+            let authService = AuthService.shared
             _ = try await authService.getIdToken(forceRefresh: true)
 
             var retryRequest = request
