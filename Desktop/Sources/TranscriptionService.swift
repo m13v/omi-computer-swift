@@ -164,7 +164,7 @@ class TranscriptionService {
         let message = URLSessionWebSocketTask.Message.data(data)
         webSocketTask.send(message) { [weak self] error in
             if let error = error {
-                log("TranscriptionService: Send error - \(error.localizedDescription)")
+                logError("TranscriptionService: Send error", error: error)
                 self?.handleDisconnection()
             }
         }
@@ -252,7 +252,7 @@ class TranscriptionService {
         let message = URLSessionWebSocketTask.Message.string(keepalive)
         webSocketTask.send(message) { [weak self] error in
             if let error = error {
-                log("TranscriptionService: Keepalive error - \(error.localizedDescription)")
+                logError("TranscriptionService: Keepalive error", error: error)
                 self?.handleDisconnection()
             }
         }
@@ -307,7 +307,7 @@ class TranscriptionService {
                 self.receiveMessage()
 
             case .failure(let error):
-                log("TranscriptionService: Receive error - \(error.localizedDescription)")
+                logError("TranscriptionService: Receive error", error: error)
                 self.handleDisconnection()
             }
         }
@@ -356,7 +356,7 @@ class TranscriptionService {
             }
         } catch {
             // Log but don't treat as fatal - some messages may be metadata
-            log("TranscriptionService: Parse warning - \(error.localizedDescription)")
+            logError("TranscriptionService: Parse warning", error: error)
         }
     }
 
