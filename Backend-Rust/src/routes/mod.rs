@@ -7,6 +7,7 @@ pub mod conversations;
 pub mod health;
 pub mod memories;
 pub mod messages;
+pub mod users;
 
 use crate::AppState;
 
@@ -17,3 +18,4 @@ pub use conversations::conversations_routes;
 pub use health::health_routes;
 pub use memories::memories_routes;
 pub use messages::messages_routes;
+pub use users::users_routes;
