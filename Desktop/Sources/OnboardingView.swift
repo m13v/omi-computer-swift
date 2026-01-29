@@ -3,6 +3,7 @@ import AppKit
 
 struct OnboardingView: View {
     @ObservedObject var appState: AppState
+    var onComplete: (() -> Void)? = nil
     @AppStorage("onboardingStep") private var currentStep = 0
     @Environment(\.dismiss) private var dismiss
 
@@ -578,7 +579,12 @@ struct OnboardingView: View {
             appState.hasCompletedOnboarding = true
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
             appState.startTranscription()
-            dismiss()
+            // Call completion handler to open main window
+            if let onComplete = onComplete {
+                onComplete()
+            } else {
+                dismiss()
+            }
         default:
             break
         }
