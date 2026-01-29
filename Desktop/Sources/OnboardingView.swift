@@ -26,24 +26,32 @@ struct OnboardingView: View {
     @FocusState private var isNameFieldFocused: Bool
 
     var body: some View {
-        Group {
-            if appState.hasCompletedOnboarding {
-                // Auto-start monitoring and dismiss
-                Color.clear
-                    .onAppear {
-                        if !ProactiveAssistantsPlugin.shared.isMonitoring {
-                            ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
+        ZStack {
+            // Full dark background
+            OmiColors.backgroundPrimary
+                .ignoresSafeArea()
+
+            Group {
+                if appState.hasCompletedOnboarding {
+                    // Auto-start monitoring
+                    Color.clear
+                        .onAppear {
+                            if !ProactiveAssistantsPlugin.shared.isMonitoring {
+                                ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
+                            }
+                            // If we have a completion handler, call it; otherwise dismiss
+                            if let onComplete = onComplete {
+                                onComplete()
+                            } else {
+                                dismiss()
+                            }
                         }
-                        dismiss()
-                    }
-            } else {
-                onboardingContent
+                } else {
+                    onboardingContent
+                }
             }
         }
-        .frame(
-            width: currentStep == 4 && !appState.hasScreenRecordingPermission ? 500 : 400,
-            height: currentStep == 4 && !appState.hasScreenRecordingPermission ? 520 : 400
-        )
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onReceive(permissionCheckTimer) { _ in
             // Only poll for permissions that user has triggered
             if hasTriggeredNotification {
@@ -118,18 +126,18 @@ struct OnboardingView: View {
             NSApp.activate(ignoringOtherApps: true)
             log("Called NSApp.activate(ignoringOtherApps: true)")
 
-            // Also bring the onboarding window to front
+            // Bring the main window to front
             var foundWindow = false
             for window in NSApp.windows {
-                if window.title == "Welcome to Omi Computer" {
+                if window.title == "Omi" {
                     foundWindow = true
-                    log("Found 'Welcome to Omi Computer' window, making key and ordering front")
+                    log("Found 'Omi' window, making key and ordering front")
                     window.makeKeyAndOrderFront(nil)
                     window.orderFrontRegardless()
                 }
             }
             if !foundWindow {
-                log("WARNING - Could not find 'Welcome to Omi Computer' window!")
+                log("WARNING - Could not find 'Omi' window!")
             }
 
             log("After activation - app is active: \(NSApp.isActive ? "YES" : "NO")")
@@ -151,24 +159,44 @@ struct OnboardingView: View {
 
     private var onboardingContent: some View {
         VStack(spacing: 24) {
-            // Progress indicators with checkmarks for granted permissions
-            HStack(spacing: 12) {
-                ForEach(0..<steps.count, id: \.self) { index in
-                    progressIndicator(for: index)
+            Spacer()
+
+            // Centered card
+            VStack(spacing: 24) {
+                // Progress indicators with checkmarks for granted permissions
+                HStack(spacing: 12) {
+                    ForEach(0..<steps.count, id: \.self) { index in
+                        progressIndicator(for: index)
+                    }
                 }
+                .padding(.top, 20)
+
+                Spacer()
+                    .frame(height: 20)
+
+                // Step content
+                stepContent
+
+                Spacer()
+                    .frame(height: 20)
+
+                // Buttons
+                buttonSection
             }
-            .padding(.top, 20)
+            .frame(width: currentStep == 4 && !appState.hasScreenRecordingPermission ? 500 : 420)
+            .frame(height: currentStep == 4 && !appState.hasScreenRecordingPermission ? 520 : 420)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(OmiColors.backgroundSecondary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(OmiColors.backgroundTertiary.opacity(0.5), lineWidth: 1)
+                    )
+            )
 
             Spacer()
-
-            // Step content
-            stepContent
-
-            Spacer()
-
-            // Buttons
-            buttonSection
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
