@@ -32,13 +32,14 @@ mod services;
 
 use auth::{firebase_auth_extension, FirebaseAuth};
 use config::Config;
-use routes::{action_items_routes, apps_routes, auth_routes, conversations_routes, health_routes, memories_routes, messages_routes, users_routes};
-use services::FirestoreService;
+use routes::{action_items_routes, apps_routes, auth_routes, conversations_routes, focus_sessions_routes, health_routes, memories_routes, messages_routes, users_routes};
+use services::{FirestoreService, IntegrationService};
 
 /// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
     pub firestore: Arc<FirestoreService>,
+    pub integrations: Arc<IntegrationService>,
     pub config: Arc<Config>,
 }
 
@@ -112,9 +113,13 @@ async fn main() {
         }
     };
 
+    // Initialize Integration Service
+    let integrations = Arc::new(IntegrationService::new());
+
     // Create app state
     let state = AppState {
         firestore,
+        integrations,
         config: Arc::new(config.clone()),
     };
 
@@ -133,6 +138,7 @@ async fn main() {
         .merge(memories_routes())
         .merge(conversations_routes())
         .merge(action_items_routes())
+        .merge(focus_sessions_routes())
         .merge(apps_routes())
         .merge(messages_routes())
         .merge(users_routes())
