@@ -5,11 +5,57 @@ struct ConversationRowView: View {
     let conversation: ServerConversation
     let onTap: () -> Void
 
-    /// Format relative time (e.g., "2h ago", "Yesterday")
-    private var relativeTime: String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: conversation.createdAt, relativeTo: Date())
+    /// Format timestamp (e.g., "10:43 AM" for today, "Jan 29, 10:43 AM" for other days)
+    private var formattedTimestamp: String {
+        let formatter = DateFormatter()
+        let calendar = Calendar.current
+
+        if calendar.isDateInToday(conversation.createdAt) {
+            // Today: just show time
+            formatter.dateFormat = "h:mm a"
+        } else if calendar.isDateInYesterday(conversation.createdAt) {
+            // Yesterday: show "Yesterday, time"
+            formatter.dateFormat = "'Yesterday,' h:mm a"
+        } else if calendar.isDate(conversation.createdAt, equalTo: Date(), toGranularity: .year) {
+            // This year: show "Mon, Jan 29, 10:43 AM"
+            formatter.dateFormat = "MMM d, h:mm a"
+        } else {
+            // Different year: include year
+            formatter.dateFormat = "MMM d, yyyy, h:mm a"
+        }
+
+        return formatter.string(from: conversation.createdAt)
+    }
+
+    /// Label for the conversation source
+    private var sourceLabel: String {
+        switch conversation.source {
+        case .desktop: return "Desktop"
+        case .omi: return "Omi"
+        case .phone: return "Phone"
+        case .appleWatch: return "Watch"
+        case .workflow: return "Workflow"
+        case .screenpipe: return "Screenpipe"
+        case .friend, .friendCom: return "Friend"
+        case .openglass: return "OpenGlass"
+        case .frame: return "Frame"
+        case .bee: return "Bee"
+        case .limitless: return "Limitless"
+        case .plaud: return "Plaud"
+        default: return "Unknown"
+        }
+    }
+
+    /// Color for the conversation source
+    private var sourceColor: Color {
+        switch conversation.source {
+        case .desktop: return OmiColors.purplePrimary
+        case .omi: return OmiColors.success
+        case .phone, .appleWatch: return OmiColors.info
+        case .workflow: return OmiColors.warning
+        case .screenpipe: return OmiColors.textSecondary
+        default: return OmiColors.textTertiary
+        }
     }
 
     var body: some View {
@@ -32,11 +78,17 @@ struct ConversationRowView: View {
 
                 Spacer()
 
-                // Time and duration
+                // Time, duration, and source
                 VStack(alignment: .trailing, spacing: 4) {
-                    Text(relativeTime)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
+                    HStack(spacing: 6) {
+                        Text(sourceLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(sourceColor)
+
+                        Text(formattedTimestamp)
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
 
                     Text(conversation.formattedDuration)
                         .font(.system(size: 11))
