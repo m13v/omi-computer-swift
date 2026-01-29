@@ -44,6 +44,9 @@ struct OMIApp: App {
         // Main desktop window - handles sign in, onboarding, and main content
         Window("Omi", id: "main") {
             DesktopHomeView()
+                .onAppear {
+                    log("OmiApp: Main window content appeared")
+                }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: 1200, height: 800)
@@ -63,6 +66,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sentryHeartbeatTimer: Timer?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        log("AppDelegate: applicationDidFinishLaunching started")
+        log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
+
         // Initialize Sentry for crash reporting and error tracking
         SentrySDK.start { options in
             options.dsn = "https://8f700584deda57b26041ff015539c8c1@o4507617161314304.ingest.us.sentry.io/4510790686277632"
@@ -117,12 +123,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Force dark appearance on main window after a brief delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            log("AppDelegate: Checking windows after 0.2s delay, count=\(NSApp.windows.count)")
+            var foundOmiWindow = false
             for window in NSApp.windows {
+                log("AppDelegate: Window title='\(window.title)', isVisible=\(window.isVisible)")
                 if window.title == "Omi" {
+                    foundOmiWindow = true
                     window.appearance = NSAppearance(named: .darkAqua)
                 }
             }
+            if !foundOmiWindow {
+                log("AppDelegate: WARNING - 'Omi' window not found!")
+            }
         }
+
+        log("AppDelegate: applicationDidFinishLaunching completed")
     }
 
     /// Start a timer that sends Sentry session snapshots every 5 minutes
