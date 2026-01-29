@@ -1,6 +1,7 @@
 import Foundation
 
 /// Manages Task Extraction Assistant-specific settings stored in UserDefaults
+@MainActor
 class TaskAssistantSettings {
     static let shared = TaskAssistantSettings()
 
