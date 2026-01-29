@@ -1,0 +1,127 @@
+import SwiftUI
+
+/// Recording header showing status, timer, and audio levels
+struct RecordingHeaderView: View {
+    @ObservedObject var appState: AppState
+
+    /// Pulsing animation state
+    @State private var isPulsing = false
+
+    /// Format duration as HH:MM:SS
+    private var formattedDuration: String {
+        let duration = Int(appState.recordingDuration)
+        let hours = duration / 3600
+        let minutes = (duration % 3600) / 60
+        let seconds = duration % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Recording status and timer
+            HStack {
+                // Pulsing recording indicator with glow
+                ZStack {
+                    // Glow effect
+                    Circle()
+                        .fill(OmiColors.error.opacity(0.3))
+                        .frame(width: 24, height: 24)
+                        .scaleEffect(isPulsing ? 1.8 : 1.0)
+                        .opacity(isPulsing ? 0.0 : 0.6)
+
+                    // Main dot
+                    Circle()
+                        .fill(OmiColors.error)
+                        .frame(width: 12, height: 12)
+                        .scaleEffect(isPulsing ? 1.3 : 1.0)
+                }
+                .animation(
+                    .easeInOut(duration: 1.0)
+                    .repeatForever(autoreverses: true),
+                    value: isPulsing
+                )
+
+                Text("Recording")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                Text(formattedDuration)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                // Stop button
+                Button(action: {
+                    appState.stopTranscription()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 10))
+                        Text("Stop")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.textPrimary)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(
+                        Capsule()
+                            .fill(OmiColors.error.opacity(0.8))
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Audio level meters
+            HStack(spacing: 32) {
+                // Microphone level
+                HStack(spacing: 8) {
+                    Image(systemName: "mic.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    AudioLevelWaveformView(
+                        level: appState.microphoneAudioLevel,
+                        isActive: appState.isTranscribing
+                    )
+
+                    Text("Mic")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // System audio level
+                HStack(spacing: 8) {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    AudioLevelWaveformView(
+                        level: appState.systemAudioLevel,
+                        isActive: appState.isTranscribing
+                    )
+
+                    Text("System Audio")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+            }
+        }
+        .padding(16)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(OmiColors.backgroundTertiary)
+        )
+        .onAppear {
+            isPulsing = true
+        }
+    }
+}
+
+#Preview {
+    RecordingHeaderView(appState: AppState())
+        .padding()
+        .background(OmiColors.backgroundPrimary)
+}
