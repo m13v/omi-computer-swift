@@ -138,6 +138,11 @@ actor AdviceAssistant: ProactiveAssistant {
             previousAdvice.removeLast()
         }
 
+        // Store advice for history
+        await MainActor.run {
+            AdviceStorage.shared.addAdvice(adviceResult)
+        }
+
         // Send notification
         await sendAdviceNotification(advice: advice)
 
