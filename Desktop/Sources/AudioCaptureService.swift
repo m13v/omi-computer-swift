@@ -182,7 +182,7 @@ class AudioCaptureService {
         // Recreate converter with new input format
         guard let targetFmt = targetFormat,
               let newConverter = AVAudioConverter(from: newHwFormat, to: targetFmt) else {
-            log("AudioCapture: Failed to create converter for new format")
+            logError("AudioCapture: Failed to create converter for new format")
             isReconfiguring = false
             return
         }
@@ -199,7 +199,7 @@ class AudioCaptureService {
             try audioEngine.start()
             log("AudioCapture: Restarted with new configuration")
         } catch {
-            log("AudioCapture: Failed to restart after config change - \(error.localizedDescription)")
+            logError("AudioCapture: Failed to restart after config change", error: error)
             // Try to restore callback for potential retry
             onAudioChunk = savedCallback
         }
@@ -271,7 +271,7 @@ class AudioCaptureService {
         converter.convert(to: outputBuffer, error: &error, withInputFrom: inputBlock)
 
         if let error = error {
-            log("AudioCapture: Conversion error - \(error.localizedDescription)")
+            logError("AudioCapture: Conversion error", error: error)
             return
         }
 
