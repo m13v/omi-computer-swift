@@ -1,6 +1,7 @@
 import Foundation
 
 /// Manages Advice Assistant-specific settings stored in UserDefaults
+@MainActor
 class AdviceAssistantSettings {
     static let shared = AdviceAssistantSettings()
 
