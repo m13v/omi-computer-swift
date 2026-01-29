@@ -3,8 +3,21 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
 
-    // OMI Backend base URL (same as Flutter app)
-    let baseURL = "https://api.omi.me/"
+    // OMI Backend base URL - configurable via environment
+    // Default: production API, override with OMI_API_URL env var for dev/staging
+    // Checked at runtime to pick up values set by loadEnvironment()
+    var baseURL: String {
+        // First check getenv() for values set by setenv() in loadEnvironment()
+        if let cString = getenv("OMI_API_URL"), let url = String(validatingUTF8: cString), !url.isEmpty {
+            return url.hasSuffix("/") ? url : url + "/"
+        }
+        // Fallback to ProcessInfo (launch-time snapshot)
+        if let envURL = ProcessInfo.processInfo.environment["OMI_API_URL"], !envURL.isEmpty {
+            return envURL.hasSuffix("/") ? envURL : envURL + "/"
+        }
+        // Default to production
+        return "https://api.omi.me/"
+    }
 
     // Local backend URL for conversation creation
     let localBackendURL = "https://omi-dev.m13v.com/"
