@@ -194,7 +194,7 @@ public class ProactiveAssistantsPlugin: NSObject {
         isMonitoring = true
 
         NotificationService.shared.sendNotification(
-            title: "OMI Assistants",
+            title: "Omi Assistants",
             message: "Monitoring started"
         )
 
@@ -251,7 +251,7 @@ public class ProactiveAssistantsPlugin: NSObject {
         frameCount = 0
 
         NotificationService.shared.sendNotification(
-            title: "OMI Assistants",
+            title: "Omi Assistants",
             message: "Monitoring stopped"
         )
 
