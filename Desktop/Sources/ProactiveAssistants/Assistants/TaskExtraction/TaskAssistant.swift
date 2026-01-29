@@ -84,6 +84,7 @@ actor TaskAssistant: ProactiveAssistant {
                 let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime)
 
                 if timeSinceLastAnalysis >= interval {
+                    log("Task: Starting analysis (interval: \(Int(interval))s, waited: \(Int(timeSinceLastAnalysis))s)")
                     pendingFrame = nil
                     lastAnalysisTime = Date()
                     await processFrame(frame)
@@ -107,7 +108,11 @@ actor TaskAssistant: ProactiveAssistant {
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
         // Store the latest frame - we'll process it when the interval has passed
+        let hadPending = pendingFrame != nil
         pendingFrame = frame
+        if !hadPending {
+            log("Task: Received frame from \(frame.appName), queued for analysis")
+        }
         // Note: This overwrites the previous frame, not a queue
         return nil
     }
@@ -190,11 +195,20 @@ actor TaskAssistant: ProactiveAssistant {
     // MARK: - Analysis
 
     private func processFrame(_ frame: CapturedFrame) async {
-        guard await isEnabled else { return }
+        let enabled = await isEnabled
+        guard enabled else {
+            log("Task: Skipping analysis (disabled)")
+            return
+        }
+
+        log("Task: Analyzing frame from \(frame.appName)...")
         do {
             guard let result = try await extractTasks(from: frame.jpegData, appName: frame.appName) else {
+                log("Task: Analysis returned no result")
                 return
             }
+
+            log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
 
             // Handle the result
             await handleResult(result) { type, data in
@@ -203,7 +217,7 @@ actor TaskAssistant: ProactiveAssistant {
                 }
             }
         } catch {
-            log("Task extraction error: \(error)")
+            logError("Task extraction error", error: error)
         }
     }
 
@@ -264,7 +278,7 @@ actor TaskAssistant: ProactiveAssistant {
 
             return try JSONDecoder().decode(TaskExtractionResult.self, from: Data(responseText.utf8))
         } catch {
-            log("Task analysis error: \(error)")
+            logError("Task analysis error", error: error)
             return nil
         }
     }
