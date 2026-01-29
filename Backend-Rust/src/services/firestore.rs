@@ -12,8 +12,9 @@ use tokio::sync::RwLock;
 
 use crate::models::{
     ActionItem, ActionItemDB, App, AppReview, AppSummary, Category, ChatSession, Conversation,
-    ConversationSource, ConversationStatus, Event, Memory, MemoryCategory, MemoryDB, Message,
-    MessageSender, MessageType, Structured, TranscriptSegment,
+    ConversationSource, ConversationStatus, DailySummarySettings, Event, Memory, MemoryCategory,
+    MemoryDB, Message, MessageSender, MessageType, NotificationSettings, Structured,
+    TranscriptSegment, TranscriptionPreferences, UserProfile,
 };
 
 /// Service account credentials from JSON file
@@ -2441,6 +2442,316 @@ impl FirestoreService {
             .and_then(|v| v.as_str())
             .and_then(|ts| DateTime::parse_from_rfc3339(ts).ok())
             .map(|dt| dt.with_timezone(&Utc))
+    }
+
+    // =========================================================================
+    // USER SETTINGS
+    // =========================================================================
+
+    /// Get user document fields
+    async fn get_user_document(
+        &self,
+        uid: &str,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Failed to get user document: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        Ok(doc)
+    }
+
+    /// Update user document fields (partial update)
+    async fn update_user_fields(
+        &self,
+        uid: &str,
+        fields: Value,
+        update_mask: &[&str],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mask_params = update_mask
+            .iter()
+            .map(|f| format!("updateMask.fieldPaths={}", f))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let url = format!(
+            "{}/{}/{}?{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            mask_params
+        );
+
+        let doc = json!({ "fields": fields });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Failed to update user fields: {}", error_text).into());
+        }
+
+        Ok(())
+    }
+
+    /// Get daily summary settings for a user
+    pub async fn get_daily_summary_settings(
+        &self,
+        uid: &str,
+    ) -> Result<DailySummarySettings, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        Ok(DailySummarySettings {
+            enabled: self.parse_bool(fields, "daily_summary_enabled").unwrap_or(true),
+            hour: self.parse_int(fields, "daily_summary_hour_local").unwrap_or(22),
+        })
+    }
+
+    /// Update daily summary settings for a user
+    pub async fn update_daily_summary_settings(
+        &self,
+        uid: &str,
+        enabled: Option<bool>,
+        hour: Option<i32>,
+    ) -> Result<DailySummarySettings, Box<dyn std::error::Error + Send + Sync>> {
+        // Get current settings
+        let current = self.get_daily_summary_settings(uid).await?;
+
+        let new_enabled = enabled.unwrap_or(current.enabled);
+        let new_hour = hour.unwrap_or(current.hour);
+
+        let fields = json!({
+            "daily_summary_enabled": {"booleanValue": new_enabled},
+            "daily_summary_hour_local": {"integerValue": new_hour.to_string()}
+        });
+
+        self.update_user_fields(uid, fields, &["daily_summary_enabled", "daily_summary_hour_local"])
+            .await?;
+
+        Ok(DailySummarySettings {
+            enabled: new_enabled,
+            hour: new_hour,
+        })
+    }
+
+    /// Get transcription preferences for a user
+    pub async fn get_transcription_preferences(
+        &self,
+        uid: &str,
+    ) -> Result<TranscriptionPreferences, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        // Parse nested transcription_preferences object
+        let prefs = fields
+            .get("transcription_preferences")
+            .and_then(|p| p.get("mapValue"))
+            .and_then(|m| m.get("fields"));
+
+        if let Some(pref_fields) = prefs {
+            Ok(TranscriptionPreferences {
+                single_language_mode: self.parse_bool(pref_fields, "single_language_mode").unwrap_or(false),
+                vocabulary: self.parse_string_array(pref_fields, "vocabulary"),
+            })
+        } else {
+            Ok(TranscriptionPreferences::default())
+        }
+    }
+
+    /// Update transcription preferences for a user
+    pub async fn update_transcription_preferences(
+        &self,
+        uid: &str,
+        single_language_mode: Option<bool>,
+        vocabulary: Option<Vec<String>>,
+    ) -> Result<TranscriptionPreferences, Box<dyn std::error::Error + Send + Sync>> {
+        // Get current settings
+        let current = self.get_transcription_preferences(uid).await?;
+
+        let new_single_language_mode = single_language_mode.unwrap_or(current.single_language_mode);
+        let new_vocabulary = vocabulary.unwrap_or(current.vocabulary);
+
+        let vocab_values: Vec<Value> = new_vocabulary
+            .iter()
+            .map(|v| json!({"stringValue": v}))
+            .collect();
+
+        let fields = json!({
+            "transcription_preferences": {
+                "mapValue": {
+                    "fields": {
+                        "single_language_mode": {"booleanValue": new_single_language_mode},
+                        "vocabulary": {
+                            "arrayValue": {
+                                "values": vocab_values
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        self.update_user_fields(uid, fields, &["transcription_preferences"])
+            .await?;
+
+        Ok(TranscriptionPreferences {
+            single_language_mode: new_single_language_mode,
+            vocabulary: new_vocabulary,
+        })
+    }
+
+    /// Get user language preference
+    pub async fn get_user_language(
+        &self,
+        uid: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        Ok(self.parse_string(fields, "language").unwrap_or_else(|| "en".to_string()))
+    }
+
+    /// Update user language preference
+    pub async fn update_user_language(
+        &self,
+        uid: &str,
+        language: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let fields = json!({
+            "language": {"stringValue": language}
+        });
+
+        self.update_user_fields(uid, fields, &["language"]).await
+    }
+
+    /// Get recording permission for a user
+    pub async fn get_recording_permission(
+        &self,
+        uid: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        Ok(self.parse_bool(fields, "store_recording_permission").unwrap_or(false))
+    }
+
+    /// Set recording permission for a user
+    pub async fn set_recording_permission(
+        &self,
+        uid: &str,
+        enabled: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let fields = json!({
+            "store_recording_permission": {"booleanValue": enabled}
+        });
+
+        self.update_user_fields(uid, fields, &["store_recording_permission"]).await
+    }
+
+    /// Get private cloud sync setting for a user
+    pub async fn get_private_cloud_sync(
+        &self,
+        uid: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        // Default to true if not set
+        Ok(self.parse_bool(fields, "private_cloud_sync_enabled").unwrap_or(true))
+    }
+
+    /// Set private cloud sync setting for a user
+    pub async fn set_private_cloud_sync(
+        &self,
+        uid: &str,
+        enabled: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let fields = json!({
+            "private_cloud_sync_enabled": {"booleanValue": enabled}
+        });
+
+        self.update_user_fields(uid, fields, &["private_cloud_sync_enabled"]).await
+    }
+
+    /// Get notification settings for a user
+    pub async fn get_notification_settings(
+        &self,
+        uid: &str,
+    ) -> Result<NotificationSettings, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        Ok(NotificationSettings {
+            enabled: self.parse_bool(fields, "notifications_enabled").unwrap_or(true),
+            frequency: self.parse_int(fields, "notification_frequency").unwrap_or(3),
+        })
+    }
+
+    /// Update notification settings for a user
+    pub async fn update_notification_settings(
+        &self,
+        uid: &str,
+        enabled: Option<bool>,
+        frequency: Option<i32>,
+    ) -> Result<NotificationSettings, Box<dyn std::error::Error + Send + Sync>> {
+        // Get current settings
+        let current = self.get_notification_settings(uid).await?;
+
+        let new_enabled = enabled.unwrap_or(current.enabled);
+        let new_frequency = frequency.unwrap_or(current.frequency);
+
+        let fields = json!({
+            "notifications_enabled": {"booleanValue": new_enabled},
+            "notification_frequency": {"integerValue": new_frequency.to_string()}
+        });
+
+        self.update_user_fields(uid, fields, &["notifications_enabled", "notification_frequency"])
+            .await?;
+
+        Ok(NotificationSettings {
+            enabled: new_enabled,
+            frequency: new_frequency,
+        })
+    }
+
+    /// Get user profile
+    pub async fn get_user_profile(
+        &self,
+        uid: &str,
+    ) -> Result<UserProfile, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        Ok(UserProfile {
+            uid: uid.to_string(),
+            email: self.parse_string(fields, "email"),
+            name: self.parse_string(fields, "name"),
+            time_zone: self.parse_string(fields, "time_zone"),
+            created_at: self.parse_timestamp_optional(fields, "created_at")
+                .map(|dt| dt.to_rfc3339()),
+        })
     }
 }
 
