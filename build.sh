@@ -2,7 +2,7 @@
 set -e
 
 # Build configuration
-APP_NAME="OMI-COMPUTER"
+APP_NAME="Omi Computer"
 BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
@@ -42,7 +42,7 @@ cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 # Update Info.plist with actual values
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy .env.app file (app runtime secrets only)
 if [ -f ".env.app" ]; then
