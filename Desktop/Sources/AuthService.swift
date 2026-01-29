@@ -177,6 +177,12 @@ class AuthService {
 
     @MainActor
     private func signIn(provider: String) async throws {
+        // Guard against double sign-in (e.g., rapid button clicks before UI updates)
+        guard !isLoading else {
+            NSLog("OMI AUTH: Sign in already in progress, ignoring duplicate request")
+            return
+        }
+
         NSLog("OMI AUTH: Starting Sign in with %@ (Web OAuth)", provider)
         isLoading = true
         error = nil
