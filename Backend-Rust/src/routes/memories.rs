@@ -178,7 +178,7 @@ async fn review_memory(
 pub fn memories_routes() -> Router<AppState> {
     Router::new()
         .route("/v3/memories", get(get_memories).post(create_memory))
-        .route("/v3/memories/{id}", delete(delete_memory).patch(edit_memory))
-        .route("/v3/memories/{id}/visibility", patch(update_visibility))
-        .route("/v3/memories/{id}/review", post(review_memory))
+        .route("/v3/memories/:id", delete(delete_memory).patch(edit_memory))
+        .route("/v3/memories/:id/visibility", patch(update_visibility))
+        .route("/v3/memories/:id/review", post(review_memory))
 }
