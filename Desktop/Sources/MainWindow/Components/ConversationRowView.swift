@@ -5,18 +5,28 @@ struct ConversationRowView: View {
     let conversation: ServerConversation
     let onTap: () -> Void
 
+    /// The timestamp to display (prefer startedAt, fall back to createdAt)
+    private var displayDate: Date {
+        conversation.startedAt ?? conversation.createdAt
+    }
+
+    /// Check if conversation was created less than 1 minute ago (newly added)
+    private var isNewlyCreated: Bool {
+        Date().timeIntervalSince(conversation.createdAt) < 60
+    }
+
     /// Format timestamp (e.g., "10:43 AM" for today, "Jan 29, 10:43 AM" for other days)
     private var formattedTimestamp: String {
         let formatter = DateFormatter()
         let calendar = Calendar.current
 
-        if calendar.isDateInToday(conversation.createdAt) {
+        if calendar.isDateInToday(displayDate) {
             // Today: just show time
             formatter.dateFormat = "h:mm a"
-        } else if calendar.isDateInYesterday(conversation.createdAt) {
+        } else if calendar.isDateInYesterday(displayDate) {
             // Yesterday: show "Yesterday, time"
             formatter.dateFormat = "'Yesterday,' h:mm a"
-        } else if calendar.isDate(conversation.createdAt, equalTo: Date(), toGranularity: .year) {
+        } else if calendar.isDate(displayDate, equalTo: Date(), toGranularity: .year) {
             // This year: show "Mon, Jan 29, 10:43 AM"
             formatter.dateFormat = "MMM d, h:mm a"
         } else {
@@ -24,7 +34,7 @@ struct ConversationRowView: View {
             formatter.dateFormat = "MMM d, yyyy, h:mm a"
         }
 
-        return formatter.string(from: conversation.createdAt)
+        return formatter.string(from: displayDate)
     }
 
     /// Label for the conversation source
@@ -86,7 +96,7 @@ struct ConversationRowView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(OmiColors.backgroundTertiary)
+                    .fill(isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)
             )
             .contentShape(Rectangle())
         }
