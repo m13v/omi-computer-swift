@@ -183,33 +183,24 @@ struct ConversationDetailView: View {
     }
 
     private var sourceChip: some View {
-        let (label, color) = sourceInfo
-        return Text(label)
-            .font(.system(size: 12, weight: .medium))
-            .foregroundColor(color)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(
-                Capsule()
-                    .fill(color.opacity(0.15))
-            )
+        metadataChip(icon: "dot.radiowaves.left.and.right", text: sourceLabel)
     }
 
-    private var sourceInfo: (label: String, color: Color) {
+    private var sourceLabel: String {
         switch conversation.source {
-        case .desktop: return ("Desktop", OmiColors.purplePrimary)
-        case .omi: return ("Omi", OmiColors.success)
-        case .phone: return ("Phone", OmiColors.info)
-        case .appleWatch: return ("Apple Watch", OmiColors.info)
-        case .workflow: return ("Workflow", OmiColors.warning)
-        case .screenpipe: return ("Screenpipe", OmiColors.textSecondary)
-        case .friend, .friendCom: return ("Friend", OmiColors.info)
-        case .openglass: return ("OpenGlass", OmiColors.info)
-        case .frame: return ("Frame", OmiColors.info)
-        case .bee: return ("Bee", OmiColors.info)
-        case .limitless: return ("Limitless", OmiColors.info)
-        case .plaud: return ("Plaud", OmiColors.info)
-        default: return ("Unknown", OmiColors.textTertiary)
+        case .desktop: return "Desktop"
+        case .omi: return "Omi"
+        case .phone: return "Phone"
+        case .appleWatch: return "Apple Watch"
+        case .workflow: return "Workflow"
+        case .screenpipe: return "Screenpipe"
+        case .friend, .friendCom: return "Friend"
+        case .openglass: return "OpenGlass"
+        case .frame: return "Frame"
+        case .bee: return "Bee"
+        case .limitless: return "Limitless"
+        case .plaud: return "Plaud"
+        default: return "Unknown"
         }
     }
 
