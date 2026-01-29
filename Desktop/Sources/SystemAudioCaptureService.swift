@@ -12,6 +12,9 @@ class SystemAudioCaptureService {
     /// Callback for receiving audio chunks
     typealias AudioChunkHandler = (Data) -> Void
 
+    /// Callback for receiving audio levels (0.0 - 1.0)
+    typealias AudioLevelHandler = (Float) -> Void
+
     enum SystemAudioCaptureError: LocalizedError {
         case tapCreationFailed(OSStatus)
         case aggregateDeviceFailed(OSStatus)
@@ -48,6 +51,7 @@ class SystemAudioCaptureService {
     private var ioProcID: AudioDeviceIOProcID?
     private var isCapturing = false
     private var onAudioChunk: AudioChunkHandler?
+    private var onAudioLevel: AudioLevelHandler?
 
     /// Target sample rate for DeepGram
     private let targetSampleRate: Double = 16000
@@ -83,14 +87,17 @@ class SystemAudioCaptureService {
     // MARK: - Public Methods
 
     /// Start capturing system audio
-    /// - Parameter onAudioChunk: Callback receiving 16-bit PCM audio data chunks at 16kHz mono
-    func startCapture(onAudioChunk: @escaping AudioChunkHandler) throws {
+    /// - Parameters:
+    ///   - onAudioChunk: Callback receiving 16-bit PCM audio data chunks at 16kHz mono
+    ///   - onAudioLevel: Optional callback receiving normalized audio level (0.0 - 1.0)
+    func startCapture(onAudioChunk: @escaping AudioChunkHandler, onAudioLevel: AudioLevelHandler? = nil) throws {
         guard !isCapturing else {
             log("SystemAudioCapture: Already capturing")
             return
         }
 
         self.onAudioChunk = onAudioChunk
+        self.onAudioLevel = onAudioLevel
 
         // 1. Create tap description for all system audio
         let tapDescription = CATapDescription(stereoGlobalTapButExcludeProcesses: [])
@@ -189,6 +196,7 @@ class SystemAudioCaptureService {
         cleanup()
         isCapturing = false
         onAudioChunk = nil
+        onAudioLevel = nil
         log("SystemAudioCapture: Stopped capturing")
     }
 
@@ -309,6 +317,20 @@ class SystemAudioCaptureService {
         // Convert to Data
         let byteData = pcmData.withUnsafeBufferPointer { buffer in
             return Data(buffer: buffer)
+        }
+
+        // Calculate and report audio level (RMS normalized to 0.0 - 1.0)
+        if let levelHandler = onAudioLevel, !pcmData.isEmpty {
+            let sumOfSquares: Float = pcmData.reduce(0.0) { acc, sample in
+                let normalized = Float(sample) / 32767.0
+                return acc + normalized * normalized
+            }
+            let rms = sqrt(sumOfSquares / Float(pcmData.count))
+            // Clamp to 0.0 - 1.0 range
+            let level = min(Float(1.0), max(Float(0.0), rms))
+            DispatchQueue.main.async {
+                levelHandler(level)
+            }
         }
 
         // Send to callback
