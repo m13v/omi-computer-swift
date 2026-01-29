@@ -54,7 +54,7 @@ struct AdvicePromptEditorView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .strokeBorder(Color.primary.opacity(0.2), lineWidth: 1)
                 )
-                .onChange(of: prompt) { newValue in
+                .onChange(of: prompt) { _, newValue in
                     AdviceAssistantSettings.shared.analysisPrompt = newValue
                 }
 
