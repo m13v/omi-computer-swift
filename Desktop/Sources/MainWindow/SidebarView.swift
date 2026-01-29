@@ -7,6 +7,7 @@ enum SidebarNavItem: Int, CaseIterable {
     case memories = 2
     case tasks = 3
     case apps = 4
+    case settings = 5
 
     var title: String {
         switch self {
@@ -15,6 +16,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .memories: return "Memories"
         case .tasks: return "Tasks"
         case .apps: return "Apps"
+        case .settings: return "Settings"
         }
     }
 
@@ -25,7 +27,13 @@ enum SidebarNavItem: Int, CaseIterable {
         case .memories: return "brain.head.profile"
         case .tasks: return "checkmark.square.fill"
         case .apps: return "square.grid.2x2.fill"
+        case .settings: return "gearshape.fill"
         }
+    }
+
+    /// Items shown in the main navigation (top section)
+    static var mainItems: [SidebarNavItem] {
+        [.conversations, .chat, .memories, .tasks, .apps]
     }
 }
 
@@ -67,7 +75,7 @@ struct SidebarView: View {
                 // Main navigation section
                 VStack(alignment: .leading, spacing: 0) {
                     // Main navigation items
-                    ForEach(SidebarNavItem.allCases, id: \.rawValue) { item in
+                    ForEach(SidebarNavItem.mainItems, id: \.rawValue) { item in
                         NavItemView(
                             icon: item.icon,
                             label: item.title,
@@ -78,18 +86,13 @@ struct SidebarView: View {
                         )
                     }
 
-                    Spacer().frame(height: 16)
-
-                    // Proactive Assistant
-                    proactiveAssistantItem
-
                     Spacer()
 
                     // Subscription upgrade banner
                     upgradeToPro
 
-                    // Get Omi Device widget (hide when collapsed)
-                    if showGetOmiWidget && !isCollapsed {
+                    // Get Omi Device widget
+                    if showGetOmiWidget {
                         Spacer().frame(height: 12)
                         getOmiWidget
                     }
@@ -129,14 +132,13 @@ struct SidebarView: View {
                     )
 
                     // Settings at the very bottom
-                    BottomNavItemView(
+                    NavItemView(
                         icon: "gearshape.fill",
                         label: "Settings",
+                        isSelected: selectedIndex == SidebarNavItem.settings.rawValue,
                         isCollapsed: isCollapsed,
                         iconWidth: iconWidth,
-                        onTap: {
-                            SettingsWindow.show()
-                        }
+                        onTap: { selectedIndex = SidebarNavItem.settings.rawValue }
                     )
 
                     Spacer().frame(height: 16)
@@ -262,57 +264,6 @@ struct SidebarView: View {
             )
     }
 
-    // MARK: - Proactive Assistant Item
-    private var proactiveAssistantItem: some View {
-        let isMonitoring = ProactiveAssistantsPlugin.shared.isMonitoring
-
-        return Button(action: {
-            SettingsWindow.show()
-        }) {
-            HStack(spacing: 12) {
-                // Status indicator - same width as other icons
-                Circle()
-                    .fill(isMonitoring ? OmiColors.success : OmiColors.textTertiary)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: isMonitoring ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
-                    .frame(width: iconWidth)
-
-                if !isCollapsed {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Proactive Assistant")
-                            .font(.system(size: 14, weight: isMonitoring ? .medium : .regular))
-                            .foregroundColor(isMonitoring ? OmiColors.textPrimary : OmiColors.textSecondary)
-
-                        Text(isMonitoring ? "Monitoring active" : "Click to configure")
-                            .font(.system(size: 11))
-                            .foregroundColor(OmiColors.textTertiary.opacity(0.8))
-                    }
-
-                    Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isMonitoring
-                          ? Color(hex: 0x1a472a, alpha: 0.6)
-                          : OmiColors.backgroundTertiary.opacity(0.3))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(isMonitoring ? OmiColors.success.opacity(0.4) : .clear, lineWidth: 1)
-                    )
-            )
-        }
-        .buttonStyle(.plain)
-        .padding(.bottom, 2)
-        .help("Proactive Assistant Settings")
-    }
-
     // MARK: - Upgrade to Pro
     private var upgradeToPro: some View {
         Button(action: {
@@ -353,48 +304,53 @@ struct SidebarView: View {
             }
         }) {
             HStack(spacing: 12) {
-                // Omi device image from Resources
-                if let deviceImage = NSImage(contentsOf: Bundle.module.url(forResource: "omi-with-rope-no-padding", withExtension: "webp")!) {
+                // Omi device image
+                if let deviceUrl = Bundle.module.url(forResource: "omi-with-rope-no-padding", withExtension: "webp"),
+                   let deviceImage = NSImage(contentsOf: deviceUrl) {
                     Image(nsImage: deviceImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .frame(width: 40, height: 40)
+                        .frame(width: 24, height: 24)
                 } else {
                     // Fallback SF Symbol
                     Image(systemName: "wave.3.right.circle.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 40, height: 40)
+                        .font(.system(size: 17))
+                        .foregroundColor(OmiColors.purplePrimary)
+                        .frame(width: iconWidth)
                 }
 
-                // Text content
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Get Omi Device")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(OmiColors.textPrimary)
+                if !isCollapsed {
+                    // Text content
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Get Omi Device")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
 
-                    Text("Your wearable AI companion")
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary.opacity(0.8))
+                        Text("Your wearable AI companion")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary.opacity(0.8))
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 12))
-                    .foregroundColor(OmiColors.textTertiary)
             }
-            .padding(14)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(OmiColors.backgroundTertiary.opacity(0.6))
                     .overlay(
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 10)
                             .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
                     )
             )
         }
         .buttonStyle(.plain)
+        .help(isCollapsed ? "Get Omi Device" : "")
     }
 }
 
