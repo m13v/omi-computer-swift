@@ -11,18 +11,28 @@ struct DesktopHomeView: View {
             if !authState.isSignedIn {
                 // State 1: Not signed in - show sign in
                 SignInView(authState: authState)
+                    .onAppear {
+                        log("DesktopHomeView: Showing SignInView (not signed in)")
+                    }
             } else if !appState.hasCompletedOnboarding {
                 // State 2: Signed in but onboarding not complete
                 OnboardingView(appState: appState, onComplete: nil)
+                    .onAppear {
+                        log("DesktopHomeView: Showing OnboardingView (signed in, not onboarded)")
+                    }
             } else {
                 // State 3: Signed in and onboarded - show main content
                 mainContent
+                    .onAppear {
+                        log("DesktopHomeView: Showing mainContent (signed in and onboarded)")
+                    }
             }
         }
         .background(OmiColors.backgroundPrimary)
         .frame(minWidth: 900, minHeight: 600)
         .preferredColorScheme(.dark)
         .onAppear {
+            log("DesktopHomeView: View appeared - isSignedIn=\(authState.isSignedIn), hasCompletedOnboarding=\(appState.hasCompletedOnboarding)")
             // Force dark appearance on the window
             DispatchQueue.main.async {
                 for window in NSApp.windows {
@@ -58,7 +68,7 @@ struct DesktopHomeView: View {
                 Group {
                     switch selectedIndex {
                     case 0:
-                        ConversationsPage()
+                        ConversationsPage(appState: appState)
                     case 1:
                         ChatPage()
                     case 2:
@@ -67,8 +77,10 @@ struct DesktopHomeView: View {
                         TasksPage()
                     case 4:
                         AppsPage()
+                    case 5:
+                        SettingsPage()
                     default:
-                        ConversationsPage()
+                        ConversationsPage(appState: appState)
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
