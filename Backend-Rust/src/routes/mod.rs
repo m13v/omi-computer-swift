@@ -1,6 +1,7 @@
 // Routes module
 
 pub mod action_items;
+pub mod advice;
 pub mod apps;
 pub mod auth;
 pub mod conversations;
@@ -13,6 +14,7 @@ pub mod users;
 use crate::AppState;
 
 pub use action_items::action_items_routes;
+pub use advice::advice_routes;
 pub use apps::apps_routes;
 pub use auth::auth_routes;
 pub use conversations::conversations_routes;
