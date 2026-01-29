@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::AuthUser;
-use crate::models::{ActionItemDB, ActionItemStatusResponse, UpdateActionItemRequest};
+use crate::models::{ActionItemDB, ActionItemStatusResponse, CreateActionItemRequest, UpdateActionItemRequest};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -25,6 +25,39 @@ pub struct GetActionItemsQuery {
 
 fn default_limit() -> usize {
     100
+}
+
+/// POST /v1/action-items - Create a new action item
+async fn create_action_item(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<CreateActionItemRequest>,
+) -> Result<Json<ActionItemDB>, StatusCode> {
+    tracing::info!(
+        "Creating action item for user {} with source={:?}, priority={:?}",
+        user.uid,
+        request.source,
+        request.priority
+    );
+
+    match state
+        .firestore
+        .create_action_item(
+            &user.uid,
+            &request.description,
+            request.due_at,
+            request.source.as_deref(),
+            request.priority.as_deref(),
+            request.metadata.as_deref(),
+        )
+        .await
+    {
+        Ok(item) => Ok(Json(item)),
+        Err(e) => {
+            tracing::error!("Failed to create action item: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
 }
 
 /// GET /v1/action-items - Fetch user action items
@@ -103,7 +136,7 @@ async fn delete_action_item(
 
 pub fn action_items_routes() -> Router<AppState> {
     Router::new()
-        .route("/v1/action-items", get(get_action_items))
+        .route("/v1/action-items", get(get_action_items).post(create_action_item))
         .route(
             "/v1/action-items/{id}",
             patch(update_action_item).delete(delete_action_item),
