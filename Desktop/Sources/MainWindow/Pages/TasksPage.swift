@@ -24,13 +24,30 @@ class TasksViewModel: ObservableObject {
     }
 
     var filteredTasks: [TaskActionItem] {
+        let filtered: [TaskActionItem]
         switch filter {
         case .all:
-            return tasks
+            filtered = tasks
         case .todo:
-            return tasks.filter { !$0.completed }
+            filtered = tasks.filter { !$0.completed }
         case .done:
-            return tasks.filter { $0.completed }
+            filtered = tasks.filter { $0.completed }
+        }
+        // Sort by: incomplete first, then high priority, then newest
+        return filtered.sorted { a, b in
+            // Incomplete tasks first
+            if a.completed != b.completed {
+                return !a.completed
+            }
+            // Then by priority (high > medium > low > nil)
+            let priorityOrder = ["high": 0, "medium": 1, "low": 2]
+            let aPriority = a.priority.flatMap { priorityOrder[$0] } ?? 3
+            let bPriority = b.priority.flatMap { priorityOrder[$0] } ?? 3
+            if aPriority != bPriority {
+                return aPriority < bPriority
+            }
+            // Then by date (newest first)
+            return a.createdAt > b.createdAt
         }
     }
 
@@ -322,6 +339,16 @@ struct TaskRow: View {
                     .lineLimit(3)
 
                 HStack(spacing: 8) {
+                    // Source badge
+                    if let source = task.source {
+                        SourceBadge(source: source, sourceLabel: task.sourceLabel, sourceIcon: task.sourceIcon)
+                    }
+
+                    // Priority badge
+                    if let priority = task.priority, priority != "low" {
+                        PriorityBadge(priority: priority)
+                    }
+
                     // Created date
                     Text(task.createdAt.formatted(date: .abbreviated, time: .omitted))
                         .font(.system(size: 11))
@@ -380,5 +407,75 @@ struct TaskRow: View {
         } message: {
             Text("Are you sure you want to delete this task? This action cannot be undone.")
         }
+    }
+}
+
+// MARK: - Source Badge
+
+struct SourceBadge: View {
+    let source: String
+    let sourceLabel: String
+    let sourceIcon: String
+
+    private var badgeColor: Color {
+        switch source {
+        case "screenshot":
+            return .blue
+        case "transcription:omi", "transcription:desktop", "transcription:phone":
+            return .green
+        case "manual":
+            return .orange
+        default:
+            return OmiColors.textTertiary
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Image(systemName: sourceIcon)
+                .font(.system(size: 9))
+            Text(sourceLabel)
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundColor(badgeColor)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(badgeColor.opacity(0.15))
+        )
+    }
+}
+
+// MARK: - Priority Badge
+
+struct PriorityBadge: View {
+    let priority: String
+
+    private var badgeColor: Color {
+        switch priority {
+        case "high":
+            return .red
+        case "medium":
+            return .orange
+        default:
+            return OmiColors.textTertiary
+        }
+    }
+
+    private var label: String {
+        priority.capitalized
+    }
+
+    var body: some View {
+        Text(label)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(badgeColor)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(badgeColor.opacity(0.15))
+            )
     }
 }
