@@ -25,6 +25,15 @@ pub struct ActionItemDB {
     pub completed_at: Option<DateTime<Utc>>,
     /// The conversation this action item was extracted from
     pub conversation_id: Option<String>,
+    /// Source of the action item: "screenshot", "transcription:omi", "transcription:desktop", "manual"
+    #[serde(default)]
+    pub source: Option<String>,
+    /// Priority: "high", "medium", "low"
+    #[serde(default)]
+    pub priority: Option<String>,
+    /// JSON metadata: {"source_app": "Safari", "confidence": 0.85}
+    #[serde(default)]
+    pub metadata: Option<String>,
 }
 
 /// Request body for updating an action item
@@ -42,4 +51,19 @@ pub struct UpdateActionItemRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct ActionItemStatusResponse {
     pub status: String,
+}
+
+/// Request body for creating a new action item
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateActionItemRequest {
+    /// The action item description (required)
+    pub description: String,
+    /// When the action item is due (optional)
+    pub due_at: Option<DateTime<Utc>>,
+    /// Source of the action item: "screenshot", "transcription:omi", "transcription:desktop", "manual"
+    pub source: Option<String>,
+    /// Priority: "high", "medium", "low"
+    pub priority: Option<String>,
+    /// JSON metadata string: {"source_app": "Safari", "confidence": 0.85}
+    pub metadata: Option<String>,
 }
