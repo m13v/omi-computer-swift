@@ -124,6 +124,6 @@ pub fn focus_sessions_routes() -> Router<AppState> {
             "/v1/focus-sessions",
             get(get_focus_sessions).post(create_focus_session),
         )
-        .route("/v1/focus-sessions/{id}", axum::routing::delete(delete_focus_session))
+        .route("/v1/focus-sessions/:id", axum::routing::delete(delete_focus_session))
         .route("/v1/focus-stats", get(get_focus_stats))
 }
