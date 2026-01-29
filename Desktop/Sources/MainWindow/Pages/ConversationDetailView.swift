@@ -10,18 +10,23 @@ struct ConversationDetailView: View {
     @State private var isReprocessing = false
     @State private var selectedAppForReprocess: OmiApp?
 
+    /// The date to display (prefer startedAt, fall back to createdAt)
+    private var displayDate: Date {
+        conversation.startedAt ?? conversation.createdAt
+    }
+
     /// Format date for display
     private var formattedDate: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMM d, yyyy"
-        return formatter.string(from: conversation.createdAt)
+        return formatter.string(from: displayDate)
     }
 
     /// Format time for display
     private var formattedTime: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "h:mm a"
-        return formatter.string(from: conversation.createdAt)
+        return formatter.string(from: displayDate)
     }
 
     var body: some View {
