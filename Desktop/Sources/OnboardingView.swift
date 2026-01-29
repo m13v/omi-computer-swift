@@ -212,8 +212,8 @@ struct OnboardingView: View {
         case 0:
             stepView(
                 icon: "brain.head.profile",
-                title: "Welcome to OMI",
-                description: "OMI helps you stay focused by monitoring your screen and alerting you when you get distracted.\n\nLet's set up a few permissions to get started."
+                title: "Welcome to Omi",
+                description: "Omi helps you stay focused by monitoring your screen and alerting you when you get distracted.\n\nLet's set up a few permissions to get started."
             )
         case 1:
             nameStepView
@@ -223,8 +223,8 @@ struct OnboardingView: View {
                 iconColor: appState.hasNotificationPermission ? .green : .accentColor,
                 title: "Notifications",
                 description: appState.hasNotificationPermission
-                    ? "Notifications are enabled! You'll receive focus alerts from OMI."
-                    : "OMI sends you gentle notifications when it detects you're getting distracted from your work."
+                    ? "Notifications are enabled! You'll receive focus alerts from Omi."
+                    : "Omi sends you gentle notifications when it detects you're getting distracted from your work."
             )
         case 3:
             stepView(
@@ -232,8 +232,8 @@ struct OnboardingView: View {
                 iconColor: appState.hasAutomationPermission ? .green : .accentColor,
                 title: "Automation",
                 description: appState.hasAutomationPermission
-                    ? "Automation permission granted! OMI can now detect which app you're using."
-                    : "OMI needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
+                    ? "Automation permission granted! Omi can now detect which app you're using."
+                    : "Omi needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
             )
         case 4:
             screenRecordingStepView
@@ -243,8 +243,8 @@ struct OnboardingView: View {
                 iconColor: appState.hasMicrophonePermission ? .green : .accentColor,
                 title: "Microphone",
                 description: appState.hasMicrophonePermission
-                    ? "Microphone access granted! OMI can now transcribe your conversations."
-                    : "OMI needs microphone access to transcribe your conversations and provide context-aware assistance."
+                    ? "Microphone access granted! Omi can now transcribe your conversations."
+                    : "Omi needs microphone access to transcribe your conversations and provide context-aware assistance."
             )
         case 6:
             systemAudioStepView
@@ -252,7 +252,7 @@ struct OnboardingView: View {
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
-                description: "OMI is ready to help you stay focused.\n\nClick the OMI menu bar icon to start monitoring."
+                description: "Omi is ready to help you stay focused.\n\nClick the Omi menu bar icon to start monitoring."
             )
         default:
             EmptyView()
@@ -392,7 +392,7 @@ struct OnboardingView: View {
         case 6:
             return systemAudioButtonTitle
         case 7:
-            return "Start Using OMI"
+            return "Start Using Omi"
         default:
             return "Continue"
         }
@@ -418,7 +418,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("Screen Recording permission granted! OMI can now analyze your focus.")
+                Text("Screen Recording permission granted! Omi can now analyze your focus.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -455,7 +455,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("System audio capture requires macOS 14.4 or later.\n\nYou can still use OMI with microphone-only transcription.")
+                Text("System audio capture requires macOS 14.4 or later.\n\nYou can still use Omi with microphone-only transcription.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -469,7 +469,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("System audio capture is ready! OMI can now capture audio from your meetings and media.")
+                Text("System audio capture is ready! Omi can now capture audio from your meetings and media.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -483,7 +483,7 @@ struct OnboardingView: View {
                     .font(.title2)
                     .fontWeight(.semibold)
 
-                Text("OMI can capture system audio to transcribe meetings, videos, and other media playing on your Mac.\n\nThis uses the same Screen Recording permission you already granted.")
+                Text("Omi can capture system audio to transcribe meetings, videos, and other media playing on your Mac.\n\nThis uses the same Screen Recording permission you already granted.")
                     .font(.body)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
@@ -517,7 +517,7 @@ struct OnboardingView: View {
                 // Permission already granted - send test notification anyway and advance
                 NotificationService.shared.sendNotification(
                     title: "Notifications Enabled",
-                    message: "You'll receive focus alerts from OMI."
+                    message: "You'll receive focus alerts from Omi."
                 )
                 MixpanelManager.shared.onboardingStepCompleted(step: 2, stepName: "Notifications")
                 MixpanelManager.shared.permissionGranted(permission: "notifications")
