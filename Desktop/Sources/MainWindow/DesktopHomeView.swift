@@ -78,8 +78,10 @@ struct DesktopHomeView: View {
                     case 4:
                         AdvicePage()
                     case 5:
-                        AppsPage()
+                        RewindPage()
                     case 6:
+                        AppsPage()
+                    case 7:
                         SettingsPage()
                     default:
                         ConversationsPage(appState: appState)
