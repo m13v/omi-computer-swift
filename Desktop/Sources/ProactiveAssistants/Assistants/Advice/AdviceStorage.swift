@@ -7,8 +7,8 @@ struct StoredAdvice: Codable, Identifiable {
     let contextSummary: String
     let currentActivity: String
     let createdAt: Date
-    let isRead: Bool
-    let isDismissed: Bool
+    var isRead: Bool
+    var isDismissed: Bool
 
     init(
         id: String = UUID().uuidString,
@@ -28,99 +28,148 @@ struct StoredAdvice: Codable, Identifiable {
         self.isDismissed = isDismissed
     }
 
-    func withRead(_ read: Bool) -> StoredAdvice {
-        StoredAdvice(
-            id: id,
-            advice: advice,
-            contextSummary: contextSummary,
-            currentActivity: currentActivity,
-            createdAt: createdAt,
-            isRead: read,
-            isDismissed: isDismissed
+    /// Convert from server model
+    init(from serverAdvice: ServerAdvice) {
+        self.id = serverAdvice.id
+        self.advice = ExtractedAdvice(
+            advice: serverAdvice.content,
+            reasoning: serverAdvice.reasoning,
+            category: serverAdvice.category.toLocal,
+            sourceApp: serverAdvice.sourceApp ?? "Unknown",
+            confidence: serverAdvice.confidence
         )
+        self.contextSummary = serverAdvice.contextSummary ?? ""
+        self.currentActivity = serverAdvice.currentActivity ?? ""
+        self.createdAt = serverAdvice.createdAt
+        self.isRead = serverAdvice.isRead
+        self.isDismissed = serverAdvice.isDismissed
+    }
+
+    func withRead(_ read: Bool) -> StoredAdvice {
+        var copy = self
+        copy.isRead = read
+        return copy
     }
 
     func withDismissed(_ dismissed: Bool) -> StoredAdvice {
-        StoredAdvice(
-            id: id,
-            advice: advice,
-            contextSummary: contextSummary,
-            currentActivity: currentActivity,
-            createdAt: createdAt,
-            isRead: isRead,
-            isDismissed: dismissed
-        )
+        var copy = self
+        copy.isDismissed = dismissed
+        return copy
     }
 }
 
-/// Local storage manager for advice history
+/// Local storage manager for advice history with backend sync
 @MainActor
 class AdviceStorage: ObservableObject {
     static let shared = AdviceStorage()
 
     @Published private(set) var adviceHistory: [StoredAdvice] = []
+    @Published private(set) var isLoading = false
+    @Published private(set) var lastSyncError: String?
 
-    private let storageKey = "omi.advice.history"
-    private let maxStoredAdvice = 100
+    private let localStorageKey = "omi.advice.history"
+    private let maxLocalAdvice = 100
+    private var isSyncing = false
 
     private init() {
-        loadFromStorage()
+        // Load from local cache first for immediate display
+        loadFromLocalCache()
+
+        // Then sync with backend
+        Task {
+            await syncFromBackend()
+        }
     }
 
     // MARK: - Public Methods
 
-    /// Add new advice to storage
+    /// Add new advice to storage and sync to backend
     func addAdvice(_ result: AdviceExtractionResult) {
         guard let advice = result.advice else { return }
 
+        // Create local stored advice
         let storedAdvice = StoredAdvice(
             advice: advice,
             contextSummary: result.contextSummary,
             currentActivity: result.currentActivity
         )
 
+        // Add locally first for immediate UI update
         adviceHistory.insert(storedAdvice, at: 0)
+        trimLocalCache()
+        saveToLocalCache()
 
-        // Trim if needed
-        if adviceHistory.count > maxStoredAdvice {
-            adviceHistory = Array(adviceHistory.prefix(maxStoredAdvice))
+        // Sync to backend
+        Task {
+            await createAdviceOnBackend(storedAdvice)
         }
-
-        saveToStorage()
     }
 
     /// Mark advice as read
     func markAsRead(_ id: String) {
-        if let index = adviceHistory.firstIndex(where: { $0.id == id }) {
-            adviceHistory[index] = adviceHistory[index].withRead(true)
-            saveToStorage()
+        guard let index = adviceHistory.firstIndex(where: { $0.id == id }) else { return }
+
+        adviceHistory[index] = adviceHistory[index].withRead(true)
+        saveToLocalCache()
+
+        // Sync to backend
+        Task {
+            await updateAdviceOnBackend(id: id, isRead: true, isDismissed: nil)
         }
     }
 
     /// Mark all advice as read
     func markAllAsRead() {
         adviceHistory = adviceHistory.map { $0.withRead(true) }
-        saveToStorage()
+        saveToLocalCache()
+
+        // Sync to backend
+        Task {
+            await markAllReadOnBackend()
+        }
     }
 
     /// Dismiss advice (hide from list)
     func dismissAdvice(_ id: String) {
-        if let index = adviceHistory.firstIndex(where: { $0.id == id }) {
-            adviceHistory[index] = adviceHistory[index].withDismissed(true)
-            saveToStorage()
+        guard let index = adviceHistory.firstIndex(where: { $0.id == id }) else { return }
+
+        adviceHistory[index] = adviceHistory[index].withDismissed(true)
+        saveToLocalCache()
+
+        // Sync to backend
+        Task {
+            await updateAdviceOnBackend(id: id, isRead: nil, isDismissed: true)
         }
     }
 
     /// Delete advice permanently
     func deleteAdvice(_ id: String) {
         adviceHistory.removeAll { $0.id == id }
-        saveToStorage()
+        saveToLocalCache()
+
+        // Sync to backend
+        Task {
+            await deleteAdviceOnBackend(id: id)
+        }
     }
 
     /// Clear all advice history
     func clearAll() {
+        let idsToDelete = adviceHistory.map { $0.id }
         adviceHistory = []
-        saveToStorage()
+        saveToLocalCache()
+
+        // Delete all from backend
+        Task {
+            for id in idsToDelete {
+                await deleteAdviceOnBackend(id: id)
+            }
+        }
+    }
+
+    /// Refresh from backend
+    func refresh() async {
+        await syncFromBackend()
     }
 
     /// Get unread count
@@ -133,10 +182,101 @@ class AdviceStorage: ObservableObject {
         adviceHistory.filter { !$0.isDismissed }
     }
 
-    // MARK: - Private Methods
+    // MARK: - Backend Sync
 
-    private func loadFromStorage() {
-        guard let data = UserDefaults.standard.data(forKey: storageKey) else {
+    private func syncFromBackend() async {
+        guard !isSyncing else { return }
+        isSyncing = true
+        isLoading = true
+        lastSyncError = nil
+
+        do {
+            let serverAdvice = try await APIClient.shared.getAdvice(
+                limit: maxLocalAdvice,
+                includeDismissed: true
+            )
+
+            // Convert to local model
+            let localAdvice = serverAdvice.map { StoredAdvice(from: $0) }
+
+            // Update local cache
+            await MainActor.run {
+                self.adviceHistory = localAdvice
+                self.saveToLocalCache()
+                self.isLoading = false
+            }
+
+            log("Advice: Synced \(localAdvice.count) items from backend")
+        } catch {
+            await MainActor.run {
+                self.lastSyncError = error.localizedDescription
+                self.isLoading = false
+            }
+            logError("Advice: Failed to sync from backend", error: error)
+        }
+
+        isSyncing = false
+    }
+
+    private func createAdviceOnBackend(_ advice: StoredAdvice) async {
+        do {
+            let request = CreateAdviceRequest(
+                content: advice.advice.advice,
+                category: advice.advice.category,
+                reasoning: advice.advice.reasoning,
+                sourceApp: advice.advice.sourceApp,
+                confidence: advice.advice.confidence,
+                contextSummary: advice.contextSummary,
+                currentActivity: advice.currentActivity
+            )
+
+            let serverAdvice = try await APIClient.shared.createAdvice(request)
+
+            // Update local ID to match server ID
+            await MainActor.run {
+                if let index = self.adviceHistory.firstIndex(where: { $0.id == advice.id }) {
+                    self.adviceHistory[index] = StoredAdvice(from: serverAdvice)
+                    self.saveToLocalCache()
+                }
+            }
+
+            log("Advice: Created on backend with ID \(serverAdvice.id)")
+        } catch {
+            logError("Advice: Failed to create on backend", error: error)
+        }
+    }
+
+    private func updateAdviceOnBackend(id: String, isRead: Bool?, isDismissed: Bool?) async {
+        do {
+            _ = try await APIClient.shared.updateAdvice(id: id, isRead: isRead, isDismissed: isDismissed)
+            log("Advice: Updated on backend (id=\(id), isRead=\(String(describing: isRead)), isDismissed=\(String(describing: isDismissed)))")
+        } catch {
+            logError("Advice: Failed to update on backend", error: error)
+        }
+    }
+
+    private func deleteAdviceOnBackend(id: String) async {
+        do {
+            try await APIClient.shared.deleteAdvice(id: id)
+            log("Advice: Deleted from backend (id=\(id))")
+        } catch {
+            logError("Advice: Failed to delete from backend", error: error)
+        }
+    }
+
+    private func markAllReadOnBackend() async {
+        do {
+            try await APIClient.shared.markAllAdviceAsRead()
+            log("Advice: Marked all as read on backend")
+        } catch {
+            logError("Advice: Failed to mark all as read on backend", error: error)
+        }
+    }
+
+    // MARK: - Local Cache
+
+    private func loadFromLocalCache() {
+        guard let data = UserDefaults.standard.data(forKey: localStorageKey) else {
             return
         }
 
@@ -145,18 +285,24 @@ class AdviceStorage: ObservableObject {
             decoder.dateDecodingStrategy = .iso8601
             adviceHistory = try decoder.decode([StoredAdvice].self, from: data)
         } catch {
-            logError("Failed to load advice history", error: error)
+            logError("Failed to load advice from local cache", error: error)
         }
     }
 
-    private func saveToStorage() {
+    private func saveToLocalCache() {
         do {
             let encoder = JSONEncoder()
             encoder.dateEncodingStrategy = .iso8601
             let data = try encoder.encode(adviceHistory)
-            UserDefaults.standard.set(data, forKey: storageKey)
+            UserDefaults.standard.set(data, forKey: localStorageKey)
         } catch {
-            logError("Failed to save advice history", error: error)
+            logError("Failed to save advice to local cache", error: error)
+        }
+    }
+
+    private func trimLocalCache() {
+        if adviceHistory.count > maxLocalAdvice {
+            adviceHistory = Array(adviceHistory.prefix(maxLocalAdvice))
         }
     }
 }
