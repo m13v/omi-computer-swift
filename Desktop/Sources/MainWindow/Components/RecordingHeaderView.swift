@@ -6,6 +6,7 @@ struct RecordingHeaderView: View {
 
     /// Pulsing animation state
     @State private var isPulsing = false
+    @State private var isFinishing = false
 
     /// Format duration as HH:MM:SS
     private var formattedDuration: String {
@@ -51,25 +52,37 @@ struct RecordingHeaderView: View {
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .foregroundColor(OmiColors.textSecondary)
 
-                // Stop button
+                // Finish conversation button
                 Button(action: {
-                    appState.stopTranscription()
+                    guard !isFinishing else { return }
+                    isFinishing = true
+                    Task {
+                        await appState.finishConversation()
+                        isFinishing = false
+                    }
                 }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 10))
-                        Text("Stop")
+                        if isFinishing {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12))
+                        }
+                        Text(isFinishing ? "Finishing..." : "Finish")
                             .font(.system(size: 13, weight: .medium))
                     }
-                    .foregroundColor(OmiColors.textPrimary)
+                    .foregroundColor(.white)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(
                         Capsule()
-                            .fill(OmiColors.error.opacity(0.8))
+                            .fill(isFinishing ? OmiColors.textTertiary : OmiColors.purplePrimary)
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(isFinishing || appState.liveSpeakerSegments.isEmpty)
             }
 
             // Audio level meters
