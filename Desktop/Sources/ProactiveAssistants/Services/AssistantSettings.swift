@@ -1,6 +1,7 @@
 import Foundation
 
 /// Manages shared settings for all Proactive Assistants stored in UserDefaults
+@MainActor
 class AssistantSettings {
     static let shared = AssistantSettings()
 
@@ -13,7 +14,7 @@ class AssistantSettings {
     // MARK: - Default Values
 
     private let defaultCooldownInterval = 10 // minutes
-    private let defaultGlowOverlayEnabled = false
+    private let defaultGlowOverlayEnabled = true
     private let defaultAnalysisDelay = 60 // seconds (1 minute)
 
     private init() {
