@@ -2,16 +2,42 @@
 // Uses Firestore REST API for simplicity and compatibility
 
 use chrono::{DateTime, Utc};
+use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 
 use crate::models::{
     ActionItem, Category, Conversation, ConversationSource, ConversationStatus, Event, Memory,
     MemoryCategory, MemoryDB, Structured, TranscriptSegment,
 };
+
+/// Service account credentials from JSON file
+#[derive(Debug, Clone, Deserialize)]
+struct ServiceAccountCredentials {
+    client_email: String,
+    private_key: String,
+    token_uri: Option<String>,
+}
+
+/// JWT claims for Google OAuth2
+#[derive(Debug, Serialize)]
+struct GoogleJwtClaims {
+    iss: String,      // Service account email
+    scope: String,    // OAuth scopes
+    aud: String,      // Token endpoint
+    iat: i64,         // Issued at
+    exp: i64,         // Expiration
+}
+
+/// Cached access token with expiration
+struct CachedToken {
+    token: String,
+    expires_at: i64,
+}
 
 /// Firestore collection paths
 /// Copied from Python database.py
@@ -33,7 +59,8 @@ pub fn document_id_from_seed(seed: &str) -> String {
 pub struct FirestoreService {
     client: Client,
     project_id: String,
-    access_token: Option<String>,
+    credentials: Option<ServiceAccountCredentials>,
+    cached_token: Arc<RwLock<Option<CachedToken>>>,
 }
 
 impl FirestoreService {
@@ -41,59 +68,183 @@ impl FirestoreService {
     pub async fn new(project_id: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let client = Client::new();
 
-        // Try to get access token from metadata server (when running on GCP)
-        // or from GOOGLE_APPLICATION_CREDENTIALS
-        let access_token = Self::get_access_token().await.ok();
+        // Load service account credentials from GOOGLE_APPLICATION_CREDENTIALS
+        let credentials = Self::load_credentials()?;
 
-        Ok(Self {
+        let service = Self {
             client,
             project_id,
-            access_token,
-        })
+            credentials,
+            cached_token: Arc::new(RwLock::new(None)),
+        };
+
+        // Pre-fetch an access token
+        if let Err(e) = service.get_access_token().await {
+            tracing::warn!("Failed to get initial access token: {}", e);
+        }
+
+        Ok(service)
     }
 
-    /// Get access token from GCP metadata server or service account
-    async fn get_access_token() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    /// Load service account credentials from JSON file
+    fn load_credentials() -> Result<Option<ServiceAccountCredentials>, Box<dyn std::error::Error + Send + Sync>> {
+        // Check GOOGLE_APPLICATION_CREDENTIALS environment variable
+        let creds_path = match std::env::var("GOOGLE_APPLICATION_CREDENTIALS") {
+            Ok(path) => path,
+            Err(_) => {
+                // Try default location in current directory
+                if std::path::Path::new("google-credentials.json").exists() {
+                    "google-credentials.json".to_string()
+                } else {
+                    tracing::warn!("No GOOGLE_APPLICATION_CREDENTIALS set and no google-credentials.json found");
+                    return Ok(None);
+                }
+            }
+        };
+
+        tracing::info!("Loading service account credentials from: {}", creds_path);
+
+        let creds_json = std::fs::read_to_string(&creds_path)
+            .map_err(|e| format!("Failed to read credentials file {}: {}", creds_path, e))?;
+
+        let credentials: ServiceAccountCredentials = serde_json::from_str(&creds_json)
+            .map_err(|e| format!("Failed to parse credentials JSON: {}", e))?;
+
+        tracing::info!("Loaded credentials for service account: {}", credentials.client_email);
+
+        Ok(Some(credentials))
+    }
+
+    /// Get access token, using cache if valid or refreshing if needed
+    async fn get_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // Check cached token
+        {
+            let cache = self.cached_token.read().await;
+            if let Some(cached) = cache.as_ref() {
+                let now = Utc::now().timestamp();
+                // Use token if it has at least 60 seconds left
+                if cached.expires_at > now + 60 {
+                    return Ok(cached.token.clone());
+                }
+            }
+        }
+
+        // Need to refresh token
+        let token = self.fetch_new_access_token().await?;
+
+        // Cache it (tokens are valid for 1 hour, we'll refresh after 55 minutes)
+        {
+            let mut cache = self.cached_token.write().await;
+            *cache = Some(CachedToken {
+                token: token.clone(),
+                expires_at: Utc::now().timestamp() + 3300, // 55 minutes
+            });
+        }
+
+        Ok(token)
+    }
+
+    /// Fetch a new access token from Google OAuth
+    async fn fetch_new_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         // Try metadata server first (for GKE/Cloud Run)
+        if let Ok(token) = self.try_metadata_server().await {
+            tracing::info!("Got access token from GCP metadata server");
+            return Ok(token);
+        }
+
+        // Use service account credentials
+        if let Some(creds) = &self.credentials {
+            let token = self.get_token_from_service_account(creds).await?;
+            tracing::info!("Got access token from service account");
+            return Ok(token);
+        }
+
+        Err("No valid authentication method available. Set GOOGLE_APPLICATION_CREDENTIALS or run on GCP.".into())
+    }
+
+    /// Try to get token from GCP metadata server
+    async fn try_metadata_server(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let metadata_url =
             "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token";
 
-        let client = Client::new();
-        let response = client
+        let response = self.client
             .get(metadata_url)
             .header("Metadata-Flavor", "Google")
             .timeout(std::time::Duration::from_secs(2))
             .send()
-            .await;
-
-        if let Ok(resp) = response {
-            if resp.status().is_success() {
-                #[derive(Deserialize)]
-                struct TokenResponse {
-                    access_token: String,
-                }
-                let token: TokenResponse = resp.json().await?;
-                return Ok(token.access_token);
-            }
-        }
-
-        // Fallback: use gcloud CLI token for local development
-        let output = tokio::process::Command::new("gcloud")
-            .args(["auth", "print-access-token"])
-            .output()
             .await?;
 
-        if output.status.success() {
-            let token = String::from_utf8(output.stdout)?.trim().to_string();
-            return Ok(token);
+        if response.status().is_success() {
+            #[derive(Deserialize)]
+            struct TokenResponse {
+                access_token: String,
+            }
+            let token: TokenResponse = response.json().await?;
+            return Ok(token.access_token);
         }
 
-        Err("Could not get access token".into())
+        Err("Metadata server not available".into())
     }
 
-    /// Refresh access token
-    pub async fn refresh_token(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        self.access_token = Some(Self::get_access_token().await?);
+    /// Get access token using service account credentials (OAuth2 JWT flow)
+    async fn get_token_from_service_account(
+        &self,
+        creds: &ServiceAccountCredentials,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let now = Utc::now().timestamp();
+        let token_uri = creds.token_uri.as_deref().unwrap_or("https://oauth2.googleapis.com/token");
+
+        // Create JWT claims
+        let claims = GoogleJwtClaims {
+            iss: creds.client_email.clone(),
+            scope: "https://www.googleapis.com/auth/datastore https://www.googleapis.com/auth/cloud-platform".to_string(),
+            aud: token_uri.to_string(),
+            iat: now,
+            exp: now + 3600, // 1 hour
+        };
+
+        // Sign JWT with service account private key (RS256)
+        let key = EncodingKey::from_rsa_pem(creds.private_key.as_bytes())
+            .map_err(|e| format!("Failed to parse private key: {}", e))?;
+
+        let jwt = encode(&Header::new(Algorithm::RS256), &claims, &key)
+            .map_err(|e| format!("Failed to encode JWT: {}", e))?;
+
+        // Exchange JWT for access token
+        let response = self.client
+            .post(token_uri)
+            .form(&[
+                ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+                ("assertion", &jwt),
+            ])
+            .send()
+            .await
+            .map_err(|e| format!("Token request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await.unwrap_or_default();
+            return Err(format!("Token exchange failed: {}", error_text).into());
+        }
+
+        #[derive(Deserialize)]
+        struct TokenResponse {
+            access_token: String,
+        }
+
+        let token_response: TokenResponse = response.json().await
+            .map_err(|e| format!("Failed to parse token response: {}", e))?;
+
+        Ok(token_response.access_token)
+    }
+
+    /// Refresh access token (for manual refresh if needed)
+    pub async fn refresh_token(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Clear cache to force refresh
+        {
+            let mut cache = self.cached_token.write().await;
+            *cache = None;
+        }
+        self.get_access_token().await?;
         Ok(())
     }
 
@@ -106,12 +257,11 @@ impl FirestoreService {
     }
 
     /// Build request with auth header
-    fn build_request(&self, method: reqwest::Method, url: &str) -> reqwest::RequestBuilder {
+    async fn build_request(&self, method: reqwest::Method, url: &str) -> Result<reqwest::RequestBuilder, Box<dyn std::error::Error + Send + Sync>> {
         let mut req = self.client.request(method, url);
-        if let Some(token) = &self.access_token {
-            req = req.bearer_auth(token);
-        }
-        req
+        let token = self.get_access_token().await?;
+        req = req.bearer_auth(token);
+        Ok(req)
     }
 
     // =========================================================================
@@ -162,6 +312,7 @@ impl FirestoreService {
 
         let response = self
             .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
             .json(&query)
             .send()
             .await?;
@@ -201,6 +352,7 @@ impl FirestoreService {
 
         let response = self
             .build_request(reqwest::Method::GET, &url)
+            .await?
             .send()
             .await?;
 
@@ -237,6 +389,7 @@ impl FirestoreService {
 
         let response = self
             .build_request(reqwest::Method::PATCH, &url)
+            .await?
             .json(&doc)
             .send()
             .await?;
@@ -277,6 +430,7 @@ impl FirestoreService {
 
         let response = self
             .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
             .json(&query)
             .send()
             .await?;
@@ -342,6 +496,7 @@ impl FirestoreService {
 
             let response = self
                 .build_request(reqwest::Method::PATCH, &url)
+                .await?
                 .json(&doc)
                 .send()
                 .await?;
@@ -403,6 +558,7 @@ impl FirestoreService {
 
             let response = self
                 .build_request(reqwest::Method::PATCH, &url)
+                .await?
                 .json(&doc)
                 .send()
                 .await?;
