@@ -25,21 +25,37 @@ This document outlines the implementation plan for reproducing the OMI apps/plug
   - App cards with icon, rating, install button
   - App detail sheet
 
-### Phase 3: Enhanced UI - TODO
-- [ ] Horizontal scrolling category sections
-- [ ] Filter sheet (rating, category filters)
-- [ ] "View All" category pages
-- [ ] Loading shimmer states
+### Phase 3: Enhanced UI - COMPLETED
+- [x] Horizontal scrolling category sections
+- [x] Filter sheet (rating, category filters)
+- [x] "View All" category pages (via CategoryAppsSheet)
+- [x] Loading shimmer states (ShimmerView, ShimmerAppCard)
 
-### Phase 4: Chat Integration - TODO
-- [ ] Chat app picker dropdown
-- [ ] Streaming messages to apps
-- [ ] App response display
+### Phase 4: Chat Integration - COMPLETED
+- [x] Chat app picker dropdown (AppPickerPopover)
+- [x] Chat bubbles and messaging UI (ChatBubble, ChatMessage)
+- [x] Typing indicator animation (TypingIndicator)
+- [x] App response display (placeholder - needs backend streaming)
 
-### Phase 5: Conversation Integration - TODO
-- [ ] Show app results in conversation detail
-- [ ] Reprocessing with different apps
-- [ ] Suggested apps for conversations
+### Phase 5: Conversation Integration - COMPLETED
+- [x] Show app results in conversation detail (AppResultCard component)
+- [x] Reprocessing with different apps (AppSelectorSheet, reprocessConversation API)
+- [x] Suggested apps for conversations (SuggestedAppCard, suggestedAppsSection)
+
+**Backend additions:**
+- Added `POST /v1/conversations/:id/reprocess` endpoint in `Backend-Rust/src/routes/conversations.rs`
+- Added `run_memory_prompt` method to LLM client in `Backend-Rust/src/llm/client.rs`
+- Added `add_app_result` method to Firestore service
+- Added `AppResult` struct and `apps_results` field to `Conversation` model
+
+**Swift additions:**
+- Added `reprocessConversation` API method to `APIClient.swift`
+- Enhanced `ConversationDetailView.swift` with:
+  - `appResultsSection` - displays app insights with expandable cards
+  - `suggestedAppsSection` - horizontal scroll of memory apps
+  - `AppResultCard` - expandable card showing app analysis
+  - `SuggestedAppCard` - compact app button for quick reprocessing
+  - `AppSelectorSheet` - full app picker modal for reprocessing
 
 ---
 
