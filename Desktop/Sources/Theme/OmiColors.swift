@@ -32,6 +32,19 @@ enum OmiColors {
     static let windowButtonMinimize = Color(hex: 0xFFBD2E)
     static let windowButtonMaximize = Color(hex: 0x28CA42)
 
+    // MARK: - Speaker Colors (for transcript bubbles)
+    static let speakerColors: [Color] = [
+        Color(hex: 0x2D3748),  // Dark blue-gray
+        Color(hex: 0x1E3A5F),  // Navy
+        Color(hex: 0x2D4A3E),  // Dark teal
+        Color(hex: 0x4A3728),  // Dark brown
+        Color(hex: 0x3D2E4A),  // Dark purple
+        Color(hex: 0x4A3A2D)   // Dark amber
+    ]
+
+    /// User bubble color (purple tinted)
+    static let userBubble = purplePrimary.opacity(0.3)
+
     // MARK: - Gradients
     static let purpleGradient = LinearGradient(
         colors: [purplePrimary, purpleAccent],
