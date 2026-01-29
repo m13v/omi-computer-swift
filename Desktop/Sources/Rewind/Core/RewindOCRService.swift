@@ -12,8 +12,12 @@ actor RewindOCRService {
 
     /// Extract text from JPEG image data using Apple Vision
     func extractText(from imageData: Data) async throws -> String {
-        guard let nsImage = NSImage(data: imageData),
-              let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+        guard let nsImage = NSImage(data: imageData) else {
+            throw RewindError.invalidImage
+        }
+
+        var rect = NSRect(origin: .zero, size: nsImage.size)
+        guard let cgImage = nsImage.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
             throw RewindError.invalidImage
         }
 
@@ -83,12 +87,3 @@ actor RewindOCRService {
     }
 }
 
-// MARK: - NSImage Extension
-
-extension NSImage {
-    /// Convert NSImage to CGImage
-    func cgImage(forProposedRect proposedRect: UnsafeMutablePointer<NSRect>?, context: NSGraphicsContext?, hints: [NSImageRep.HintKey: Any]?) -> CGImage? {
-        var rect = NSRect(origin: .zero, size: size)
-        return cgImage(forProposedRect: &rect, context: context, hints: hints)
-    }
-}
