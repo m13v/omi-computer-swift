@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Clear system OPENAI_API_KEY so .env takes precedence
+unset OPENAI_API_KEY
+
 # App configuration
 APP_NAME="OMI-COMPUTER"
 BUNDLE_ID="com.omi.computer-macos"
@@ -34,6 +37,9 @@ pkill "$APP_NAME" 2>/dev/null || true
 pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
+
+# Clear log file for fresh run (must be before backend starts)
+rm -f /tmp/omi.log 2>/dev/null || true
 
 # Clean up conflicting app bundles with same bundle ID
 echo "Cleaning up conflicting app bundles..."
@@ -135,9 +141,6 @@ echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
 echo "App:      $APP_BUNDLE (running from build directory)"
 echo "========================"
 echo ""
-
-# Clear log file for fresh run
-rm -f /tmp/omi.log 2>/dev/null || true
 
 # Remove quarantine and start app from build directory
 echo "Starting app..."
