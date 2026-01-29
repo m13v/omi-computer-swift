@@ -148,23 +148,23 @@ struct ChatPage: View {
                                 .id(message.id)
                         }
                     }
-
-                    if chatProvider.isSending {
-                        HStack {
-                            TypingIndicator()
-                            Spacer()
-                        }
-                        .padding(.horizontal)
-                    }
                 }
                 .padding()
             }
             .onChange(of: chatProvider.messages.count) { _, _ in
-                if let lastMessage = chatProvider.messages.last {
-                    withAnimation {
-                        proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                    }
-                }
+                scrollToBottom(proxy: proxy)
+            }
+            .onChange(of: chatProvider.messages.last?.text) { _, _ in
+                // Scroll as streaming text updates
+                scrollToBottom(proxy: proxy)
+            }
+        }
+    }
+
+    private func scrollToBottom(proxy: ScrollViewProxy) {
+        if let lastMessage = chatProvider.messages.last {
+            withAnimation(.easeOut(duration: 0.1)) {
+                proxy.scrollTo(lastMessage.id, anchor: .bottom)
             }
         }
     }
@@ -265,7 +265,7 @@ struct ChatPage: View {
 // MARK: - Chat Bubble
 
 struct ChatBubble: View {
-    let message: ServerChatMessage
+    let message: ChatMessage
     let app: OmiApp?
 
     var body: some View {
@@ -296,21 +296,29 @@ struct ChatBubble: View {
                 }
             }
 
-            VStack(alignment: message.sender == .human ? .trailing : .leading, spacing: 4) {
-                Text(message.text)
-                    .font(.system(size: 14))
-                    .foregroundColor(message.sender == .human ? .white : OmiColors.textPrimary)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
-                    .background(message.sender == .human ? OmiColors.purplePrimary : OmiColors.backgroundSecondary)
-                    .cornerRadius(18)
+            VStack(alignment: message.sender == .user ? .trailing : .leading, spacing: 4) {
+                if message.isStreaming && message.text.isEmpty {
+                    // Show typing indicator for empty streaming message
+                    TypingIndicator()
+                } else {
+                    Text(message.text)
+                        .font(.system(size: 14))
+                        .foregroundColor(message.sender == .user ? .white : OmiColors.textPrimary)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 10)
+                        .background(message.sender == .user ? OmiColors.purplePrimary : OmiColors.backgroundSecondary)
+                        .cornerRadius(18)
+                        .textSelection(.enabled)
+                }
 
-                Text(message.createdAt, style: .time)
-                    .font(.system(size: 10))
-                    .foregroundColor(OmiColors.textTertiary)
+                if !message.isStreaming || !message.text.isEmpty {
+                    Text(message.createdAt, style: .time)
+                        .font(.system(size: 10))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
             }
 
-            if message.sender == .human {
+            if message.sender == .user {
                 // User avatar
                 Image(systemName: "person.fill")
                     .font(.system(size: 14))
@@ -320,7 +328,7 @@ struct ChatBubble: View {
                     .clipShape(Circle())
             }
         }
-        .frame(maxWidth: .infinity, alignment: message.sender == .human ? .trailing : .leading)
+        .frame(maxWidth: .infinity, alignment: message.sender == .user ? .trailing : .leading)
     }
 }
 
