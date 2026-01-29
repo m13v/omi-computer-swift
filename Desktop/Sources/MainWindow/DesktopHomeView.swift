@@ -76,8 +76,10 @@ struct DesktopHomeView: View {
                     case 3:
                         TasksPage()
                     case 4:
-                        AppsPage()
+                        AdvicePage()
                     case 5:
+                        AppsPage()
+                    case 6:
                         SettingsPage()
                     default:
                         ConversationsPage(appState: appState)
