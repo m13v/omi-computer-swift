@@ -130,8 +130,15 @@ cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 # Copy GoogleService-Info.plist for Firebase
 cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
-# Copy .env.app (app runtime secrets only)
-cp .env.app "$APP_BUNDLE/Contents/Resources/.env" 2>/dev/null || true
+# Copy .env.app (app runtime secrets only) and add API URL
+if [ -f ".env.app" ]; then
+    cp .env.app "$APP_BUNDLE/Contents/Resources/.env"
+else
+    touch "$APP_BUNDLE/Contents/Resources/.env"
+fi
+# Set API URL to tunnel for development (overrides production default)
+echo "OMI_API_URL=$TUNNEL_URL" >> "$APP_BUNDLE/Contents/Resources/.env"
+echo "Using backend: $TUNNEL_URL"
 
 # Copy app icon
 cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
