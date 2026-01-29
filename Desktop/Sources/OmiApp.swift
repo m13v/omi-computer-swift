@@ -48,7 +48,7 @@ struct OMIApp: App {
         }
         .menuBarExtraStyle(.menu)
 
-        Window("Welcome to OMI-COMPUTER", id: "onboarding") {
+        Window("Welcome to Omi Computer", id: "onboarding") {
             Group {
                 if authState.isSignedIn {
                     OnboardingView(appState: appState)
@@ -60,7 +60,7 @@ struct OMIApp: App {
                 // Center and activate the window after a brief delay
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     for window in NSApp.windows {
-                        if window.title == "Welcome to OMI-COMPUTER" || window.contentView?.subviews.first != nil {
+                        if window.title == "Welcome to Omi Computer" || window.contentView?.subviews.first != nil {
                             window.center()
                             window.makeKeyAndOrderFront(nil)
                             window.orderFrontRegardless()
@@ -69,13 +69,7 @@ struct OMIApp: App {
                     NSApp.activate(ignoringOtherApps: true)
                 }
             }
-            // Handle OAuth callback URLs
-            .onOpenURL { url in
-                NSLog("OMI: Received URL: %@", url.absoluteString)
-                Task { @MainActor in
-                    AuthService.shared.handleOAuthCallback(url: url)
-                }
-            }
+            // Note: OAuth callback URLs are handled by AppDelegate.handleGetURLEvent
         }
         .windowResizability(.contentSize)
         .defaultLaunchBehavior(.presented)
@@ -237,7 +231,7 @@ struct MenuBarView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApp.activate(ignoringOtherApps: true)
                     for window in NSApp.windows {
-                        if window.title == "Welcome to OMI-COMPUTER" {
+                        if window.title == "Welcome to Omi Computer" {
                             window.makeKeyAndOrderFront(nil)
                             window.orderFrontRegardless()
                         }
@@ -250,7 +244,7 @@ struct MenuBarView: View {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     NSApp.activate(ignoringOtherApps: true)
                     for window in NSApp.windows {
-                        if window.title == "Welcome to OMI-COMPUTER" {
+                        if window.title == "Welcome to Omi Computer" {
                             window.makeKeyAndOrderFront(nil)
                             window.orderFrontRegardless()
                         }
