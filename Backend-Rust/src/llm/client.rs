@@ -643,3 +643,303 @@ pub struct ProcessedConversation {
     pub action_items: Vec<ActionItem>,
     pub memories: Vec<Memory>,
 }
+
+/// Chat message for LLM conversations
+#[derive(Debug, Clone)]
+pub struct ChatMessageInput {
+    pub role: String,  // "user" or "assistant"
+    pub content: String,
+}
+
+impl LlmClient {
+    // =========================================================================
+    // CHAT FUNCTIONALITY
+    // =========================================================================
+
+    /// Generate a chat response based on conversation history
+    pub async fn chat_response(
+        &self,
+        messages: &[ChatMessageInput],
+        user_name: &str,
+        memories: &[MemoryDB],
+        app_name: Option<&str>,
+        app_prompt: Option<&str>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // Build memories context
+        let memories_context = if memories.is_empty() {
+            "(No stored memories yet)".to_string()
+        } else {
+            memories.iter()
+                .take(50) // Limit context size
+                .map(|m| format!("- {}", m.content))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let app_name = app_name.unwrap_or("OMI Assistant");
+        let app_prompt = app_prompt.unwrap_or(DEFAULT_CHAT_APP_PROMPT);
+
+        // Build system prompt
+        let system_prompt = CHAT_SYSTEM_PROMPT
+            .replace("{user_name}", user_name)
+            .replace("{app_name}", app_name)
+            .replace("{app_prompt}", app_prompt)
+            .replace("{memories_context}", &memories_context);
+
+        // Call LLM with conversation
+        match self.provider {
+            LlmProvider::OpenAI => self.chat_openai(&system_prompt, messages).await,
+            LlmProvider::Gemini => self.chat_gemini(&system_prompt, messages).await,
+        }
+    }
+
+    /// Generate an initial greeting message for a new chat
+    pub async fn initial_chat_message(
+        &self,
+        user_name: &str,
+        memories: &[MemoryDB],
+        app_name: Option<&str>,
+        app_prompt: Option<&str>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // Build memories context
+        let memories_context = if memories.is_empty() {
+            "(No stored memories yet)".to_string()
+        } else {
+            memories.iter()
+                .take(20) // Limit context for greeting
+                .map(|m| format!("- {}", m.content))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let app_name = app_name.unwrap_or("OMI Assistant");
+        let app_prompt = app_prompt.unwrap_or(DEFAULT_CHAT_APP_PROMPT);
+
+        let prompt = INITIAL_CHAT_PROMPT
+            .replace("{user_name}", user_name)
+            .replace("{app_name}", app_name)
+            .replace("{app_prompt}", app_prompt)
+            .replace("{memories_context}", &memories_context);
+
+        // Call LLM with conversation (text response, not JSON)
+        match self.provider {
+            LlmProvider::OpenAI => self.call_openai_text(&prompt, Some(0.7), Some(200)).await,
+            LlmProvider::Gemini => self.call_gemini_text(&prompt, Some(0.7), Some(200)).await,
+        }
+    }
+
+    /// Chat with OpenAI using conversation history
+    async fn chat_openai(
+        &self,
+        system_prompt: &str,
+        messages: &[ChatMessageInput],
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let mut openai_messages = vec![
+            OpenAIMessage {
+                role: "system".to_string(),
+                content: system_prompt.to_string(),
+            }
+        ];
+
+        for msg in messages {
+            openai_messages.push(OpenAIMessage {
+                role: msg.role.clone(),
+                content: msg.content.clone(),
+            });
+        }
+
+        let request = OpenAIRequest {
+            model: self.model.clone(),
+            messages: openai_messages,
+            response_format: None, // Free-form text, not JSON
+            temperature: Some(0.7),
+            max_completion_tokens: Some(2000),
+        };
+
+        let response = self
+            .client
+            .post("https://api.openai.com/v1/chat/completions")
+            .bearer_auth(&self.api_key)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error = response.text().await?;
+            return Err(format!("OpenAI API error: {}", error).into());
+        }
+
+        let result: OpenAIResponse = response.json().await?;
+        Ok(result.choices.first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default())
+    }
+
+    /// Chat with Gemini using conversation history
+    async fn chat_gemini(
+        &self,
+        system_prompt: &str,
+        messages: &[ChatMessageInput],
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // Gemini uses a different format - combine system prompt with first user message
+        let mut parts = vec![GeminiPart {
+            text: format!("System instructions: {}\n\n", system_prompt),
+        }];
+
+        for msg in messages {
+            let prefix = if msg.role == "user" { "User: " } else { "Assistant: " };
+            parts.push(GeminiPart {
+                text: format!("{}{}", prefix, msg.content),
+            });
+        }
+
+        let request = GeminiRequest {
+            contents: vec![GeminiContent { parts }],
+            generation_config: Some(GeminiGenerationConfig {
+                response_mime_type: "text/plain".to_string(),
+                temperature: Some(0.7),
+                max_output_tokens: Some(2000),
+            }),
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            self.model, self.api_key
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error = response.text().await?;
+            return Err(format!("Gemini API error: {}", error).into());
+        }
+
+        let result: GeminiResponse = response.json().await?;
+        Ok(result.candidates.first()
+            .and_then(|c| c.content.parts.first())
+            .map(|p| p.text.clone())
+            .unwrap_or_default())
+    }
+
+    /// Run an app's memory prompt against a conversation transcript
+    /// Used for reprocessing conversations with different apps
+    pub async fn run_memory_prompt(
+        &self,
+        prompt_template: &str,
+        transcript: &str,
+        structured: &Structured,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // Build context about the conversation
+        let context = format!(
+            "CONVERSATION CONTEXT:\nTitle: {}\nCategory: {:?}\nOverview: {}\n\nTRANSCRIPT:\n{}",
+            structured.title,
+            structured.category,
+            structured.overview,
+            transcript
+        );
+
+        // Build the full prompt
+        let full_prompt = format!(
+            "{}\n\n{}\n\nProvide your analysis based on the app's prompt and the conversation above. Be specific and actionable.",
+            prompt_template,
+            context
+        );
+
+        // Call the LLM without JSON format requirement (free-form text response)
+        match self.provider {
+            LlmProvider::OpenAI => self.call_openai_text(&full_prompt, Some(0.7), Some(2000)).await,
+            LlmProvider::Gemini => self.call_gemini_text(&full_prompt, Some(0.7), Some(2000)).await,
+        }
+    }
+
+    /// Call OpenAI API with text (non-JSON) response
+    async fn call_openai_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let request = OpenAIRequest {
+            model: self.model.clone(),
+            messages: vec![OpenAIMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            }],
+            response_format: None, // No JSON requirement
+            temperature,
+            max_completion_tokens: max_tokens,
+        };
+
+        let response = self
+            .client
+            .post("https://api.openai.com/v1/chat/completions")
+            .bearer_auth(&self.api_key)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error = response.text().await?;
+            return Err(format!("OpenAI API error: {}", error).into());
+        }
+
+        let result: OpenAIResponse = response.json().await?;
+        Ok(result.choices.first()
+            .map(|c| c.message.content.clone())
+            .unwrap_or_default())
+    }
+
+    /// Call Gemini API with text (non-JSON) response
+    async fn call_gemini_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        #[derive(Debug, Serialize)]
+        struct GeminiTextRequest {
+            contents: Vec<GeminiContent>,
+            #[serde(rename = "generationConfig")]
+            generation_config: Option<GeminiTextConfig>,
+        }
+
+        #[derive(Debug, Serialize)]
+        struct GeminiTextConfig {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            temperature: Option<f32>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            #[serde(rename = "maxOutputTokens")]
+            max_output_tokens: Option<i32>,
+        }
+
+        let request = GeminiTextRequest {
+            contents: vec![GeminiContent {
+                parts: vec![GeminiPart {
+                    text: prompt.to_string(),
+                }],
+            }],
+            generation_config: Some(GeminiTextConfig {
+                temperature,
+                max_output_tokens: max_tokens,
+            }),
+        };
+
+        let url = format!(
+            "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
+            self.model, self.api_key
+        );
+
+        let response = self
+            .client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error = response.text().await?;
+            return Err(format!("Gemini API error: {}", error).into());
+        }
+
+        let result: GeminiResponse = response.json().await?;
+        Ok(result.candidates.first()
+            .and_then(|c| c.content.parts.first())
+            .map(|p| p.text.clone())
+            .unwrap_or_default())
+    }
+}
