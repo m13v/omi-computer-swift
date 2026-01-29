@@ -2,10 +2,39 @@ import SwiftUI
 
 struct DesktopHomeView: View {
     @StateObject private var appState = AppState()
+    @ObservedObject private var authState = AuthState.shared
     @State private var selectedIndex: Int = 0
     @State private var isSidebarCollapsed: Bool = false
 
     var body: some View {
+        Group {
+            if !authState.isSignedIn {
+                // State 1: Not signed in - show sign in
+                SignInView(authState: authState)
+            } else if !appState.hasCompletedOnboarding {
+                // State 2: Signed in but onboarding not complete
+                OnboardingView(appState: appState, onComplete: nil)
+            } else {
+                // State 3: Signed in and onboarded - show main content
+                mainContent
+            }
+        }
+        .background(OmiColors.backgroundPrimary)
+        .frame(minWidth: 900, minHeight: 600)
+        .preferredColorScheme(.dark)
+        .onAppear {
+            // Force dark appearance on the window
+            DispatchQueue.main.async {
+                for window in NSApp.windows {
+                    if window.title == "Omi" {
+                        window.appearance = NSAppearance(named: .darkAqua)
+                    }
+                }
+            }
+        }
+    }
+
+    private var mainContent: some View {
         HStack(spacing: 0) {
             // Sidebar
             SidebarView(
@@ -45,19 +74,6 @@ struct DesktopHomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .padding(12)
-        }
-        .background(OmiColors.backgroundPrimary)
-        .frame(minWidth: 900, minHeight: 600)
-        .preferredColorScheme(.dark)
-        .onAppear {
-            // Force dark appearance on the window
-            DispatchQueue.main.async {
-                for window in NSApp.windows {
-                    if window.title == "Omi" {
-                        window.appearance = NSAppearance(named: .darkAqua)
-                    }
-                }
-            }
         }
     }
 }
