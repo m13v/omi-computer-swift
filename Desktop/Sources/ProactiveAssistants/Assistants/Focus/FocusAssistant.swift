@@ -40,6 +40,11 @@ actor FocusAssistant: ProactiveAssistant {
     private var lastAnalyzedWindowTitle: String?
     private var analysisCooldownEndTime: Date?
 
+    // MARK: - Notification Deduplication
+    // Track the last state we notified about to prevent duplicate notifications
+    // from parallel frame analysis (only notify on state change)
+    private var lastNotifiedState: FocusStatus?
+
     /// Get the current system prompt from settings (accessed on MainActor for thread safety)
     private var systemPrompt: String {
         get async {
@@ -219,6 +224,7 @@ actor FocusAssistant: ProactiveAssistant {
         lastAnalyzedApp = nil
         lastAnalyzedWindowTitle = nil
         lastStatus = nil
+        lastNotifiedState = nil
         analysisCooldownEndTime = nil
     }
 
@@ -296,43 +302,43 @@ actor FocusAssistant: ProactiveAssistant {
 
             // Update status
             onStatusChange?(analysis.status)
-
-            // Track state transition
-            let justBecameFocused = lastStatus == .distracted && analysis.status == .focused
             lastStatus = analysis.status
 
-            if analysis.status == .distracted {
-                // Send distraction notification with cooldown
+            // Only notify on STATE CHANGE to prevent duplicate notifications from parallel frames
+            // e.g., if 3 frames all return "distracted", only the first one notifies
+            if analysis.status == .distracted && lastNotifiedState != .distracted {
+                // Transitioning to distracted state
                 if let message = analysis.message {
                     let fullMessage = "\(analysis.appOrSite) - \(message)"
                     log("ALERT: \(message)")
 
-                    // Send notification (analysis cooldown handles throttling, not notification cooldown)
-                    let notificationSent = NotificationService.shared.sendNotification(
+                    // Update notified state BEFORE sending to prevent race with parallel frames
+                    lastNotifiedState = .distracted
+
+                    NotificationService.shared.sendNotification(
                         title: "Focus",
                         message: fullMessage,
                         assistantId: identifier,
                         applyCooldown: false
                     )
 
-                    if notificationSent {
-                        // Trigger red glow via callback (runs on MainActor in plugin)
-                        onDistraction?()
+                    // Trigger red glow via callback (runs on MainActor in plugin)
+                    onDistraction?()
 
-                        // Start analysis cooldown (same as notification cooldown)
-                        // This prevents continuous API calls while user is distracted
-                        let cooldownSeconds = await MainActor.run {
-                            FocusAssistantSettings.shared.cooldownIntervalSeconds
-                        }
-                        analysisCooldownEndTime = Date().addingTimeInterval(cooldownSeconds)
-                        log("Focus: Started \(Int(cooldownSeconds))s analysis cooldown")
+                    // Start analysis cooldown to prevent continuous API calls while distracted
+                    let cooldownSeconds = await MainActor.run {
+                        FocusAssistantSettings.shared.cooldownIntervalSeconds
                     }
+                    analysisCooldownEndTime = Date().addingTimeInterval(cooldownSeconds)
+                    log("Focus: Started \(Int(cooldownSeconds))s analysis cooldown")
 
-                    // Still call the callback for Flutter event streaming
+                    // Call the callback for Flutter event streaming
                     onAlert(fullMessage)
                 }
-            } else if justBecameFocused {
-                // Only notify once when transitioning TO focused state
+            } else if analysis.status == .focused && lastNotifiedState == .distracted {
+                // Transitioning from distracted to focused
+                lastNotifiedState = .focused
+
                 // Trigger the glow effect
                 onRefocus?()
 
@@ -347,7 +353,7 @@ actor FocusAssistant: ProactiveAssistant {
                 }
             }
         } catch {
-            log("Frame \(frame.frameNumber) error: \(error)")
+            logError("Frame \(frame.frameNumber) error", error: error)
         }
     }
 
@@ -381,7 +387,7 @@ actor FocusAssistant: ProactiveAssistant {
 
             return try JSONDecoder().decode(ScreenAnalysis.self, from: Data(responseText.utf8))
         } catch {
-            log("Focus analysis error: \(error)")
+            logError("Focus analysis error", error: error)
             return nil
         }
     }
