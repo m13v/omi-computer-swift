@@ -517,8 +517,7 @@ struct OnboardingView: View {
                 // Permission already granted - send test notification anyway and advance
                 NotificationService.shared.sendNotification(
                     title: "Notifications Enabled",
-                    message: "You'll receive focus alerts from OMI.",
-                    applyCooldown: false
+                    message: "You'll receive focus alerts from OMI."
                 )
                 MixpanelManager.shared.onboardingStepCompleted(step: 2, stepName: "Notifications")
                 MixpanelManager.shared.permissionGranted(permission: "notifications")
