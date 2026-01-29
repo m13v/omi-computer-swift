@@ -5,9 +5,10 @@ pub mod app;
 pub mod category;
 pub mod conversation;
 pub mod memory;
+pub mod message;
 pub mod request;
 
-pub use action_item::{ActionItemDB, ActionItemStatusResponse, UpdateActionItemRequest};
+pub use action_item::{ActionItemDB, ActionItemStatusResponse, CreateActionItemRequest, UpdateActionItemRequest};
 pub use app::{
     App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ChatTool, ExternalIntegration,
     ListAppsQuery, ProactiveNotification, SearchAppsQuery, SubmitReviewRequest, ToggleAppRequest,
@@ -15,11 +16,15 @@ pub use app::{
 };
 pub use category::{Category, MemoryCategory};
 pub use conversation::{
-    ActionItem, Conversation, ConversationSource, ConversationStatus, Event, Structured,
+    ActionItem, AppResult, Conversation, ConversationSource, ConversationStatus, Event, Structured,
     TranscriptSegment,
 };
 pub use memory::{
     CreateMemoryRequest, CreateMemoryResponse, EditMemoryRequest, Memory, MemoryDB,
     MemoryStatusResponse, ReviewMemoryRequest, UpdateVisibilityRequest,
+};
+pub use message::{
+    ChatSession, GetMessagesQuery, Message, MessageAppQuery, MessageSender, MessageType,
+    SendMessageRequest,
 };
 pub use request::{CreateConversationRequest, CreateConversationResponse};
