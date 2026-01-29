@@ -10,6 +10,9 @@ class AudioCaptureService {
     /// Callback for receiving audio chunks
     typealias AudioChunkHandler = (Data) -> Void
 
+    /// Callback for receiving audio levels (0.0 - 1.0)
+    typealias AudioLevelHandler = (Float) -> Void
+
     enum AudioCaptureError: LocalizedError {
         case noInputAvailable
         case engineStartFailed(Error)
@@ -35,6 +38,7 @@ class AudioCaptureService {
     private let audioEngine = AVAudioEngine()
     private var isCapturing = false
     private var onAudioChunk: AudioChunkHandler?
+    private var onAudioLevel: AudioLevelHandler?
 
     /// Target sample rate for DeepGram
     private let targetSampleRate: Double = 16000
@@ -73,14 +77,17 @@ class AudioCaptureService {
     }
 
     /// Start capturing audio from microphone
-    /// - Parameter onAudioChunk: Callback receiving 16-bit PCM audio data chunks at 16kHz
-    func startCapture(onAudioChunk: @escaping AudioChunkHandler) throws {
+    /// - Parameters:
+    ///   - onAudioChunk: Callback receiving 16-bit PCM audio data chunks at 16kHz
+    ///   - onAudioLevel: Optional callback receiving normalized audio level (0.0 - 1.0)
+    func startCapture(onAudioChunk: @escaping AudioChunkHandler, onAudioLevel: AudioLevelHandler? = nil) throws {
         guard !isCapturing else {
             log("AudioCapture: Already capturing")
             return
         }
 
         self.onAudioChunk = onAudioChunk
+        self.onAudioLevel = onAudioLevel
 
         let inputNode = audioEngine.inputNode
 
@@ -222,6 +229,7 @@ class AudioCaptureService {
         isCapturing = false
         isReconfiguring = false
         onAudioChunk = nil
+        onAudioLevel = nil
 
         // Clean up converter
         audioConverter = nil
@@ -294,6 +302,20 @@ class AudioCaptureService {
         // Convert to Data (little-endian, which is native on Apple platforms)
         let byteData = pcmData.withUnsafeBufferPointer { buffer in
             return Data(buffer: buffer)
+        }
+
+        // Calculate and report audio level (RMS normalized to 0.0 - 1.0)
+        if let levelHandler = onAudioLevel, !pcmData.isEmpty {
+            let sumOfSquares: Float = pcmData.reduce(0.0) { acc, sample in
+                let normalized = Float(sample) / 32767.0
+                return acc + normalized * normalized
+            }
+            let rms = sqrt(sumOfSquares / Float(pcmData.count))
+            // Clamp to 0.0 - 1.0 range
+            let level = min(Float(1.0), max(Float(0.0), rms))
+            DispatchQueue.main.async {
+                levelHandler(level)
+            }
         }
 
         // Send to callback
