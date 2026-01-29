@@ -169,7 +169,7 @@ class AppState: ObservableObject {
                 DispatchQueue.main.async {
                     NotificationService.shared.sendNotification(
                         title: "Notifications Enabled",
-                        message: "You'll receive focus alerts from OMI."
+                        message: "You'll receive focus alerts from Omi."
                     )
                 }
             }
