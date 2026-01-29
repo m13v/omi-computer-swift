@@ -7,7 +7,8 @@ struct ChatPage: View {
     @State private var showAppPicker = false
 
     var selectedApp: OmiApp? {
-        appProvider.chatApps.first { $0.id == chatProvider.selectedAppId }
+        guard let appId = chatProvider.selectedAppId else { return nil }
+        return appProvider.chatApps.first { $0.id == appId }
     }
 
     var body: some View {
@@ -20,11 +21,7 @@ struct ChatPage: View {
                 .background(OmiColors.backgroundTertiary)
 
             // Messages area
-            if appProvider.chatApps.isEmpty && !appProvider.isLoading {
-                noChatAppsView
-            } else {
-                messagesView
-            }
+            messagesView
 
             Divider()
                 .background(OmiColors.backgroundTertiary)
@@ -36,10 +33,8 @@ struct ChatPage: View {
         .background(OmiColors.backgroundPrimary)
         .task {
             await appProvider.fetchApps()
-            // Auto-select first chat app
-            if chatProvider.selectedAppId == nil, let firstApp = appProvider.chatApps.first {
-                chatProvider.selectApp(firstApp.id)
-            }
+            // Fetch messages for default OMI assistant (no app selected)
+            await chatProvider.fetchMessages()
         }
     }
 
@@ -51,6 +46,7 @@ struct ChatPage: View {
             Button(action: { showAppPicker.toggle() }) {
                 HStack(spacing: 10) {
                     if let app = selectedApp {
+                        // Show selected app
                         AsyncImage(url: URL(string: app.image)) { phase in
                             switch phase {
                             case .success(let image):
@@ -70,23 +66,35 @@ struct ChatPage: View {
                                 .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(OmiColors.textPrimary)
 
-                            Text(app.worksWithChat ? "Chat App" : "Assistant")
+                            Text("Chat App")
                                 .font(.system(size: 11))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
                     } else {
-                        Image(systemName: "bubble.left.and.bubble.right")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.textTertiary)
+                        // Default OMI assistant
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 18))
+                            .foregroundColor(OmiColors.purplePrimary)
+                            .frame(width: 32, height: 32)
+                            .background(OmiColors.backgroundTertiary)
+                            .clipShape(Circle())
 
-                        Text("Select an app")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textSecondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("OMI")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Personal Assistant")
+                                .font(.system(size: 11))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
                     }
 
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 10))
-                        .foregroundColor(OmiColors.textTertiary)
+                    if !appProvider.chatApps.isEmpty {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -94,6 +102,7 @@ struct ChatPage: View {
                 .cornerRadius(20)
             }
             .buttonStyle(.plain)
+            .disabled(appProvider.chatApps.isEmpty)
             .popover(isPresented: $showAppPicker, arrowEdge: .bottom) {
                 AppPickerPopover(
                     apps: appProvider.chatApps,
@@ -188,39 +197,24 @@ struct ChatPage: View {
                     .lineLimit(3)
                     .padding(.horizontal, 40)
             } else {
-                Image(systemName: "bubble.left.and.bubble.right")
+                // Default OMI assistant
+                Image(systemName: "brain.head.profile")
                     .font(.system(size: 48))
-                    .foregroundColor(OmiColors.textTertiary)
+                    .foregroundColor(OmiColors.purplePrimary)
 
-                Text("Start a Conversation")
+                Text("Chat with OMI")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
-                Text("Select a chat app from the dropdown above to begin")
+                Text("Your personal AI assistant that knows you through your memories and conversations")
                     .font(.system(size: 13))
-                    .foregroundColor(OmiColors.textTertiary)
+                    .foregroundColor(OmiColors.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding()
-    }
-
-    private var noChatAppsView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "square.grid.2x2")
-                .font(.system(size: 48))
-                .foregroundColor(OmiColors.textTertiary)
-
-            Text("No Chat Apps Installed")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
-
-            Text("Install apps with chat capability from the Apps tab")
-                .font(.system(size: 13))
-                .foregroundColor(OmiColors.textTertiary)
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     // MARK: - Input Area
@@ -251,7 +245,6 @@ struct ChatPage: View {
 
     private var canSend: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        chatProvider.selectedAppId != nil &&
         !chatProvider.isSending
     }
 
@@ -365,21 +358,26 @@ struct AppPickerPopover: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Select App")
+            Text("Select Assistant")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundColor(OmiColors.textTertiary)
                 .padding(.horizontal, 12)
                 .padding(.top, 12)
                 .padding(.bottom, 8)
 
-            if apps.isEmpty {
-                Text("No chat apps available")
-                    .font(.system(size: 13))
-                    .foregroundColor(OmiColors.textTertiary)
-                    .padding()
-            } else {
-                ScrollView {
-                    VStack(spacing: 2) {
+            ScrollView {
+                VStack(spacing: 2) {
+                    // Default OMI option
+                    DefaultOmiRow(isSelected: selectedAppId == nil) {
+                        selectedAppId = nil
+                        onSelect()
+                    }
+
+                    if !apps.isEmpty {
+                        Divider()
+                            .padding(.vertical, 4)
+                            .padding(.horizontal, 12)
+
                         ForEach(apps) { app in
                             AppPickerRow(
                                 app: app,
@@ -391,11 +389,54 @@ struct AppPickerPopover: View {
                         }
                     }
                 }
-                .frame(maxHeight: 300)
             }
+            .frame(maxHeight: 300)
         }
         .frame(width: 250)
         .background(OmiColors.backgroundPrimary)
+    }
+}
+
+struct DefaultOmiRow: View {
+    let isSelected: Bool
+    let onSelect: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onSelect) {
+            HStack(spacing: 10) {
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 18))
+                    .foregroundColor(OmiColors.purplePrimary)
+                    .frame(width: 36, height: 36)
+                    .background(OmiColors.backgroundTertiary)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("OMI")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Text("Personal Assistant")
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+
+                if isSelected {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(isSelected || isHovering ? OmiColors.backgroundSecondary : Color.clear)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
 
