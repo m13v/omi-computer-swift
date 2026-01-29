@@ -7,6 +7,7 @@ pub mod conversation;
 pub mod memory;
 pub mod message;
 pub mod request;
+pub mod user_settings;
 
 pub use action_item::{ActionItemDB, ActionItemStatusResponse, CreateActionItemRequest, UpdateActionItemRequest};
 pub use app::{
@@ -28,3 +29,10 @@ pub use message::{
     SendMessageRequest,
 };
 pub use request::{CreateConversationRequest, CreateConversationResponse};
+pub use user_settings::{
+    DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
+    SetPrivateCloudSyncRequest, SetRecordingPermissionRequest, TranscriptionPreferences,
+    UpdateDailySummaryRequest, UpdateLanguageRequest, UpdateNotificationSettingsRequest,
+    UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsResponse,
+    UserSettingsStatusResponse,
+};
