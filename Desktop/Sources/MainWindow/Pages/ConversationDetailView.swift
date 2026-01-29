@@ -161,6 +161,9 @@ struct ConversationDetailView: View {
 
     private var metadataSection: some View {
         HStack(spacing: 12) {
+            // Source chip (device indicator)
+            sourceChip
+
             // Date chip
             metadataChip(icon: "calendar", text: formattedDate)
 
@@ -176,6 +179,37 @@ struct ConversationDetailView: View {
             }
 
             Spacer()
+        }
+    }
+
+    private var sourceChip: some View {
+        let (label, color) = sourceInfo
+        return Text(label)
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(color)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                Capsule()
+                    .fill(color.opacity(0.15))
+            )
+    }
+
+    private var sourceInfo: (label: String, color: Color) {
+        switch conversation.source {
+        case .desktop: return ("Desktop", OmiColors.purplePrimary)
+        case .omi: return ("Omi", OmiColors.success)
+        case .phone: return ("Phone", OmiColors.info)
+        case .appleWatch: return ("Apple Watch", OmiColors.info)
+        case .workflow: return ("Workflow", OmiColors.warning)
+        case .screenpipe: return ("Screenpipe", OmiColors.textSecondary)
+        case .friend, .friendCom: return ("Friend", OmiColors.info)
+        case .openglass: return ("OpenGlass", OmiColors.info)
+        case .frame: return ("Frame", OmiColors.info)
+        case .bee: return ("Bee", OmiColors.info)
+        case .limitless: return ("Limitless", OmiColors.info)
+        case .plaud: return ("Plaud", OmiColors.info)
+        default: return ("Unknown", OmiColors.textTertiary)
         }
     }
 
