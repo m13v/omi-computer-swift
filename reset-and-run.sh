@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Clear system OPENAI_API_KEY so .env takes precedence
+unset OPENAI_API_KEY
+
 # App configuration
 APP_NAME="OMI-COMPUTER"
 BUNDLE_ID="com.omi.computer-macos"
