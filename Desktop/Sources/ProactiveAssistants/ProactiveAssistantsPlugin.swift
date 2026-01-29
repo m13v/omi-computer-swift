@@ -304,7 +304,7 @@ public class ProactiveAssistantsPlugin: NSObject {
     private func onAppActivated(appName: String) {
         // Ignore our own app and system dialogs - don't monitor these (causes flickering)
         let ignoredApps = [
-            "OMI-COMPUTER",           // Our own app
+            "Omi Computer",           // Our own app
             "universalAccessAuthWarn", // macOS permission dialog
             "System Settings",         // System Settings app
             "System Preferences",      // Older macOS name
