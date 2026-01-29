@@ -12,10 +12,8 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         switch assistantId {
         case "focus":
             return FocusAssistantSettings.shared.cooldownIntervalSeconds
-        case "advice":
-            return AdviceAssistantSettings.shared.cooldownIntervalSeconds
         default:
-            // Task assistant uses extraction interval instead of notification cooldown
+            // Other assistants use extraction interval instead of notification cooldown
             return AssistantSettings.shared.cooldownIntervalSeconds
         }
     }
@@ -73,7 +71,7 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request) { error in
             if let error = error {
                 print("Notification error: \(error)")
-                log("Notification error: \(error)")
+                logError("Notification error", error: error)
             } else {
                 print("Notification sent successfully")
             }
