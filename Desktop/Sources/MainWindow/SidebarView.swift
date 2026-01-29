@@ -6,8 +6,9 @@ enum SidebarNavItem: Int, CaseIterable {
     case chat = 1
     case memories = 2
     case tasks = 3
-    case apps = 4
-    case settings = 5
+    case advice = 4
+    case apps = 5
+    case settings = 6
 
     var title: String {
         switch self {
@@ -15,6 +16,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .chat: return "Chat"
         case .memories: return "Memories"
         case .tasks: return "Tasks"
+        case .advice: return "Advice"
         case .apps: return "Apps"
         case .settings: return "Settings"
         }
@@ -26,6 +28,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .chat: return "bubble.left.and.bubble.right.fill"
         case .memories: return "brain.head.profile"
         case .tasks: return "checkmark.square.fill"
+        case .advice: return "lightbulb.fill"
         case .apps: return "square.grid.2x2.fill"
         case .settings: return "gearshape.fill"
         }
@@ -33,7 +36,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.conversations, .chat, .memories, .tasks, .apps]
+        [.conversations, .chat, .memories, .tasks, .advice, .apps]
     }
 }
 
@@ -42,6 +45,7 @@ struct SidebarView: View {
     @Binding var selectedIndex: Int
     @Binding var isCollapsed: Bool
     @ObservedObject var appState: AppState
+    @ObservedObject private var adviceStorage = AdviceStorage.shared
 
     // State for Get Omi Widget
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
@@ -82,6 +86,7 @@ struct SidebarView: View {
                             isSelected: selectedIndex == item.rawValue,
                             isCollapsed: isCollapsed,
                             iconWidth: iconWidth,
+                            badge: item == .advice ? adviceStorage.unreadCount : 0,
                             onTap: { selectedIndex = item.rawValue }
                         )
                     }
@@ -361,6 +366,7 @@ struct NavItemView: View {
     let isSelected: Bool
     let isCollapsed: Bool
     let iconWidth: CGFloat
+    var badge: Int = 0
     let onTap: () -> Void
 
     @State private var isHovered = false
@@ -368,10 +374,20 @@ struct NavItemView: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                    .frame(width: iconWidth)
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: icon)
+                        .font(.system(size: 17))
+                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                        .frame(width: iconWidth)
+
+                    // Badge on icon when collapsed
+                    if isCollapsed && badge > 0 {
+                        Circle()
+                            .fill(OmiColors.purplePrimary)
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -4)
+                    }
+                }
 
                 if !isCollapsed {
                     Text(label)
@@ -379,6 +395,17 @@ struct NavItemView: View {
                         .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
 
                     Spacer()
+
+                    // Badge count when expanded
+                    if badge > 0 {
+                        Text("\(badge)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(OmiColors.purplePrimary)
+                            .clipShape(Capsule())
+                    }
                 }
             }
             .padding(.horizontal, 12)
