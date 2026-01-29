@@ -318,8 +318,7 @@ actor FocusAssistant: ProactiveAssistant {
                     NotificationService.shared.sendNotification(
                         title: "Focus",
                         message: fullMessage,
-                        assistantId: identifier,
-                        applyCooldown: false
+                        assistantId: identifier
                     )
 
                     // Trigger red glow via callback (runs on MainActor in plugin)
@@ -347,8 +346,7 @@ actor FocusAssistant: ProactiveAssistant {
                     NotificationService.shared.sendNotification(
                         title: "Focus",
                         message: message,
-                        assistantId: identifier,
-                        applyCooldown: false
+                        assistantId: identifier
                     )
                 }
             }
