@@ -5,6 +5,53 @@ use serde::{Deserialize, Serialize};
 
 use super::category::MemoryCategory;
 
+// =========================================================================
+// REQUEST TYPES
+// =========================================================================
+
+/// Request to create a new manual memory
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateMemoryRequest {
+    pub content: String,
+    #[serde(default = "default_visibility")]
+    pub visibility: String,
+}
+
+/// Request to edit a memory's content
+#[derive(Debug, Clone, Deserialize)]
+pub struct EditMemoryRequest {
+    pub value: String,
+}
+
+/// Request to update a memory's visibility
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateVisibilityRequest {
+    pub value: String,
+}
+
+/// Request to review/approve a memory
+#[derive(Debug, Clone, Deserialize)]
+pub struct ReviewMemoryRequest {
+    pub value: bool,
+}
+
+// =========================================================================
+// RESPONSE TYPES
+// =========================================================================
+
+/// Response for successful memory creation
+#[derive(Debug, Clone, Serialize)]
+pub struct CreateMemoryResponse {
+    pub id: String,
+    pub message: String,
+}
+
+/// Simple status response
+#[derive(Debug, Clone, Serialize)]
+pub struct MemoryStatusResponse {
+    pub status: String,
+}
+
 /// A memory extracted from conversation - long-term knowledge about the user
 /// Copied from Python Memory model
 #[derive(Debug, Clone, Serialize, Deserialize)]
