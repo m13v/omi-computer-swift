@@ -186,6 +186,36 @@ async fn create_conversation_from_segments(
         }
     }
 
+    // Trigger external integrations (async, don't block response)
+    let integrations = state.integrations.clone();
+    let firestore = state.firestore.clone();
+    let uid = user.uid.clone();
+    let conv_for_trigger = conversation.clone();
+
+    tokio::spawn(async move {
+        // Get user's enabled apps with full details
+        match firestore.get_enabled_apps_full(&uid).await {
+            Ok(enabled_apps) => {
+                let results = integrations
+                    .trigger_conversation_created(&uid, &conv_for_trigger, &enabled_apps)
+                    .await;
+
+                if !results.is_empty() {
+                    let successful = results.iter().filter(|r| r.success).count();
+                    let failed = results.len() - successful;
+                    tracing::info!(
+                        "Integration triggers completed: {} successful, {} failed",
+                        successful,
+                        failed
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to get enabled apps for integration triggers: {}", e);
+            }
+        }
+    });
+
     Ok(Json(CreateConversationResponse {
         id: conversation_id,
         status: "completed".to_string(),
