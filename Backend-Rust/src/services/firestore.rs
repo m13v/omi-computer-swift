@@ -11,8 +11,9 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 use crate::models::{
-    ActionItem, Category, Conversation, ConversationSource, ConversationStatus, Event, Memory,
-    MemoryCategory, MemoryDB, Structured, TranscriptSegment,
+    ActionItem, ActionItemDB, App, AppReview, AppSummary, Category, Conversation,
+    ConversationSource, ConversationStatus, Event, Memory, MemoryCategory, MemoryDB, Structured,
+    TranscriptSegment,
 };
 
 /// Service account credentials from JSON file
@@ -45,6 +46,8 @@ pub const USERS_COLLECTION: &str = "users";
 pub const CONVERSATIONS_SUBCOLLECTION: &str = "conversations";
 pub const ACTION_ITEMS_SUBCOLLECTION: &str = "action_items";
 pub const MEMORIES_SUBCOLLECTION: &str = "memories";
+pub const APPS_COLLECTION: &str = "plugins_data";
+pub const ENABLED_APPS_SUBCOLLECTION: &str = "enabled_plugins";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -501,6 +504,242 @@ impl FirestoreService {
         Ok(memories)
     }
 
+    /// Get a single memory by ID
+    pub async fn get_memory(
+        &self,
+        uid: &str,
+        memory_id: &str,
+    ) -> Result<Option<MemoryDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore error: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        let memory = self.parse_memory(&doc)?;
+        Ok(Some(memory))
+    }
+
+    /// Delete a memory by ID
+    pub async fn delete_memory(
+        &self,
+        uid: &str,
+        memory_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::DELETE, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore delete error: {}", error_text).into());
+        }
+
+        tracing::info!("Deleted memory {} for user {}", memory_id, uid);
+        Ok(())
+    }
+
+    /// Update memory content
+    pub async fn update_memory_content(
+        &self,
+        uid: &str,
+        memory_id: &str,
+        content: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}?updateMask.fieldPaths=content&updateMask.fieldPaths=updated_at",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id
+        );
+
+        let now = Utc::now();
+        let doc = json!({
+            "fields": {
+                "content": {"stringValue": content},
+                "updated_at": {"timestampValue": now.to_rfc3339()}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!("Updated memory content {} for user {}", memory_id, uid);
+        Ok(())
+    }
+
+    /// Update memory visibility
+    pub async fn update_memory_visibility(
+        &self,
+        uid: &str,
+        memory_id: &str,
+        visibility: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}?updateMask.fieldPaths=visibility&updateMask.fieldPaths=updated_at",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id
+        );
+
+        let now = Utc::now();
+        let doc = json!({
+            "fields": {
+                "visibility": {"stringValue": visibility},
+                "updated_at": {"timestampValue": now.to_rfc3339()}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!("Updated memory visibility {} for user {}", memory_id, uid);
+        Ok(())
+    }
+
+    /// Review a memory (approve/reject)
+    pub async fn review_memory(
+        &self,
+        uid: &str,
+        memory_id: &str,
+        value: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}?updateMask.fieldPaths=reviewed&updateMask.fieldPaths=user_review&updateMask.fieldPaths=updated_at",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id
+        );
+
+        let now = Utc::now();
+        let doc = json!({
+            "fields": {
+                "reviewed": {"booleanValue": true},
+                "user_review": {"booleanValue": value},
+                "updated_at": {"timestampValue": now.to_rfc3339()}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!("Reviewed memory {} for user {} with value {}", memory_id, uid, value);
+        Ok(())
+    }
+
+    /// Create a manual memory
+    pub async fn create_manual_memory(
+        &self,
+        uid: &str,
+        content: &str,
+        visibility: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let memory_id = document_id_from_seed(content);
+        let now = Utc::now();
+        let scoring = MemoryDB::calculate_scoring(&MemoryCategory::Manual, &now, true);
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id
+        );
+
+        let doc = json!({
+            "fields": {
+                "content": {"stringValue": content},
+                "category": {"stringValue": "manual"},
+                "created_at": {"timestampValue": now.to_rfc3339()},
+                "updated_at": {"timestampValue": now.to_rfc3339()},
+                "reviewed": {"booleanValue": true},
+                "user_review": {"booleanValue": true},
+                "visibility": {"stringValue": visibility},
+                "manually_added": {"booleanValue": true},
+                "scoring": {"stringValue": scoring}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore create error: {}", error_text).into());
+        }
+
+        tracing::info!("Created manual memory {} for user {}", memory_id, uid);
+        Ok(memory_id)
+    }
+
     /// Save memories to Firestore
     /// Memory IDs are generated from content hash to enable deduplication
     /// Copied from Python save_memories
@@ -565,6 +804,189 @@ impl FirestoreService {
     // =========================================================================
     // ACTION ITEMS
     // =========================================================================
+
+    /// Get action items for a user
+    /// Path: users/{uid}/action_items
+    pub async fn get_action_items(
+        &self,
+        uid: &str,
+        limit: usize,
+        offset: usize,
+        completed_filter: Option<bool>,
+    ) -> Result<Vec<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        // Build filters
+        let mut filters: Vec<Value> = Vec::new();
+
+        if let Some(completed) = completed_filter {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "completed"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": completed}
+                }
+            }));
+        }
+
+        // Build the where clause
+        let where_clause = if filters.is_empty() {
+            None
+        } else if filters.len() == 1 {
+            Some(filters.into_iter().next().unwrap())
+        } else {
+            Some(json!({
+                "compositeFilter": {
+                    "op": "AND",
+                    "filters": filters
+                }
+            }))
+        };
+
+        // Build structured query
+        let mut structured_query = json!({
+            "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
+            "limit": limit,
+            "offset": offset
+        });
+
+        if let Some(where_filter) = where_clause {
+            structured_query["where"] = where_filter;
+        }
+
+        let query = json!({
+            "structuredQuery": structured_query
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            tracing::error!("Firestore query error: {}", error_text);
+            return Ok(vec![]);
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let action_items = results
+            .into_iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| self.parse_action_item(d).ok())
+            })
+            .collect();
+
+        Ok(action_items)
+    }
+
+    /// Update an action item
+    pub async fn update_action_item(
+        &self,
+        uid: &str,
+        item_id: &str,
+        completed: Option<bool>,
+        description: Option<&str>,
+        due_at: Option<DateTime<Utc>>,
+    ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
+        // Build update mask and fields
+        let mut field_paths: Vec<&str> = vec!["updated_at"];
+        let mut fields = json!({
+            "updated_at": {"timestampValue": Utc::now().to_rfc3339()}
+        });
+
+        if let Some(c) = completed {
+            field_paths.push("completed");
+            fields["completed"] = json!({"booleanValue": c});
+
+            // Set completed_at if completing the item
+            if c {
+                field_paths.push("completed_at");
+                fields["completed_at"] = json!({"timestampValue": Utc::now().to_rfc3339()});
+            }
+        }
+
+        if let Some(d) = description {
+            field_paths.push("description");
+            fields["description"] = json!({"stringValue": d});
+        }
+
+        if let Some(due) = due_at {
+            field_paths.push("due_at");
+            fields["due_at"] = json!({"timestampValue": due.to_rfc3339()});
+        }
+
+        let update_mask = field_paths
+            .iter()
+            .map(|p| format!("updateMask.fieldPaths={}", p))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let url = format!(
+            "{}/{}/{}/{}/{}?{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            ACTION_ITEMS_SUBCOLLECTION,
+            item_id,
+            update_mask
+        );
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        // Parse and return the updated document
+        let updated_doc: Value = response.json().await?;
+        let action_item = self.parse_action_item(&updated_doc)?;
+
+        tracing::info!("Updated action item {} for user {}", item_id, uid);
+        Ok(action_item)
+    }
+
+    /// Delete an action item
+    pub async fn delete_action_item(
+        &self,
+        uid: &str,
+        item_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            ACTION_ITEMS_SUBCOLLECTION,
+            item_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::DELETE, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore delete error: {}", error_text).into());
+        }
+
+        tracing::info!("Deleted action item {} for user {}", item_id, uid);
+        Ok(())
+    }
 
     /// Save action items to Firestore
     /// Copied from Python save_action_items
@@ -662,6 +1084,27 @@ impl FirestoreService {
             discarded: self.parse_bool(fields, "discarded").unwrap_or(false),
             structured: self.parse_structured(fields)?,
             transcript_segments: self.parse_transcript_segments(fields)?,
+        })
+    }
+
+    /// Parse Firestore document to ActionItemDB
+    fn parse_action_item(
+        &self,
+        doc: &Value,
+    ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
+        let fields = doc.get("fields").ok_or("Missing fields")?;
+        let name = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let id = name.split('/').last().unwrap_or("").to_string();
+
+        Ok(ActionItemDB {
+            id,
+            description: self.parse_string(fields, "description").unwrap_or_default(),
+            completed: self.parse_bool(fields, "completed").unwrap_or(false),
+            created_at: self.parse_timestamp_optional(fields, "created_at").unwrap_or_else(Utc::now),
+            updated_at: self.parse_timestamp_optional(fields, "updated_at"),
+            due_at: self.parse_timestamp_optional(fields, "due_at"),
+            completed_at: self.parse_timestamp_optional(fields, "completed_at"),
+            conversation_id: self.parse_string(fields, "conversation_id"),
         })
     }
 
