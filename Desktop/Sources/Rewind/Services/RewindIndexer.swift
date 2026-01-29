@@ -97,10 +97,7 @@ actor RewindIndexer {
                 tasksJson = String(data: data, encoding: .utf8)
             }
 
-            var adviceJson: String? = nil
-            if let advice = advice {
-                adviceJson = advice
-            }
+            let adviceJson: String? = advice
 
             let screenshot = Screenshot(
                 timestamp: frame.captureTime,
@@ -210,11 +207,11 @@ actor RewindIndexer {
     // MARK: - Statistics
 
     /// Get indexer statistics
-    func getStats() async -> (totalScreenshots: Int, indexedScreenshots: Int, storageSize: Int64)? {
+    func getStats() async -> (total: Int, indexed: Int, storageSize: Int64)? {
         do {
             let dbStats = try await RewindDatabase.shared.getStats()
             let storageSize = try await RewindStorage.shared.getTotalStorageSize()
-            return (dbStats.totalCount, dbStats.indexedCount, storageSize)
+            return (dbStats.total, dbStats.indexed, storageSize)
         } catch {
             logError("RewindIndexer: Failed to get stats: \(error)")
             return nil
