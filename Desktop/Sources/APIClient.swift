@@ -1468,162 +1468,6 @@ extension APIClient {
     }
 }
 
-// MARK: - Chat API
-
-extension APIClient {
-
-    /// Fetches chat messages for the current user
-    func getChatMessages(appId: String? = nil, limit: Int = 50) async throws -> [ServerChatMessage] {
-        var queryItems: [String] = ["limit=\(limit)"]
-        if let appId = appId {
-            queryItems.append("app_id=\(appId)")
-        }
-        let endpoint = "v2/messages?\(queryItems.joined(separator: "&"))"
-        return try await get(endpoint)
-    }
-
-    /// Sends a chat message and returns the AI response
-    func sendChatMessage(text: String, appId: String? = nil) async throws -> ServerChatMessage {
-        struct SendRequest: Encodable {
-            let text: String
-            let file_ids: [String]
-        }
-        struct SendResponse: Decodable {
-            let id: String
-            let text: String
-            let createdAt: Date
-            let sender: MessageSenderType
-            let appId: String?
-            let type: MessageTypeValue
-            let memoriesId: [String]
-            let chatSessionId: String?
-
-            enum CodingKeys: String, CodingKey {
-                case id, text, sender, type
-                case createdAt = "created_at"
-                case appId = "app_id"
-                case memoriesId = "memories_id"
-                case chatSessionId = "chat_session_id"
-            }
-
-            var asServerChatMessage: ServerChatMessage {
-                ServerChatMessage(
-                    id: id,
-                    text: text,
-                    createdAt: createdAt,
-                    sender: sender,
-                    appId: appId,
-                    type: type,
-                    memoriesId: memoriesId,
-                    chatSessionId: chatSessionId
-                )
-            }
-        }
-
-        var endpoint = "v2/messages"
-        if let appId = appId {
-            endpoint += "?app_id=\(appId)"
-        }
-
-        let body = SendRequest(text: text, file_ids: [])
-        let response: SendResponse = try await post(endpoint, body: body)
-        return response.asServerChatMessage
-    }
-
-    /// Clears chat messages and returns the initial greeting message
-    func clearChatMessages(appId: String? = nil) async throws -> ClearChatResponse {
-        var endpoint = "v2/messages"
-        if let appId = appId {
-            endpoint += "?app_id=\(appId)"
-        }
-
-        let url = URL(string: baseURL + endpoint)!
-        var request = URLRequest(url: url)
-        request.httpMethod = "DELETE"
-        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
-
-        let (data, response) = try await session.data(for: request)
-
-        guard let httpResponse = response as? HTTPURLResponse else {
-            throw APIError.invalidResponse
-        }
-
-        if httpResponse.statusCode == 401 {
-            throw APIError.unauthorized
-        }
-
-        guard (200...299).contains(httpResponse.statusCode) else {
-            throw APIError.httpError(statusCode: httpResponse.statusCode)
-        }
-
-        return try decoder.decode(ClearChatResponse.self, from: data)
-    }
-}
-
-// MARK: - Chat Models
-
-enum MessageSenderType: String, Codable {
-    case ai
-    case human
-}
-
-enum MessageTypeValue: String, Codable {
-    case text
-    case daySummary = "day_summary"
-}
-
-struct ServerChatMessage: Codable, Identifiable {
-    let id: String
-    let text: String
-    let createdAt: Date
-    let sender: MessageSenderType
-    let appId: String?
-    let type: MessageTypeValue
-    let memoriesId: [String]
-    let chatSessionId: String?
-
-    enum CodingKeys: String, CodingKey {
-        case id, text, sender, type
-        case createdAt = "created_at"
-        case appId = "app_id"
-        case memoriesId = "memories_id"
-        case chatSessionId = "chat_session_id"
-    }
-
-    init(id: String, text: String, createdAt: Date, sender: MessageSenderType, appId: String?, type: MessageTypeValue, memoriesId: [String], chatSessionId: String?) {
-        self.id = id
-        self.text = text
-        self.createdAt = createdAt
-        self.sender = sender
-        self.appId = appId
-        self.type = type
-        self.memoriesId = memoriesId
-        self.chatSessionId = chatSessionId
-    }
-
-    init(from decoder: Decoder) throws {
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(String.self, forKey: .id)
-        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
-        sender = try container.decodeIfPresent(MessageSenderType.self, forKey: .sender) ?? .human
-        appId = try container.decodeIfPresent(String.self, forKey: .appId)
-        type = try container.decodeIfPresent(MessageTypeValue.self, forKey: .type) ?? .text
-        memoriesId = try container.decodeIfPresent([String].self, forKey: .memoriesId) ?? []
-        chatSessionId = try container.decodeIfPresent(String.self, forKey: .chatSessionId)
-    }
-}
-
-struct ClearChatResponse: Codable {
-    let deletedCount: Int
-    let initialMessage: ServerChatMessage?
-
-    enum CodingKeys: String, CodingKey {
-        case deletedCount = "deleted_count"
-        case initialMessage = "initial_message"
-    }
-}
-
 // MARK: - User Settings API
 
 extension APIClient {
@@ -1851,3 +1695,154 @@ extension APIClient {
         return try await get(endpoint)
     }
 }
+
+// MARK: - Advice API
+
+extension APIClient {
+
+    /// Fetches advice history from the backend
+    func getAdvice(
+        limit: Int = 100,
+        offset: Int = 0,
+        category: String? = nil,
+        includeDismissed: Bool = false
+    ) async throws -> [ServerAdvice] {
+        var queryItems: [String] = [
+            "limit=\(limit)",
+            "offset=\(offset)",
+            "include_dismissed=\(includeDismissed)"
+        ]
+
+        if let category = category {
+            queryItems.append("category=\(category)")
+        }
+
+        let endpoint = "v1/advice?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Creates a new advice entry
+    func createAdvice(_ request: CreateAdviceRequest) async throws -> ServerAdvice {
+        return try await post("v1/advice", body: request)
+    }
+
+    /// Updates advice (mark as read/dismissed)
+    func updateAdvice(id: String, isRead: Bool? = nil, isDismissed: Bool? = nil) async throws -> ServerAdvice {
+        struct UpdateRequest: Encodable {
+            let is_read: Bool?
+            let is_dismissed: Bool?
+        }
+        let body = UpdateRequest(is_read: isRead, is_dismissed: isDismissed)
+        return try await patch("v1/advice/\(id)", body: body)
+    }
+
+    /// Deletes advice permanently
+    func deleteAdvice(id: String) async throws {
+        try await delete("v1/advice/\(id)")
+    }
+
+    /// Marks all advice as read
+    func markAllAdviceAsRead() async throws {
+        struct StatusResponse: Decodable {
+            let status: String
+        }
+        let _: StatusResponse = try await post("v1/advice/mark-all-read", body: EmptyBody())
+    }
+}
+
+// MARK: - Advice Models
+
+/// Server advice model matching Rust AdviceDB
+struct ServerAdvice: Codable, Identifiable {
+    let id: String
+    let content: String
+    let category: ServerAdviceCategory
+    let reasoning: String?
+    let sourceApp: String?
+    let confidence: Double
+    let contextSummary: String?
+    let currentActivity: String?
+    let createdAt: Date
+    let updatedAt: Date?
+    let isRead: Bool
+    let isDismissed: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, content, category, reasoning, confidence
+        case sourceApp = "source_app"
+        case contextSummary = "context_summary"
+        case currentActivity = "current_activity"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case isRead = "is_read"
+        case isDismissed = "is_dismissed"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        content = try container.decodeIfPresent(String.self, forKey: .content) ?? ""
+        category = try container.decodeIfPresent(ServerAdviceCategory.self, forKey: .category) ?? .other
+        reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+        sourceApp = try container.decodeIfPresent(String.self, forKey: .sourceApp)
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence) ?? 0.5
+        contextSummary = try container.decodeIfPresent(String.self, forKey: .contextSummary)
+        currentActivity = try container.decodeIfPresent(String.self, forKey: .currentActivity)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt)
+        isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? false
+        isDismissed = try container.decodeIfPresent(Bool.self, forKey: .isDismissed) ?? false
+    }
+}
+
+/// Server advice category enum matching Rust AdviceCategory
+enum ServerAdviceCategory: String, Codable {
+    case productivity
+    case health
+    case communication
+    case learning
+    case other
+
+    /// Convert to local AdviceCategory
+    var toLocal: AdviceCategory {
+        switch self {
+        case .productivity: return .productivity
+        case .health: return .health
+        case .communication: return .communication
+        case .learning: return .learning
+        case .other: return .other
+        }
+    }
+}
+
+/// Request to create new advice
+struct CreateAdviceRequest: Encodable {
+    let content: String
+    let category: String?
+    let reasoning: String?
+    let source_app: String?
+    let confidence: Double?
+    let context_summary: String?
+    let current_activity: String?
+
+    init(
+        content: String,
+        category: AdviceCategory? = nil,
+        reasoning: String? = nil,
+        sourceApp: String? = nil,
+        confidence: Double? = nil,
+        contextSummary: String? = nil,
+        currentActivity: String? = nil
+    ) {
+        self.content = content
+        self.category = category?.rawValue
+        self.reasoning = reasoning
+        self.source_app = sourceApp
+        self.confidence = confidence
+        self.context_summary = contextSummary
+        self.current_activity = currentActivity
+    }
+}
+
+/// Empty body for POST requests with no body
+struct EmptyBody: Encodable {}
