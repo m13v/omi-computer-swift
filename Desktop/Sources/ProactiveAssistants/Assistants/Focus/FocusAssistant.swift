@@ -304,6 +304,11 @@ actor FocusAssistant: ProactiveAssistant {
             onStatusChange?(analysis.status)
             lastStatus = analysis.status
 
+            // Save to FocusStorage for UI and Firestore sync
+            Task { @MainActor in
+                FocusStorage.shared.addSession(from: analysis)
+            }
+
             // Only notify on STATE CHANGE to prevent duplicate notifications from parallel frames
             // e.g., if 3 frames all return "distracted", only the first one notifies
             if analysis.status == .distracted && lastNotifiedState != .distracted {
