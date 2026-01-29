@@ -2,7 +2,7 @@
 import PackageDescription
 
 let package = Package(
-    name: "OMI-COMPUTER",
+    name: "Omi Computer",
     platforms: [
         .macOS("15.0")
     ],
@@ -13,7 +13,7 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "OMI-COMPUTER",
+            name: "Omi Computer",
             dependencies: [
                 .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
