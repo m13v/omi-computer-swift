@@ -153,13 +153,13 @@ actor AdviceAssistant: ProactiveAssistant {
     private func sendAdviceNotification(advice: ExtractedAdvice) async {
         let message = advice.advice
 
-        // Use cooldown to prevent notification spam with frequent analysis
+        // No cooldown needed - extraction interval already limits frequency
         await MainActor.run {
             NotificationService.shared.sendNotification(
                 title: "Tip",
                 message: message,
                 assistantId: identifier,
-                applyCooldown: true
+                applyCooldown: false
             )
         }
     }
@@ -203,7 +203,7 @@ actor AdviceAssistant: ProactiveAssistant {
                 }
             }
         } catch {
-            log("Advice extraction error: \(error)")
+            logError("Advice extraction error", error: error)
         }
     }
 
@@ -263,7 +263,7 @@ actor AdviceAssistant: ProactiveAssistant {
 
             return try JSONDecoder().decode(AdviceExtractionResult.self, from: Data(responseText.utf8))
         } catch {
-            log("Advice analysis error: \(error)")
+            logError("Advice analysis error", error: error)
             return nil
         }
     }
