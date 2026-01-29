@@ -4,6 +4,47 @@ This document outlines the implementation plan for reproducing the OMI apps/plug
 
 ---
 
+## Implementation Progress
+
+### Phase 1: Foundation - COMPLETED
+- [x] **Models** - Created `Backend-Rust/src/models/app.rs` with all data structures
+- [x] **Routes** - Created `Backend-Rust/src/routes/apps.rs` with all endpoints
+- [x] **Firestore** - Added app-related methods to `Backend-Rust/src/services/firestore.rs`
+- [x] **Integration** - Updated `mod.rs` files and `main.rs` to include apps routes
+
+### Phase 2: Basic UI - COMPLETED
+- [x] **Swift Models** - Added `OmiApp`, `OmiAppDetails`, `OmiAppCategory`, `OmiAppCapability`, `OmiAppReview` to `Desktop/Sources/APIClient.swift`
+- [x] **API Client** - Added all app API methods (getApps, searchApps, enableApp, disableApp, etc.)
+- [x] **AppProvider** - Created `Desktop/Sources/Providers/AppProvider.swift` for state management
+- [x] **AppsPage** - Fully implemented apps marketplace UI in `Desktop/Sources/MainWindow/Pages/AppsPage.swift`
+  - Search bar with debounced search
+  - Filter toggle for installed apps
+  - Popular apps section
+  - Installed apps section
+  - Category-grouped apps
+  - App cards with icon, rating, install button
+  - App detail sheet
+
+### Phase 3: Enhanced UI - TODO
+- [ ] Horizontal scrolling category sections
+- [ ] Filter sheet (rating, category filters)
+- [ ] "View All" category pages
+- [ ] Loading shimmer states
+
+### Phase 4: Chat Integration - TODO
+- [ ] Chat app picker dropdown
+- [ ] Streaming messages to apps
+- [ ] App response display
+
+### Phase 5: Conversation Integration - TODO
+- [ ] Show app results in conversation detail
+- [ ] Reprocessing with different apps
+- [ ] Suggested apps for conversations
+
+---
+
+---
+
 ## 1. Overview: How Apps Work
 
 Apps in OMI are a **marketplace and plugin system** that extends the platform's functionality. They are third-party integrations that can:
