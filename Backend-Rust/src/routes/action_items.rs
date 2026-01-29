@@ -138,7 +138,7 @@ pub fn action_items_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/action-items", get(get_action_items).post(create_action_item))
         .route(
-            "/v1/action-items/{id}",
+            "/v1/action-items/:id",
             patch(update_action_item).delete(delete_action_item),
         )
 }
