@@ -1,6 +1,7 @@
 // Firestore service - Port from Python backend (database.py)
 // Uses Firestore REST API for simplicity and compatibility
 
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
@@ -534,6 +535,7 @@ impl FirestoreService {
 
     /// Get memories for a user
     /// Copied from Python get_memories
+    /// Enriches memories with source from linked conversations
     pub async fn get_memories(
         &self,
         uid: &str,
@@ -567,7 +569,7 @@ impl FirestoreService {
         }
 
         let results: Vec<Value> = response.json().await?;
-        let memories = results
+        let mut memories: Vec<MemoryDB> = results
             .into_iter()
             .filter_map(|doc| {
                 doc.get("document")
@@ -577,7 +579,53 @@ impl FirestoreService {
             .filter(|m| m.user_review != Some(false))
             .collect();
 
+        // Enrich memories with source from linked conversations
+        self.enrich_memories_with_source(uid, &mut memories).await;
+
         Ok(memories)
+    }
+
+    /// Batch fetch conversations and populate source field on memories
+    async fn enrich_memories_with_source(&self, uid: &str, memories: &mut [MemoryDB]) {
+        use std::collections::{HashMap, HashSet};
+
+        // Collect unique conversation IDs
+        let conversation_ids: HashSet<&str> = memories
+            .iter()
+            .filter_map(|m| m.conversation_id.as_deref())
+            .collect();
+
+        if conversation_ids.is_empty() {
+            return;
+        }
+
+        // Fetch conversations in parallel (limit to avoid too many concurrent requests)
+        let mut source_map: HashMap<String, String> = HashMap::new();
+
+        // Batch fetch - fetch up to 10 at a time
+        let ids: Vec<&str> = conversation_ids.into_iter().collect();
+        for chunk in ids.chunks(10) {
+            let futures: Vec<_> = chunk
+                .iter()
+                .map(|id| self.get_conversation(uid, id))
+                .collect();
+
+            let results = futures::future::join_all(futures).await;
+
+            for (id, result) in chunk.iter().zip(results) {
+                if let Ok(Some(conv)) = result {
+                    let source_str = format!("{:?}", conv.source).to_lowercase();
+                    source_map.insert(id.to_string(), source_str);
+                }
+            }
+        }
+
+        // Populate source field on memories
+        for memory in memories.iter_mut() {
+            if let Some(conv_id) = &memory.conversation_id {
+                memory.source = source_map.get(conv_id).cloned();
+            }
+        }
     }
 
     /// Get a single memory by ID
@@ -2297,6 +2345,7 @@ impl FirestoreService {
             visibility: self.parse_string(fields, "visibility").unwrap_or_else(|| "private".to_string()),
             manually_added: self.parse_bool(fields, "manually_added").unwrap_or(false),
             scoring: self.parse_string(fields, "scoring"),
+            source: None, // Enriched later from linked conversation
         })
     }
 
@@ -2324,25 +2373,34 @@ impl FirestoreService {
     }
 
     /// Parse transcript segments
-    /// Note: Python stores segments as encrypted+compressed strings for enhanced protection.
-    /// This implementation handles plain arrays; encrypted segments return empty vec.
-    /// TODO: Implement decryption for full parity with Python backend.
+    /// Handles both plain arrays and zlib-compressed bytes (from OMI device).
+    /// Encrypted segments (enhanced protection) return empty vec - not yet supported.
     fn parse_transcript_segments(
         &self,
         fields: &Value,
     ) -> Result<Vec<TranscriptSegment>, Box<dyn std::error::Error + Send + Sync>> {
         let transcript_field = fields.get("transcript_segments");
 
-        // Check if transcript is a string (encrypted/compressed) - not yet supported
-        if let Some(string_val) = transcript_field.and_then(|t| t.get("stringValue")) {
-            tracing::debug!("Transcript segments are encrypted/compressed (string format), returning empty");
+        // Check if transcript is a string (encrypted) - not yet supported
+        if let Some(_string_val) = transcript_field.and_then(|t| t.get("stringValue")) {
+            tracing::debug!("Transcript segments are encrypted (string format), returning empty");
             return Ok(vec![]);
         }
 
-        // Check if transcript is bytes (compressed) - not yet supported
+        // Check if transcript is bytes (zlib compressed) - decompress it
         if let Some(bytes_val) = transcript_field.and_then(|t| t.get("bytesValue")) {
-            tracing::debug!("Transcript segments are compressed (bytes format), returning empty");
-            return Ok(vec![]);
+            if let Some(b64_str) = bytes_val.as_str() {
+                match self.decompress_transcript_segments(b64_str) {
+                    Ok(segments) => {
+                        tracing::debug!("Decompressed {} transcript segments", segments.len());
+                        return Ok(segments);
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to decompress transcript segments: {}", e);
+                        return Ok(vec![]);
+                    }
+                }
+            }
         }
 
         // Handle plain array format
@@ -2369,6 +2427,60 @@ impl FirestoreService {
         } else {
             Ok(vec![])
         }
+    }
+
+    /// Decompress zlib-compressed transcript segments from base64-encoded bytes
+    fn decompress_transcript_segments(
+        &self,
+        b64_str: &str,
+    ) -> Result<Vec<TranscriptSegment>, Box<dyn std::error::Error + Send + Sync>> {
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+
+        // Decode base64 to bytes
+        let compressed_bytes = base64::Engine::decode(
+            &base64::engine::general_purpose::STANDARD,
+            b64_str,
+        )?;
+
+        // Decompress with zlib
+        let mut decoder = ZlibDecoder::new(&compressed_bytes[..]);
+        let mut decompressed = String::new();
+        decoder.read_to_string(&mut decompressed)?;
+
+        // Parse JSON array of segments
+        let segments: Vec<serde_json::Value> = serde_json::from_str(&decompressed)?;
+
+        // Convert to TranscriptSegment
+        Ok(segments
+            .iter()
+            .filter_map(|seg| {
+                Some(TranscriptSegment {
+                    text: seg.get("text")?.as_str()?.to_string(),
+                    speaker: seg
+                        .get("speaker")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("SPEAKER_00")
+                        .to_string(),
+                    speaker_id: seg
+                        .get("speaker_id")
+                        .and_then(|s| s.as_i64())
+                        .unwrap_or(0) as i32,
+                    is_user: seg
+                        .get("is_user")
+                        .and_then(|s| s.as_bool())
+                        .unwrap_or(false),
+                    start: seg
+                        .get("start")
+                        .and_then(|s| s.as_f64())
+                        .unwrap_or(0.0),
+                    end: seg
+                        .get("end")
+                        .and_then(|s| s.as_f64())
+                        .unwrap_or(0.0),
+                })
+            })
+            .collect())
     }
 
     /// Convert conversation to Firestore document format
