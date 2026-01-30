@@ -4,6 +4,7 @@ import CryptoKit
 import AppKit
 import Sentry
 
+@MainActor
 class AuthService {
     static let shared = AuthService()
 
