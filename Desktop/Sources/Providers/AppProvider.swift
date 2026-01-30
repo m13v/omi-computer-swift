@@ -105,8 +105,12 @@ class AppProvider: ObservableObject {
         do {
             if app.enabled {
                 try await apiClient.disableApp(appId: app.id)
+                // Track app disabled
+                AnalyticsManager.shared.appDisabled(appId: app.id, appName: app.name)
             } else {
                 try await apiClient.enableApp(appId: app.id)
+                // Track app enabled
+                AnalyticsManager.shared.appEnabled(appId: app.id, appName: app.name)
             }
 
             // Update local state
