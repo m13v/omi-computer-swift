@@ -1,0 +1,60 @@
+import Foundation
+import SwiftUI
+import Sparkle
+
+/// View model for managing Sparkle auto-updates
+/// Provides SwiftUI bindings for the updater UI
+@MainActor
+final class UpdaterViewModel: ObservableObject {
+    static let shared = UpdaterViewModel()
+
+    private let updaterController: SPUStandardUpdaterController
+
+    /// Whether automatic update checks are enabled
+    @Published var automaticallyChecksForUpdates: Bool {
+        didSet {
+            updaterController.updater.automaticallyChecksForUpdates = automaticallyChecksForUpdates
+        }
+    }
+
+    /// Whether the updater can check for updates (e.g., not already checking)
+    @Published private(set) var canCheckForUpdates: Bool = true
+
+    /// The date of the last update check
+    var lastUpdateCheckDate: Date? {
+        updaterController.updater.lastUpdateCheckDate
+    }
+
+    private init() {
+        // Initialize the updater controller
+        // startingUpdater: true means it will automatically check for updates on launch
+        updaterController = SPUStandardUpdaterController(
+            startingUpdater: true,
+            updaterDelegate: nil,
+            userDriverDelegate: nil
+        )
+
+        // Initialize published property from updater state
+        automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
+
+        // Observe updater state changes
+        updaterController.updater.publisher(for: \.canCheckForUpdates)
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$canCheckForUpdates)
+    }
+
+    /// Manually check for updates
+    func checkForUpdates() {
+        updaterController.checkForUpdates(nil)
+    }
+
+    /// Get the current app version string
+    var currentVersion: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "Unknown"
+    }
+
+    /// Get the current build number
+    var buildNumber: String {
+        Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "Unknown"
+    }
+}
