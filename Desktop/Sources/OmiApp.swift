@@ -3,6 +3,7 @@ import FirebaseCore
 import FirebaseAuth
 import Mixpanel
 import Sentry
+import Sparkle
 
 // Simple observable state without Firebase types
 @MainActor
@@ -185,6 +186,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 struct MenuBarView: View {
     @ObservedObject var appState: AppState
     @ObservedObject var authState: AuthState
+    @ObservedObject var updaterViewModel = UpdaterViewModel.shared
     var openMain: () -> Void = {}
 
     var body: some View {
@@ -201,6 +203,13 @@ struct MenuBarView: View {
             }
         }
         .keyboardShortcut("o", modifiers: .command)
+
+        Divider()
+
+        Button("Check for Updates...") {
+            updaterViewModel.checkForUpdates()
+        }
+        .disabled(!updaterViewModel.canCheckForUpdates)
 
         Divider()
 
