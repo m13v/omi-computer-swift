@@ -6,6 +6,7 @@ struct RewindPage: View {
     @ObservedObject private var settings = RewindSettings.shared
 
     @State private var showingPreview = false
+    @FocusState private var isSearchFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -29,6 +30,35 @@ struct RewindPage: View {
         .task {
             await viewModel.loadInitialData()
         }
+        // Global keyboard handler
+        .onKeyPress(.escape) {
+            if showingPreview {
+                showingPreview = false
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.leftArrow) {
+            if showingPreview {
+                viewModel.selectPreviousScreenshot()
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.rightArrow) {
+            if showingPreview {
+                viewModel.selectNextScreenshot()
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.space) {
+            if let selected = viewModel.selectedScreenshot, !showingPreview {
+                showingPreview = true
+                return .handled
+            }
+            return .ignored
+        }
     }
 
     // MARK: - Header
@@ -36,9 +66,15 @@ struct RewindPage: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Rewind")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 20))
+                        .foregroundColor(OmiColors.purplePrimary)
+
+                    Text("Rewind")
+                        .font(.system(size: 24, weight: .semibold))
+                        .foregroundColor(OmiColors.textPrimary)
+                }
 
                 if let stats = viewModel.stats {
                     Text("\(stats.total) screenshots • \(RewindStorage.formatBytes(stats.storageSize))")
@@ -52,6 +88,21 @@ struct RewindPage: View {
             }
 
             Spacer()
+
+            // Keyboard shortcut hint
+            HStack(spacing: 4) {
+                Image(systemName: "command")
+                    .font(.system(size: 10))
+                Text("⇧")
+                    .font(.system(size: 12))
+                Text("R")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(OmiColors.textQuaternary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(OmiColors.backgroundTertiary)
+            .cornerRadius(4)
 
             // Toggle button
             Toggle(isOn: $settings.isEnabled) {
@@ -146,9 +197,15 @@ struct RewindPage: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
-            Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 48))
-                .foregroundColor(OmiColors.textTertiary)
+            ZStack {
+                Circle()
+                    .fill(OmiColors.purplePrimary.opacity(0.1))
+                    .frame(width: 80, height: 80)
+
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(.system(size: 36))
+                    .foregroundColor(OmiColors.purplePrimary.opacity(0.6))
+            }
 
             Text("No Screenshots Yet")
                 .font(.system(size: 20, weight: .semibold))
@@ -158,15 +215,35 @@ struct RewindPage: View {
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
+
+            // Quick tip
+            HStack(spacing: 8) {
+                Image(systemName: "lightbulb.fill")
+                    .foregroundColor(.yellow)
+                Text("Tip: Use search to find anything you've seen on screen")
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textSecondary)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(OmiColors.backgroundTertiary)
+            .cornerRadius(8)
+            .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var disabledState: some View {
         VStack(spacing: 16) {
-            Image(systemName: "pause.circle")
-                .font(.system(size: 48))
-                .foregroundColor(OmiColors.textTertiary)
+            ZStack {
+                Circle()
+                    .fill(OmiColors.backgroundTertiary)
+                    .frame(width: 80, height: 80)
+
+                Image(systemName: "pause.circle")
+                    .font(.system(size: 36))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
 
             Text("Rewind is Disabled")
                 .font(.system(size: 20, weight: .semibold))
@@ -212,9 +289,15 @@ struct RewindPage: View {
 
     private func errorView(_ message: String) -> some View {
         VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
-                .foregroundColor(OmiColors.error)
+            ZStack {
+                Circle()
+                    .fill(OmiColors.error.opacity(0.1))
+                    .frame(width: 80, height: 80)
+
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 36))
+                    .foregroundColor(OmiColors.error)
+            }
 
             Text("Failed to Load Screenshots")
                 .font(.system(size: 18, weight: .semibold))
@@ -246,6 +329,6 @@ struct RewindPage: View {
 
 #Preview {
     RewindPage()
-        .frame(width: 800, height: 600)
+        .frame(width: 900, height: 700)
         .background(OmiColors.backgroundPrimary)
 }
