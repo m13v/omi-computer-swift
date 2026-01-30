@@ -334,6 +334,9 @@ actor FocusAssistant: ProactiveAssistant {
                     log("ALERT: \(message)")
 
                     await MainActor.run {
+                        // Track focus alert shown
+                        AnalyticsManager.shared.focusAlertShown(app: analysis.appOrSite)
+
                         NotificationService.shared.sendNotification(
                             title: "Focus",
                             message: fullMessage,
