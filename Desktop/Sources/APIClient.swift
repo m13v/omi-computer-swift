@@ -19,8 +19,18 @@ actor APIClient {
         return "https://api.omi.me/"
     }
 
-    // Local backend URL for conversation creation
-    let localBackendURL = "https://omi-dev.m13v.com/"
+    // Desktop backend URL for conversation creation
+    // Default: production Cloud Run, override with OMI_DESKTOP_BACKEND_URL env var for dev
+    var desktopBackendURL: String {
+        if let cString = getenv("OMI_DESKTOP_BACKEND_URL"), let url = String(validatingUTF8: cString), !url.isEmpty {
+            return url.hasSuffix("/") ? url : url + "/"
+        }
+        if let envURL = ProcessInfo.processInfo.environment["OMI_DESKTOP_BACKEND_URL"], !envURL.isEmpty {
+            return envURL.hasSuffix("/") ? envURL : envURL + "/"
+        }
+        // Default to production Cloud Run
+        return "https://desktop-backend-208440318997.us-central1.run.app/"
+    }
 
     let session: URLSession
     private let decoder: JSONDecoder
@@ -844,7 +854,7 @@ extension APIClient {
             timezone: timezone
         )
 
-        return try await post("v1/conversations/from-segments", body: request, customBaseURL: localBackendURL)
+        return try await post("v1/conversations/from-segments", body: request, customBaseURL: desktopBackendURL)
     }
 }
 
