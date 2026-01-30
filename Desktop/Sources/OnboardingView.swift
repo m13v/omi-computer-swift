@@ -574,6 +574,9 @@ struct OnboardingView: View {
             if appState.hasScreenRecordingPermission {
                 MixpanelManager.shared.onboardingStepCompleted(step: 4, stepName: "Screen Recording")
                 MixpanelManager.shared.permissionGranted(permission: "screen_recording")
+                // Trigger proactive monitoring to surface any additional ScreenCaptureKit permission dialogs
+                // (e.g., "allow app to bypass standard screen recording" on macOS Sequoia)
+                ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
                 currentStep += 1
             } else {
                 MixpanelManager.shared.permissionRequested(permission: "screen_recording")
