@@ -250,6 +250,11 @@ extension PostHogManager {
         ])
     }
 
+    /// Track first launch with comprehensive system diagnostics
+    func firstLaunch(diagnostics: [String: Any]) {
+        track("First Launch", properties: diagnostics)
+    }
+
     func appBecameActive() {
         track("App Became Active")
     }
