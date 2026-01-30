@@ -96,6 +96,9 @@ class RewindViewModel: ObservableObject {
         isSearching = true
         activeSearchQuery = trimmedQuery
 
+        // Track rewind search
+        AnalyticsManager.shared.rewindSearchPerformed(queryLength: trimmedQuery.count)
+
         searchTask = Task {
             do {
                 let results = try await RewindDatabase.shared.search(
