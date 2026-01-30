@@ -148,9 +148,16 @@ echo "Installing to /Applications..."
 rm -rf "$APP_PATH"
 cp -r "$APP_BUNDLE" /Applications/
 
-# Sign app (ad-hoc for dev - Developer ID requires notarization)
-echo "Signing app (ad-hoc for development)..."
-codesign --force --deep --sign - "$APP_PATH"
+# Sign app with hardened runtime (preserves TCC permissions across builds)
+echo "Signing app with hardened runtime..."
+if security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
+    codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "$SIGN_IDENTITY" "$APP_PATH"
+elif security find-identity -v -p codesigning | grep -q "Omi Dev"; then
+    codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "Omi Dev" "$APP_PATH"
+else
+    echo "Warning: No persistent signing identity found. Using ad-hoc (permissions won't persist)."
+    codesign --force --deep --sign - "$APP_PATH"
+fi
 
 # Reset permissions
 # Note: System audio capture (Core Audio Taps) uses the same ScreenCapture permission
