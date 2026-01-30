@@ -174,6 +174,11 @@ actor TaskAssistant: ProactiveAssistant {
             }
         }
 
+        // Track task extracted
+        await MainActor.run {
+            AnalyticsManager.shared.taskExtracted(taskCount: 1)
+        }
+
         // Send notification
         await sendTaskNotification(task: task)
 
