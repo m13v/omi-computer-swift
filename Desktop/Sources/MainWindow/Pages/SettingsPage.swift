@@ -51,6 +51,11 @@ struct SettingsContentView: View {
     @State private var adviceExtractionInterval: Double
     @State private var adviceMinConfidence: Double
 
+    // Memory Assistant states
+    @State private var memoryEnabled: Bool
+    @State private var memoryExtractionInterval: Double
+    @State private var memoryMinConfidence: Double
+
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
 
@@ -123,6 +128,9 @@ struct SettingsContentView: View {
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
+        _memoryEnabled = State(initialValue: MemoryAssistantSettings.shared.isEnabled)
+        _memoryExtractionInterval = State(initialValue: MemoryAssistantSettings.shared.extractionInterval)
+        _memoryMinConfidence = State(initialValue: MemoryAssistantSettings.shared.minConfidence)
     }
 
     var body: some View {
@@ -462,6 +470,94 @@ struct SettingsContentView: View {
                         settingRow(title: "Advice Prompt", subtitle: "Customize AI instructions for advice") {
                             Button(action: {
                                 AdvicePromptEditorWindow.show()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Text("Edit")
+                                        .font(.system(size: 12))
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 11))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+            }
+
+            // Memory Assistant
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Memory Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $memoryEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: memoryEnabled) { _, newValue in
+                                MemoryAssistantSettings.shared.isEnabled = newValue
+                            }
+                    }
+
+                    Text("Extract facts and wisdom from your screen")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if memoryEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        settingRow(title: "Extraction Interval", subtitle: "How often to scan for new memories") {
+                            Picker("", selection: $memoryExtractionInterval) {
+                                ForEach(extractionIntervalOptions, id: \.self) { seconds in
+                                    Text(formatExtractionInterval(seconds)).tag(seconds)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 120)
+                            .onChange(of: memoryExtractionInterval) { _, newValue in
+                                MemoryAssistantSettings.shared.extractionInterval = newValue
+                            }
+                        }
+
+                        // Minimum Confidence Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Minimum Confidence")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                    Text("Only save memories above this confidence level")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+
+                                Spacer()
+
+                                Text("\(Int(memoryMinConfidence * 100))%")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                    .frame(width: 40, alignment: .trailing)
+                            }
+
+                            Slider(value: $memoryMinConfidence, in: 0.5...0.95, step: 0.05)
+                                .tint(OmiColors.purplePrimary)
+                                .onChange(of: memoryMinConfidence) { _, newValue in
+                                    MemoryAssistantSettings.shared.minConfidence = newValue
+                                }
+                        }
+
+                        settingRow(title: "Memory Extraction Prompt", subtitle: "Customize AI instructions for memory extraction") {
+                            Button(action: {
+                                MemoryPromptEditorWindow.show()
                             }) {
                                 HStack(spacing: 4) {
                                     Text("Edit")
