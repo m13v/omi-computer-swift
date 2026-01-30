@@ -104,7 +104,10 @@ struct SidebarView: View {
                             iconWidth: iconWidth,
                             badge: item == .advice ? adviceStorage.unreadCount : 0,
                             statusColor: item == .focus ? focusStatusColor : nil,
-                            onTap: { selectedIndex = item.rawValue }
+                            onTap: {
+                                selectedIndex = item.rawValue
+                                AnalyticsManager.shared.tabChanged(tabName: item.title)
+                            }
                         )
                     }
 
