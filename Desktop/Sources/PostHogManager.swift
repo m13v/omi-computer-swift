@@ -264,4 +264,79 @@ extension PostHogManager {
         screen(pageName)
         track("Page Viewed", properties: ["page": pageName])
     }
+
+    // MARK: - Conversation Events
+    // Note: The event is named "Memory Created" in analytics for historical reasons,
+    // but it actually tracks when a conversation/recording is created, not a "memory".
+    // This matches Flutter's naming for analytics consistency.
+
+    func conversationCreated(conversationId: String, source: String, durationSeconds: Int? = nil) {
+        var properties: [String: Any] = [
+            "conversation_id": conversationId,
+            "source": source
+        ]
+        if let duration = durationSeconds {
+            properties["duration_seconds"] = duration
+        }
+        track("Memory Created", properties: properties)
+    }
+
+    func memoryDeleted(conversationId: String) {
+        track("Memory Deleted", properties: [
+            "conversation_id": conversationId
+        ])
+    }
+
+    func memoryShareButtonClicked(conversationId: String) {
+        track("Memory Share Button Clicked", properties: [
+            "conversation_id": conversationId
+        ])
+    }
+
+    func memoryListItemClicked(conversationId: String) {
+        track("Memory List Item Clicked", properties: [
+            "conversation_id": conversationId
+        ])
+    }
+
+    // MARK: - Chat Events
+
+    func chatMessageSent(messageLength: Int, hasContext: Bool = false) {
+        track("Chat Message Sent", properties: [
+            "message_length": messageLength,
+            "has_context": hasContext
+        ])
+    }
+
+    // MARK: - Search Events
+
+    func searchQueryEntered(query: String) {
+        track("Search Query Entered", properties: [
+            "query_length": query.count
+        ])
+    }
+
+    func searchBarFocused() {
+        track("Search Bar Focused")
+    }
+
+    // MARK: - Settings Events
+
+    func settingsPageOpened() {
+        track("Settings Page Opened")
+    }
+
+    // MARK: - Account Events
+
+    func deleteAccountClicked() {
+        track("Delete Account Clicked")
+    }
+
+    func deleteAccountConfirmed() {
+        track("Delete Account Confirmed")
+    }
+
+    func deleteAccountCancelled() {
+        track("Delete Account Cancelled")
+    }
 }
