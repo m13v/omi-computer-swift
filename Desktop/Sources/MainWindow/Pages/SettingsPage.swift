@@ -1,4 +1,5 @@
 import SwiftUI
+import Sparkle
 
 /// Settings page that wraps SettingsView with proper dark theme styling for the main window
 struct SettingsPage: View {
@@ -30,6 +31,9 @@ struct SettingsPage: View {
 
 /// Dark-themed settings content matching the main window style
 struct SettingsContentView: View {
+    // Updater view model
+    @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
+
     // Master monitoring state
     @State private var isMonitoring: Bool
     @State private var isToggling: Bool = false
@@ -957,7 +961,7 @@ struct SettingsContentView: View {
                                 .font(.system(size: 18, weight: .bold))
                                 .foregroundColor(OmiColors.textPrimary)
 
-                            Text("Version 1.0.0")
+                            Text("Version \(updaterViewModel.currentVersion) (\(updaterViewModel.buildNumber))")
                                 .font(.system(size: 13))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
@@ -973,6 +977,44 @@ struct SettingsContentView: View {
                     linkRow(title: "Help Center", url: "https://help.omi.me")
                     linkRow(title: "Privacy Policy", url: "https://omi.me/privacy")
                     linkRow(title: "Terms of Service", url: "https://omi.me/terms")
+                }
+            }
+
+            // Software Updates
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Software Updates")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Button("Check Now") {
+                            updaterViewModel.checkForUpdates()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!updaterViewModel.canCheckForUpdates)
+                    }
+
+                    if let lastCheck = updaterViewModel.lastUpdateCheckDate {
+                        Text("Last checked: \(lastCheck, style: .relative) ago")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Automatic Updates", subtitle: "Check for updates automatically in the background") {
+                        Toggle("", isOn: $updaterViewModel.automaticallyChecksForUpdates)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
                 }
             }
 
