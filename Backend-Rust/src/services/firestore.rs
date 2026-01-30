@@ -1390,11 +1390,10 @@ impl FirestoreService {
             }))
         };
 
+        // Note: We don't use orderBy in the query because it would require a composite index
+        // Instead, we fetch all matching apps and sort in memory (matching Python backend behavior)
         let mut structured_query = json!({
-            "from": [{"collectionId": APPS_COLLECTION}],
-            "orderBy": [{"field": {"fieldPath": "installs"}, "direction": "DESCENDING"}],
-            "limit": limit,
-            "offset": offset
+            "from": [{"collectionId": APPS_COLLECTION}]
         });
 
         if let Some(where_filter) = where_clause {
@@ -1441,7 +1440,13 @@ impl FirestoreService {
             app.enabled = enabled_app_ids.contains(&app.id);
         }
 
-        Ok(apps)
+        // Sort by installs descending (in memory, to avoid needing composite index)
+        apps.sort_by(|a, b| b.installs.cmp(&a.installs));
+
+        // Apply pagination
+        let start = offset.min(apps.len());
+        let end = (offset + limit).min(apps.len());
+        Ok(apps[start..end].to_vec())
     }
 
     /// Get approved public apps
