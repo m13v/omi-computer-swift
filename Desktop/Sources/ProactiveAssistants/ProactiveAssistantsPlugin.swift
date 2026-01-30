@@ -17,6 +17,7 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var focusAssistant: FocusAssistant?
     private var taskAssistant: TaskAssistant?
     private var adviceAssistant: AdviceAssistant?
+    private var memoryAssistant: MemoryAssistant?
     private var captureTimer: Timer?
     private var analysisDelayTimer: Timer?
     private var isInDelayPeriod = false
@@ -82,6 +83,8 @@ public class ProactiveAssistantsPlugin: NSObject {
             TaskAssistantSettings.shared.isEnabled = enabled
         case "advice":
             AdviceAssistantSettings.shared.isEnabled = enabled
+        case "memory-extraction":
+            MemoryAssistantSettings.shared.isEnabled = enabled
         default:
             log("Unknown assistant: \(identifier)")
         }
@@ -164,6 +167,12 @@ public class ProactiveAssistantsPlugin: NSObject {
                 AssistantCoordinator.shared.register(advice)
             }
 
+            memoryAssistant = try MemoryAssistant()
+
+            if let memory = memoryAssistant {
+                AssistantCoordinator.shared.register(memory)
+            }
+
         } catch {
             completion(false, error.localizedDescription)
             return
@@ -237,10 +246,16 @@ public class ProactiveAssistantsPlugin: NSObject {
                 await advice.stop()
             }
         }
+        if let memory = memoryAssistant {
+            Task {
+                await memory.stop()
+            }
+        }
 
         focusAssistant = nil
         taskAssistant = nil
         adviceAssistant = nil
+        memoryAssistant = nil
         screenCaptureService = nil
 
         isMonitoring = false
