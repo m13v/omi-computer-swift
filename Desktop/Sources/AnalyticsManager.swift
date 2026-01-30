@@ -220,4 +220,137 @@ class AnalyticsManager {
         MixpanelManager.shared.deleteAccountCancelled()
         PostHogManager.shared.deleteAccountCancelled()
     }
+
+    // MARK: - Navigation Events
+
+    func tabChanged(tabName: String) {
+        MixpanelManager.shared.tabChanged(tabName: tabName)
+        PostHogManager.shared.tabChanged(tabName: tabName)
+    }
+
+    func conversationDetailOpened(conversationId: String) {
+        MixpanelManager.shared.conversationDetailOpened(conversationId: conversationId)
+        PostHogManager.shared.conversationDetailOpened(conversationId: conversationId)
+    }
+
+    // MARK: - Chat Events (Additional)
+
+    func chatAppSelected(appId: String?, appName: String?) {
+        MixpanelManager.shared.chatAppSelected(appId: appId, appName: appName)
+        PostHogManager.shared.chatAppSelected(appId: appId, appName: appName)
+    }
+
+    func chatCleared() {
+        MixpanelManager.shared.chatCleared()
+        PostHogManager.shared.chatCleared()
+    }
+
+    // MARK: - Conversation Events (Additional)
+
+    func conversationReprocessed(conversationId: String, appId: String) {
+        MixpanelManager.shared.conversationReprocessed(conversationId: conversationId, appId: appId)
+        PostHogManager.shared.conversationReprocessed(conversationId: conversationId, appId: appId)
+    }
+
+    // MARK: - Settings Events (Additional)
+
+    func settingToggled(setting: String, enabled: Bool) {
+        MixpanelManager.shared.settingToggled(setting: setting, enabled: enabled)
+        PostHogManager.shared.settingToggled(setting: setting, enabled: enabled)
+    }
+
+    func languageChanged(language: String) {
+        MixpanelManager.shared.languageChanged(language: language)
+        PostHogManager.shared.languageChanged(language: language)
+    }
+
+    // MARK: - Feedback Events
+
+    func feedbackOpened() {
+        MixpanelManager.shared.feedbackOpened()
+        PostHogManager.shared.feedbackOpened()
+    }
+
+    func feedbackSubmitted(feedbackLength: Int) {
+        MixpanelManager.shared.feedbackSubmitted(feedbackLength: feedbackLength)
+        PostHogManager.shared.feedbackSubmitted(feedbackLength: feedbackLength)
+    }
+
+    // MARK: - Rewind Events (Desktop-specific)
+
+    func rewindSearchPerformed(queryLength: Int) {
+        MixpanelManager.shared.rewindSearchPerformed(queryLength: queryLength)
+        PostHogManager.shared.rewindSearchPerformed(queryLength: queryLength)
+    }
+
+    func rewindScreenshotViewed(timestamp: Date) {
+        MixpanelManager.shared.rewindScreenshotViewed(timestamp: timestamp)
+        PostHogManager.shared.rewindScreenshotViewed(timestamp: timestamp)
+    }
+
+    func rewindTimelineNavigated(direction: String) {
+        MixpanelManager.shared.rewindTimelineNavigated(direction: direction)
+        PostHogManager.shared.rewindTimelineNavigated(direction: direction)
+    }
+
+    // MARK: - Proactive Assistant Events (Desktop-specific)
+
+    func focusAlertShown(app: String) {
+        MixpanelManager.shared.focusAlertShown(app: app)
+        PostHogManager.shared.focusAlertShown(app: app)
+    }
+
+    func focusAlertDismissed(app: String, action: String) {
+        MixpanelManager.shared.focusAlertDismissed(app: app, action: action)
+        PostHogManager.shared.focusAlertDismissed(app: app, action: action)
+    }
+
+    func taskExtracted(taskCount: Int) {
+        MixpanelManager.shared.taskExtracted(taskCount: taskCount)
+        PostHogManager.shared.taskExtracted(taskCount: taskCount)
+    }
+
+    func memoryExtracted(memoryCount: Int) {
+        MixpanelManager.shared.memoryExtracted(memoryCount: memoryCount)
+        PostHogManager.shared.memoryExtracted(memoryCount: memoryCount)
+    }
+
+    func adviceGenerated(category: String?) {
+        MixpanelManager.shared.adviceGenerated(category: category)
+        PostHogManager.shared.adviceGenerated(category: category)
+    }
+
+    // MARK: - Apps Events
+
+    func appEnabled(appId: String, appName: String) {
+        MixpanelManager.shared.appEnabled(appId: appId, appName: appName)
+        PostHogManager.shared.appEnabled(appId: appId, appName: appName)
+    }
+
+    func appDisabled(appId: String, appName: String) {
+        MixpanelManager.shared.appDisabled(appId: appId, appName: appName)
+        PostHogManager.shared.appDisabled(appId: appId, appName: appName)
+    }
+
+    func appDetailViewed(appId: String, appName: String) {
+        MixpanelManager.shared.appDetailViewed(appId: appId, appName: appName)
+        PostHogManager.shared.appDetailViewed(appId: appId, appName: appName)
+    }
+
+    // MARK: - Update Events
+
+    func updateCheckStarted() {
+        MixpanelManager.shared.updateCheckStarted()
+        PostHogManager.shared.updateCheckStarted()
+    }
+
+    func updateAvailable(version: String) {
+        MixpanelManager.shared.updateAvailable(version: version)
+        PostHogManager.shared.updateAvailable(version: version)
+    }
+
+    func updateInstalled(version: String) {
+        MixpanelManager.shared.updateInstalled(version: version)
+        PostHogManager.shared.updateInstalled(version: version)
+    }
 }
