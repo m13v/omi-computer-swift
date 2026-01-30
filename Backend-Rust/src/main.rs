@@ -32,7 +32,7 @@ mod services;
 
 use auth::{firebase_auth_extension, FirebaseAuth};
 use config::Config;
-use routes::{action_items_routes, advice_routes, apps_routes, auth_routes, conversations_routes, focus_sessions_routes, health_routes, memories_routes, messages_routes, users_routes};
+use routes::{action_items_routes, advice_routes, apps_routes, auth_routes, conversations_routes, focus_sessions_routes, health_routes, memories_routes, users_routes};
 use services::{FirestoreService, IntegrationService};
 
 /// Application state shared across handlers
@@ -140,7 +140,6 @@ async fn main() {
         .merge(action_items_routes())
         .merge(focus_sessions_routes())
         .merge(apps_routes())
-        .merge(messages_routes())
         .merge(users_routes())
         .merge(advice_routes())
         .with_state(state);
