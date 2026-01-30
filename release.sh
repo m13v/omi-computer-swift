@@ -28,6 +28,11 @@ CN_ORG="mediar"
 CN_APP="omi-computer"
 export CN_API_KEY="${CN_API_KEY:-cn_4j2Us_EaFAXfV-IKtesjLt7T6tecbKMuKJWRMVfX45e0GMz4mQWwOYoNG_TMZxa6Fw7YDV-sNM3NRuWPMczNAg}"
 
+# Sparkle Auto-Update
+SPARKLE_PRIVATE_KEY="${SPARKLE_PRIVATE_KEY:-}"  # Set via environment or Keychain
+APPCAST_DIR="$BUILD_DIR/appcast"
+APPCAST_URL="https://api.omi.me/desktop"
+
 # -----------------------------------------------------------------------------
 # Version handling: auto-increment if not specified
 # -----------------------------------------------------------------------------
@@ -250,9 +255,49 @@ if [ -f "omi_icon.icns" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Step 9: Publish to CrabNebula
+# Step 9: Generate Sparkle Appcast
 # -----------------------------------------------------------------------------
-echo "[9/9] Publishing to CrabNebula..."
+echo "[9/10] Generating Sparkle appcast..."
+
+mkdir -p "$APPCAST_DIR"
+cp "$DMG_PATH" "$APPCAST_DIR/"
+
+# Check if Sparkle tools are available
+SPARKLE_BIN=""
+if [ -d "Desktop/.build/artifacts/sparkle/Sparkle/bin" ]; then
+    SPARKLE_BIN="Desktop/.build/artifacts/sparkle/Sparkle/bin"
+elif [ -d "$HOME/Library/Developer/Xcode/DerivedData/Sparkle*/SourcePackages/artifacts/sparkle/Sparkle/bin" ]; then
+    SPARKLE_BIN=$(ls -d $HOME/Library/Developer/Xcode/DerivedData/Sparkle*/SourcePackages/artifacts/sparkle/Sparkle/bin 2>/dev/null | head -1)
+fi
+
+if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
+    if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
+        # Use private key from environment
+        echo "$SPARKLE_PRIVATE_KEY" | "$SPARKLE_BIN/generate_appcast" \
+            --ed-key-file - \
+            --download-url-prefix "$APPCAST_URL/" \
+            "$APPCAST_DIR"
+        echo "  Appcast generated at: $APPCAST_DIR/appcast.xml"
+    else
+        # Try to use key from Keychain (generate_appcast will prompt or use stored key)
+        "$SPARKLE_BIN/generate_appcast" \
+            --download-url-prefix "$APPCAST_URL/" \
+            "$APPCAST_DIR" 2>/dev/null || {
+            echo "  Warning: Could not generate appcast (no signing key found)"
+            echo "  Run 'Desktop/.build/artifacts/sparkle/Sparkle/bin/generate_keys' to create keys"
+        }
+    fi
+else
+    echo "  Warning: Sparkle generate_appcast not found"
+    echo "  Build the project first to download Sparkle tools, or manually generate appcast"
+fi
+
+echo "  DMG ready for upload at: $APPCAST_DIR/$APP_NAME.dmg"
+
+# -----------------------------------------------------------------------------
+# Step 10: Publish to CrabNebula
+# -----------------------------------------------------------------------------
+echo "[10/10] Publishing to CrabNebula..."
 
 if [ ! -f "$CN_CLI" ]; then
     echo "  Error: CrabNebula CLI not found at $CN_CLI"
@@ -282,10 +327,20 @@ echo ""
 echo "Local files:"
 echo "  App: $APP_BUNDLE"
 echo "  DMG: $DMG_PATH"
+if [ -f "$APPCAST_DIR/appcast.xml" ]; then
+echo "  Appcast: $APPCAST_DIR/appcast.xml"
+fi
 echo ""
 echo "Download URL:"
 echo "  https://cdn.crabnebula.app/download/$CN_ORG/$CN_APP/latest/$APP_NAME.dmg"
 echo ""
+if [ -f "$APPCAST_DIR/appcast.xml" ]; then
+echo "Auto-Update Setup:"
+echo "  1. Upload $APPCAST_DIR/$APP_NAME.dmg to $APPCAST_URL/"
+echo "  2. Upload $APPCAST_DIR/appcast.xml to $APPCAST_URL/"
+echo "  3. Verify appcast is accessible at: $APPCAST_URL/appcast.xml"
+echo ""
+fi
 echo "Verify with:"
 echo "  spctl --assess --verbose=2 $APP_BUNDLE"
 echo "  spctl --assess --verbose=2 --type open --context context:primary-signature $DMG_PATH"
