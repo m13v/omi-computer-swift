@@ -1,15 +1,15 @@
 #!/bin/bash
 # Full cleanup script - removes app and all permissions/data
 
-BUNDLE_ID="com.omi.focusmonitor"
-APP_PATH="/Applications/OMI.app"
-BUILD_PATH="build/OMI.app"
+BUNDLE_ID="com.omi.computer-macos"
+APP_PATH="/Applications/Omi Computer.app"
+BUILD_PATH="build/Omi Computer.app"
 
-echo "=== Full OMI Cleanup ==="
+echo "=== Full Omi Computer Cleanup ==="
 
 # Kill the app if running
 echo "Killing app..."
-pkill -9 OMI 2>/dev/null || true
+pkill -9 "Omi Computer" 2>/dev/null || true
 
 # Remove app from Applications
 if [ -d "$APP_PATH" ]; then
