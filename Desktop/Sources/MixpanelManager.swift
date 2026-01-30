@@ -278,6 +278,24 @@ extension MixpanelManager {
         ])
     }
 
+    /// Track first launch with comprehensive system diagnostics
+    func firstLaunch(diagnostics: [String: Any]) {
+        // Convert to MixpanelType dictionary
+        var mixpanelProperties: [String: MixpanelType] = [:]
+        for (key, value) in diagnostics {
+            if let stringValue = value as? String {
+                mixpanelProperties[key] = stringValue
+            } else if let intValue = value as? Int {
+                mixpanelProperties[key] = intValue
+            } else if let boolValue = value as? Bool {
+                mixpanelProperties[key] = boolValue
+            } else if let doubleValue = value as? Double {
+                mixpanelProperties[key] = doubleValue
+            }
+        }
+        track("First Launch", properties: mixpanelProperties)
+    }
+
     func appBecameActive() {
         track("App Became Active")
     }
