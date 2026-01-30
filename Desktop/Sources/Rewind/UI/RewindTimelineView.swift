@@ -1,7 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Enhanced timeline scrubber view with app icons and time markers
+/// Enhanced timeline scrubber view with app icons, time markers, and scroll support
 struct RewindTimelineView: View {
     let screenshots: [Screenshot]
     @Binding var selectedScreenshot: Screenshot?
@@ -20,7 +20,7 @@ struct RewindTimelineView: View {
             // App icons row (showing unique apps in timeline)
             appIconsBar
 
-            // Timeline scrubber
+            // Timeline scrubber with scroll support
             GeometryReader { geometry in
                 let width = geometry.size.width
 
@@ -99,6 +99,36 @@ struct RewindTimelineView: View {
             OmiColors.backgroundSecondary.opacity(0.95)
                 .background(.ultraThinMaterial)
         )
+        // Scroll wheel handler for timeline navigation
+        .onScrollWheelGesture { delta in
+            handleScrollWheel(delta: delta)
+        }
+    }
+
+    // MARK: - Scroll Wheel Handler
+
+    private func handleScrollWheel(delta: CGFloat) {
+        guard !screenshots.isEmpty else { return }
+
+        // Find current index
+        let currentIndex: Int
+        if let selected = selectedScreenshot,
+           let index = screenshots.firstIndex(where: { $0.id == selected.id }) {
+            currentIndex = index
+        } else {
+            currentIndex = 0
+        }
+
+        // Calculate new index based on scroll direction
+        // Scroll down (negative delta) = go to earlier screenshots (higher index)
+        // Scroll up (positive delta) = go to newer screenshots (lower index)
+        let scrollSensitivity = 3 // How many screenshots to skip per scroll unit
+        let indexDelta = Int(-delta * CGFloat(scrollSensitivity))
+        let newIndex = max(0, min(screenshots.count - 1, currentIndex + indexDelta))
+
+        if newIndex != currentIndex {
+            onSelect(screenshots[newIndex])
+        }
     }
 
     // MARK: - App Icons Bar
@@ -223,6 +253,50 @@ struct RewindTimelineView: View {
     }
 }
 
+// MARK: - Scroll Wheel Gesture Modifier
+
+struct ScrollWheelGestureModifier: ViewModifier {
+    let action: (CGFloat) -> Void
+
+    func body(content: Content) -> some View {
+        content.background(
+            ScrollWheelView(action: action)
+        )
+    }
+}
+
+struct ScrollWheelView: NSViewRepresentable {
+    let action: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = ScrollWheelNSView()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {
+        (nsView as? ScrollWheelNSView)?.action = action
+    }
+}
+
+class ScrollWheelNSView: NSView {
+    var action: ((CGFloat) -> Void)?
+
+    override func scrollWheel(with event: NSEvent) {
+        // Use deltaY for vertical scroll
+        let delta = event.deltaY
+        if abs(delta) > 0.1 {
+            action?(delta)
+        }
+    }
+}
+
+extension View {
+    func onScrollWheelGesture(action: @escaping (CGFloat) -> Void) -> some View {
+        modifier(ScrollWheelGestureModifier(action: action))
+    }
+}
+
 /// App icon button for the timeline bar
 struct AppIconButton: View {
     let appName: String
@@ -327,14 +401,16 @@ struct HoverPreviewTooltip: View {
     }
 }
 
-/// Full-size screenshot preview view with keyboard navigation
+/// Full-size screenshot preview view with search highlighting
 struct ScreenshotPreviewView: View {
     let screenshot: Screenshot
+    let searchQuery: String?
     let onPrevious: () -> Void
     let onNext: () -> Void
     let onClose: () -> Void
 
     @State private var fullImage: NSImage? = nil
+    @State private var imageSize: CGSize = .zero
     @State private var isLoading = true
 
     var body: some View {
@@ -360,6 +436,24 @@ struct ScreenshotPreviewView: View {
                 }
 
                 Spacer()
+
+                // Search match info
+                if let query = searchQuery {
+                    let matchCount = screenshot.matchingBlocks(for: query).count
+                    if matchCount > 0 {
+                        HStack(spacing: 4) {
+                            Image(systemName: "text.magnifyingglass")
+                                .font(.system(size: 11))
+                            Text("\(matchCount) match\(matchCount == 1 ? "" : "es")")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(OmiColors.purplePrimary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(OmiColors.purplePrimary.opacity(0.15))
+                        .cornerRadius(4)
+                    }
+                }
 
                 // Time
                 Text(screenshot.formattedDate)
@@ -389,28 +483,52 @@ struct ScreenshotPreviewView: View {
             .padding(.vertical, 12)
             .background(OmiColors.backgroundSecondary.opacity(0.95))
 
-            // Image
-            ZStack {
-                if let image = fullImage {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                } else if isLoading {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 48))
-                        .foregroundColor(OmiColors.textQuaternary)
-                }
+            // Image with highlight overlays
+            GeometryReader { geometry in
+                ZStack {
+                    if let image = fullImage {
+                        Image(nsImage: image)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .background(
+                                GeometryReader { imageGeometry in
+                                    Color.clear.preference(
+                                        key: ImageSizePreferenceKey.self,
+                                        value: imageGeometry.size
+                                    )
+                                }
+                            )
+                            .overlay {
+                                // Search highlight overlays
+                                if let query = searchQuery {
+                                    SearchHighlightOverlay(
+                                        screenshot: screenshot,
+                                        query: query,
+                                        imageSize: imageSize,
+                                        containerSize: geometry.size
+                                    )
+                                }
+                            }
+                    } else if isLoading {
+                        ProgressView()
+                            .progressViewStyle(.circular)
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.system(size: 48))
+                            .foregroundColor(OmiColors.textQuaternary)
+                    }
 
-                // Navigation arrows
-                HStack {
-                    navButton(systemName: "chevron.left", action: onPrevious)
-                    Spacer()
-                    navButton(systemName: "chevron.right", action: onNext)
+                    // Navigation arrows
+                    HStack {
+                        navButton(systemName: "chevron.left", action: onPrevious)
+                        Spacer()
+                        navButton(systemName: "chevron.right", action: onNext)
+                    }
+                    .padding(.horizontal, 16)
                 }
-                .padding(.horizontal, 16)
+                .onPreferenceChange(ImageSizePreferenceKey.self) { size in
+                    imageSize = size
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.black.opacity(0.4))
@@ -481,11 +599,19 @@ struct ScreenshotPreviewView: View {
             }
 
             ScrollView {
-                Text(text)
-                    .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textSecondary)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Highlight search query in text if present
+                if let query = searchQuery {
+                    Text(highlightedText(text, query: query))
+                        .font(.system(size: 11))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(text)
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .frame(maxHeight: 100)
         }
@@ -493,14 +619,99 @@ struct ScreenshotPreviewView: View {
         .background(OmiColors.backgroundTertiary.opacity(0.8))
     }
 
+    private func highlightedText(_ text: String, query: String) -> AttributedString {
+        var result = AttributedString(text)
+        result.foregroundColor = OmiColors.textSecondary
+
+        let lowercasedText = text.lowercased()
+        let lowercasedQuery = query.lowercased()
+
+        var searchStart = lowercasedText.startIndex
+        while let range = lowercasedText.range(of: lowercasedQuery, range: searchStart..<lowercasedText.endIndex) {
+            if let attrRange = Range(range, in: result) {
+                result[attrRange].foregroundColor = OmiColors.purplePrimary
+                result[attrRange].backgroundColor = OmiColors.purplePrimary.opacity(0.2)
+                result[attrRange].font = .system(size: 11, weight: .semibold)
+            }
+            searchStart = range.upperBound
+        }
+
+        return result
+    }
+
     private func loadFullImage() async {
         isLoading = true
         do {
-            fullImage = try await RewindStorage.shared.loadScreenshotImage(relativePath: screenshot.imagePath)
+            let image = try await RewindStorage.shared.loadScreenshotImage(relativePath: screenshot.imagePath)
+            fullImage = image
         } catch {
             logError("ScreenshotPreviewView: Failed to load image: \(error)")
         }
         isLoading = false
+    }
+}
+
+// MARK: - Image Size Preference Key
+
+struct ImageSizePreferenceKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Search Highlight Overlay
+
+struct SearchHighlightOverlay: View {
+    let screenshot: Screenshot
+    let query: String
+    let imageSize: CGSize
+    let containerSize: CGSize
+
+    private var displayedSizeAndOffset: (size: CGSize, offset: CGSize) {
+        let aspectRatio = imageSize.width / max(imageSize.height, 1)
+        let containerAspect = containerSize.width / max(containerSize.height, 1)
+
+        if aspectRatio > containerAspect {
+            // Image is wider - fits width
+            let displayedWidth = containerSize.width
+            let displayedHeight = displayedWidth / aspectRatio
+            return (
+                size: CGSize(width: displayedWidth, height: displayedHeight),
+                offset: CGSize(width: 0, height: (containerSize.height - displayedHeight) / 2)
+            )
+        } else {
+            // Image is taller - fits height
+            let displayedHeight = containerSize.height
+            let displayedWidth = displayedHeight * aspectRatio
+            return (
+                size: CGSize(width: displayedWidth, height: displayedHeight),
+                offset: CGSize(width: (containerSize.width - displayedWidth) / 2, height: 0)
+            )
+        }
+    }
+
+    var body: some View {
+        let matchingBlocks = screenshot.matchingBlocks(for: query)
+        let layout = displayedSizeAndOffset
+
+        ZStack {
+            ForEach(Array(matchingBlocks.enumerated()), id: \.offset) { _, block in
+                let screenRect = block.screenRect(for: CGSize(width: 1, height: 1)) // Normalized
+
+                Rectangle()
+                    .stroke(OmiColors.purplePrimary, lineWidth: 2)
+                    .background(OmiColors.purplePrimary.opacity(0.2))
+                    .frame(
+                        width: screenRect.width * layout.size.width,
+                        height: screenRect.height * layout.size.height
+                    )
+                    .position(
+                        x: layout.offset.width + screenRect.midX * layout.size.width,
+                        y: layout.offset.height + screenRect.midY * layout.size.height
+                    )
+            }
+        }
     }
 }
 

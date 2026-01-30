@@ -53,7 +53,7 @@ struct RewindPage: View {
             return .ignored
         }
         .onKeyPress(.space) {
-            if let selected = viewModel.selectedScreenshot, !showingPreview {
+            if viewModel.selectedScreenshot != nil, !showingPreview {
                 showingPreview = true
                 return .handled
             }
@@ -154,9 +154,10 @@ struct RewindPage: View {
 
             // Split view: Grid or Preview
             if showingPreview, let selected = viewModel.selectedScreenshot {
-                // Preview mode
+                // Preview mode with search highlighting
                 ScreenshotPreviewView(
                     screenshot: selected,
+                    searchQuery: viewModel.activeSearchQuery,
                     onPrevious: {
                         viewModel.selectPreviousScreenshot()
                     },
@@ -168,7 +169,7 @@ struct RewindPage: View {
                     }
                 )
 
-                // Timeline at bottom
+                // Timeline at bottom with scroll support
                 RewindTimelineView(
                     screenshots: viewModel.screenshots,
                     selectedScreenshot: $viewModel.selectedScreenshot,
@@ -177,10 +178,11 @@ struct RewindPage: View {
                     }
                 )
             } else {
-                // Grid mode
+                // Grid mode with search context
                 ScreenshotGridView(
                     screenshots: viewModel.screenshots,
                     selectedScreenshot: viewModel.selectedScreenshot,
+                    searchQuery: viewModel.activeSearchQuery,
                     onSelect: { screenshot in
                         viewModel.selectScreenshot(screenshot)
                         showingPreview = true

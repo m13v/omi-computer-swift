@@ -5,6 +5,7 @@ import AppKit
 struct ScreenshotThumbnailView: View {
     let screenshot: Screenshot
     let isSelected: Bool
+    let searchQuery: String?
     let onSelect: () -> Void
     let onDelete: () -> Void
 
@@ -85,6 +86,23 @@ struct ScreenshotThumbnailView: View {
                         }
                         .padding(6)
                     }
+
+                    // Search match indicator
+                    if searchQuery != nil && screenshot.ocrDataJson != nil {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Image(systemName: "text.magnifyingglass")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.white)
+                                    .padding(4)
+                                    .background(OmiColors.purplePrimary)
+                                    .clipShape(Circle())
+                            }
+                            Spacer()
+                        }
+                        .padding(6)
+                    }
                 }
                 .frame(height: 120)
                 .cornerRadius(8)
@@ -122,8 +140,14 @@ struct ScreenshotThumbnailView: View {
                     }
                 }
 
-                // Window title (if available)
-                if let title = screenshot.windowTitle, !title.isEmpty {
+                // Search context snippet (when searching)
+                if let query = searchQuery,
+                   let snippet = screenshot.contextSnippet(for: query) {
+                    SearchContextSnippet(snippet: snippet, query: query)
+                }
+
+                // Window title (if available and no search context)
+                else if let title = screenshot.windowTitle, !title.isEmpty {
                     Text(title)
                         .font(.system(size: 10))
                         .foregroundColor(OmiColors.textQuaternary)
@@ -176,10 +200,47 @@ struct ScreenshotThumbnailView: View {
     }
 }
 
+/// Displays a search context snippet with the query highlighted
+struct SearchContextSnippet: View {
+    let snippet: String
+    let query: String
+
+    var body: some View {
+        Text(attributedSnippet)
+            .font(.system(size: 10))
+            .lineLimit(2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
+            .background(OmiColors.purplePrimary.opacity(0.1))
+            .cornerRadius(4)
+    }
+
+    private var attributedSnippet: AttributedString {
+        var result = AttributedString(snippet)
+        result.foregroundColor = OmiColors.textTertiary
+
+        // Highlight the search query
+        let lowercasedSnippet = snippet.lowercased()
+        let lowercasedQuery = query.lowercased()
+
+        var searchStart = lowercasedSnippet.startIndex
+        while let range = lowercasedSnippet.range(of: lowercasedQuery, range: searchStart..<lowercasedSnippet.endIndex) {
+            if let attrRange = Range(range, in: result) {
+                result[attrRange].foregroundColor = OmiColors.purplePrimary
+                result[attrRange].font = .system(size: 10, weight: .semibold)
+            }
+            searchStart = range.upperBound
+        }
+
+        return result
+    }
+}
+
 /// Grid view showing multiple screenshot thumbnails
 struct ScreenshotGridView: View {
     let screenshots: [Screenshot]
     let selectedScreenshot: Screenshot?
+    let searchQuery: String?
     let onSelect: (Screenshot) -> Void
     let onDelete: (Screenshot) -> Void
 
@@ -196,6 +257,12 @@ struct ScreenshotGridView: View {
                 Text("\(screenshots.count) screenshots")
                     .font(.system(size: 12))
                     .foregroundColor(OmiColors.textTertiary)
+
+                if let query = searchQuery {
+                    Text("matching \"\(query)\"")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
 
                 Spacer()
 
@@ -231,6 +298,7 @@ struct ScreenshotGridView: View {
                 ScreenshotThumbnailView(
                     screenshot: screenshot,
                     isSelected: selectedScreenshot?.id == screenshot.id,
+                    searchQuery: searchQuery,
                     onSelect: { onSelect(screenshot) },
                     onDelete: { onDelete(screenshot) }
                 )
@@ -269,6 +337,7 @@ struct ScreenshotGridView: View {
                             ScreenshotThumbnailView(
                                 screenshot: screenshot,
                                 isSelected: selectedScreenshot?.id == screenshot.id,
+                                searchQuery: searchQuery,
                                 onSelect: { onSelect(screenshot) },
                                 onDelete: { onDelete(screenshot) }
                             )
@@ -286,6 +355,7 @@ struct ScreenshotGridView: View {
     ScreenshotGridView(
         screenshots: [],
         selectedScreenshot: nil,
+        searchQuery: nil,
         onSelect: { _ in },
         onDelete: { _ in }
     )

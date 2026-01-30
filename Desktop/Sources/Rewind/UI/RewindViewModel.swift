@@ -20,6 +20,9 @@ class RewindViewModel: ObservableObject {
 
     @Published var stats: (total: Int, indexed: Int, storageSize: Int64)? = nil
 
+    /// The active search query (trimmed, non-empty) for highlighting
+    @Published var activeSearchQuery: String? = nil
+
     // MARK: - Private State
 
     private var searchTask: Task<Void, Never>?
@@ -81,6 +84,7 @@ class RewindViewModel: ObservableObject {
         if trimmedQuery.isEmpty {
             // Reset to recent screenshots
             isSearching = false
+            activeSearchQuery = nil
             do {
                 screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
             } catch {
@@ -90,6 +94,7 @@ class RewindViewModel: ObservableObject {
         }
 
         isSearching = true
+        activeSearchQuery = trimmedQuery
 
         searchTask = Task {
             do {
@@ -179,6 +184,20 @@ class RewindViewModel: ObservableObject {
               currentIndex < screenshots.count - 1 else { return }
 
         selectedScreenshot = screenshots[currentIndex + 1]
+    }
+
+    // MARK: - Search Result Helpers
+
+    /// Get a context snippet for the current search query on a screenshot
+    func contextSnippet(for screenshot: Screenshot) -> String? {
+        guard let query = activeSearchQuery else { return nil }
+        return screenshot.contextSnippet(for: query)
+    }
+
+    /// Get matching text blocks for highlighting
+    func matchingBlocks(for screenshot: Screenshot) -> [OCRTextBlock] {
+        guard let query = activeSearchQuery else { return [] }
+        return screenshot.matchingBlocks(for: query)
     }
 
     // MARK: - Delete
