@@ -49,7 +49,14 @@ struct ScreenshotThumbnailView: View {
 
                         VStack {
                             HStack {
+                                // App icon badge
+                                AppIconView(appName: screenshot.appName, size: 20)
+                                    .padding(4)
+                                    .background(Color.black.opacity(0.5))
+                                    .cornerRadius(6)
+
                                 Spacer()
+
                                 Button {
                                     onDelete()
                                 } label: {
@@ -63,6 +70,18 @@ struct ScreenshotThumbnailView: View {
                                 .buttonStyle(.plain)
                             }
                             Spacer()
+
+                            // Time overlay at bottom
+                            HStack {
+                                Spacer()
+                                Text(screenshot.formattedTime)
+                                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                    .background(Color.black.opacity(0.6))
+                                    .cornerRadius(4)
+                            }
                         }
                         .padding(6)
                     }
@@ -75,40 +94,55 @@ struct ScreenshotThumbnailView: View {
                 )
 
                 // Info section
-                VStack(alignment: .leading, spacing: 4) {
-                    // App name
-                    HStack(spacing: 4) {
-                        Image(systemName: "app.badge")
-                            .font(.system(size: 10))
-                            .foregroundColor(OmiColors.textTertiary)
+                HStack(spacing: 8) {
+                    // App icon
+                    AppIconView(appName: screenshot.appName, size: 16)
 
+                    VStack(alignment: .leading, spacing: 2) {
+                        // App name
                         Text(screenshot.appName)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(OmiColors.textSecondary)
                             .lineLimit(1)
+
+                        // Time
+                        Text(screenshot.formattedTime)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(OmiColors.textTertiary)
                     }
 
-                    // Time
-                    Text(screenshot.formattedTime)
-                        .font(.system(size: 10))
-                        .foregroundColor(OmiColors.textTertiary)
+                    Spacer()
 
-                    // Window title (if available)
-                    if let title = screenshot.windowTitle, !title.isEmpty {
-                        Text(title)
+                    // OCR indicator
+                    if screenshot.isIndexed && screenshot.ocrText != nil && !screenshot.ocrText!.isEmpty {
+                        Image(systemName: "doc.text.fill")
                             .font(.system(size: 10))
-                            .foregroundColor(OmiColors.textQuaternary)
-                            .lineLimit(1)
+                            .foregroundColor(OmiColors.purplePrimary.opacity(0.6))
+                            .help("Text extracted")
                     }
+                }
+
+                // Window title (if available)
+                if let title = screenshot.windowTitle, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 10))
+                        .foregroundColor(OmiColors.textQuaternary)
+                        .lineLimit(1)
                 }
             }
             .padding(8)
             .background(isSelected ? OmiColors.purplePrimary.opacity(0.1) : OmiColors.backgroundTertiary.opacity(0.5))
             .cornerRadius(10)
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            isHovered = hovering
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
         }
         .task {
             await loadThumbnail()
@@ -149,24 +183,112 @@ struct ScreenshotGridView: View {
     let onSelect: (Screenshot) -> Void
     let onDelete: (Screenshot) -> Void
 
+    @State private var groupByApp = false
+
     private let columns = [
         GridItem(.adaptive(minimum: 180, maximum: 250), spacing: 12)
     ]
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 12) {
-                ForEach(screenshots) { screenshot in
-                    ScreenshotThumbnailView(
-                        screenshot: screenshot,
-                        isSelected: selectedScreenshot?.id == screenshot.id,
-                        onSelect: { onSelect(screenshot) },
-                        onDelete: { onDelete(screenshot) }
-                    )
+        VStack(spacing: 0) {
+            // View controls
+            HStack {
+                Text("\(screenshots.count) screenshots")
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textTertiary)
+
+                Spacer()
+
+                // Group toggle
+                Toggle(isOn: $groupByApp) {
+                    HStack(spacing: 4) {
+                        Image(systemName: groupByApp ? "square.grid.3x3.fill" : "square.grid.3x3")
+                        Text("Group by app")
+                    }
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textSecondary)
                 }
+                .toggleStyle(.button)
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 24)
+            .padding(.bottom, 12)
+
+            // Grid
+            ScrollView {
+                if groupByApp {
+                    groupedGridContent
+                } else {
+                    standardGridContent
+                }
+            }
         }
     }
+
+    private var standardGridContent: some View {
+        LazyVGrid(columns: columns, spacing: 12) {
+            ForEach(screenshots) { screenshot in
+                ScreenshotThumbnailView(
+                    screenshot: screenshot,
+                    isSelected: selectedScreenshot?.id == screenshot.id,
+                    onSelect: { onSelect(screenshot) },
+                    onDelete: { onDelete(screenshot) }
+                )
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 24)
+    }
+
+    private var groupedGridContent: some View {
+        let grouped = Dictionary(grouping: screenshots) { $0.appName }
+        let sortedKeys = grouped.keys.sorted()
+
+        return LazyVStack(alignment: .leading, spacing: 24) {
+            ForEach(sortedKeys, id: \.self) { appName in
+                VStack(alignment: .leading, spacing: 12) {
+                    // App header
+                    HStack(spacing: 8) {
+                        AppIconView(appName: appName, size: 20)
+
+                        Text(appName)
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("(\(grouped[appName]?.count ?? 0))")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 24)
+
+                    // Screenshots for this app
+                    LazyVGrid(columns: columns, spacing: 12) {
+                        ForEach(grouped[appName] ?? []) { screenshot in
+                            ScreenshotThumbnailView(
+                                screenshot: screenshot,
+                                isSelected: selectedScreenshot?.id == screenshot.id,
+                                onSelect: { onSelect(screenshot) },
+                                onDelete: { onDelete(screenshot) }
+                            )
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                }
+            }
+        }
+        .padding(.bottom, 24)
+    }
+}
+
+#Preview {
+    ScreenshotGridView(
+        screenshots: [],
+        selectedScreenshot: nil,
+        onSelect: { _ in },
+        onDelete: { _ in }
+    )
+    .frame(width: 800, height: 600)
+    .background(OmiColors.backgroundPrimary)
 }
