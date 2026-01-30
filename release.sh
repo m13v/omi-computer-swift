@@ -144,6 +144,10 @@ else
     exit 1
 fi
 
+# Add rpath for embedded frameworks (required for Sparkle to be found at runtime)
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+echo "  Added Frameworks rpath"
+
 # Copy icon if exists
 if [ -f "omi_icon.icns" ]; then
     cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
