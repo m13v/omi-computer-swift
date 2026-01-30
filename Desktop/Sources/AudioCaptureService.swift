@@ -49,6 +49,11 @@ class AudioCaptureService {
     private var targetFormat: AVAudioFormat?
     private var detectedSampleRate: Double = 0.0
 
+    // Audio level smoothing (for natural decay like system audio)
+    private var smoothedLevel: Float = 0.0
+    private let noiseFloor: Float = 0.005  // Very low threshold for preamp noise
+    private let decayRate: Float = 0.85    // Decay multiplier per frame (lower = faster decay)
+
     // Device change handling
     private var configChangeObserver: NSObjectProtocol?
     private var isReconfiguring = false
@@ -236,6 +241,7 @@ class AudioCaptureService {
         inputFormat = nil
         targetFormat = nil
         detectedSampleRate = 0.0
+        smoothedLevel = 0.0
 
         log("AudioCapture: Stopped capturing")
     }
@@ -305,14 +311,32 @@ class AudioCaptureService {
         }
 
         // Calculate and report audio level (RMS normalized to 0.0 - 1.0)
+        // Uses smoothing and decay to match system audio behavior
         if let levelHandler = onAudioLevel, !pcmData.isEmpty {
             let sumOfSquares: Float = pcmData.reduce(0.0) { acc, sample in
                 let normalized = Float(sample) / 32767.0
                 return acc + normalized * normalized
             }
             let rms = sqrt(sumOfSquares / Float(pcmData.count))
-            // Clamp to 0.0 - 1.0 range
-            let level = min(Float(1.0), max(Float(0.0), rms))
+
+            // Apply soft noise floor - subtract noise but don't hard cutoff
+            let cleanedRms = max(0.0, rms - noiseFloor)
+
+            // Smoothing: if current level is higher, jump to it; if lower, decay gradually
+            // This matches how system audio naturally behaves and feels more responsive
+            if cleanedRms > smoothedLevel {
+                // Rising: follow immediately for responsiveness
+                smoothedLevel = cleanedRms
+            } else {
+                // Falling: decay gradually for smooth animation
+                smoothedLevel = smoothedLevel * decayRate
+                // If decayed level is very small, snap to zero to avoid endless tiny values
+                if smoothedLevel < 0.001 {
+                    smoothedLevel = 0.0
+                }
+            }
+
+            let level = min(Float(1.0), smoothedLevel)
             DispatchQueue.main.async {
                 levelHandler(level)
             }
