@@ -66,11 +66,13 @@ class TasksViewModel: ObservableObject {
     }
 
     func toggleTask(_ task: TaskActionItem) async {
+        log("TasksViewModel: toggleTask called for id=\(task.id), setting completed=\(!task.completed)")
         do {
             let updated = try await APIClient.shared.updateActionItem(
                 id: task.id,
                 completed: !task.completed
             )
+            log("TasksViewModel: toggleTask succeeded")
             // Update local state
             if let index = tasks.firstIndex(where: { $0.id == task.id }) {
                 tasks[index] = updated
@@ -327,9 +329,10 @@ struct TaskRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             // Checkbox with animation
-            Button(action: {
+            Button {
+                log("Task: Checkbox clicked for task: \(task.id)")
                 handleToggle()
-            }) {
+            } label: {
                 ZStack {
                     // Background circle
                     Circle()
@@ -349,6 +352,8 @@ struct TaskRow: View {
                             .scaleEffect(checkmarkScale)
                     }
                 }
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .padding(.top, 2)
@@ -435,13 +440,18 @@ struct TaskRow: View {
     }
 
     private func handleToggle() {
+        log("Task: handleToggle called, completed=\(task.completed)")
+
         // If already completed, just toggle without animation
         if task.completed {
+            log("Task: Already completed, toggling back")
             Task {
                 await viewModel.toggleTask(task)
             }
             return
         }
+
+        log("Task: Starting completion animation")
 
         // Animate the completion
         isCompletingAnimation = true
@@ -454,22 +464,23 @@ struct TaskRow: View {
         // Scale back down
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
-                checkmarkScale = 1.0
+                self.checkmarkScale = 1.0
             }
         }
 
         // Slide and fade out after a brief moment
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             withAnimation(.easeInOut(duration: 0.3)) {
-                rowOpacity = 0.0
-                rowOffset = 50
+                self.rowOpacity = 0.0
+                self.rowOffset = 50
             }
         }
 
         // Actually toggle the task after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
+            log("Task: Animation complete, calling toggleTask")
             Task {
-                await viewModel.toggleTask(task)
+                await self.viewModel.toggleTask(self.task)
             }
         }
     }
