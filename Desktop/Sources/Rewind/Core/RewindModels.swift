@@ -23,6 +23,9 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
     /// Extracted OCR text (nullable until indexed)
     var ocrText: String?
 
+    /// JSON-encoded OCR data with bounding boxes
+    var ocrDataJson: String?
+
     /// Whether OCR has been completed
     var isIndexed: Bool
 
@@ -46,6 +49,7 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
         windowTitle: String? = nil,
         imagePath: String,
         ocrText: String? = nil,
+        ocrDataJson: String? = nil,
         isIndexed: Bool = false,
         focusStatus: String? = nil,
         extractedTasksJson: String? = nil,
@@ -57,6 +61,7 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
         self.windowTitle = windowTitle
         self.imagePath = imagePath
         self.ocrText = ocrText
+        self.ocrDataJson = ocrDataJson
         self.isIndexed = isIndexed
         self.focusStatus = focusStatus
         self.extractedTasksJson = extractedTasksJson
@@ -68,16 +73,52 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
     mutating func didInsert(_ inserted: InsertionSuccess) {
         id = inserted.rowID
     }
+
+    // MARK: - OCR Data Access
+
+    /// Decode the OCR result with bounding boxes
+    var ocrResult: OCRResult? {
+        guard let jsonString = ocrDataJson,
+              let data = jsonString.data(using: .utf8) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(OCRResult.self, from: data)
+    }
+
+    /// Get text blocks that match a search query
+    func matchingBlocks(for query: String) -> [OCRTextBlock] {
+        return ocrResult?.blocksContaining(query) ?? []
+    }
+
+    /// Get a context snippet for a search query
+    func contextSnippet(for query: String) -> String? {
+        return ocrResult?.contextSnippet(for: query)
+    }
 }
 
 // MARK: - Search Result
 
 /// A search result containing a screenshot and match information
-struct ScreenshotSearchResult: Identifiable {
+struct ScreenshotSearchResult: Identifiable, Equatable {
     let screenshot: Screenshot
     let matchedText: String?
+    let contextSnippet: String?
+    let matchingBlocks: [OCRTextBlock]
 
     var id: Int64? { screenshot.id }
+
+    init(screenshot: Screenshot, query: String? = nil) {
+        self.screenshot = screenshot
+        self.matchedText = query
+
+        if let query = query, !query.isEmpty {
+            self.contextSnippet = screenshot.contextSnippet(for: query)
+            self.matchingBlocks = screenshot.matchingBlocks(for: query)
+        } else {
+            self.contextSnippet = nil
+            self.matchingBlocks = []
+        }
+    }
 }
 
 // MARK: - Rewind Error Types

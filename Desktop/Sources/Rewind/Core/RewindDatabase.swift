@@ -11,6 +11,11 @@ actor RewindDatabase {
 
     private init() {}
 
+    /// Get the database queue for other storage actors
+    func getDatabaseQueue() -> DatabaseQueue? {
+        return dbQueue
+    }
+
     /// Initialize the database with migrations
     func initialize() async throws {
         guard dbQueue == nil else { return }
@@ -99,6 +104,103 @@ actor RewindDatabase {
                 """)
         }
 
+        // Migration 3: Create proactive_extractions table for memories, tasks, and advice
+        migrator.registerMigration("createProactiveExtractions") { db in
+            try db.create(table: "proactive_extractions") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("screenshotId", .integer)
+                    .references("screenshots", onDelete: .cascade)
+                t.column("type", .text).notNull() // memory, task, advice
+                t.column("content", .text).notNull()
+                t.column("category", .text) // memory: system/interesting, advice: productivity/health/etc
+                t.column("confidence", .double)
+                t.column("reasoning", .text)
+                t.column("sourceApp", .text).notNull()
+                t.column("contextSummary", .text)
+                t.column("priority", .text) // For tasks: high/medium/low
+                t.column("isRead", .boolean).notNull().defaults(to: false)
+                t.column("isDismissed", .boolean).notNull().defaults(to: false)
+                t.column("backendId", .text) // Server ID after sync
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // Indexes for common queries
+            try db.create(index: "idx_extractions_type", on: "proactive_extractions", columns: ["type"])
+            try db.create(index: "idx_extractions_screenshot", on: "proactive_extractions", columns: ["screenshotId"])
+            try db.create(index: "idx_extractions_synced", on: "proactive_extractions", columns: ["backendSynced"])
+            try db.create(index: "idx_extractions_created", on: "proactive_extractions", columns: ["createdAt"])
+            try db.create(index: "idx_extractions_type_created", on: "proactive_extractions", columns: ["type", "createdAt"])
+        }
+
+        // Migration 4: Create focus_sessions table for focus tracking
+        migrator.registerMigration("createFocusSessions") { db in
+            try db.create(table: "focus_sessions") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("screenshotId", .integer)
+                    .references("screenshots", onDelete: .cascade)
+                t.column("status", .text).notNull() // focused, distracted
+                t.column("appOrSite", .text).notNull()
+                t.column("description", .text).notNull()
+                t.column("message", .text)
+                t.column("durationSeconds", .integer)
+                t.column("backendId", .text)
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+                t.column("createdAt", .datetime).notNull()
+            }
+
+            // Indexes for time-based aggregation queries
+            try db.create(index: "idx_focus_created", on: "focus_sessions", columns: ["createdAt"])
+            try db.create(index: "idx_focus_status", on: "focus_sessions", columns: ["status"])
+            try db.create(index: "idx_focus_screenshot", on: "focus_sessions", columns: ["screenshotId"])
+            try db.create(index: "idx_focus_synced", on: "focus_sessions", columns: ["backendSynced"])
+        }
+
+        // Migration 5: Add ocrDataJson column for bounding boxes
+        migrator.registerMigration("addOcrDataJson") { db in
+            try db.alter(table: "screenshots") { t in
+                t.add(column: "ocrDataJson", .text)
+            }
+        }
+
+        // Migration 6: Create FTS for proactive_extractions content search
+        migrator.registerMigration("createExtractionsFTS") { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE proactive_extractions_fts USING fts5(
+                    content,
+                    reasoning,
+                    contextSummary,
+                    content='proactive_extractions',
+                    content_rowid='id'
+                )
+                """)
+
+            // Triggers to keep FTS in sync
+            try db.execute(sql: """
+                CREATE TRIGGER extractions_ai AFTER INSERT ON proactive_extractions BEGIN
+                    INSERT INTO proactive_extractions_fts(rowid, content, reasoning, contextSummary)
+                    VALUES (new.id, new.content, new.reasoning, new.contextSummary);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER extractions_ad AFTER DELETE ON proactive_extractions BEGIN
+                    INSERT INTO proactive_extractions_fts(proactive_extractions_fts, rowid, content, reasoning, contextSummary)
+                    VALUES ('delete', old.id, old.content, old.reasoning, old.contextSummary);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER extractions_au AFTER UPDATE ON proactive_extractions BEGIN
+                    INSERT INTO proactive_extractions_fts(proactive_extractions_fts, rowid, content, reasoning, contextSummary)
+                    VALUES ('delete', old.id, old.content, old.reasoning, old.contextSummary);
+                    INSERT INTO proactive_extractions_fts(rowid, content, reasoning, contextSummary)
+                    VALUES (new.id, new.content, new.reasoning, new.contextSummary);
+                END
+                """)
+        }
+
         try migrator.migrate(queue)
     }
 
@@ -112,13 +214,13 @@ actor RewindDatabase {
         }
 
         return try dbQueue.write { db -> Screenshot in
-            var record = screenshot
+            let record = screenshot
             try record.insert(db)
             return record
         }
     }
 
-    /// Update OCR text for a screenshot
+    /// Update OCR text for a screenshot (legacy - without bounding boxes)
     func updateOCRText(id: Int64, ocrText: String) throws {
         guard let dbQueue = dbQueue else {
             throw RewindError.databaseNotInitialized
@@ -128,6 +230,28 @@ actor RewindDatabase {
             try db.execute(
                 sql: "UPDATE screenshots SET ocrText = ?, isIndexed = 1 WHERE id = ?",
                 arguments: [ocrText, id]
+            )
+        }
+    }
+
+    /// Update OCR result with bounding boxes for a screenshot
+    func updateOCRResult(id: Int64, ocrResult: OCRResult) throws {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        let ocrDataJson: String?
+        do {
+            let data = try JSONEncoder().encode(ocrResult)
+            ocrDataJson = String(data: data, encoding: .utf8)
+        } catch {
+            ocrDataJson = nil
+        }
+
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE screenshots SET ocrText = ?, ocrDataJson = ?, isIndexed = 1 WHERE id = ?",
+                arguments: [ocrResult.fullText, ocrDataJson, id]
             )
         }
     }
