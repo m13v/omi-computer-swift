@@ -346,6 +346,7 @@ class AppState: ObservableObject {
                     Task { @MainActor in
                         logError("Transcription error", error: error)
                         MixpanelManager.shared.recordingError(error: error.localizedDescription)
+                        PostHogManager.shared.recordingError(error: error.localizedDescription)
                         self?.stopTranscription()
                     }
                 },
@@ -392,11 +393,13 @@ class AppState: ObservableObject {
 
             // Track transcription started
             MixpanelManager.shared.transcriptionStarted()
+            PostHogManager.shared.transcriptionStarted()
 
             log("Transcription: Starting...")
 
         } catch {
             MixpanelManager.shared.recordingError(error: error.localizedDescription)
+            PostHogManager.shared.recordingError(error: error.localizedDescription)
             showAlert(title: "Transcription Error", message: error.localizedDescription)
         }
     }
@@ -531,6 +534,7 @@ class AppState: ObservableObject {
 
         // Track transcription stopped
         MixpanelManager.shared.transcriptionStopped(wordCount: wordCount)
+        PostHogManager.shared.transcriptionStopped(wordCount: wordCount)
 
         log("Transcription: Stopped")
 
@@ -623,6 +627,7 @@ class AppState: ObservableObject {
         } catch {
             logError("Transcription: Failed to save conversation", error: error)
             MixpanelManager.shared.recordingError(error: "Failed to save: \(error.localizedDescription)")
+            PostHogManager.shared.recordingError(error: "Failed to save: \(error.localizedDescription)")
 
             // Show error notification
             NotificationService.shared.sendNotification(
