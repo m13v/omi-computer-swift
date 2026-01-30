@@ -2,8 +2,8 @@
 set -e
 
 # Distribution configuration
-APP_NAME="OMI"
-BUNDLE_ID="com.omi.focusmonitor"
+APP_NAME="Omi Computer"
+BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 ZIP_PATH="$BUILD_DIR/$APP_NAME.zip"
