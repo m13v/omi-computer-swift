@@ -3,9 +3,8 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
 
-    // OMI Backend base URL - configurable via environment
-    // Default: production API, override with OMI_API_URL env var for dev/staging
-    // Checked at runtime to pick up values set by loadEnvironment()
+    // OMI Backend base URL - loaded from .env file (OMI_API_URL)
+    // Production URL is set in .env.app, dev URL is set by run.sh
     var baseURL: String {
         // First check getenv() for values set by setenv() in loadEnvironment()
         if let cString = getenv("OMI_API_URL"), let url = String(validatingUTF8: cString), !url.isEmpty {
@@ -15,21 +14,8 @@ actor APIClient {
         if let envURL = ProcessInfo.processInfo.environment["OMI_API_URL"], !envURL.isEmpty {
             return envURL.hasSuffix("/") ? envURL : envURL + "/"
         }
-        // Default to production
-        return "https://api.omi.me/"
-    }
-
-    // Desktop backend URL for conversation creation
-    // Default: production Cloud Run, override with OMI_DESKTOP_BACKEND_URL env var for dev
-    var desktopBackendURL: String {
-        if let cString = getenv("OMI_DESKTOP_BACKEND_URL"), let url = String(validatingUTF8: cString), !url.isEmpty {
-            return url.hasSuffix("/") ? url : url + "/"
-        }
-        if let envURL = ProcessInfo.processInfo.environment["OMI_DESKTOP_BACKEND_URL"], !envURL.isEmpty {
-            return envURL.hasSuffix("/") ? envURL : envURL + "/"
-        }
-        // Default to production Cloud Run
-        return "https://desktop-backend-208440318997.us-central1.run.app/"
+        // No hardcoded default - must be set via .env file
+        fatalError("OMI_API_URL not set. Ensure .env file is present in app bundle.")
     }
 
     let session: URLSession
@@ -854,7 +840,7 @@ extension APIClient {
             timezone: timezone
         )
 
-        return try await post("v1/conversations/from-segments", body: request, customBaseURL: desktopBackendURL)
+        return try await post("v1/conversations/from-segments", body: request)
     }
 }
 
