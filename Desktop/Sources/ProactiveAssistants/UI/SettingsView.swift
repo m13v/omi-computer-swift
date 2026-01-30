@@ -5,6 +5,7 @@ enum SettingsTab: String, CaseIterable {
     case focus = "Focus"
     case tasks = "Tasks"
     case advice = "Advice"
+    case memories = "Memories"
 }
 
 /// SwiftUI view for Proactive Assistants settings
@@ -31,6 +32,11 @@ struct SettingsView: View {
     @State private var adviceEnabled: Bool
     @State private var adviceExtractionInterval: Double
     @State private var adviceMinConfidence: Double
+
+    // Memory Assistant states
+    @State private var memoryEnabled: Bool
+    @State private var memoryExtractionInterval: Double
+    @State private var memoryMinConfidence: Double
 
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
@@ -63,6 +69,11 @@ struct SettingsView: View {
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
+
+        // Memory settings
+        _memoryEnabled = State(initialValue: MemoryAssistantSettings.shared.isEnabled)
+        _memoryExtractionInterval = State(initialValue: MemoryAssistantSettings.shared.extractionInterval)
+        _memoryMinConfidence = State(initialValue: MemoryAssistantSettings.shared.minConfidence)
     }
 
     var body: some View {
@@ -98,6 +109,8 @@ struct SettingsView: View {
                     tasksTabContent
                 case .advice:
                     adviceTabContent
+                case .memories:
+                    memoriesTabContent
                 }
             }
             .padding(20)
@@ -110,6 +123,7 @@ struct SettingsView: View {
             focusEnabled = FocusAssistantSettings.shared.isEnabled
             taskEnabled = TaskAssistantSettings.shared.isEnabled
             adviceEnabled = AdviceAssistantSettings.shared.isEnabled
+            memoryEnabled = MemoryAssistantSettings.shared.isEnabled
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             // Update monitoring state when it changes externally
@@ -522,6 +536,105 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Memories Tab Content
+
+    private var memoriesTabContent: some View {
+        VStack(spacing: 20) {
+            // Memory Assistant Toggle
+            settingRow(
+                title: "Memory Assistant",
+                subtitle: "Extract facts and wisdom from your screen",
+                icon: "brain.head.profile"
+            ) {
+                Toggle("", isOn: $memoryEnabled)
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .onChange(of: memoryEnabled) { _, newValue in
+                        MemoryAssistantSettings.shared.isEnabled = newValue
+                    }
+            }
+
+            Divider()
+                .background(Color.primary.opacity(0.1))
+
+            // Extraction Interval
+            settingRow(
+                title: "Extraction Interval",
+                subtitle: "How often to scan for new memories",
+                icon: "clock"
+            ) {
+                Picker("", selection: $memoryExtractionInterval) {
+                    ForEach(extractionIntervalOptions, id: \.self) { seconds in
+                        Text(formatExtractionInterval(seconds)).tag(seconds)
+                    }
+                }
+                .pickerStyle(.menu)
+                .frame(width: 120)
+                .onChange(of: memoryExtractionInterval) { _, newValue in
+                    MemoryAssistantSettings.shared.extractionInterval = newValue
+                }
+            }
+
+            Divider()
+                .background(Color.primary.opacity(0.1))
+
+            // Minimum Confidence
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
+                    Image(systemName: "gauge.with.dots.needle.67percent")
+                        .font(.system(size: 16))
+                        .foregroundColor(.accentColor)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Minimum Confidence")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.primary)
+
+                        Text("Only save memories above this confidence level")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Text("\(Int(memoryMinConfidence * 100))%")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .frame(width: 40, alignment: .trailing)
+                }
+
+                Slider(value: $memoryMinConfidence, in: 0.5...0.95, step: 0.05)
+                    .onChange(of: memoryMinConfidence) { _, newValue in
+                        MemoryAssistantSettings.shared.minConfidence = newValue
+                    }
+            }
+
+            Divider()
+                .background(Color.primary.opacity(0.1))
+
+            // Memory Analysis Prompt - opens in separate window
+            settingRow(
+                title: "Memory Extraction Prompt",
+                subtitle: "Customize AI instructions for memory extraction",
+                icon: "text.alignleft"
+            ) {
+                Button(action: {
+                    MemoryPromptEditorWindow.show()
+                }) {
+                    HStack(spacing: 4) {
+                        Text("Edit")
+                            .font(.system(size: 12))
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.system(size: 11))
+                    }
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+            }
+        }
+    }
+
     // MARK: - Tab Icon Helper
 
     private func tabIcon(for tab: SettingsTab) -> String {
@@ -532,6 +645,8 @@ struct SettingsView: View {
             return "checklist"
         case .advice:
             return "lightbulb.fill"
+        case .memories:
+            return "brain.head.profile"
         }
     }
 
