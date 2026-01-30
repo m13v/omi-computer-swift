@@ -5,6 +5,7 @@ pub mod advice;
 pub mod app;
 pub mod category;
 pub mod conversation;
+pub mod email;
 pub mod focus_session;
 pub mod memory;
 pub mod request;
@@ -37,4 +38,9 @@ pub use user_settings::{
     UpdateDailySummaryRequest, UpdateLanguageRequest, UpdateNotificationSettingsRequest,
     UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsResponse,
     UserSettingsStatusResponse,
+};
+pub use email::{
+    EmailAttachment, EmailListResponse, EmailResponse, EmailStatusResponse, GetEmailsQuery,
+    InboundEmailDB, MarkReadRequest, ResendAttachment, ResendEmailData, ResendWebhookPayload,
+    WebhookResponse,
 };
