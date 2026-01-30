@@ -178,6 +178,11 @@ actor MemoryAssistant: ProactiveAssistant {
             }
         }
 
+        // Track memory extracted
+        await MainActor.run {
+            AnalyticsManager.shared.memoryExtracted(memoryCount: 1)
+        }
+
         // Send notification
         await sendMemoryNotification(memory: memory)
 
