@@ -14,6 +14,7 @@ DerivedData/
 
 # Credentials
 **/google-credentials.json
+.claude/settings.json
 
 # macOS
 .DS_Store
