@@ -29,18 +29,18 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>OMI needs screen recording permission to monitor your focus and detect distractions.</string>
+    <string>Omi Computer needs screen recording permission to monitor your focus and detect distractions.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>OMI needs permission to detect which application is currently active.</string>
+    <string>Omi Computer needs permission to detect which application is currently active.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>OMI needs microphone access to transcribe your conversations in real-time.</string>
+    <string>Omi Computer needs microphone access to transcribe your conversations in real-time.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>OMI needs permission to capture system audio for transcription of calls and meetings.</string>
+    <string>Omi Computer needs permission to capture system audio for transcription of calls and meetings.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>OMI Computer Auth Callback</string>
+            <string>Omi Computer Auth Callback</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>omi-computer</string>
