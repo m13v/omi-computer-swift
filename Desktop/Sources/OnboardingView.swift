@@ -530,6 +530,7 @@ struct OnboardingView: View {
         switch currentStep {
         case 0:
             MixpanelManager.shared.onboardingStepCompleted(step: 0, stepName: "Welcome")
+            PostHogManager.shared.onboardingStepCompleted(step: 0, stepName: "Welcome")
             currentStep += 1
         case 1:
             // Name step - validate and save
@@ -544,6 +545,7 @@ struct OnboardingView: View {
                 await AuthService.shared.updateGivenName(trimmedName)
             }
             MixpanelManager.shared.onboardingStepCompleted(step: 1, stepName: "Name")
+            PostHogManager.shared.onboardingStepCompleted(step: 1, stepName: "Name")
             currentStep += 1
         case 2:
             if appState.hasNotificationPermission {
@@ -554,9 +556,12 @@ struct OnboardingView: View {
                 )
                 MixpanelManager.shared.onboardingStepCompleted(step: 2, stepName: "Notifications")
                 MixpanelManager.shared.permissionGranted(permission: "notifications")
+                PostHogManager.shared.onboardingStepCompleted(step: 2, stepName: "Notifications")
+                PostHogManager.shared.permissionGranted(permission: "notifications")
                 currentStep += 1
             } else {
                 MixpanelManager.shared.permissionRequested(permission: "notifications")
+                PostHogManager.shared.permissionRequested(permission: "notifications")
                 hasTriggeredNotification = true
                 appState.requestNotificationPermission()
             }
@@ -564,9 +569,12 @@ struct OnboardingView: View {
             if appState.hasAutomationPermission {
                 MixpanelManager.shared.onboardingStepCompleted(step: 3, stepName: "Automation")
                 MixpanelManager.shared.permissionGranted(permission: "automation")
+                PostHogManager.shared.onboardingStepCompleted(step: 3, stepName: "Automation")
+                PostHogManager.shared.permissionGranted(permission: "automation")
                 currentStep += 1
             } else {
                 MixpanelManager.shared.permissionRequested(permission: "automation")
+                PostHogManager.shared.permissionRequested(permission: "automation")
                 hasTriggeredAutomation = true
                 appState.triggerAutomationPermission()
             }
@@ -574,12 +582,15 @@ struct OnboardingView: View {
             if appState.hasScreenRecordingPermission {
                 MixpanelManager.shared.onboardingStepCompleted(step: 4, stepName: "Screen Recording")
                 MixpanelManager.shared.permissionGranted(permission: "screen_recording")
+                PostHogManager.shared.onboardingStepCompleted(step: 4, stepName: "Screen Recording")
+                PostHogManager.shared.permissionGranted(permission: "screen_recording")
                 // Trigger proactive monitoring to surface any additional ScreenCaptureKit permission dialogs
                 // (e.g., "allow app to bypass standard screen recording" on macOS Sequoia)
                 ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
                 currentStep += 1
             } else {
                 MixpanelManager.shared.permissionRequested(permission: "screen_recording")
+                PostHogManager.shared.permissionRequested(permission: "screen_recording")
                 hasTriggeredScreenRecording = true
                 appState.triggerScreenRecordingPermission()
             }
@@ -587,9 +598,12 @@ struct OnboardingView: View {
             if appState.hasMicrophonePermission {
                 MixpanelManager.shared.onboardingStepCompleted(step: 5, stepName: "Microphone")
                 MixpanelManager.shared.permissionGranted(permission: "microphone")
+                PostHogManager.shared.onboardingStepCompleted(step: 5, stepName: "Microphone")
+                PostHogManager.shared.permissionGranted(permission: "microphone")
                 currentStep += 1
             } else {
                 MixpanelManager.shared.permissionRequested(permission: "microphone")
+                PostHogManager.shared.permissionRequested(permission: "microphone")
                 hasTriggeredMicrophone = true
                 appState.requestMicrophonePermission()
             }
@@ -598,13 +612,17 @@ struct OnboardingView: View {
             if !appState.isSystemAudioSupported {
                 // Not supported on this macOS version - just continue
                 MixpanelManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
+                PostHogManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
                 currentStep += 1
             } else if appState.hasSystemAudioPermission {
                 MixpanelManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
                 MixpanelManager.shared.permissionGranted(permission: "system_audio")
+                PostHogManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
+                PostHogManager.shared.permissionGranted(permission: "system_audio")
                 currentStep += 1
             } else {
                 MixpanelManager.shared.permissionRequested(permission: "system_audio")
+                PostHogManager.shared.permissionRequested(permission: "system_audio")
                 hasTriggeredSystemAudio = true
                 appState.triggerSystemAudioPermission()
             }
@@ -612,6 +630,8 @@ struct OnboardingView: View {
             log("OnboardingView: Step 7 - Completing onboarding")
             MixpanelManager.shared.onboardingStepCompleted(step: 7, stepName: "Done")
             MixpanelManager.shared.onboardingCompleted()
+            PostHogManager.shared.onboardingStepCompleted(step: 7, stepName: "Done")
+            PostHogManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
             appState.startTranscription()
