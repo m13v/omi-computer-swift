@@ -167,12 +167,11 @@ echo "[5/9] Creating installer DMG..."
 
 rm -f "$DMG_PATH"
 
-# Copy app to temp staging directory and rename for cleaner DMG display
+# Copy app to temp staging directory
 STAGING_DIR="/tmp/omi-dmg-staging-$$"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
-# Rename to "OMI.app" in DMG so the label shows "OMI" instead of "Omi Computer"
-DMG_APP_NAME="OMI"
+DMG_APP_NAME="Omi Computer"
 cp -R "$APP_BUNDLE" "$STAGING_DIR/$DMG_APP_NAME.app"
 STAGED_APP="$STAGING_DIR/$DMG_APP_NAME.app"
 
@@ -185,7 +184,7 @@ if command -v create-dmg &> /dev/null; then
     fi
 
     create-dmg \
-        --volname "OMI" \
+        --volname "Omi Computer" \
         --volicon "$STAGED_APP/Contents/Resources/AppIcon.icns" \
         --window-pos 200 120 \
         --window-size 610 365 \
@@ -200,7 +199,7 @@ if command -v create-dmg &> /dev/null; then
 else
     # Fallback to basic hdiutil if create-dmg not available
     echo "  Warning: create-dmg not found, using basic DMG creation"
-    hdiutil create -volname "OMI" \
+    hdiutil create -volname "Omi Computer" \
         -srcfolder "$STAGED_APP" \
         -ov -format UDZO \
         "$DMG_PATH"
@@ -208,43 +207,6 @@ fi
 
 # Clean up staging directory
 rm -rf "$STAGING_DIR"
-
-# Set custom icon on DMG file itself
-if [ -f "omi_icon.icns" ]; then
-    echo "  Setting DMG file icon..."
-
-    # Use Python with PyObjC (available on macOS) to set the icon
-    python3 << PYEOF
-import os
-import sys
-
-try:
-    from AppKit import NSWorkspace, NSImage
-    from Foundation import NSURL
-
-    icon_path = os.path.abspath("omi_icon.icns")
-    dmg_path = os.path.abspath("$DMG_PATH")
-
-    image = NSImage.alloc().initWithContentsOfFile_(icon_path)
-    if image:
-        workspace = NSWorkspace.sharedWorkspace()
-        result = workspace.setIcon_forFile_options_(image, dmg_path, 0)
-        if result:
-            print("    Icon set successfully")
-        else:
-            print("    Warning: Could not set icon via NSWorkspace")
-            sys.exit(1)
-    else:
-        print("    Warning: Could not load icon image")
-        sys.exit(1)
-except ImportError:
-    print("    Warning: PyObjC not available, skipping icon")
-    sys.exit(1)
-except Exception as e:
-    print(f"    Warning: {e}")
-    sys.exit(1)
-PYEOF
-fi
 
 echo "  ✓ DMG created"
 
@@ -276,6 +238,16 @@ echo "[8/9] Stapling notarization ticket to DMG..."
 
 xcrun stapler staple "$DMG_PATH"
 echo "  ✓ DMG stapled"
+
+# Set custom icon on DMG file (must be after signing/stapling to persist)
+if [ -f "omi_icon.icns" ]; then
+    echo "  Setting DMG file icon..."
+    if command -v fileicon &> /dev/null; then
+        fileicon set "$DMG_PATH" omi_icon.icns && echo "    Icon set successfully" || echo "    Warning: Could not set icon"
+    else
+        echo "    Warning: fileicon not installed (brew install fileicon)"
+    fi
+fi
 
 # -----------------------------------------------------------------------------
 # Step 9: Publish to CrabNebula
