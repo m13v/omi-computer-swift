@@ -1111,6 +1111,9 @@ struct SettingsContentView: View {
         permissionError = nil
         isToggling = true
 
+        // Track setting change
+        AnalyticsManager.shared.settingToggled(setting: "monitoring", enabled: enabled)
+
         if enabled {
             ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
                 DispatchQueue.main.async {
@@ -1265,6 +1268,9 @@ struct SettingsContentView: View {
     }
 
     private func updateLanguage(_ language: String) {
+        // Track language change
+        AnalyticsManager.shared.languageChanged(language: language)
+
         Task {
             do {
                 let _ = try await APIClient.shared.updateUserLanguage(language)
