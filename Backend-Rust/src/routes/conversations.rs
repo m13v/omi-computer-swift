@@ -77,6 +77,51 @@ async fn get_conversations(
     }
 }
 
+#[derive(Deserialize)]
+pub struct GetConversationsCountQuery {
+    #[serde(default = "default_include_discarded")]
+    pub include_discarded: bool,
+    #[serde(default = "default_statuses")]
+    pub statuses: String,
+}
+
+#[derive(Serialize)]
+pub struct ConversationsCountResponse {
+    pub count: i64,
+}
+
+/// GET /v1/conversations/count - Get count of user conversations
+async fn get_conversations_count(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(query): Query<GetConversationsCountQuery>,
+) -> Result<Json<ConversationsCountResponse>, (StatusCode, String)> {
+    let statuses: Vec<String> = if query.statuses.is_empty() {
+        vec![]
+    } else {
+        query.statuses.split(',').map(|s| s.trim().to_string()).collect()
+    };
+
+    tracing::info!(
+        "Getting conversations count for user {} with include_discarded={}, statuses={:?}",
+        user.uid,
+        query.include_discarded,
+        statuses
+    );
+
+    match state
+        .firestore
+        .get_conversations_count(&user.uid, query.include_discarded, &statuses)
+        .await
+    {
+        Ok(count) => Ok(Json(ConversationsCountResponse { count })),
+        Err(e) => {
+            tracing::error!("Failed to get conversations count: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get conversations count: {}", e)))
+        }
+    }
+}
+
 /// POST /v1/conversations/from-segments - Create conversation from transcript
 /// Copied from Python create_conversation_from_segments
 async fn create_conversation_from_segments(
@@ -337,9 +382,97 @@ async fn reprocess_conversation(
     }))
 }
 
+// Search request/response models
+#[derive(Deserialize)]
+pub struct SearchConversationsRequest {
+    pub query: String,
+    #[serde(default = "default_page")]
+    pub page: usize,
+    #[serde(default = "default_per_page")]
+    pub per_page: usize,
+    #[serde(default)]
+    pub include_discarded: bool,
+}
+
+fn default_page() -> usize {
+    1
+}
+
+fn default_per_page() -> usize {
+    10
+}
+
+#[derive(Serialize)]
+pub struct SearchConversationsResponse {
+    pub items: Vec<Conversation>,
+    pub total_pages: usize,
+    pub current_page: usize,
+    pub per_page: usize,
+}
+
+/// POST /v1/conversations/search - Search conversations by title and overview
+async fn search_conversations(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<SearchConversationsRequest>,
+) -> Result<Json<SearchConversationsResponse>, (StatusCode, String)> {
+    tracing::info!(
+        "Searching conversations for user {} with query '{}', page={}, per_page={}",
+        user.uid,
+        request.query,
+        request.page,
+        request.per_page
+    );
+
+    // Fetch all conversations (we'll filter in memory since Firestore doesn't support full-text search)
+    let all_conversations = match state
+        .firestore
+        .get_conversations(&user.uid, 500, 0, request.include_discarded, &["completed".to_string()])
+        .await
+    {
+        Ok(convs) => convs,
+        Err(e) => {
+            tracing::error!("Failed to get conversations for search: {}", e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to search: {}", e)));
+        }
+    };
+
+    // Filter by query (case-insensitive search in title and overview)
+    let query_lower = request.query.to_lowercase();
+    let filtered: Vec<Conversation> = all_conversations
+        .into_iter()
+        .filter(|conv| {
+            let title_match = conv.structured.title.to_lowercase().contains(&query_lower);
+            let overview_match = conv.structured.overview.to_lowercase().contains(&query_lower);
+            title_match || overview_match
+        })
+        .collect();
+
+    // Paginate results
+    let total_count = filtered.len();
+    let total_pages = (total_count + request.per_page - 1) / request.per_page.max(1);
+    let start_idx = (request.page.saturating_sub(1)) * request.per_page;
+    let items: Vec<Conversation> = filtered
+        .into_iter()
+        .skip(start_idx)
+        .take(request.per_page)
+        .collect();
+
+    tracing::info!("Search found {} total matches, returning {} items", total_count, items.len());
+
+    Ok(Json(SearchConversationsResponse {
+        items,
+        total_pages,
+        current_page: request.page,
+        per_page: request.per_page,
+    }))
+}
+
 pub fn conversations_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/conversations", get(get_conversations))
+        .route("/v1/conversations/count", get(get_conversations_count))
+        .route("/v1/conversations/search", post(search_conversations))
         .route(
             "/v1/conversations/from-segments",
             post(create_conversation_from_segments),
