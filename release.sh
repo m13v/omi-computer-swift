@@ -179,19 +179,28 @@ echo "  ✓ Build complete"
 # -----------------------------------------------------------------------------
 echo "[3/11] Signing app with Developer ID..."
 
-# Sign Sparkle framework first (must be signed before the app)
-codesign --force --options runtime \
+# Sign Sparkle framework components (innermost first)
+# XPC Services
+codesign --force --options runtime --timestamp \
+    --sign "$SIGN_IDENTITY" \
+    "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Downloader.xpc"
+codesign --force --options runtime --timestamp \
+    --sign "$SIGN_IDENTITY" \
+    "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B/XPCServices/Installer.xpc"
+# Autoupdate and Updater.app
+codesign --force --options runtime --timestamp \
     --sign "$SIGN_IDENTITY" \
     "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
-codesign --force --options runtime \
+codesign --force --options runtime --timestamp \
     --sign "$SIGN_IDENTITY" \
     "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
-codesign --force --options runtime \
+# Framework itself
+codesign --force --options runtime --timestamp \
     --sign "$SIGN_IDENTITY" \
     "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
 
 # Sign the main app
-codesign --force --options runtime \
+codesign --force --options runtime --timestamp \
     --sign "$SIGN_IDENTITY" \
     --entitlements Desktop/Omi-Release.entitlements \
     "$APP_BUNDLE"
