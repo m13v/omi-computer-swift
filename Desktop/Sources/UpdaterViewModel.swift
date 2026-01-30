@@ -45,6 +45,7 @@ final class UpdaterViewModel: ObservableObject {
 
     /// Manually check for updates
     func checkForUpdates() {
+        AnalyticsManager.shared.updateCheckStarted()
         updaterController.checkForUpdates(nil)
     }
 
