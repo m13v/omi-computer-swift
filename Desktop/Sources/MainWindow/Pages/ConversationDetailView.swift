@@ -68,6 +68,7 @@ struct ConversationDetailView: View {
         }
         .task {
             await appProvider.fetchApps()
+            AnalyticsManager.shared.conversationDetailOpened(conversationId: conversation.id)
         }
         .sheet(isPresented: $showAppSelector) {
             AppSelectorSheet(
@@ -350,6 +351,9 @@ struct ConversationDetailView: View {
             selectedAppForReprocess = nil
             showAppSelector = false
         }
+
+        // Track reprocess
+        AnalyticsManager.shared.conversationReprocessed(conversationId: conversation.id, appId: app.id)
 
         do {
             try await APIClient.shared.reprocessConversation(
