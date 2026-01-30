@@ -5,6 +5,7 @@ import Mixpanel
 import Sentry
 
 // Simple observable state without Firebase types
+@MainActor
 class AuthState: ObservableObject {
     static let shared = AuthState()
 
@@ -208,19 +209,6 @@ struct MenuBarView: View {
                 Text("Signed in as \(email)")
                     .font(.caption)
                     .foregroundColor(.secondary)
-            }
-
-            Divider()
-
-            Button(appState.isTranscribing ? "Stop Transcription" : "Start Transcription") {
-                appState.toggleTranscription()
-            }
-            .keyboardShortcut("t", modifiers: .command)
-
-            if appState.isTranscribing {
-                Text("Recording...")
-                    .font(.caption)
-                    .foregroundColor(.red)
             }
 
             Divider()
