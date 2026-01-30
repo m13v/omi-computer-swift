@@ -256,6 +256,9 @@ struct ChatPage: View {
         let messageText = inputText
         inputText = ""
 
+        // Track chat message sent
+        AnalyticsManager.shared.chatMessageSent(messageLength: messageText.count, hasContext: selectedApp != nil)
+
         Task {
             await chatProvider.sendMessage(messageText)
         }
@@ -378,6 +381,7 @@ struct AppPickerPopover: View {
                     // Default OMI option
                     DefaultOmiRow(isSelected: selectedAppId == nil) {
                         selectedAppId = nil
+                        AnalyticsManager.shared.chatAppSelected(appId: nil, appName: "OMI")
                         onSelect()
                     }
 
@@ -392,6 +396,7 @@ struct AppPickerPopover: View {
                                 isSelected: selectedAppId == app.id
                             ) {
                                 selectedAppId = app.id
+                                AnalyticsManager.shared.chatAppSelected(appId: app.id, appName: app.name)
                                 onSelect()
                             }
                         }
