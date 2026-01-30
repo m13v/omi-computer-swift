@@ -1,9 +1,14 @@
 #!/bin/bash
 set -e
 
+# Load .env if present (for RELEASE_SECRET, SPARKLE_PRIVATE_KEY, etc.)
+if [ -f ".env" ]; then
+    export $(grep -v '^#' .env | xargs)
+fi
+
 # =============================================================================
 # OMI Release Script
-# Full pipeline: build → sign → notarize → package DMG → publish to CrabNebula
+# Full pipeline: deploy backend → build app → sign → notarize → DMG → GitHub
 # Usage: ./release.sh [version]
 # Example: ./release.sh 0.0.3
 # If no version specified, auto-increments patch version from latest release
@@ -22,16 +27,22 @@ TEAM_ID="S6DP5HF77G"
 APPLE_ID="matthew.heartful@gmail.com"
 NOTARIZE_PASSWORD="${NOTARIZE_PASSWORD:-REDACTED}"
 
-# CrabNebula
-CN_CLI="${CN_CLI:-$HOME/.local/bin/cn}"
-CN_ORG="mediar"
-CN_APP="omi-computer"
-export CN_API_KEY="${CN_API_KEY:-cn_4j2Us_EaFAXfV-IKtesjLt7T6tecbKMuKJWRMVfX45e0GMz4mQWwOYoNG_TMZxa6Fw7YDV-sNM3NRuWPMczNAg}"
-
 # Sparkle Auto-Update
 SPARKLE_PRIVATE_KEY="${SPARKLE_PRIVATE_KEY:-}"  # Set via environment or Keychain
-APPCAST_DIR="$BUILD_DIR/appcast"
-APPCAST_URL="https://api.omi.me/desktop"
+SPARKLE_ZIP_PATH="$BUILD_DIR/Omi.zip"
+
+# GitHub Release
+GITHUB_REPO="BasedHardware/omi"
+
+# Backend (for Firestore release registration)
+DESKTOP_BACKEND_URL="${DESKTOP_BACKEND_URL:-https://desktop-backend-hhibjajaja-uc.a.run.app}"
+RELEASE_SECRET="${RELEASE_SECRET:-}"
+
+# Google Cloud (Backend deployment)
+GCP_PROJECT="based-hardware"
+GCP_REGION="us-central1"
+BACKEND_IMAGE="gcr.io/$GCP_PROJECT/desktop-backend"
+CLOUD_RUN_SERVICE="desktop-backend"
 
 # -----------------------------------------------------------------------------
 # Version handling: auto-increment if not specified
@@ -39,15 +50,8 @@ APPCAST_URL="https://api.omi.me/desktop"
 if [ -z "$1" ]; then
     echo "No version specified, checking latest release..."
 
-    # Try to get latest version from CrabNebula
-    if [ -f "$CN_CLI" ]; then
-        LATEST=$("$CN_CLI" release list "$CN_ORG/$CN_APP" 2>/dev/null | grep -E '^\s*[0-9]+\.[0-9]+\.[0-9]+' | head -1 | awk '{print $1}' || echo "")
-    fi
-
-    # Fallback to git tags if CN fails
-    if [ -z "$LATEST" ]; then
-        LATEST=$(git tag -l 'v*' 2>/dev/null | sort -V | tail -1 | sed 's/^v//' || echo "")
-    fi
+    # Get latest version from git tags
+    LATEST=$(git tag -l 'v*' 2>/dev/null | sort -V | tail -1 | sed 's/^v//' || echo "")
 
     # Default to 0.0.0 if no previous version found
     if [ -z "$LATEST" ]; then
@@ -60,7 +64,7 @@ if [ -z "$1" ]; then
     # Parse and increment patch version
     MAJOR=$(echo "$LATEST" | cut -d. -f1)
     MINOR=$(echo "$LATEST" | cut -d. -f2)
-    PATCH=$(echo "$LATEST" | cut -d. -f3)
+    PATCH=$(echo "$LATEST" | cut -d. -f3 | cut -d+ -f1)  # Handle v1.0.0+100 format
     PATCH=$((PATCH + 1))
     VERSION="$MAJOR.$MINOR.$PATCH"
     echo "  Auto-incrementing to: $VERSION"
@@ -74,9 +78,42 @@ echo "=============================================="
 echo ""
 
 # -----------------------------------------------------------------------------
-# Step 1: Build
+# Step 1: Deploy Backend to Cloud Run
 # -----------------------------------------------------------------------------
-echo "[1/9] Building $APP_NAME..."
+echo "[1/11] Deploying Rust backend to Cloud Run..."
+
+# Check if Docker is running
+if ! docker info &>/dev/null; then
+    echo "  Error: Docker is not running. Please start Docker Desktop."
+    exit 1
+fi
+
+# Build for linux/amd64 (Cloud Run runs on x86_64)
+echo "  Building Docker image for linux/amd64..."
+docker build --platform linux/amd64 -t "$BACKEND_IMAGE:$VERSION" -t "$BACKEND_IMAGE:latest" Backend-Rust/
+
+# Push to GCR
+echo "  Pushing to Google Container Registry..."
+docker push "$BACKEND_IMAGE:$VERSION"
+docker push "$BACKEND_IMAGE:latest"
+
+# Deploy to Cloud Run
+echo "  Deploying to Cloud Run..."
+gcloud run deploy "$CLOUD_RUN_SERVICE" \
+    --image "$BACKEND_IMAGE:$VERSION" \
+    --project "$GCP_PROJECT" \
+    --region "$GCP_REGION" \
+    --platform managed \
+    --allow-unauthenticated \
+    --update-env-vars "RELEASE_SECRET=$RELEASE_SECRET,FIREBASE_PROJECT_ID=$GCP_PROJECT,RUST_LOG=info" \
+    --quiet
+
+echo "  ✓ Backend deployed"
+
+# -----------------------------------------------------------------------------
+# Step 2: Build Desktop App
+# -----------------------------------------------------------------------------
+echo "[2/11] Building $APP_NAME..."
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
@@ -92,9 +129,20 @@ fi
 # Create app bundle
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
 cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
+
+# Copy Sparkle framework
+SPARKLE_FRAMEWORK="$(swift build -c release --package-path Desktop --show-bin-path)/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
+    echo "  Copied Sparkle.framework"
+else
+    echo "Error: Sparkle.framework not found at $SPARKLE_FRAMEWORK"
+    exit 1
+fi
 
 # Copy icon if exists
 if [ -f "omi_icon.icns" ]; then
@@ -127,10 +175,22 @@ echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 echo "  ✓ Build complete"
 
 # -----------------------------------------------------------------------------
-# Step 2: Sign App
+# Step 3: Sign App
 # -----------------------------------------------------------------------------
-echo "[2/9] Signing app with Developer ID..."
+echo "[3/11] Signing app with Developer ID..."
 
+# Sign Sparkle framework first (must be signed before the app)
+codesign --force --options runtime \
+    --sign "$SIGN_IDENTITY" \
+    "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B/Autoupdate"
+codesign --force --options runtime \
+    --sign "$SIGN_IDENTITY" \
+    "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework/Versions/B/Updater.app"
+codesign --force --options runtime \
+    --sign "$SIGN_IDENTITY" \
+    "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+
+# Sign the main app
 codesign --force --options runtime \
     --sign "$SIGN_IDENTITY" \
     --entitlements Desktop/Omi-Release.entitlements \
@@ -140,9 +200,9 @@ codesign --verify --verbose=2 "$APP_BUNDLE" 2>&1 | head -3
 echo "  ✓ App signed"
 
 # -----------------------------------------------------------------------------
-# Step 3: Notarize App
+# Step 4: Notarize App
 # -----------------------------------------------------------------------------
-echo "[3/9] Notarizing app (this may take a minute)..."
+echo "[4/11] Notarizing app (this may take a minute)..."
 
 # Create temporary zip for notarization
 TEMP_ZIP="$BUILD_DIR/notarize-temp.zip"
@@ -158,17 +218,17 @@ rm -f "$TEMP_ZIP"
 echo "  ✓ App notarized"
 
 # -----------------------------------------------------------------------------
-# Step 4: Staple App
+# Step 5: Staple App
 # -----------------------------------------------------------------------------
-echo "[4/9] Stapling notarization ticket to app..."
+echo "[5/11] Stapling notarization ticket to app..."
 
 xcrun stapler staple "$APP_BUNDLE"
 echo "  ✓ App stapled"
 
 # -----------------------------------------------------------------------------
-# Step 5: Create DMG (with Applications shortcut for drag-to-install)
+# Step 6: Create DMG (with Applications shortcut for drag-to-install)
 # -----------------------------------------------------------------------------
-echo "[5/9] Creating installer DMG..."
+echo "[6/11] Creating installer DMG..."
 
 rm -f "$DMG_PATH"
 
@@ -216,17 +276,17 @@ rm -rf "$STAGING_DIR"
 echo "  ✓ DMG created"
 
 # -----------------------------------------------------------------------------
-# Step 6: Sign DMG
+# Step 7: Sign DMG
 # -----------------------------------------------------------------------------
-echo "[6/9] Signing DMG..."
+echo "[7/11] Signing DMG..."
 
 codesign --force --sign "$SIGN_IDENTITY" "$DMG_PATH"
 echo "  ✓ DMG signed"
 
 # -----------------------------------------------------------------------------
-# Step 7: Notarize DMG
+# Step 8: Notarize DMG
 # -----------------------------------------------------------------------------
-echo "[7/9] Notarizing DMG..."
+echo "[8/11] Notarizing DMG..."
 
 xcrun notarytool submit "$DMG_PATH" \
     --apple-id "$APPLE_ID" \
@@ -237,9 +297,9 @@ xcrun notarytool submit "$DMG_PATH" \
 echo "  ✓ DMG notarized"
 
 # -----------------------------------------------------------------------------
-# Step 8: Staple DMG
+# Step 9: Staple DMG
 # -----------------------------------------------------------------------------
-echo "[8/9] Stapling notarization ticket to DMG..."
+echo "[9/11] Stapling notarization ticket to DMG..."
 
 xcrun stapler staple "$DMG_PATH"
 echo "  ✓ DMG stapled"
@@ -255,66 +315,127 @@ if [ -f "omi_icon.icns" ]; then
 fi
 
 # -----------------------------------------------------------------------------
-# Step 9: Generate Sparkle Appcast
+# Step 10: Create Sparkle ZIP and Sign for Auto-Update
 # -----------------------------------------------------------------------------
-echo "[9/10] Generating Sparkle appcast..."
-
-mkdir -p "$APPCAST_DIR"
-cp "$DMG_PATH" "$APPCAST_DIR/"
+echo "[10/11] Creating Sparkle update package..."
 
 # Check if Sparkle tools are available
 SPARKLE_BIN=""
 if [ -d "Desktop/.build/artifacts/sparkle/Sparkle/bin" ]; then
     SPARKLE_BIN="Desktop/.build/artifacts/sparkle/Sparkle/bin"
-elif [ -d "$HOME/Library/Developer/Xcode/DerivedData/Sparkle*/SourcePackages/artifacts/sparkle/Sparkle/bin" ]; then
-    SPARKLE_BIN=$(ls -d $HOME/Library/Developer/Xcode/DerivedData/Sparkle*/SourcePackages/artifacts/sparkle/Sparkle/bin 2>/dev/null | head -1)
 fi
 
-if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/generate_appcast" ]; then
+# Create ZIP of the app bundle for Sparkle (Sparkle expects .app in a ZIP, not DMG)
+rm -f "$SPARKLE_ZIP_PATH"
+ditto -c -k --keepParent "$APP_BUNDLE" "$SPARKLE_ZIP_PATH"
+echo "  Created: $SPARKLE_ZIP_PATH"
+
+# Sign the ZIP with Sparkle EdDSA signature
+ED_SIGNATURE=""
+if [ -n "$SPARKLE_BIN" ] && [ -f "$SPARKLE_BIN/sign_update" ]; then
     if [ -n "$SPARKLE_PRIVATE_KEY" ]; then
         # Use private key from environment
-        echo "$SPARKLE_PRIVATE_KEY" | "$SPARKLE_BIN/generate_appcast" \
-            --ed-key-file - \
-            --download-url-prefix "$APPCAST_URL/" \
-            "$APPCAST_DIR"
-        echo "  Appcast generated at: $APPCAST_DIR/appcast.xml"
+        ED_SIGNATURE=$(echo "$SPARKLE_PRIVATE_KEY" | "$SPARKLE_BIN/sign_update" "$SPARKLE_ZIP_PATH" --ed-key-file - 2>/dev/null | grep "sparkle:edSignature" | sed 's/.*edSignature="\([^"]*\)".*/\1/')
     else
-        # Try to use key from Keychain (generate_appcast will prompt or use stored key)
-        "$SPARKLE_BIN/generate_appcast" \
-            --download-url-prefix "$APPCAST_URL/" \
-            "$APPCAST_DIR" 2>/dev/null || {
-            echo "  Warning: Could not generate appcast (no signing key found)"
-            echo "  Run 'Desktop/.build/artifacts/sparkle/Sparkle/bin/generate_keys' to create keys"
-        }
+        # Try to use key from Keychain
+        ED_SIGNATURE=$("$SPARKLE_BIN/sign_update" "$SPARKLE_ZIP_PATH" 2>/dev/null | grep "sparkle:edSignature" | sed 's/.*edSignature="\([^"]*\)".*/\1/')
+    fi
+
+    if [ -n "$ED_SIGNATURE" ]; then
+        echo "  EdDSA signature: $ED_SIGNATURE"
+    else
+        echo "  Warning: Could not generate EdDSA signature"
     fi
 else
-    echo "  Warning: Sparkle generate_appcast not found"
-    echo "  Build the project first to download Sparkle tools, or manually generate appcast"
+    echo "  Warning: Sparkle sign_update not found, skipping signature"
 fi
 
-echo "  DMG ready for upload at: $APPCAST_DIR/$APP_NAME.dmg"
-
 # -----------------------------------------------------------------------------
-# Step 10: Publish to CrabNebula
+# Step 11: Create GitHub Release & Register in Firestore
 # -----------------------------------------------------------------------------
-echo "[10/10] Publishing to CrabNebula..."
+echo "[11/11] Publishing to GitHub and registering release..."
 
-if [ ! -f "$CN_CLI" ]; then
-    echo "  Error: CrabNebula CLI not found at $CN_CLI"
-    echo "  Install with: curl -L https://cdn.crabnebula.app/download/crabnebula/cn-cli/latest/cn_macos -o ~/.local/bin/cn && chmod +x ~/.local/bin/cn"
-    exit 1
+# Build number for version comparison (Sparkle uses this)
+BUILD_NUMBER=$(echo "$VERSION" | tr '.' '\n' | awk '{s=s*1000+$1}END{print s}')
+
+# Tag format: v{version}+{build}-macos
+RELEASE_TAG="v${VERSION}+${BUILD_NUMBER}-macos"
+
+# Create release notes
+RELEASE_NOTES=$(cat <<EOF
+## Omi Desktop v${VERSION}
+
+### What's New
+- Bug fixes and improvements
+
+### Downloads
+- **DMG Installer**: For fresh installs, download the DMG below
+- **Auto-Update**: Existing users will receive this update automatically
+EOF
+)
+
+# Check if gh CLI is available
+if command -v gh &> /dev/null; then
+    # Create GitHub release with both Omi.zip and DMG
+    gh release create "$RELEASE_TAG" \
+        --repo "$GITHUB_REPO" \
+        --title "Omi Desktop v${VERSION}" \
+        --notes "$RELEASE_NOTES" \
+        "$SPARKLE_ZIP_PATH" \
+        "$DMG_PATH" \
+        2>/dev/null && {
+        echo "  ✓ GitHub release created: $RELEASE_TAG"
+        echo "  ✓ Uploaded: Omi.zip (for auto-update)"
+        echo "  ✓ Uploaded: $APP_NAME.dmg (for manual download)"
+    } || {
+        echo "  Warning: Could not create GitHub release"
+        echo "  You may need to run: gh auth login"
+        echo "  Or create the release manually at: https://github.com/$GITHUB_REPO/releases/new"
+    }
+else
+    echo "  Warning: GitHub CLI (gh) not found"
+    echo "  Install with: brew install gh"
 fi
 
-# Create draft
-"$CN_CLI" release draft "$CN_ORG/$CN_APP" "$VERSION" 2>/dev/null || true
+# Get the GitHub release download URL for Omi.zip
+DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/Omi.zip"
 
-# Upload DMG
-"$CN_CLI" release upload "$CN_ORG/$CN_APP" "$VERSION" --file "$DMG_PATH"
+# Register release in Firestore via backend API
+if [ -n "$RELEASE_SECRET" ]; then
+    # Create JSON payload
+    RELEASE_JSON=$(cat <<EOJSON
+{
+    "version": "$VERSION",
+    "build_number": $BUILD_NUMBER,
+    "download_url": "$DOWNLOAD_URL",
+    "ed_signature": "$ED_SIGNATURE",
+    "changelog": ["Bug fixes and improvements"],
+    "is_live": true,
+    "is_critical": false
+}
+EOJSON
+)
 
-# Publish
-"$CN_CLI" release publish "$CN_ORG/$CN_APP" "$VERSION"
+    # Register release via backend API
+    HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "Content-Type: application/json" \
+        -H "X-Release-Secret: $RELEASE_SECRET" \
+        -d "$RELEASE_JSON" \
+        "$DESKTOP_BACKEND_URL/updates/releases" 2>/dev/null)
 
-echo "  ✓ Published to CrabNebula"
+    HTTP_CODE=$(echo "$HTTP_RESPONSE" | tail -n1)
+
+    if [ "$HTTP_CODE" = "201" ]; then
+        echo "  ✓ Release registered in Firestore"
+    else
+        echo "  Warning: Could not register release (HTTP $HTTP_CODE)"
+        echo "  You can manually add it using: local-scripts/add_release.py"
+    fi
+else
+    echo "  Warning: RELEASE_SECRET not set, skipping Firestore registration"
+    echo "  Set RELEASE_SECRET in .env or environment"
+fi
 
 # -----------------------------------------------------------------------------
 # Done
@@ -327,20 +448,15 @@ echo ""
 echo "Local files:"
 echo "  App: $APP_BUNDLE"
 echo "  DMG: $DMG_PATH"
-if [ -f "$APPCAST_DIR/appcast.xml" ]; then
-echo "  Appcast: $APPCAST_DIR/appcast.xml"
-fi
+echo "  Sparkle ZIP: $SPARKLE_ZIP_PATH"
 echo ""
 echo "Download URL:"
-echo "  https://cdn.crabnebula.app/download/$CN_ORG/$CN_APP/latest/$APP_NAME.dmg"
+echo "  https://github.com/$GITHUB_REPO/releases/tag/$RELEASE_TAG"
 echo ""
-if [ -f "$APPCAST_DIR/appcast.xml" ]; then
-echo "Auto-Update Setup:"
-echo "  1. Upload $APPCAST_DIR/$APP_NAME.dmg to $APPCAST_URL/"
-echo "  2. Upload $APPCAST_DIR/appcast.xml to $APPCAST_URL/"
-echo "  3. Verify appcast is accessible at: $APPCAST_URL/appcast.xml"
+echo "Auto-Update:"
+echo "  Appcast URL: $DESKTOP_BACKEND_URL/appcast.xml"
+echo "  EdDSA Signature: ${ED_SIGNATURE:-'(not generated)'}"
 echo ""
-fi
 echo "Verify with:"
 echo "  spctl --assess --verbose=2 $APP_BUNDLE"
 echo "  spctl --assess --verbose=2 --type open --context context:primary-signature $DMG_PATH"
