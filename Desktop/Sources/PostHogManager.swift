@@ -18,7 +18,7 @@ class PostHogManager {
 
     // MARK: - Initialization
 
-    /// Initialize PostHog with analytics and session replay
+    /// Initialize PostHog with analytics
     func initialize() {
         guard !isInitialized else { return }
 
@@ -27,12 +27,7 @@ class PostHogManager {
         // Enable automatic event capture
         config.captureApplicationLifecycleEvents = true
         config.captureScreenViews = true
-
-        // Enable Session Replay (iOS/macOS)
-        // Note: Session replay on mobile captures screenshots periodically
-        config.sessionReplay = true
-        config.sessionReplayConfig.maskAllTextInputs = true
-        config.sessionReplayConfig.maskAllImages = false
+        config.preloadFeatureFlags = true
 
         PostHogSDK.shared.setup(config)
 
