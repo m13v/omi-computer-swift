@@ -3251,6 +3251,128 @@ impl FirestoreService {
             is_dismissed: self.parse_bool(fields, "is_dismissed").unwrap_or(false),
         })
     }
+
+    // =========================================================================
+    // Desktop Releases (for Sparkle auto-update)
+    // =========================================================================
+
+    /// Get desktop releases for auto-update appcast
+    /// Fetches from desktop_releases collection
+    pub async fn get_desktop_releases(
+        &self,
+    ) -> Result<Vec<crate::routes::updates::ReleaseInfo>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/desktop_releases",
+            self.base_url()
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            // If collection doesn't exist, return empty list
+            if response.status() == reqwest::StatusCode::NOT_FOUND {
+                return Ok(vec![]);
+            }
+            let error_text = response.text().await?;
+            return Err(format!("Firestore error: {}", error_text).into());
+        }
+
+        let data: Value = response.json().await?;
+        let mut releases = Vec::new();
+
+        if let Some(documents) = data.get("documents").and_then(|d| d.as_array()) {
+            for doc in documents {
+                if let Ok(release) = self.parse_release(doc) {
+                    releases.push(release);
+                }
+            }
+        }
+
+        // Sort by build number descending (newest first)
+        releases.sort_by(|a, b| b.build_number.cmp(&a.build_number));
+
+        Ok(releases)
+    }
+
+    /// Parse Firestore document to ReleaseInfo
+    fn parse_release(
+        &self,
+        doc: &Value,
+    ) -> Result<crate::routes::updates::ReleaseInfo, Box<dyn std::error::Error + Send + Sync>> {
+        let fields = doc.get("fields").ok_or("Missing fields")?;
+
+        let changelog = if let Some(arr) = fields.get("changelog").and_then(|c| c.get("arrayValue")).and_then(|a| a.get("values")).and_then(|v| v.as_array()) {
+            arr.iter()
+                .filter_map(|v| v.get("stringValue").and_then(|s| s.as_str()))
+                .map(|s| s.to_string())
+                .collect()
+        } else {
+            vec![]
+        };
+
+        Ok(crate::routes::updates::ReleaseInfo {
+            version: self.parse_string(fields, "version").unwrap_or_default(),
+            build_number: self.parse_int(fields, "build_number").unwrap_or(0) as u32,
+            download_url: self.parse_string(fields, "download_url").unwrap_or_default(),
+            ed_signature: self.parse_string(fields, "ed_signature").unwrap_or_default(),
+            published_at: self.parse_string(fields, "published_at").unwrap_or_default(),
+            changelog,
+            is_live: self.parse_bool(fields, "is_live").unwrap_or(false),
+            is_critical: self.parse_bool(fields, "is_critical").unwrap_or(false),
+        })
+    }
+
+    /// Create a new desktop release in Firestore
+    pub async fn create_desktop_release(
+        &self,
+        release: &crate::routes::updates::ReleaseInfo,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let doc_id = format!("v{}+{}", release.version, release.build_number);
+
+        let url = format!(
+            "{}/desktop_releases/{}",
+            self.base_url(),
+            doc_id
+        );
+
+        // Build changelog array
+        let changelog_values: Vec<Value> = release.changelog
+            .iter()
+            .map(|s| json!({"stringValue": s}))
+            .collect();
+
+        let doc = json!({
+            "fields": {
+                "version": {"stringValue": release.version},
+                "build_number": {"integerValue": release.build_number.to_string()},
+                "download_url": {"stringValue": release.download_url},
+                "ed_signature": {"stringValue": release.ed_signature},
+                "published_at": {"stringValue": release.published_at},
+                "changelog": {"arrayValue": {"values": changelog_values}},
+                "is_live": {"booleanValue": release.is_live},
+                "is_critical": {"booleanValue": release.is_critical}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore create error: {}", error_text).into());
+        }
+
+        tracing::info!("Created desktop release: {}", doc_id);
+        Ok(doc_id)
+    }
 }
 
 impl Default for Structured {
