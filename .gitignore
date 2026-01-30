@@ -37,9 +37,9 @@ xcuserdata/
 *.dSYM.zip
 *.dSYM
 
-# Local scripts (untracked)
+# Local scripts and data (untracked)
 local/
-local-scripts/
+scripts/
 
 # Swift compiler diagnostics cache
 *.dia
