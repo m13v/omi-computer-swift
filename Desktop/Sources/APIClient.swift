@@ -94,6 +94,7 @@ actor APIClient {
     ) async throws -> T {
         let base = customBaseURL ?? baseURL
         let url = URL(string: base + endpoint)!
+        log("APIClient: POST \(url.absoluteString)")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.allHTTPHeaderFields = try await buildHeaders(requireAuth: requireAuth)
@@ -320,6 +321,30 @@ extension APIClient {
         )
 
         return try await post("v1/conversations/search", body: body)
+    }
+
+    /// Gets the total count of conversations
+    func getConversationsCount(
+        includeDiscarded: Bool = false,
+        statuses: [ConversationStatus] = [.completed, .processing]
+    ) async throws -> Int {
+        var queryItems: [String] = [
+            "include_discarded=\(includeDiscarded)"
+        ]
+
+        if !statuses.isEmpty {
+            let statusStrings = statuses.map { $0.rawValue }.joined(separator: ",")
+            queryItems.append("statuses=\(statusStrings)")
+        }
+
+        let endpoint = "v1/conversations/count?\(queryItems.joined(separator: "&"))"
+
+        struct CountResponse: Decodable {
+            let count: Int
+        }
+
+        let response: CountResponse = try await get(endpoint)
+        return response.count
     }
 }
 
