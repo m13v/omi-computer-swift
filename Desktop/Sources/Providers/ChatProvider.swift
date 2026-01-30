@@ -33,67 +33,12 @@ class ChatProvider: ObservableObject {
 
     private var geminiClient: GeminiClient?
 
-    // MARK: - System Prompt Template (matching OMI backend)
+    // MARK: - Cached Context for Prompts
+    private var cachedMemories: [ServerMemory] = []
+    private var memoriesLoaded = false
 
-    /// Template variables:
-    /// - {user_name} - User's display name
-    /// - {tz} - User's timezone
-    /// - {current_datetime_str} - Current datetime string
-    /// - {memories_str} - User's memories/facts (empty for now)
-    private let systemPromptTemplate = """
-    <assistant_role>
-    You are Omi, an AI assistant & mentor for {user_name}. You are a smart friend who gives honest and concise feedback and responses to user's questions in the most personalized way possible.
-    </assistant_role>
-
-    <user_context>
-    Current date/time in {user_name}'s timezone ({tz}): {current_datetime_str}
-    {memories_section}
-    </user_context>
-
-    <mentor_behavior>
-    You're a mentor, not a yes-man. When you see a critical gap between {user_name}'s plan and their goal:
-    - Call it out directly - don't bury it after paragraphs of summary
-    - Only challenge when it matters - not every message needs pushback
-    - Be direct - "why not just do X?" rather than "Have you considered the alternative approach of X?"
-    - Never summarize what they just said - jump straight to your reaction/advice
-    - Give one clear recommendation, not 10 options
-    </mentor_behavior>
-
-    <response_style>
-    Write like a real human texting - not an AI writing an essay.
-
-    Length:
-    - Default: 2-8 lines, conversational
-    - Reflections/planning: can be longer but NO SUMMARIES of what they said
-    - Quick replies: 1-3 lines
-    - "I don't know" responses: 1-2 lines MAX
-
-    Format:
-    - NO essays summarizing their message
-    - NO headers like "What you did:", "How you felt:", "Next steps:"
-    - NO "Great reflection!" or corporate praise
-    - Just talk normally like you're texting a friend who you respect
-    - Feel free to use lowercase, casual language when appropriate
-    </response_style>
-
-    <critical_accuracy_rules>
-    NEVER MAKE UP INFORMATION - THIS IS CRITICAL:
-    1. If you don't have information about something, give a SHORT 1-2 line response saying you don't know.
-    2. Do NOT generate plausible-sounding details even if they seem helpful.
-    3. Sound like a human: "I don't have that" not "no data available"
-    4. If you don't know something, say "I don't know" in 1-2 lines max.
-    </critical_accuracy_rules>
-
-    <instructions>
-    - Be casual, concise, and direct—text like a friend.
-    - Give specific feedback/advice; never generic.
-    - Keep it short—use fewer words, bullet points when possible.
-    - Always answer the question directly; no extra info, no fluff.
-    - Use what you know about {user_name} to personalize your responses.
-    - Show times/dates in {user_name}'s timezone ({tz}), in a natural, friendly way.
-    - If you don't know, say so honestly in 1-2 lines.
-    </instructions>
-    """
+    // MARK: - System Prompt
+    // Prompts are defined in ChatPrompts.swift (converted from Python backend)
 
     init() {
         do {
@@ -105,6 +50,37 @@ class ChatProvider: ObservableObject {
         }
     }
 
+    // MARK: - Load Context (Memories)
+
+    /// Fetches user memories from the backend for use in prompts
+    private func loadMemoriesIfNeeded() async {
+        guard !memoriesLoaded else { return }
+
+        do {
+            cachedMemories = try await APIClient.shared.getMemories(limit: 50)
+            memoriesLoaded = true
+            log("ChatProvider loaded \(cachedMemories.count) memories for context")
+        } catch {
+            logError("Failed to load memories for chat context", error: error)
+            // Continue without memories - non-critical
+        }
+    }
+
+    /// Formats cached memories into a string for the prompt
+    private func formatMemoriesSection() -> String {
+        guard !cachedMemories.isEmpty else { return "" }
+
+        let userName = AuthService.shared.displayName.isEmpty ? "the user" : AuthService.shared.givenName
+
+        var lines: [String] = ["<user_facts>", "Facts about \(userName):"]
+        for memory in cachedMemories.prefix(30) {  // Limit to 30 most relevant
+            lines.append("- \(memory.content)")
+        }
+        lines.append("</user_facts>")
+
+        return lines.joined(separator: "\n")
+    }
+
     // MARK: - Build System Prompt with Variables
 
     /// Builds the system prompt with dynamic template variables
@@ -112,36 +88,26 @@ class ChatProvider: ObservableObject {
         // Get user name from AuthService
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
 
-        // Get timezone
-        let timezone = TimeZone.current.identifier
+        // Build memories section from cached memories
+        let memoriesSection = formatMemoriesSection()
 
-        // Format current datetime
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-        dateFormatter.timeZone = TimeZone.current
-        let currentDatetime = dateFormatter.string(from: Date())
-
-        // Build memories section (empty for now - can be populated later)
-        let memoriesSection = ""  // TODO: Fetch user memories from backend
-
-        // Replace template variables
-        var prompt = systemPromptTemplate
-        prompt = prompt.replacingOccurrences(of: "{user_name}", with: userName)
-        prompt = prompt.replacingOccurrences(of: "{tz}", with: timezone)
-        prompt = prompt.replacingOccurrences(of: "{current_datetime_str}", with: currentDatetime)
-        prompt = prompt.replacingOccurrences(of: "{memories_section}", with: memoriesSection)
-
-        return prompt
+        // Use ChatPromptBuilder to build the prompt with all variables
+        return ChatPromptBuilder.buildDesktopChat(
+            userName: userName,
+            memoriesSection: memoriesSection
+        )
     }
 
     // MARK: - Fetch Messages
 
-    /// Fetch chat messages (currently just clears for fresh start)
+    /// Fetch chat messages and load context
     func fetchMessages() async {
         // For client-side chat, we start fresh each session
-        // In the future, we could persist locally or sync with backend
         messages.removeAll()
         errorMessage = nil
+
+        // Load memories for context (non-blocking, best-effort)
+        await loadMemoriesIfNeeded()
     }
 
     // MARK: - Send Message
