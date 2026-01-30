@@ -94,13 +94,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             AuthService.shared.configure()
         }
 
-        // Initialize MixPanel analytics
+        // Initialize analytics (MixPanel + PostHog)
         MixpanelManager.shared.initialize()
         MixpanelManager.shared.appLaunched()
+        PostHogManager.shared.initialize()
+        PostHogManager.shared.appLaunched()
 
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
             MixpanelManager.shared.identify()
+            PostHogManager.shared.identify()
             // Set Sentry user context
             if let email = AuthState.shared.userEmail {
                 let sentryUser = Sentry.User()
