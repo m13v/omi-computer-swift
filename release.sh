@@ -167,12 +167,14 @@ echo "[5/9] Creating installer DMG..."
 
 rm -f "$DMG_PATH"
 
-# Copy app to temp staging directory to avoid permission issues
+# Copy app to temp staging directory and rename for cleaner DMG display
 STAGING_DIR="/tmp/omi-dmg-staging-$$"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
-cp -R "$APP_BUNDLE" "$STAGING_DIR/"
-STAGED_APP="$STAGING_DIR/$APP_NAME.app"
+# Rename to "OMI.app" in DMG so the label shows "OMI" instead of "Omi Computer"
+DMG_APP_NAME="OMI"
+cp -R "$APP_BUNDLE" "$STAGING_DIR/$DMG_APP_NAME.app"
+STAGED_APP="$STAGING_DIR/$DMG_APP_NAME.app"
 
 # Use create-dmg for a proper installer DMG with Applications shortcut
 if command -v create-dmg &> /dev/null; then
@@ -183,13 +185,13 @@ if command -v create-dmg &> /dev/null; then
     fi
 
     create-dmg \
-        --volname "Application" \
+        --volname "OMI" \
         --volicon "$STAGED_APP/Contents/Resources/AppIcon.icns" \
         --window-pos 200 120 \
         --window-size 610 365 \
         --icon-size 80 \
-        --icon "$APP_NAME.app" 155 175 \
-        --hide-extension "$APP_NAME.app" \
+        --icon "$DMG_APP_NAME.app" 155 175 \
+        --hide-extension "$DMG_APP_NAME.app" \
         --app-drop-link 455 175 \
         --no-internet-enable \
         $BG_ARGS \
@@ -198,7 +200,7 @@ if command -v create-dmg &> /dev/null; then
 else
     # Fallback to basic hdiutil if create-dmg not available
     echo "  Warning: create-dmg not found, using basic DMG creation"
-    hdiutil create -volname "$APP_NAME" \
+    hdiutil create -volname "OMI" \
         -srcfolder "$STAGED_APP" \
         -ov -format UDZO \
         "$DMG_PATH"
@@ -206,6 +208,43 @@ fi
 
 # Clean up staging directory
 rm -rf "$STAGING_DIR"
+
+# Set custom icon on DMG file itself
+if [ -f "omi_icon.icns" ]; then
+    echo "  Setting DMG file icon..."
+
+    # Use Python with PyObjC (available on macOS) to set the icon
+    python3 << PYEOF
+import os
+import sys
+
+try:
+    from AppKit import NSWorkspace, NSImage
+    from Foundation import NSURL
+
+    icon_path = os.path.abspath("omi_icon.icns")
+    dmg_path = os.path.abspath("$DMG_PATH")
+
+    image = NSImage.alloc().initWithContentsOfFile_(icon_path)
+    if image:
+        workspace = NSWorkspace.sharedWorkspace()
+        result = workspace.setIcon_forFile_options_(image, dmg_path, 0)
+        if result:
+            print("    Icon set successfully")
+        else:
+            print("    Warning: Could not set icon via NSWorkspace")
+            sys.exit(1)
+    else:
+        print("    Warning: Could not load icon image")
+        sys.exit(1)
+except ImportError:
+    print("    Warning: PyObjC not available, skipping icon")
+    sys.exit(1)
+except Exception as e:
+    print(f"    Warning: {e}")
+    sys.exit(1)
+PYEOF
+fi
 
 echo "  ✓ DMG created"
 
