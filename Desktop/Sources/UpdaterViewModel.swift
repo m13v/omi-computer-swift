@@ -2,6 +2,50 @@ import Foundation
 import SwiftUI
 import Sparkle
 
+/// Delegate to track Sparkle update events for analytics
+final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
+
+    /// Called when Sparkle starts checking for updates
+    func updater(_ updater: SPUUpdater, didStartLoading request: URLRequest) {
+        Task { @MainActor in
+            log("Sparkle: Started checking for updates")
+            AnalyticsManager.shared.updateCheckStarted()
+        }
+    }
+
+    /// Called when Sparkle finds a valid update
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        Task { @MainActor in
+            log("Sparkle: Found update v\(version)")
+            AnalyticsManager.shared.updateAvailable(version: version)
+        }
+    }
+
+    /// Called when no update is available
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        Task { @MainActor in
+            log("Sparkle: No update available")
+        }
+    }
+
+    /// Called when update check fails
+    func updater(_ updater: SPUUpdater, didFailToFindUpdateWithError error: Error) {
+        Task { @MainActor in
+            log("Sparkle: Update check failed - \(error.localizedDescription)")
+        }
+    }
+
+    /// Called when an update will be installed
+    func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
+        let version = item.displayVersionString
+        Task { @MainActor in
+            log("Sparkle: Installing update v\(version)")
+            AnalyticsManager.shared.updateInstalled(version: version)
+        }
+    }
+}
+
 /// View model for managing Sparkle auto-updates
 /// Provides SwiftUI bindings for the updater UI
 @MainActor
@@ -9,6 +53,7 @@ final class UpdaterViewModel: ObservableObject {
     static let shared = UpdaterViewModel()
 
     private let updaterController: SPUStandardUpdaterController
+    private let updaterDelegate = UpdaterDelegate()
 
     /// Whether automatic update checks are enabled
     @Published var automaticallyChecksForUpdates: Bool {
@@ -26,11 +71,10 @@ final class UpdaterViewModel: ObservableObject {
     }
 
     private init() {
-        // Initialize the updater controller
-        // startingUpdater: true means it will automatically check for updates on launch
+        // Initialize the updater controller with our delegate
         updaterController = SPUStandardUpdaterController(
             startingUpdater: true,
-            updaterDelegate: nil,
+            updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
         )
 
@@ -45,7 +89,6 @@ final class UpdaterViewModel: ObservableObject {
 
     /// Manually check for updates
     func checkForUpdates() {
-        AnalyticsManager.shared.updateCheckStarted()
         updaterController.checkForUpdates(nil)
     }
 
