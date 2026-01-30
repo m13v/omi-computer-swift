@@ -112,8 +112,17 @@ actor AdviceAssistant: ProactiveAssistant {
     }
 
     func handleResult(_ result: AssistantResult, sendEvent: @escaping (String, [String: Any]) -> Void) async {
+        // This method is required by protocol but we use handleResultWithScreenshot instead
         guard let adviceResult = result as? AdviceExtractionResult else { return }
+        await handleResultWithScreenshot(adviceResult, screenshotId: nil, sendEvent: sendEvent)
+    }
 
+    /// Handle result with screenshot ID for SQLite storage
+    private func handleResultWithScreenshot(
+        _ adviceResult: AdviceExtractionResult,
+        screenshotId: Int64?,
+        sendEvent: @escaping (String, [String: Any]) -> Void
+    ) async {
         // Check if AI has new advice (should almost always be true now - only false for duplicates)
         guard adviceResult.hasAdvice, let advice = adviceResult.advice else {
             log("Advice: Skipped (duplicate or no context)")
@@ -138,9 +147,32 @@ actor AdviceAssistant: ProactiveAssistant {
             previousAdvice.removeLast()
         }
 
-        // Store advice for history
+        // Save to SQLite first
+        var extractionRecord = await saveAdviceToSQLite(
+            advice: advice,
+            screenshotId: screenshotId,
+            contextSummary: adviceResult.contextSummary,
+            currentActivity: adviceResult.currentActivity
+        )
+
+        // Also save to old storage for UI compatibility (dual-write during transition)
         await MainActor.run {
             AdviceStorage.shared.addAdvice(adviceResult)
+        }
+
+        // Sync to backend
+        if let backendId = await syncAdviceToBackend(advice: advice, adviceResult: adviceResult) {
+            // Update SQLite record with backend ID
+            if let recordId = extractionRecord?.id {
+                do {
+                    try await ProactiveStorage.shared.updateExtraction(
+                        id: recordId,
+                        updates: ExtractionUpdate(backendId: backendId, backendSynced: true)
+                    )
+                } catch {
+                    logError("Advice: Failed to update sync status", error: error)
+                }
+            }
         }
 
         // Send notification
@@ -152,6 +184,56 @@ actor AdviceAssistant: ProactiveAssistant {
             "advice": advice.toDictionary(),
             "contextSummary": adviceResult.contextSummary
         ])
+    }
+
+    /// Save advice to SQLite
+    private func saveAdviceToSQLite(
+        advice: ExtractedAdvice,
+        screenshotId: Int64?,
+        contextSummary: String,
+        currentActivity: String
+    ) async -> ProactiveExtractionRecord? {
+        let record = ProactiveExtractionRecord(
+            screenshotId: screenshotId,
+            type: .advice,
+            content: advice.advice,
+            category: advice.category.rawValue,
+            confidence: advice.confidence,
+            reasoning: advice.reasoning,
+            sourceApp: advice.sourceApp,
+            contextSummary: contextSummary
+        )
+
+        do {
+            let inserted = try await ProactiveStorage.shared.insertExtraction(record)
+            log("Advice: Saved to SQLite (id: \(inserted.id ?? -1))")
+            return inserted
+        } catch {
+            logError("Advice: Failed to save to SQLite", error: error)
+            return nil
+        }
+    }
+
+    /// Sync advice to backend, returns backend ID if successful
+    private func syncAdviceToBackend(advice: ExtractedAdvice, adviceResult: AdviceExtractionResult) async -> String? {
+        do {
+            let request = CreateAdviceRequest(
+                content: advice.advice,
+                category: advice.category,
+                reasoning: advice.reasoning,
+                sourceApp: advice.sourceApp,
+                confidence: advice.confidence,
+                contextSummary: adviceResult.contextSummary,
+                currentActivity: adviceResult.currentActivity
+            )
+
+            let serverAdvice = try await APIClient.shared.createAdvice(request)
+            log("Advice: Synced to backend (id: \(serverAdvice.id))")
+            return serverAdvice.id
+        } catch {
+            logError("Advice: Failed to sync to backend", error: error)
+            return nil
+        }
     }
 
     /// Send a notification for the advice
@@ -199,8 +281,8 @@ actor AdviceAssistant: ProactiveAssistant {
                 return
             }
 
-            // Handle the result
-            await handleResult(result) { type, data in
+            // Handle the result with screenshot ID for SQLite storage
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }

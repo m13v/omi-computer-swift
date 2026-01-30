@@ -118,8 +118,17 @@ actor MemoryAssistant: ProactiveAssistant {
     }
 
     func handleResult(_ result: AssistantResult, sendEvent: @escaping (String, [String: Any]) -> Void) async {
+        // This method is required by protocol but we use handleResultWithScreenshot instead
         guard let memoryResult = result as? MemoryExtractionResult else { return }
+        await handleResultWithScreenshot(memoryResult, screenshotId: nil, sendEvent: sendEvent)
+    }
 
+    /// Handle result with screenshot ID for SQLite storage
+    private func handleResultWithScreenshot(
+        _ memoryResult: MemoryExtractionResult,
+        screenshotId: Int64?,
+        sendEvent: @escaping (String, [String: Any]) -> Void
+    ) async {
         // Check if AI found new memories
         guard memoryResult.hasNewMemory, !memoryResult.memories.isEmpty else {
             return
@@ -147,8 +156,27 @@ actor MemoryAssistant: ProactiveAssistant {
             previousMemories.removeLast()
         }
 
-        // Save memory to backend
-        await saveMemoryToBackend(memory: memory)
+        // Save to SQLite first
+        var extractionRecord = await saveMemoryToSQLite(
+            memory: memory,
+            screenshotId: screenshotId,
+            contextSummary: memoryResult.contextSummary
+        )
+
+        // Sync to backend
+        if let backendId = await syncMemoryToBackend(memory: memory) {
+            // Update SQLite record with backend ID
+            if let recordId = extractionRecord?.id {
+                do {
+                    try await ProactiveStorage.shared.updateExtraction(
+                        id: recordId,
+                        updates: ExtractionUpdate(backendId: backendId, backendSynced: true)
+                    )
+                } catch {
+                    logError("Memory: Failed to update sync status", error: error)
+                }
+            }
+        }
 
         // Send notification
         await sendMemoryNotification(memory: memory)
@@ -161,17 +189,45 @@ actor MemoryAssistant: ProactiveAssistant {
         ])
     }
 
-    /// Save extracted memory to backend API
-    private func saveMemoryToBackend(memory: ExtractedMemory) async {
+    /// Save extracted memory to SQLite
+    private func saveMemoryToSQLite(
+        memory: ExtractedMemory,
+        screenshotId: Int64?,
+        contextSummary: String
+    ) async -> ProactiveExtractionRecord? {
+        let record = ProactiveExtractionRecord(
+            screenshotId: screenshotId,
+            type: .memory,
+            content: memory.content,
+            category: memory.category.rawValue,
+            confidence: memory.confidence,
+            sourceApp: memory.sourceApp,
+            contextSummary: contextSummary
+        )
+
         do {
-            _ = try await APIClient.shared.createMemory(
+            let inserted = try await ProactiveStorage.shared.insertExtraction(record)
+            log("Memory: Saved to SQLite (id: \(inserted.id ?? -1))")
+            return inserted
+        } catch {
+            logError("Memory: Failed to save to SQLite", error: error)
+            return nil
+        }
+    }
+
+    /// Sync memory to backend API, returns backend ID if successful
+    private func syncMemoryToBackend(memory: ExtractedMemory) async -> String? {
+        do {
+            let response = try await APIClient.shared.createMemory(
                 content: memory.content,
                 visibility: "private"
             )
 
-            log("Memory: Saved to backend: \"\(memory.content)\"")
+            log("Memory: Synced to backend (id: \(response.id))")
+            return response.id
         } catch {
-            logError("Memory: Failed to save memory to backend", error: error)
+            logError("Memory: Failed to sync to backend", error: error)
+            return nil
         }
     }
 
@@ -230,8 +286,8 @@ actor MemoryAssistant: ProactiveAssistant {
 
             log("Memory: Analysis complete - hasNewMemory: \(result.hasNewMemory), count: \(result.memories.count), context: \(result.contextSummary)")
 
-            // Handle the result
-            await handleResult(result) { type, data in
+            // Handle the result with screenshot ID for SQLite storage
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }

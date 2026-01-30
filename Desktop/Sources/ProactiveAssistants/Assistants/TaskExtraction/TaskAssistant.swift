@@ -118,8 +118,17 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     func handleResult(_ result: AssistantResult, sendEvent: @escaping (String, [String: Any]) -> Void) async {
+        // This method is required by protocol but we use handleResultWithScreenshot instead
         guard let taskResult = result as? TaskExtractionResult else { return }
+        await handleResultWithScreenshot(taskResult, screenshotId: nil, sendEvent: sendEvent)
+    }
 
+    /// Handle result with screenshot ID for SQLite storage
+    private func handleResultWithScreenshot(
+        _ taskResult: TaskExtractionResult,
+        screenshotId: Int64?,
+        sendEvent: @escaping (String, [String: Any]) -> Void
+    ) async {
         // Check if AI found a new task
         guard taskResult.hasNewTask, let task = taskResult.task else {
             return
@@ -143,8 +152,27 @@ actor TaskAssistant: ProactiveAssistant {
             previousTasks.removeLast()
         }
 
-        // Save task to backend
-        await saveTaskToBackend(task: task)
+        // Save to SQLite first
+        var extractionRecord = await saveTaskToSQLite(
+            task: task,
+            screenshotId: screenshotId,
+            contextSummary: taskResult.contextSummary
+        )
+
+        // Sync to backend
+        if let backendId = await syncTaskToBackend(task: task) {
+            // Update SQLite record with backend ID
+            if let recordId = extractionRecord?.id {
+                do {
+                    try await ProactiveStorage.shared.updateExtraction(
+                        id: recordId,
+                        updates: ExtractionUpdate(backendId: backendId, backendSynced: true)
+                    )
+                } catch {
+                    logError("Task: Failed to update sync status", error: error)
+                }
+            }
+        }
 
         // Send notification
         await sendTaskNotification(task: task)
@@ -157,15 +185,42 @@ actor TaskAssistant: ProactiveAssistant {
         ])
     }
 
-    /// Save extracted task to backend API
-    private func saveTaskToBackend(task: ExtractedTask) async {
+    /// Save extracted task to SQLite
+    private func saveTaskToSQLite(
+        task: ExtractedTask,
+        screenshotId: Int64?,
+        contextSummary: String
+    ) async -> ProactiveExtractionRecord? {
+        let record = ProactiveExtractionRecord(
+            screenshotId: screenshotId,
+            type: .task,
+            content: task.title,
+            confidence: task.confidence,
+            reasoning: task.description,
+            sourceApp: task.sourceApp,
+            contextSummary: contextSummary,
+            priority: task.priority.rawValue
+        )
+
+        do {
+            let inserted = try await ProactiveStorage.shared.insertExtraction(record)
+            log("Task: Saved to SQLite (id: \(inserted.id ?? -1))")
+            return inserted
+        } catch {
+            logError("Task: Failed to save to SQLite", error: error)
+            return nil
+        }
+    }
+
+    /// Sync task to backend API, returns backend ID if successful
+    private func syncTaskToBackend(task: ExtractedTask) async -> String? {
         do {
             let metadata: [String: Any] = [
                 "source_app": task.sourceApp,
                 "confidence": task.confidence
             ]
 
-            let _ = try await APIClient.shared.createActionItem(
+            let response = try await APIClient.shared.createActionItem(
                 description: task.title,
                 dueAt: nil, // Could parse task.inferredDeadline if available
                 source: "screenshot",
@@ -173,9 +228,11 @@ actor TaskAssistant: ProactiveAssistant {
                 metadata: metadata
             )
 
-            log("Task: Saved to backend: \"\(task.title)\"")
+            log("Task: Synced to backend (id: \(response.id))")
+            return response.id
         } catch {
-            logError("Task: Failed to save task to backend", error: error)
+            logError("Task: Failed to sync to backend", error: error)
+            return nil
         }
     }
 
@@ -234,8 +291,8 @@ actor TaskAssistant: ProactiveAssistant {
 
             log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
 
-            // Handle the result
-            await handleResult(result) { type, data in
+            // Handle the result with screenshot ID for SQLite storage
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }

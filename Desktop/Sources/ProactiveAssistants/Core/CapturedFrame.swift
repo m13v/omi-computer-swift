@@ -17,11 +17,23 @@ struct CapturedFrame {
     /// Timestamp when the frame was captured
     let captureTime: Date
 
-    init(jpegData: Data, appName: String, windowTitle: String? = nil, frameNumber: Int, captureTime: Date = Date()) {
+    /// Optional reference to the screenshot in the Rewind database
+    /// Used to link proactive extractions back to their source screenshot
+    let screenshotId: Int64?
+
+    init(
+        jpegData: Data,
+        appName: String,
+        windowTitle: String? = nil,
+        frameNumber: Int,
+        captureTime: Date = Date(),
+        screenshotId: Int64? = nil
+    ) {
         self.jpegData = jpegData
         self.appName = appName
         self.windowTitle = windowTitle
         self.frameNumber = frameNumber
         self.captureTime = captureTime
+        self.screenshotId = screenshotId
     }
 }

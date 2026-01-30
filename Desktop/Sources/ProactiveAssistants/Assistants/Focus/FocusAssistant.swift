@@ -311,7 +311,10 @@ actor FocusAssistant: ProactiveAssistant {
                 // Update notified state BEFORE other actions to prevent race with parallel frames
                 lastNotifiedState = .distracted
 
-                // Save to FocusStorage for UI and Firestore sync
+                // Save to SQLite and sync to backend
+                await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId)
+
+                // Also save to old storage for UI compatibility (dual-write during transition)
                 Task { @MainActor in
                     FocusStorage.shared.addSession(from: analysis)
                 }
@@ -346,7 +349,10 @@ actor FocusAssistant: ProactiveAssistant {
                 let wasDistracted = lastNotifiedState == .distracted
                 lastNotifiedState = .focused
 
-                // Save to FocusStorage for UI and Firestore sync
+                // Save to SQLite and sync to backend
+                await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId)
+
+                // Also save to old storage for UI compatibility (dual-write during transition)
                 Task { @MainActor in
                     FocusStorage.shared.addSession(from: analysis)
                 }
@@ -404,6 +410,56 @@ actor FocusAssistant: ProactiveAssistant {
             return try JSONDecoder().decode(ScreenAnalysis.self, from: Data(responseText.utf8))
         } catch {
             logError("Focus analysis error", error: error)
+            return nil
+        }
+    }
+
+    // MARK: - Storage
+
+    /// Save focus session to SQLite and sync to backend
+    private func saveFocusSessionToSQLite(analysis: ScreenAnalysis, screenshotId: Int64?) async {
+        let record = FocusSessionRecord(
+            screenshotId: screenshotId,
+            status: analysis.status.rawValue,
+            appOrSite: analysis.appOrSite,
+            description: analysis.description,
+            message: analysis.message
+        )
+
+        do {
+            var inserted = try await ProactiveStorage.shared.insertFocusSession(record)
+            log("Focus: Saved to SQLite (id: \(inserted.id ?? -1), status: \(analysis.status.rawValue))")
+
+            // Sync to backend
+            if let backendId = await syncFocusSessionToBackend(analysis: analysis) {
+                if let recordId = inserted.id {
+                    try await ProactiveStorage.shared.updateFocusSessionSyncStatus(
+                        id: recordId,
+                        backendId: backendId,
+                        synced: true
+                    )
+                }
+            }
+        } catch {
+            logError("Focus: Failed to save to SQLite", error: error)
+        }
+    }
+
+    /// Sync focus session to backend, returns backend ID if successful
+    private func syncFocusSessionToBackend(analysis: ScreenAnalysis) async -> String? {
+        do {
+            let request = CreateFocusSessionRequest(
+                status: analysis.status.rawValue,
+                appOrSite: analysis.appOrSite,
+                description: analysis.description,
+                message: analysis.message
+            )
+
+            let response: FocusSessionResponse = try await APIClient.shared.createFocusSession(request)
+            log("Focus: Synced to backend (id: \(response.id))")
+            return response.id
+        } catch {
+            logError("Focus: Failed to sync to backend", error: error)
             return nil
         }
     }
