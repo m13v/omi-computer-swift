@@ -25,6 +25,21 @@ struct DesktopHomeView: View {
                 mainContent
                     .onAppear {
                         log("DesktopHomeView: Showing mainContent (signed in and onboarded)")
+                        // Check all permissions on launch
+                        appState.checkAllPermissions()
+                        // Auto-start transcription on app launch
+                        if !appState.isTranscribing {
+                            log("DesktopHomeView: Auto-starting transcription")
+                            appState.startTranscription()
+                        }
+                        // Start proactive assistants monitoring
+                        ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
+                            if success {
+                                log("DesktopHomeView: Proactive assistants started")
+                            } else {
+                                log("DesktopHomeView: Proactive assistants failed to start: \(error ?? "unknown")")
+                            }
+                        }
                     }
             }
         }
