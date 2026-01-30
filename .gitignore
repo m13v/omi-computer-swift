@@ -40,3 +40,9 @@ xcuserdata/
 # Local scripts (untracked)
 local/
 local-scripts/
+
+# Swift compiler diagnostics cache
+*.dia
+
+# Playwright MCP cache
+.playwright-mcp/
