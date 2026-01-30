@@ -5,16 +5,19 @@ import Combine
 
 /// Debounces search queries to avoid excessive API calls
 class SearchDebouncer: ObservableObject {
+    /// The input query (set immediately when user types)
+    @Published var inputQuery: String = ""
+    /// The debounced query (updated 500ms after user stops typing)
     @Published var debouncedQuery: String = ""
     private var cancellables = Set<AnyCancellable>()
 
     init() {
-        // Observe changes to debouncedQuery with 500ms delay
-        $debouncedQuery
+        // Observe input and debounce to output
+        $inputQuery
             .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
             .removeDuplicates()
-            .sink { [weak self] _ in
-                // This triggers the search via onChange in the view
+            .sink { [weak self] value in
+                self?.debouncedQuery = value
             }
             .store(in: &cancellables)
     }
@@ -181,9 +184,16 @@ struct ConversationsPage: View {
                         .foregroundColor(OmiColors.textSecondary)
 
                     if searchQuery.isEmpty {
-                        Text("(\(appState.conversations.count))")
-                            .font(.system(size: 12))
-                            .foregroundColor(OmiColors.textTertiary)
+                        // Show "50" or "50 of 224" when total count is available
+                        if let total = appState.totalConversationsCount, total > appState.conversations.count {
+                            Text("(\(appState.conversations.count) of \(total))")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        } else {
+                            Text("(\(appState.conversations.count))")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
                     } else {
                         Text("(\(searchResults.count) results)")
                             .font(.system(size: 12))
@@ -209,15 +219,18 @@ struct ConversationsPage: View {
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textPrimary)
                         .onChange(of: searchQuery) { _, newValue in
-                            searchDebouncer.debouncedQuery = newValue
+                            // Feed input to debouncer
+                            searchDebouncer.inputQuery = newValue
                         }
                         .onChange(of: searchDebouncer.debouncedQuery) { _, newValue in
+                            // Debounced value changed - perform search
                             performSearch(query: newValue)
                         }
 
                     if !searchQuery.isEmpty {
                         Button(action: {
                             searchQuery = ""
+                            searchDebouncer.inputQuery = ""
                             searchResults = []
                             searchError = nil
                         }) {
@@ -328,6 +341,7 @@ struct ConversationsPage: View {
 
         isSearching = true
         searchError = nil
+        log("Search: Starting search for '\(query)'")
 
         Task {
             do {
@@ -337,9 +351,11 @@ struct ConversationsPage: View {
                     perPage: 50,
                     includeDiscarded: false
                 )
+                log("Search: Found \(result.items.count) results")
                 searchResults = result.items
                 isSearching = false
             } catch {
+                logError("Search: Failed", error: error)
                 searchError = error.localizedDescription
                 searchResults = []
                 isSearching = false
