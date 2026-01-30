@@ -25,7 +25,7 @@ DMG_PATH="$BUILD_DIR/$APP_NAME.dmg"
 SIGN_IDENTITY="Developer ID Application: Matthew Diakonov (S6DP5HF77G)"
 TEAM_ID="S6DP5HF77G"
 APPLE_ID="matthew.heartful@gmail.com"
-NOTARIZE_PASSWORD="${NOTARIZE_PASSWORD:-REDACTED}"
+NOTARIZE_PASSWORD="${NOTARIZE_PASSWORD:-}"  # Set via .env file
 
 # Sparkle Auto-Update
 SPARKLE_PRIVATE_KEY="${SPARKLE_PRIVATE_KEY:-}"  # Set via environment or Keychain
