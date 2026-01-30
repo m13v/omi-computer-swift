@@ -177,7 +177,7 @@ actor AdviceAssistant: ProactiveAssistant {
 
         // Track advice generated
         await MainActor.run {
-            AnalyticsManager.shared.adviceGenerated(category: advice.category)
+            AnalyticsManager.shared.adviceGenerated(category: advice.category.rawValue)
         }
 
         // Send notification
