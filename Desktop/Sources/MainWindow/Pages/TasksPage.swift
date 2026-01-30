@@ -418,6 +418,20 @@ struct TaskRow: View {
         )
         .opacity(rowOpacity)
         .offset(x: rowOffset)
+        .onAppear {
+            // Reset animation states when view appears (e.g., switching tabs)
+            rowOpacity = 1.0
+            rowOffset = 0
+            isCompletingAnimation = false
+            checkmarkScale = 1.0
+        }
+        .onChange(of: task.completed) { _, _ in
+            // Reset animation states when task state changes externally
+            rowOpacity = 1.0
+            rowOffset = 0
+            isCompletingAnimation = false
+            checkmarkScale = 1.0
+        }
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
