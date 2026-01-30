@@ -360,4 +360,161 @@ extension MixpanelManager {
     func deleteAccountCancelled() {
         track("Delete Account Cancelled")
     }
+
+    // MARK: - Navigation Events
+
+    func tabChanged(tabName: String) {
+        track("Tab Changed", properties: [
+            "tab_name": tabName
+        ])
+    }
+
+    func conversationDetailOpened(conversationId: String) {
+        track("Conversation Detail Opened", properties: [
+            "conversation_id": conversationId
+        ])
+    }
+
+    // MARK: - Chat Events (Additional)
+
+    func chatAppSelected(appId: String?, appName: String?) {
+        var properties: [String: MixpanelType] = [:]
+        if let id = appId { properties["app_id"] = id }
+        if let name = appName { properties["app_name"] = name }
+        track("Chat App Selected", properties: properties.isEmpty ? nil : properties)
+    }
+
+    func chatCleared() {
+        track("Chat Cleared")
+    }
+
+    // MARK: - Conversation Events (Additional)
+
+    func conversationReprocessed(conversationId: String, appId: String) {
+        track("Conversation Reprocessed", properties: [
+            "conversation_id": conversationId,
+            "app_id": appId
+        ])
+    }
+
+    // MARK: - Settings Events (Additional)
+
+    func settingToggled(setting: String, enabled: Bool) {
+        track("Setting Toggled", properties: [
+            "setting": setting,
+            "enabled": enabled
+        ])
+    }
+
+    func languageChanged(language: String) {
+        track("Language Changed", properties: [
+            "language": language
+        ])
+    }
+
+    // MARK: - Feedback Events
+
+    func feedbackOpened() {
+        track("Feedback Opened")
+    }
+
+    func feedbackSubmitted(feedbackLength: Int) {
+        track("Feedback Submitted", properties: [
+            "feedback_length": feedbackLength
+        ])
+    }
+
+    // MARK: - Rewind Events (Desktop-specific)
+
+    func rewindSearchPerformed(queryLength: Int) {
+        track("Rewind Search Performed", properties: [
+            "query_length": queryLength
+        ])
+    }
+
+    func rewindScreenshotViewed(timestamp: Date) {
+        track("Rewind Screenshot Viewed", properties: [
+            "timestamp": ISO8601DateFormatter().string(from: timestamp)
+        ])
+    }
+
+    func rewindTimelineNavigated(direction: String) {
+        track("Rewind Timeline Navigated", properties: [
+            "direction": direction
+        ])
+    }
+
+    // MARK: - Proactive Assistant Events (Desktop-specific)
+
+    func focusAlertShown(app: String) {
+        track("Focus Alert Shown", properties: [
+            "app": app
+        ])
+    }
+
+    func focusAlertDismissed(app: String, action: String) {
+        track("Focus Alert Dismissed", properties: [
+            "app": app,
+            "action": action
+        ])
+    }
+
+    func taskExtracted(taskCount: Int) {
+        track("Task Extracted", properties: [
+            "task_count": taskCount
+        ])
+    }
+
+    func memoryExtracted(memoryCount: Int) {
+        track("Memory Extracted", properties: [
+            "memory_count": memoryCount
+        ])
+    }
+
+    func adviceGenerated(category: String?) {
+        var properties: [String: MixpanelType] = [:]
+        if let cat = category { properties["category"] = cat }
+        track("Advice Generated", properties: properties.isEmpty ? nil : properties)
+    }
+
+    // MARK: - Apps Events
+
+    func appEnabled(appId: String, appName: String) {
+        track("App Enabled", properties: [
+            "app_id": appId,
+            "app_name": appName
+        ])
+    }
+
+    func appDisabled(appId: String, appName: String) {
+        track("App Disabled", properties: [
+            "app_id": appId,
+            "app_name": appName
+        ])
+    }
+
+    func appDetailViewed(appId: String, appName: String) {
+        track("App Detail Viewed", properties: [
+            "app_id": appId,
+            "app_name": appName
+        ])
+    }
+
+    // MARK: - Update Events
+
+    func updateCheckStarted() {
+        track("Update Check Started")
+    }
+
+    func updateAvailable(version: String) {
+        track("Update Available", properties: [
+            "version": version
+        ])
+    }
+
+    func updateInstalled(version: String) {
+        track("Update Installed", properties: [
+            "version": version
+        ])
+    }
 }
