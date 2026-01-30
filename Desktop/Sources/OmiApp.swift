@@ -103,6 +103,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize analytics (MixPanel + PostHog)
         AnalyticsManager.shared.initialize()
         AnalyticsManager.shared.appLaunched()
+        AnalyticsManager.shared.trackFirstLaunchIfNeeded()
 
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
