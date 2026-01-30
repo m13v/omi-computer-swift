@@ -11,6 +11,7 @@ enum SidebarNavItem: Int, CaseIterable {
     case rewind = 6
     case apps = 7
     case settings = 8
+    case permissions = 9
 
     var title: String {
         switch self {
@@ -23,6 +24,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .rewind: return "Rewind"
         case .apps: return "Apps"
         case .settings: return "Settings"
+        case .permissions: return "Permissions"
         }
     }
 
@@ -37,6 +39,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .rewind: return "clock.arrow.circlepath"
         case .apps: return "square.grid.2x2.fill"
         case .settings: return "gearshape.fill"
+        case .permissions: return "exclamationmark.triangle.fill"
         }
     }
 
@@ -56,9 +59,6 @@ struct SidebarView: View {
 
     // State for Get Omi Widget
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
-
-    // State for permissions sheet
-    @State private var showPermissionsSheet = false
 
     // Drag state
     @State private var dragOffset: CGFloat = 0
@@ -383,7 +383,7 @@ struct SidebarView: View {
     // MARK: - Permission Warning Button
     private var permissionWarningButton: some View {
         Button(action: {
-            showPermissionsSheet = true
+            selectedIndex = SidebarNavItem.permissions.rawValue
         }) {
             HStack(spacing: 12) {
                 Image(systemName: "exclamationmark.triangle.fill")
@@ -413,169 +413,6 @@ struct SidebarView: View {
         .buttonStyle(.plain)
         .padding(.bottom, 8)
         .help(isCollapsed ? "Permissions missing" : "")
-        .sheet(isPresented: $showPermissionsSheet) {
-            PermissionsSheet(appState: appState)
-        }
-    }
-}
-
-// MARK: - Permissions Sheet
-struct PermissionsSheet: View {
-    @ObservedObject var appState: AppState
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 24) {
-            // Header
-            HStack {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 24))
-                    .foregroundColor(OmiColors.warning)
-
-                Text("Permissions Required")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                Spacer()
-
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-
-            Text("Omi needs the following permissions to work properly:")
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textSecondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-            // Permission items
-            VStack(spacing: 16) {
-                // Microphone
-                PermissionItemView(
-                    icon: "mic.fill",
-                    title: "Microphone",
-                    description: "Required for voice recording and transcription",
-                    isGranted: appState.hasMicrophonePermission,
-                    onGrant: {
-                        appState.requestMicrophonePermission()
-                    }
-                )
-
-                // Screen Recording
-                PermissionItemView(
-                    icon: "rectangle.inset.filled.and.person.filled",
-                    title: "Screen Recording",
-                    description: "Required for proactive monitoring and context awareness",
-                    isGranted: appState.hasScreenRecordingPermission,
-                    onGrant: {
-                        ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
-                    }
-                )
-            }
-
-            Spacer()
-
-            // Refresh button
-            Button(action: {
-                appState.checkAllPermissions()
-            }) {
-                HStack {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Refresh Permission Status")
-                }
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(OmiColors.purplePrimary)
-            }
-            .buttonStyle(.plain)
-
-            // Done button
-            Button(action: { dismiss() }) {
-                Text("Done")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 10)
-                            .fill(OmiColors.purplePrimary)
-                    )
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(24)
-        .frame(width: 400, height: 420)
-        .background(OmiColors.backgroundPrimary)
-        .onAppear {
-            appState.checkAllPermissions()
-        }
-    }
-}
-
-// MARK: - Permission Item View
-struct PermissionItemView: View {
-    let icon: String
-    let title: String
-    let description: String
-    let isGranted: Bool
-    let onGrant: () -> Void
-
-    var body: some View {
-        HStack(spacing: 16) {
-            // Icon
-            Image(systemName: icon)
-                .font(.system(size: 20))
-                .foregroundColor(isGranted ? .green : OmiColors.textTertiary)
-                .frame(width: 32)
-
-            // Text
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(title)
-                        .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(OmiColors.textPrimary)
-
-                    if isGranted {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(.green)
-                    }
-                }
-
-                Text(description)
-                    .font(.system(size: 12))
-                    .foregroundColor(OmiColors.textTertiary)
-            }
-
-            Spacer()
-
-            // Grant button
-            if !isGranted {
-                Button(action: onGrant) {
-                    Text("Grant")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(OmiColors.purplePrimary)
-                        )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(OmiColors.backgroundTertiary.opacity(0.5))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(isGranted ? Color.green.opacity(0.3) : OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
-                )
-        )
     }
 }
 
