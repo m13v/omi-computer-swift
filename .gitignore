@@ -46,3 +46,6 @@ scripts/
 
 # Playwright MCP cache
 .playwright-mcp/
+
+# Python reference code (for Rust porting)
+**/python_reference/
