@@ -10,6 +10,9 @@ class FeedbackWindow {
         // Close existing window if any
         window?.close()
 
+        // Track feedback opened
+        AnalyticsManager.shared.feedbackOpened()
+
         let feedbackView = FeedbackView(userEmail: userEmail) {
             window?.close()
             window = nil
@@ -126,6 +129,9 @@ struct FeedbackView: View {
 
     private func submitFeedback() {
         isSubmitting = true
+
+        // Track feedback submitted
+        AnalyticsManager.shared.feedbackSubmitted(feedbackLength: feedbackText.count)
 
         // Create a Sentry event ID (capture a message to attach feedback to)
         let eventId = SentrySDK.capture(message: "User Feedback Submitted")
