@@ -153,16 +153,16 @@ impl FirestoreService {
 
     /// Fetch a new access token from Google OAuth
     async fn fetch_new_access_token(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        // Try metadata server first (for GKE/Cloud Run)
-        if let Ok(token) = self.try_metadata_server().await {
-            tracing::info!("Got access token from GCP metadata server");
-            return Ok(token);
-        }
-
-        // Use service account credentials
+        // Use service account credentials first (has full permissions)
         if let Some(creds) = &self.credentials {
             let token = self.get_token_from_service_account(creds).await?;
             tracing::info!("Got access token from service account");
+            return Ok(token);
+        }
+
+        // Fall back to metadata server (for GKE/Cloud Run without credentials file)
+        if let Ok(token) = self.try_metadata_server().await {
+            tracing::info!("Got access token from GCP metadata server");
             return Ok(token);
         }
 
