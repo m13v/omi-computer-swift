@@ -140,9 +140,17 @@ cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null ||
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-# Sign app with ad-hoc signature (for local development)
-echo "Signing app (ad-hoc)..."
-codesign --force --deep --sign - "$APP_BUNDLE"
+# Sign app with hardened runtime (preserves TCC permissions across builds)
+echo "Signing app with hardened runtime..."
+if security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
+    codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
+elif security find-identity -v -p codesigning | grep -q "Omi Dev"; then
+    codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "Omi Dev" "$APP_BUNDLE"
+else
+    echo "Warning: No persistent signing identity found. Using ad-hoc (permissions won't persist)."
+    echo "To fix: Create a self-signed certificate named 'Omi Dev' in Keychain Access."
+    codesign --force --deep --sign - "$APP_BUNDLE"
+fi
 
 echo ""
 echo "=== Services Running ==="
