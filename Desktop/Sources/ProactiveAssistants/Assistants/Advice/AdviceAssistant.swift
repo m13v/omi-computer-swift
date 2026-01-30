@@ -175,6 +175,11 @@ actor AdviceAssistant: ProactiveAssistant {
             }
         }
 
+        // Track advice generated
+        await MainActor.run {
+            AnalyticsManager.shared.adviceGenerated(category: advice.category)
+        }
+
         // Send notification
         await sendAdviceNotification(advice: advice)
 
