@@ -4,6 +4,7 @@ import FirebaseAuth
 
 /// Singleton manager for MixPanel analytics
 /// Mirrors the functionality from the Flutter app's MixpanelManager
+@MainActor
 class MixpanelManager {
     static let shared = MixpanelManager()
 
