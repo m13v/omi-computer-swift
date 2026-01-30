@@ -149,18 +149,19 @@ actor RewindIndexer {
                         relativePath: screenshot.imagePath
                     )
 
-                    // Extract text
-                    let ocrText = try await RewindOCRService.shared.extractText(from: imageData)
+                    // Extract text with bounding boxes
+                    let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: imageData)
 
-                    // Update database
-                    try await RewindDatabase.shared.updateOCRText(id: id, ocrText: ocrText)
+                    // Update database with full OCR result (including bounding boxes)
+                    try await RewindDatabase.shared.updateOCRResult(id: id, ocrResult: ocrResult)
 
-                    log("RewindIndexer: OCR completed for screenshot \(id), extracted \(ocrText.count) characters")
+                    log("RewindIndexer: OCR completed for screenshot \(id), extracted \(ocrResult.fullText.count) characters, \(ocrResult.blocks.count) text blocks")
 
                 } catch {
                     logError("RewindIndexer: OCR failed for screenshot \(id): \(error)")
                     // Mark as indexed anyway to prevent retrying forever
-                    try? await RewindDatabase.shared.updateOCRText(id: id, ocrText: "")
+                    let emptyResult = OCRResult(fullText: "", blocks: [], processedAt: Date())
+                    try? await RewindDatabase.shared.updateOCRResult(id: id, ocrResult: emptyResult)
                 }
             }
 
