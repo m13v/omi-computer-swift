@@ -136,6 +136,89 @@ class AnalyticsManager {
         PostHogManager.shared.appLaunched()
     }
 
+    /// Track first launch with comprehensive system diagnostics
+    /// This only fires once per installation
+    func trackFirstLaunchIfNeeded() {
+        let defaults = UserDefaults.standard
+        let hasLaunchedKey = "hasLaunchedBefore"
+
+        // Check if this is the first launch
+        guard !defaults.bool(forKey: hasLaunchedKey) else {
+            return
+        }
+
+        // Mark as launched so this only fires once
+        defaults.set(true, forKey: hasLaunchedKey)
+
+        // Collect system diagnostics
+        let diagnostics = collectSystemDiagnostics()
+
+        // Track in both analytics systems
+        MixpanelManager.shared.firstLaunch(diagnostics: diagnostics)
+        PostHogManager.shared.firstLaunch(diagnostics: diagnostics)
+
+        log("Analytics: First launch diagnostics tracked")
+    }
+
+    /// Collect comprehensive system diagnostics for first launch event
+    private func collectSystemDiagnostics() -> [String: Any] {
+        var diagnostics: [String: Any] = [:]
+
+        // App version
+        diagnostics["app_version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "unknown"
+        diagnostics["build_number"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "unknown"
+
+        // macOS version (detailed)
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        diagnostics["os_version"] = "\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)"
+        diagnostics["os_major_version"] = osVersion.majorVersion
+        diagnostics["os_minor_version"] = osVersion.minorVersion
+        diagnostics["os_patch_version"] = osVersion.patchVersion
+        diagnostics["os_version_string"] = ProcessInfo.processInfo.operatingSystemVersionString
+
+        // Architecture (Apple Silicon vs Intel)
+        #if arch(arm64)
+        diagnostics["architecture"] = "arm64"
+        diagnostics["is_apple_silicon"] = true
+        #elseif arch(x86_64)
+        diagnostics["architecture"] = "x86_64"
+        diagnostics["is_apple_silicon"] = false
+        #else
+        diagnostics["architecture"] = "unknown"
+        diagnostics["is_apple_silicon"] = false
+        #endif
+
+        // App bundle location - helps diagnose installation issues
+        if let bundlePath = Bundle.main.bundlePath as String? {
+            diagnostics["bundle_path"] = bundlePath
+
+            // Categorize the installation location
+            if bundlePath.hasPrefix("/Volumes/") {
+                diagnostics["install_location"] = "dmg_mounted"
+            } else if bundlePath.contains("/Downloads/") {
+                diagnostics["install_location"] = "downloads_folder"
+            } else if bundlePath.hasPrefix("/Applications/") {
+                diagnostics["install_location"] = "applications_system"
+            } else if bundlePath.contains("/Applications/") {
+                diagnostics["install_location"] = "applications_user"
+            } else if bundlePath.contains("DerivedData") || bundlePath.contains("Xcode") {
+                diagnostics["install_location"] = "xcode_build"
+            } else {
+                diagnostics["install_location"] = "other"
+            }
+        }
+
+        // Device info
+        diagnostics["processor_count"] = ProcessInfo.processInfo.processorCount
+        diagnostics["physical_memory_gb"] = Int(ProcessInfo.processInfo.physicalMemory / 1_073_741_824)
+
+        // Locale info
+        diagnostics["locale"] = Locale.current.identifier
+        diagnostics["timezone"] = TimeZone.current.identifier
+
+        return diagnostics
+    }
+
     func appBecameActive() {
         MixpanelManager.shared.appBecameActive()
         PostHogManager.shared.appBecameActive()
