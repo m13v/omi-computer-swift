@@ -42,9 +42,15 @@ struct OMIApp: App {
     @StateObject private var authState = AuthState.shared
     @Environment(\.openWindow) private var openWindow
 
+    /// Window title with version number
+    private var windowTitle: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
+        return version.isEmpty ? "Omi" : "Omi v\(version)"
+    }
+
     var body: some Scene {
         // Main desktop window - handles sign in, onboarding, and main content
-        Window("Omi", id: "main") {
+        Window(windowTitle, id: "main") {
             DesktopHomeView()
                 .onAppear {
                     log("OmiApp: Main window content appeared")
@@ -130,7 +136,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             var foundOmiWindow = false
             for window in NSApp.windows {
                 log("AppDelegate: Window title='\(window.title)', isVisible=\(window.isVisible)")
-                if window.title == "Omi" {
+                if window.title.hasPrefix("Omi") {
                     foundOmiWindow = true
                     window.makeKeyAndOrderFront(nil)
                     window.appearance = NSAppearance(named: .darkAqua)
@@ -195,7 +201,7 @@ struct MenuBarView: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NSApp.activate(ignoringOtherApps: true)
                 for window in NSApp.windows {
-                    if window.title == "Omi" {
+                    if window.title.hasPrefix("Omi") {
                         window.makeKeyAndOrderFront(nil)
                         window.appearance = NSAppearance(named: .darkAqua)
                     }
