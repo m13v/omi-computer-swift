@@ -304,55 +304,68 @@ actor FocusAssistant: ProactiveAssistant {
             onStatusChange?(analysis.status)
             lastStatus = analysis.status
 
-            // Save to FocusStorage for UI and Firestore sync
-            Task { @MainActor in
-                FocusStorage.shared.addSession(from: analysis)
-            }
-
-            // Only notify on STATE CHANGE to prevent duplicate notifications from parallel frames
-            // e.g., if 3 frames all return "distracted", only the first one notifies
+            // Only act on STATE CHANGE to prevent duplicates from parallel frames
+            // e.g., if 3 frames all return "distracted", only the first one triggers
             if analysis.status == .distracted && lastNotifiedState != .distracted {
                 // Transitioning to distracted state
+                // Update notified state BEFORE other actions to prevent race with parallel frames
+                lastNotifiedState = .distracted
+
+                // Save to FocusStorage for UI and Firestore sync
+                Task { @MainActor in
+                    FocusStorage.shared.addSession(from: analysis)
+                }
+
+                // Trigger red glow via callback (runs on MainActor in plugin)
+                onDistraction?()
+
+                // Start analysis cooldown to prevent continuous API calls while distracted
+                let cooldownSeconds = await MainActor.run {
+                    FocusAssistantSettings.shared.cooldownIntervalSeconds
+                }
+                analysisCooldownEndTime = Date().addingTimeInterval(cooldownSeconds)
+                log("Focus: Started \(Int(cooldownSeconds))s analysis cooldown")
+
                 if let message = analysis.message {
                     let fullMessage = "\(analysis.appOrSite) - \(message)"
                     log("ALERT: \(message)")
 
-                    // Update notified state BEFORE sending to prevent race with parallel frames
-                    lastNotifiedState = .distracted
-
-                    NotificationService.shared.sendNotification(
-                        title: "Focus",
-                        message: fullMessage,
-                        assistantId: identifier
-                    )
-
-                    // Trigger red glow via callback (runs on MainActor in plugin)
-                    onDistraction?()
-
-                    // Start analysis cooldown to prevent continuous API calls while distracted
-                    let cooldownSeconds = await MainActor.run {
-                        FocusAssistantSettings.shared.cooldownIntervalSeconds
+                    await MainActor.run {
+                        NotificationService.shared.sendNotification(
+                            title: "Focus",
+                            message: fullMessage,
+                            assistantId: identifier
+                        )
                     }
-                    analysisCooldownEndTime = Date().addingTimeInterval(cooldownSeconds)
-                    log("Focus: Started \(Int(cooldownSeconds))s analysis cooldown")
 
                     // Call the callback for Flutter event streaming
                     onAlert(fullMessage)
                 }
-            } else if analysis.status == .focused && lastNotifiedState == .distracted {
-                // Transitioning from distracted to focused
+            } else if analysis.status == .focused && lastNotifiedState != .focused {
+                // Transitioning to focused state (from distracted OR initial nil state)
+                let wasDistracted = lastNotifiedState == .distracted
                 lastNotifiedState = .focused
 
-                // Trigger the glow effect
-                onRefocus?()
+                // Save to FocusStorage for UI and Firestore sync
+                Task { @MainActor in
+                    FocusStorage.shared.addSession(from: analysis)
+                }
 
-                if let message = analysis.message {
-                    log("Back on track: \(message)")
-                    NotificationService.shared.sendNotification(
-                        title: "Focus",
-                        message: message,
-                        assistantId: identifier
-                    )
+                // Only trigger glow and notification when returning FROM distracted
+                if wasDistracted {
+                    // Trigger the glow effect
+                    onRefocus?()
+
+                    if let message = analysis.message {
+                        log("Back on track: \(message)")
+                        await MainActor.run {
+                            NotificationService.shared.sendNotification(
+                                title: "Focus",
+                                message: message,
+                                assistantId: identifier
+                            )
+                        }
+                    }
                 }
             }
         } catch {
