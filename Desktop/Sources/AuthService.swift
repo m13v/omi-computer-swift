@@ -190,6 +190,7 @@ class AuthService {
 
         // Track sign-in started
         MixpanelManager.shared.signInStarted(provider: provider)
+        PostHogManager.shared.signInStarted(provider: provider)
 
         defer { isLoading = false }
 
@@ -268,6 +269,8 @@ class AuthService {
             // Track sign-in completed and identify user
             MixpanelManager.shared.signInCompleted(provider: provider)
             MixpanelManager.shared.identify()
+            PostHogManager.shared.signInCompleted(provider: provider)
+            PostHogManager.shared.identify()
 
             // Set Sentry user context for error tracking
             let sentryUser = User(userId: userId)
@@ -283,6 +286,7 @@ class AuthService {
         } catch {
             NSLog("OMI AUTH: Error during sign in: %@", error.localizedDescription)
             MixpanelManager.shared.signInFailed(provider: provider, error: error.localizedDescription)
+            PostHogManager.shared.signInFailed(provider: provider, error: error.localizedDescription)
             self.error = error.localizedDescription
             throw error
         }
@@ -707,9 +711,11 @@ class AuthService {
     // MARK: - Sign Out
 
     func signOut() throws {
-        // Track sign out and reset MixPanel
+        // Track sign out and reset analytics
         MixpanelManager.shared.signedOut()
         MixpanelManager.shared.reset()
+        PostHogManager.shared.signedOut()
+        PostHogManager.shared.reset()
 
         // Clear Sentry user context
         SentrySDK.setUser(nil)
