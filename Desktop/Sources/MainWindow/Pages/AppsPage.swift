@@ -98,6 +98,9 @@ struct AppsPage: View {
         }
         .sheet(item: $selectedApp) { app in
             AppDetailSheet(app: app, appProvider: appProvider)
+                .onAppear {
+                    AnalyticsManager.shared.appDetailViewed(appId: app.id, appName: app.name)
+                }
         }
         .sheet(isPresented: $showFilterSheet) {
             AppFilterSheet(appProvider: appProvider)
