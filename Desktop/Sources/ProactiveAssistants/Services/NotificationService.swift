@@ -1,6 +1,7 @@
 import Foundation
 import UserNotifications
 
+@MainActor
 class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationService()
 
@@ -13,7 +14,7 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     // MARK: - UNUserNotificationCenterDelegate
 
     // This allows notifications to be displayed even when the app is in the foreground
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
         // Show banner, play sound, and update badge even when app is frontmost
@@ -21,7 +22,7 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     }
 
     // Handle notification tap
-    func userNotificationCenter(_ center: UNUserNotificationCenter,
+    nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 didReceive response: UNNotificationResponse,
                                 withCompletionHandler completionHandler: @escaping () -> Void) {
         completionHandler()
