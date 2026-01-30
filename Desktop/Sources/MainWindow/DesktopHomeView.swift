@@ -100,6 +100,8 @@ struct DesktopHomeView: View {
                         AppsPage()
                     case 8:
                         SettingsPage()
+                    case 9:
+                        PermissionsPage(appState: appState)
                     default:
                         ConversationsPage(appState: appState)
                     }
