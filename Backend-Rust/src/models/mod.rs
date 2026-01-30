@@ -7,7 +7,6 @@ pub mod category;
 pub mod conversation;
 pub mod focus_session;
 pub mod memory;
-pub mod message;
 pub mod request;
 pub mod user_settings;
 
@@ -26,10 +25,6 @@ pub use conversation::{
 pub use memory::{
     CreateMemoryRequest, CreateMemoryResponse, EditMemoryRequest, Memory, MemoryDB,
     MemoryStatusResponse, ReviewMemoryRequest, UpdateVisibilityRequest,
-};
-pub use message::{
-    ChatSession, GetMessagesQuery, Message, MessageAppQuery, MessageSender, MessageType,
-    SendMessageRequest,
 };
 pub use request::{CreateConversationRequest, CreateConversationResponse};
 pub use focus_session::{
