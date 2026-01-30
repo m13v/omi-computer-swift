@@ -38,11 +38,25 @@ class AppState: ObservableObject {
     @Published var conversations: [ServerConversation] = []
     @Published var isLoadingConversations: Bool = false
     @Published var conversationsError: String? = nil
+    @Published var totalConversationsCount: Int? = nil  // Total count (fetched separately)
 
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
     @Published var hasScreenRecordingPermission = false
     @Published var hasAutomationPermission = false
+
+    /// Returns list of missing permissions that are required for full functionality
+    var missingPermissions: [String] {
+        var missing: [String] = []
+        if !hasMicrophonePermission { missing.append("Microphone") }
+        if !hasScreenRecordingPermission { missing.append("Screen Recording") }
+        return missing
+    }
+
+    /// True if any required permissions are missing
+    var hasMissingPermissions: Bool {
+        !missingPermissions.isEmpty
+    }
 
     // Transcription services
     private var audioCaptureService: AudioCaptureService?
@@ -535,18 +549,32 @@ class AppState: ObservableObject {
         isLoadingConversations = true
         conversationsError = nil
 
+        // Fetch conversations and count in parallel
+        async let conversationsTask = APIClient.shared.getConversations(
+            limit: 50,
+            offset: 0,
+            statuses: [.completed, .processing],
+            includeDiscarded: false
+        )
+        async let countTask = APIClient.shared.getConversationsCount(includeDiscarded: false)
+
         do {
-            let fetchedConversations = try await APIClient.shared.getConversations(
-                limit: 50,
-                offset: 0,
-                statuses: [.completed, .processing],
-                includeDiscarded: false
-            )
+            let fetchedConversations = try await conversationsTask
             conversations = fetchedConversations
             log("Conversations: Loaded \(fetchedConversations.count) conversations")
         } catch {
             logError("Conversations: Failed to load", error: error)
             conversationsError = error.localizedDescription
+        }
+
+        // Update total count separately (don't fail the whole load if count fails)
+        do {
+            let count = try await countTask
+            totalConversationsCount = count
+            log("Conversations: Total count = \(count)")
+        } catch {
+            logError("Conversations: Failed to get count", error: error)
+            // Don't set error - conversations still loaded fine
         }
 
         isLoadingConversations = false
