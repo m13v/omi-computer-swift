@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 import ScreenCaptureKit
 
-class ScreenCaptureService {
+final class ScreenCaptureService: Sendable {
     private let maxSize: CGFloat = 1024
     private let jpegQuality: CGFloat = 0.85
 
