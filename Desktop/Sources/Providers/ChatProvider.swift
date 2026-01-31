@@ -205,6 +205,7 @@ class ChatProvider: ObservableObject {
         messages.removeAll()
         errorMessage = nil
         log("Chat cleared")
+        AnalyticsManager.shared.chatCleared()
     }
 
     // MARK: - App Selection
