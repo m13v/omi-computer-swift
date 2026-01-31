@@ -458,18 +458,25 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Result of finishing a conversation
+    enum FinishConversationResult {
+        case saved
+        case discarded
+        case error(String)
+    }
+
     /// Finish the current conversation but keep recording for the next one
     @MainActor
-    func finishConversation() async {
+    func finishConversation() async -> FinishConversationResult {
         guard !speakerSegments.isEmpty else {
             log("Transcription: No segments to finish")
-            return
+            return .discarded
         }
 
         log("Transcription: Finishing conversation, keeping recording active")
 
         // Process the current conversation
-        await finalizeConversation()
+        let result = await finalizeConversation()
 
         // Clear segments for the next conversation but keep recording
         speakerSegments = []
@@ -483,6 +490,8 @@ class AppState: ObservableObject {
         await refreshConversations()
 
         log("Transcription: Ready for next conversation")
+
+        return result
     }
 
     /// Stop transcription services without finalizing (internal use)
@@ -586,10 +595,10 @@ class AppState: ObservableObject {
     }
 
     /// Finalize and save the current conversation to the backend
-    private func finalizeConversation() async {
+    private func finalizeConversation() async -> FinishConversationResult {
         guard !speakerSegments.isEmpty, let startTime = recordingStartTime else {
             log("Transcription: No segments to save")
-            return
+            return .discarded
         }
 
         let endTime = Date()
@@ -615,20 +624,23 @@ class AppState: ObservableObject {
             )
             log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded)")
 
-            // Show notification to user
-            NotificationService.shared.sendNotification(
-                title: "Conversation Saved",
-                message: response.discarded ? "Conversation was too short and was discarded" : "Your conversation has been processed"
+            if response.discarded {
+                return .discarded
+            }
+
+            // Track successful conversation creation in analytics (Mixpanel + PostHog)
+            let durationSeconds = Int(endTime.timeIntervalSince(startTime))
+            AnalyticsManager.shared.conversationCreated(
+                conversationId: response.id,
+                source: "desktop",
+                durationSeconds: durationSeconds
             )
+
+            return .saved
         } catch {
             logError("Transcription: Failed to save conversation", error: error)
             AnalyticsManager.shared.recordingError(error: "Failed to save: \(error.localizedDescription)")
-
-            // Show error notification
-            NotificationService.shared.sendNotification(
-                title: "Save Failed",
-                message: "Could not save conversation: \(error.localizedDescription)"
-            )
+            return .error(error.localizedDescription)
         }
     }
 
