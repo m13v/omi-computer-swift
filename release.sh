@@ -2,8 +2,11 @@
 set -e
 
 # Load .env if present (for RELEASE_SECRET, SPARKLE_PRIVATE_KEY, etc.)
+# Using set -a/source instead of xargs to handle multiline values (APPLE_PRIVATE_KEY)
 if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
+    set -a
+    source .env
+    set +a
 fi
 
 # =============================================================================
@@ -72,8 +75,12 @@ else
     VERSION="$1"
 fi
 
+# Calculate build number early (needed for CFBundleVersion in app bundle)
+# Converts "0.0.7" → 7, "1.2.3" → 1002003
+BUILD_NUMBER=$(echo "$VERSION" | tr '.' '\n' | awk '{s=s*1000+$1}END{print s}')
+
 echo "=============================================="
-echo "  OMI Release Pipeline v$VERSION"
+echo "  OMI Release Pipeline v$VERSION (build $BUILD_NUMBER)"
 echo "=============================================="
 echo ""
 
@@ -97,7 +104,7 @@ echo "  Pushing to Google Container Registry..."
 docker push "$BACKEND_IMAGE:$VERSION"
 docker push "$BACKEND_IMAGE:latest"
 
-# Deploy to Cloud Run
+# Deploy to Cloud Run with all backend env vars from .env
 echo "  Deploying to Cloud Run..."
 gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --image "$BACKEND_IMAGE:$VERSION" \
@@ -105,7 +112,15 @@ gcloud run deploy "$CLOUD_RUN_SERVICE" \
     --region "$GCP_REGION" \
     --platform managed \
     --allow-unauthenticated \
-    --update-env-vars "RELEASE_SECRET=$RELEASE_SECRET,FIREBASE_PROJECT_ID=$GCP_PROJECT,RUST_LOG=info" \
+    --set-env-vars "FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID,FIREBASE_API_KEY=$FIREBASE_API_KEY,GEMINI_API_KEY=$GEMINI_API_KEY,APPLE_CLIENT_ID=$APPLE_CLIENT_ID,APPLE_TEAM_ID=$APPLE_TEAM_ID,APPLE_KEY_ID=$APPLE_KEY_ID,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET,RUST_LOG=info,RELEASE_SECRET=$RELEASE_SECRET,RESEND_API_KEY=$RESEND_API_KEY" \
+    --quiet
+
+# Add APPLE_PRIVATE_KEY separately (multiline value requires special handling)
+echo "  Adding Apple Sign-In private key..."
+gcloud run services update "$CLOUD_RUN_SERVICE" \
+    --project "$GCP_PROJECT" \
+    --region "$GCP_REGION" \
+    --update-env-vars "^@^APPLE_PRIVATE_KEY=$APPLE_PRIVATE_KEY" \
     --quiet
 
 echo "  ✓ Backend deployed"
@@ -162,8 +177,8 @@ cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
-/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $VERSION" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
+/usr/libexec/PlistBuddy -c "Add :CFBundleVersion string $BUILD_NUMBER" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :LSMinimumSystemVersion 15.0" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy .env.app (app runtime secrets only - not build secrets)
@@ -367,9 +382,6 @@ fi
 # Step 11: Create GitHub Release & Register in Firestore
 # -----------------------------------------------------------------------------
 echo "[11/11] Publishing to GitHub and registering release..."
-
-# Build number for version comparison (Sparkle uses this)
-BUILD_NUMBER=$(echo "$VERSION" | tr '.' '\n' | awk '{s=s*1000+$1}END{print s}')
 
 # Tag format: v{version}+{build}-macos
 RELEASE_TAG="v${VERSION}+${BUILD_NUMBER}-macos"
