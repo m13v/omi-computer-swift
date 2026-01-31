@@ -1,0 +1,221 @@
+name: Test macOS Installation
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag to test (e.g., v0.0.10+10-macos)'
+        required: false
+        default: 'latest'
+
+jobs:
+  test-install:
+    runs-on: macos-15
+    timeout-minutes: 15
+
+    steps:
+      - name: System Info
+        run: |
+          echo "=== System Information ==="
+          sw_vers
+          echo ""
+          echo "=== Architecture ==="
+          uname -m
+          echo ""
+          echo "=== Gatekeeper Status ==="
+          spctl --status || true
+          echo ""
+          echo "=== Security Assessment Policy ==="
+          spctl --assess --verbose=4 /Applications/Calculator.app 2>&1 || true
+
+      - name: Download DMG from GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "=== Downloading DMG ==="
+
+          # Get release tag
+          TAG="${{ github.event.inputs.release_tag }}"
+          if [ "$TAG" = "latest" ] || [ -z "$TAG" ]; then
+            TAG=$(gh release list --repo BasedHardware/omi --limit 1 | head -1 | awk '{print $3}')
+            echo "Using latest release: $TAG"
+          fi
+
+          # Download DMG
+          gh release download "$TAG" \
+            --repo BasedHardware/omi \
+            --pattern "Omi.Computer.dmg" \
+            --dir .
+
+          echo ""
+          echo "=== Downloaded file ==="
+          ls -la Omi.Computer.dmg
+
+          echo ""
+          echo "=== File type ==="
+          file Omi.Computer.dmg
+
+          echo ""
+          echo "=== Quarantine attributes (simulating browser download) ==="
+          # Add quarantine attribute to simulate browser download
+          xattr -w com.apple.quarantine "0083;$(printf '%x' $(date +%s));Safari;$(uuidgen)" Omi.Computer.dmg
+          xattr -l Omi.Computer.dmg
+
+      - name: Verify DMG Signature
+        run: |
+          echo "=== DMG Code Signature ==="
+          codesign -dv --verbose=4 Omi.Computer.dmg 2>&1 || echo "DMG signature check failed"
+
+          echo ""
+          echo "=== Gatekeeper Assessment of DMG ==="
+          spctl --assess --verbose=4 --type open --context context:primary-signature Omi.Computer.dmg 2>&1 || echo "Gatekeeper rejected DMG"
+
+      - name: Mount DMG
+        run: |
+          echo "=== Mounting DMG ==="
+          hdiutil attach Omi.Computer.dmg -nobrowse -quiet
+
+          echo ""
+          echo "=== Mounted volumes ==="
+          ls -la /Volumes/
+
+          echo ""
+          echo "=== DMG Contents ==="
+          ls -la "/Volumes/Omi Computer/" || ls -la /Volumes/Omi*/
+
+      - name: Copy App to Applications
+        run: |
+          echo "=== Copying to /Applications ==="
+          # Find the mounted volume
+          VOLUME=$(ls -d /Volumes/Omi* | head -1)
+          echo "Volume: $VOLUME"
+
+          # Copy app
+          cp -R "$VOLUME/Omi Computer.app" /Applications/
+
+          echo ""
+          echo "=== Installed app ==="
+          ls -la "/Applications/Omi Computer.app"
+
+          echo ""
+          echo "=== App bundle contents ==="
+          ls -la "/Applications/Omi Computer.app/Contents/"
+
+          echo ""
+          echo "=== Frameworks ==="
+          ls -la "/Applications/Omi Computer.app/Contents/Frameworks/" || echo "No Frameworks directory"
+
+      - name: Verify App Signature
+        run: |
+          echo "=== Code Signature Verification ==="
+          codesign -dv --verbose=4 "/Applications/Omi Computer.app" 2>&1
+
+          echo ""
+          echo "=== Deep Signature Check ==="
+          codesign --verify --deep --strict --verbose=2 "/Applications/Omi Computer.app" 2>&1 || echo "Deep verification failed"
+
+          echo ""
+          echo "=== Entitlements ==="
+          codesign -d --entitlements - "/Applications/Omi Computer.app" 2>&1 || echo "Could not read entitlements"
+
+      - name: Gatekeeper Assessment
+        run: |
+          echo "=== Gatekeeper Assessment ==="
+          spctl --assess --verbose=4 "/Applications/Omi Computer.app" 2>&1 || echo "Gatekeeper assessment failed with exit code $?"
+
+          echo ""
+          echo "=== Quarantine status ==="
+          xattr -l "/Applications/Omi Computer.app"
+
+          echo ""
+          echo "=== Notarization info ==="
+          spctl --assess --verbose=4 --type execute "/Applications/Omi Computer.app" 2>&1 || echo "Execute assessment failed"
+
+          echo ""
+          echo "=== Stapler validation ==="
+          xcrun stapler validate "/Applications/Omi Computer.app" 2>&1 || echo "Stapler validation failed"
+
+      - name: Check for Translocation
+        run: |
+          echo "=== Checking App Translocation ==="
+          # App translocation moves quarantined apps to a random read-only location
+          # This can cause issues with frameworks and resources
+
+          # Get the actual path the app would run from
+          ACTUAL_PATH=$(/System/Library/Frameworks/Security.framework/Versions/Current/Resources/translocate "/Applications/Omi Computer.app" 2>/dev/null || echo "/Applications/Omi Computer.app")
+          echo "App would run from: $ACTUAL_PATH"
+
+          if [ "$ACTUAL_PATH" != "/Applications/Omi Computer.app" ]; then
+            echo "WARNING: App will be translocated! This may cause issues."
+            echo "Translocated path: $ACTUAL_PATH"
+          else
+            echo "App will NOT be translocated (good)"
+          fi
+
+      - name: Attempt to Launch App
+        run: |
+          echo "=== Attempting to launch app ==="
+
+          # Clear any quarantine (as if user approved in Gatekeeper)
+          xattr -cr "/Applications/Omi Computer.app"
+
+          # Try to launch the app
+          echo "Launching app..."
+          open -a "Omi Computer" &
+          OPEN_PID=$!
+
+          # Wait a bit for app to start
+          sleep 5
+
+          echo ""
+          echo "=== Check if app is running ==="
+          pgrep -l "Omi Computer" || echo "App process not found"
+
+          echo ""
+          echo "=== Process list ==="
+          ps aux | grep -i "omi" | grep -v grep || echo "No Omi processes found"
+
+          echo ""
+          echo "=== Recent crash logs ==="
+          ls -la ~/Library/Logs/DiagnosticReports/ 2>/dev/null | grep -i omi | tail -5 || echo "No crash logs found"
+
+          # Check for crash reports
+          if ls ~/Library/Logs/DiagnosticReports/*Omi* 2>/dev/null; then
+            echo ""
+            echo "=== CRASH REPORT FOUND ==="
+            cat ~/Library/Logs/DiagnosticReports/*Omi*.crash | head -200 || true
+          fi
+
+      - name: Check System Logs
+        if: always()
+        run: |
+          echo "=== System logs related to Omi ==="
+          log show --predicate 'process == "Omi Computer" OR message CONTAINS "Omi Computer" OR message CONTAINS "com.omi.computer"' --last 5m 2>/dev/null | head -100 || echo "No logs found"
+
+          echo ""
+          echo "=== LaunchServices logs ==="
+          log show --predicate 'subsystem == "com.apple.launchservices"' --last 5m 2>/dev/null | grep -i omi | head -50 || echo "No LaunchServices logs for Omi"
+
+          echo ""
+          echo "=== Security logs ==="
+          log show --predicate 'subsystem == "com.apple.security" OR subsystem == "com.apple.TCC"' --last 5m 2>/dev/null | grep -i omi | head -50 || echo "No security logs for Omi"
+
+          echo ""
+          echo "=== Gatekeeper/XProtect logs ==="
+          log show --predicate 'process == "syspolicyd" OR process == "XprotectService"' --last 5m 2>/dev/null | head -50 || echo "No Gatekeeper logs"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          echo "=== Cleanup ==="
+          # Kill app if running
+          pkill -9 "Omi Computer" 2>/dev/null || true
+
+          # Unmount DMG
+          hdiutil detach "/Volumes/Omi Computer" -quiet 2>/dev/null || true
+          hdiutil detach /Volumes/Omi* -quiet 2>/dev/null || true
+
+          # Remove app
+          rm -rf "/Applications/Omi Computer.app"
+
+          echo "Cleanup complete"
