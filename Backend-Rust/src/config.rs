@@ -8,9 +8,7 @@ use std::env;
 pub struct Config {
     /// Server port
     pub port: u16,
-    /// OpenAI API key for LLM calls
-    pub openai_api_key: Option<String>,
-    /// Gemini API key for LLM calls (alternative)
+    /// Gemini API key for LLM calls
     pub gemini_api_key: Option<String>,
     /// Google Application Credentials path for Firestore
     pub google_application_credentials: Option<String>,
@@ -42,7 +40,6 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
-            openai_api_key: env::var("OPENAI_API_KEY").ok(),
             gemini_api_key: env::var("GEMINI_API_KEY").ok(),
             google_application_credentials: env::var("GOOGLE_APPLICATION_CREDENTIALS").ok(),
             firebase_project_id: env::var("FIREBASE_PROJECT_ID").ok()
@@ -63,8 +60,8 @@ impl Config {
         if self.google_application_credentials.is_none() {
             tracing::warn!("GOOGLE_APPLICATION_CREDENTIALS not set - Firestore will use default credentials");
         }
-        if self.openai_api_key.is_none() && self.gemini_api_key.is_none() {
-            tracing::warn!("No LLM API key set (OPENAI_API_KEY or GEMINI_API_KEY)");
+        if self.gemini_api_key.is_none() {
+            tracing::warn!("GEMINI_API_KEY not set - conversation processing will fail");
         }
         Ok(())
     }
