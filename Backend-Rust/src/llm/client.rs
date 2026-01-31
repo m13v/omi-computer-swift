@@ -1,4 +1,4 @@
-// LLM Client - OpenAI and Gemini API integration
+// LLM Client - Gemini API integration
 // Port from Python backend (llm.py)
 
 use chrono::{DateTime, Utc};
@@ -7,13 +7,6 @@ use serde::{Deserialize, Serialize};
 
 use super::prompts::*;
 use crate::models::{ActionItem, Category, Event, Memory, MemoryCategory, MemoryDB, Structured, TranscriptSegment};
-
-/// LLM Provider
-#[derive(Debug, Clone)]
-pub enum LlmProvider {
-    OpenAI,
-    Gemini,
-}
 
 /// Calendar participant for meeting context
 #[derive(Debug, Clone, Default)]
@@ -77,51 +70,11 @@ impl CalendarMeetingContext {
     }
 }
 
-/// LLM Client for calling OpenAI or Gemini
+/// LLM Client for calling Gemini
 pub struct LlmClient {
     client: Client,
-    provider: LlmProvider,
     api_key: String,
     model: String,
-}
-
-// OpenAI API types
-#[derive(Debug, Serialize)]
-struct OpenAIRequest {
-    model: String,
-    messages: Vec<OpenAIMessage>,
-    response_format: Option<OpenAIResponseFormat>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_completion_tokens: Option<i32>,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenAIMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Serialize)]
-struct OpenAIResponseFormat {
-    #[serde(rename = "type")]
-    format_type: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIResponse {
-    choices: Vec<OpenAIChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIChoice {
-    message: OpenAIMessageResponse,
-}
-
-#[derive(Debug, Deserialize)]
-struct OpenAIMessageResponse {
-    content: String,
 }
 
 // Gemini API types
@@ -174,21 +127,10 @@ struct GeminiPartResponse {
 }
 
 impl LlmClient {
-    /// Create a new OpenAI client
-    pub fn openai(api_key: String) -> Self {
-        Self {
-            client: Client::new(),
-            provider: LlmProvider::OpenAI,
-            api_key,
-            model: DEFAULT_MODEL.to_string(),
-        }
-    }
-
     /// Create a new Gemini client
-    pub fn gemini(api_key: String) -> Self {
+    pub fn new(api_key: String) -> Self {
         Self {
             client: Client::new(),
-            provider: LlmProvider::Gemini,
             api_key,
             model: "gemini-2.0-flash".to_string(),
         }
@@ -203,48 +145,6 @@ impl LlmClient {
 
     /// Call the LLM and get a response
     async fn call(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        match self.provider {
-            LlmProvider::OpenAI => self.call_openai(prompt, temperature, max_tokens).await,
-            LlmProvider::Gemini => self.call_gemini(prompt, temperature, max_tokens).await,
-        }
-    }
-
-    /// Call OpenAI API
-    async fn call_openai(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let request = OpenAIRequest {
-            model: self.model.clone(),
-            messages: vec![OpenAIMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            }],
-            response_format: Some(OpenAIResponseFormat {
-                format_type: "json_object".to_string(),
-            }),
-            temperature,
-            max_completion_tokens: max_tokens,
-        };
-
-        let response = self
-            .client
-            .post("https://api.openai.com/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let error = response.text().await?;
-            return Err(format!("OpenAI API error: {}", error).into());
-        }
-
-        let result: OpenAIResponse = response.json().await?;
-        Ok(result.choices.first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default())
-    }
-
-    /// Call Gemini API
-    async fn call_gemini(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let request = GeminiRequest {
             contents: vec![GeminiContent {
                 parts: vec![GeminiPart {
@@ -670,46 +570,11 @@ impl LlmClient {
         );
 
         // Call the LLM without JSON format requirement (free-form text response)
-        match self.provider {
-            LlmProvider::OpenAI => self.call_openai_text(&full_prompt, Some(0.7), Some(2000)).await,
-            LlmProvider::Gemini => self.call_gemini_text(&full_prompt, Some(0.7), Some(2000)).await,
-        }
-    }
-
-    /// Call OpenAI API with text (non-JSON) response
-    async fn call_openai_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let request = OpenAIRequest {
-            model: self.model.clone(),
-            messages: vec![OpenAIMessage {
-                role: "user".to_string(),
-                content: prompt.to_string(),
-            }],
-            response_format: None, // No JSON requirement
-            temperature,
-            max_completion_tokens: max_tokens,
-        };
-
-        let response = self
-            .client
-            .post("https://api.openai.com/v1/chat/completions")
-            .bearer_auth(&self.api_key)
-            .json(&request)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let error = response.text().await?;
-            return Err(format!("OpenAI API error: {}", error).into());
-        }
-
-        let result: OpenAIResponse = response.json().await?;
-        Ok(result.choices.first()
-            .map(|c| c.message.content.clone())
-            .unwrap_or_default())
+        self.call_text(&full_prompt, Some(0.7), Some(2000)).await
     }
 
     /// Call Gemini API with text (non-JSON) response
-    async fn call_gemini_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn call_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         #[derive(Debug, Serialize)]
         struct GeminiTextRequest {
             contents: Vec<GeminiContent>,
