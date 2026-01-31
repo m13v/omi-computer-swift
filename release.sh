@@ -171,6 +171,16 @@ fi
 # Copy GoogleService-Info.plist for Firebase
 cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
+# Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
+# Note: Bundle goes in Contents/Resources/ - our custom BundleExtension.swift looks for it there
+SWIFT_BUILD_DIR=$(swift build -c release --package-path Desktop --show-bin-path)
+if [ -d "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" ]; then
+    cp -R "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" "$APP_BUNDLE/Contents/Resources/"
+    echo "  Copied resource bundle"
+else
+    echo "Warning: Resource bundle not found at $SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle"
+fi
+
 # Update Info.plist with version and bundle info
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
