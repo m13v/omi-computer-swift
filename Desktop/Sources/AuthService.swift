@@ -720,8 +720,8 @@ class AuthService {
         saveAuthState(isSignedIn: false, email: nil, userId: nil)
         clearTokens()
 
-        // Clear onboarding state so user goes through onboarding again on next sign in
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        // Clear onboarding step/trigger flags but keep hasCompletedOnboarding
+        // Permissions are per-app on macOS, so no need to re-show onboarding after logout
         UserDefaults.standard.removeObject(forKey: "onboardingStep")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredNotification")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredAutomation")
