@@ -236,6 +236,8 @@ class AnalyticsManager {
     func conversationCreated(conversationId: String, source: String, durationSeconds: Int? = nil) {
         MixpanelManager.shared.conversationCreated(conversationId: conversationId, source: source, durationSeconds: durationSeconds)
         PostHogManager.shared.conversationCreated(conversationId: conversationId, source: source, durationSeconds: durationSeconds)
+        // Flush immediately to ensure this important event is sent
+        MixpanelManager.shared.flush()
     }
 
     func memoryDeleted(conversationId: String) {
