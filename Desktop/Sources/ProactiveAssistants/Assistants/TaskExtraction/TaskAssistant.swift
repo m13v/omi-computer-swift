@@ -153,7 +153,7 @@ actor TaskAssistant: ProactiveAssistant {
         }
 
         // Save to SQLite first
-        var extractionRecord = await saveTaskToSQLite(
+        let extractionRecord = await saveTaskToSQLite(
             task: task,
             screenshotId: screenshotId,
             contextSummary: taskResult.contextSummary
