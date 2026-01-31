@@ -135,6 +135,13 @@ cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 # Copy GoogleService-Info.plist for Firebase
 cp -f Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
+# Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
+# Note: Bundle goes in Contents/Resources/ - our custom BundleExtension.swift looks for it there
+RESOURCE_BUNDLE="Desktop/.build/arm64-apple-macosx/debug/Omi Computer_Omi Computer.bundle"
+if [ -d "$RESOURCE_BUNDLE" ]; then
+    cp -Rf "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+fi
+
 # Copy .env.app (app runtime secrets only) and add API URL
 if [ -f ".env.app" ]; then
     cp -f .env.app "$APP_BUNDLE/Contents/Resources/.env"
