@@ -171,6 +171,7 @@ class RewindViewModel: ObservableObject {
 
     func selectScreenshot(_ screenshot: Screenshot) {
         selectedScreenshot = screenshot
+        AnalyticsManager.shared.rewindScreenshotViewed(timestamp: screenshot.timestamp)
     }
 
     func selectNextScreenshot() {
@@ -179,6 +180,7 @@ class RewindViewModel: ObservableObject {
               currentIndex > 0 else { return }
 
         selectedScreenshot = screenshots[currentIndex - 1]
+        AnalyticsManager.shared.rewindTimelineNavigated(direction: "next")
     }
 
     func selectPreviousScreenshot() {
@@ -187,6 +189,7 @@ class RewindViewModel: ObservableObject {
               currentIndex < screenshots.count - 1 else { return }
 
         selectedScreenshot = screenshots[currentIndex + 1]
+        AnalyticsManager.shared.rewindTimelineNavigated(direction: "previous")
     }
 
     // MARK: - Search Result Helpers
