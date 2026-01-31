@@ -26,6 +26,9 @@ struct SettingsPage: View {
             }
         }
         .background(OmiColors.backgroundSecondary.opacity(0.3))
+        .onAppear {
+            AnalyticsManager.shared.settingsPageOpened()
+        }
     }
 }
 
