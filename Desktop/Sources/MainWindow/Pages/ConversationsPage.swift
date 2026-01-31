@@ -73,22 +73,51 @@ struct ConversationsPage: View {
     // MARK: - Main View with Recording Header + List
 
     private var mainConversationsView: some View {
-        VStack(spacing: 0) {
-            // Recording header (always visible)
-            recordingHeader
-                .padding(16)
+        ZStack(alignment: .top) {
+            VStack(spacing: 0) {
+                // Recording header (always visible)
+                recordingHeader
+                    .padding(16)
 
-            Divider()
-                .background(OmiColors.backgroundTertiary)
+                Divider()
+                    .background(OmiColors.backgroundTertiary)
 
-            // Live transcript when recording (with draggable splitter)
-            if appState.isTranscribing {
-                transcriptSection
+                // Live transcript when recording (with draggable splitter)
+                if appState.isTranscribing {
+                    transcriptSection
+                }
+
+                // Conversation list (always visible below)
+                conversationListSection
             }
 
-            // Conversation list (always visible below)
-            conversationListSection
+            // Toast banner for discarded/error feedback
+            if showDiscarded || showError {
+                toastBanner
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .padding(.top, 60)
+            }
         }
+    }
+
+    private var toastBanner: some View {
+        HStack(spacing: 8) {
+            Image(systemName: showDiscarded ? "info.circle.fill" : "exclamationmark.triangle.fill")
+                .font(.system(size: 14))
+
+            Text(showDiscarded ? "Conversation was too short and was discarded" : "Failed to save: \(errorMessage)")
+                .font(.system(size: 13))
+
+            Spacer()
+        }
+        .foregroundColor(.white)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(showDiscarded ? OmiColors.warning : OmiColors.error)
+        )
+        .padding(.horizontal, 16)
     }
 
     // MARK: - Transcript Section with Splitter
@@ -122,22 +151,29 @@ struct ConversationsPage: View {
     }
 
     private var splitterHandle: some View {
-        // Draggable splitter bar with centered chevron button
+        // Draggable splitter bar with centered button
         ZStack {
             // The splitter line itself - thick enough to grab
             Rectangle()
                 .fill(OmiColors.backgroundTertiary)
 
-            // Centered chevron button
+            // Centered button - shows "Show Transcript" when collapsed, chevron when expanded
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     isTranscriptCollapsed.toggle()
                 }
             }) {
-                Image(systemName: isTranscriptCollapsed ? "chevron.down" : "chevron.up")
-                    .font(.system(size: 9, weight: .bold))
+                if isTranscriptCollapsed {
+                    // Show text label when collapsed
+                    HStack(spacing: 4) {
+                        Text("Show Transcript")
+                            .font(.system(size: 10, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 8, weight: .bold))
+                    }
                     .foregroundColor(OmiColors.textSecondary)
-                    .frame(width: 28, height: 14)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
                     .background(
                         Capsule()
                             .fill(OmiColors.backgroundSecondary)
@@ -146,6 +182,21 @@ struct ConversationsPage: View {
                                     .strokeBorder(OmiColors.textQuaternary.opacity(0.3), lineWidth: 0.5)
                             )
                     )
+                } else {
+                    // Show just chevron when expanded
+                    Image(systemName: "chevron.up")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 28, height: 14)
+                        .background(
+                            Capsule()
+                                .fill(OmiColors.backgroundSecondary)
+                                .overlay(
+                                    Capsule()
+                                        .strokeBorder(OmiColors.textQuaternary.opacity(0.3), lineWidth: 0.5)
+                                )
+                        )
+                }
             }
             .buttonStyle(.plain)
         }
@@ -262,6 +313,7 @@ struct ConversationsPage: View {
                     isLoading: appState.isLoadingConversations,
                     error: appState.conversationsError,
                     onSelect: { conversation in
+                        AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
                         selectedConversation = conversation
                     },
                     onRefresh: {
@@ -318,6 +370,7 @@ struct ConversationsPage: View {
                             ConversationRowView(
                                 conversation: conversation,
                                 onTap: {
+                                    AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
                                     selectedConversation = conversation
                                 }
                             )
@@ -342,6 +395,7 @@ struct ConversationsPage: View {
         isSearching = true
         searchError = nil
         log("Search: Starting search for '\(query)'")
+        AnalyticsManager.shared.searchQueryEntered(query: query)
 
         Task {
             do {
@@ -452,26 +506,48 @@ struct ConversationsPage: View {
     // MARK: - Buttons
 
     @State private var isFinishing = false
+    @State private var showDiscarded = false
+    @State private var showError = false
+    @State private var errorMessage = ""
 
     private var finishButton: some View {
         Button(action: {
-            guard !isFinishing && !showSavedSuccess else { return }
+            guard !isFinishing && !showSavedSuccess && !showDiscarded else { return }
             isFinishing = true
             Task {
-                await appState.finishConversation()
+                let result = await appState.finishConversation()
                 isFinishing = false
 
-                // Show success state
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showSavedSuccess = true
-                }
+                switch result {
+                case .saved:
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showSavedSuccess = true
+                    }
+                    try? await Task.sleep(for: .seconds(2.5))
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showSavedSuccess = false
+                        isTranscriptCollapsed = true
+                    }
 
-                // After 2.5 seconds, collapse transcript and reset
-                try? await Task.sleep(for: .seconds(2.5))
+                case .discarded:
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showDiscarded = true
+                    }
+                    try? await Task.sleep(for: .seconds(2.5))
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showDiscarded = false
+                        isTranscriptCollapsed = true
+                    }
 
-                withAnimation(.easeInOut(duration: 0.3)) {
-                    showSavedSuccess = false
-                    isTranscriptCollapsed = true
+                case .error(let message):
+                    errorMessage = message
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showError = true
+                    }
+                    try? await Task.sleep(for: .seconds(3.0))
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        showError = false
+                    }
                 }
             }
         }) {
@@ -483,11 +559,17 @@ struct ConversationsPage: View {
                 } else if showSavedSuccess {
                     Image(systemName: "checkmark")
                         .font(.system(size: 12, weight: .bold))
+                } else if showDiscarded {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                } else if showError {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12))
                 } else {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                 }
-                Text(isFinishing ? "Saving..." : (showSavedSuccess ? "Saved!" : "Finish"))
+                Text(finishButtonText)
                     .font(.system(size: 13, weight: .medium))
             }
             .foregroundColor(.white)
@@ -495,11 +577,27 @@ struct ConversationsPage: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(isFinishing ? OmiColors.textTertiary : (showSavedSuccess ? OmiColors.success : OmiColors.purplePrimary))
+                    .fill(finishButtonColor)
             )
         }
         .buttonStyle(.plain)
-        .disabled(isFinishing || showSavedSuccess || appState.liveSpeakerSegments.isEmpty)
+        .disabled(isFinishing || showSavedSuccess || showDiscarded || showError || appState.liveSpeakerSegments.isEmpty)
+    }
+
+    private var finishButtonText: String {
+        if isFinishing { return "Saving..." }
+        if showSavedSuccess { return "Saved!" }
+        if showDiscarded { return "Too Short" }
+        if showError { return "Failed" }
+        return "Finish"
+    }
+
+    private var finishButtonColor: Color {
+        if isFinishing { return OmiColors.textTertiary }
+        if showSavedSuccess { return OmiColors.success }
+        if showDiscarded { return OmiColors.warning }
+        if showError { return OmiColors.error }
+        return OmiColors.purplePrimary
     }
 
     private var startRecordingButton: some View {
