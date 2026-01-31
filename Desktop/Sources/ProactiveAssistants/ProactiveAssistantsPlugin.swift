@@ -125,6 +125,9 @@ public class ProactiveAssistantsPlugin: NSObject {
     }
 
     private func continueStartMonitoring(completion: @escaping (Bool, String?) -> Void) {
+        // Report resources before starting heavy monitoring
+        ResourceMonitor.shared.reportResourcesNow(context: "before_monitoring_start")
+
         // Initialize services
         screenCaptureService = ScreenCaptureService()
 
@@ -202,12 +205,16 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         isMonitoring = true
 
+        // Report resources after initialization
+        ResourceMonitor.shared.reportResourcesNow(context: "after_monitoring_start")
+
         NotificationService.shared.sendNotification(
             title: "Omi Assistants",
             message: "Monitoring started"
         )
 
         sendEvent(type: "monitoringStarted", data: [:])
+        AnalyticsManager.shared.monitoringStarted()
         NotificationCenter.default.post(
             name: .assistantMonitoringStateDidChange,
             object: nil,
@@ -265,12 +272,16 @@ public class ProactiveAssistantsPlugin: NSObject {
         lastStatus = nil
         frameCount = 0
 
+        // Report resources after stopping
+        ResourceMonitor.shared.reportResourcesNow(context: "after_monitoring_stop")
+
         NotificationService.shared.sendNotification(
             title: "Omi Assistants",
             message: "Monitoring stopped"
         )
 
         sendEvent(type: "monitoringStopped", data: [:])
+        AnalyticsManager.shared.monitoringStopped()
         NotificationCenter.default.post(
             name: .assistantMonitoringStateDidChange,
             object: nil,
