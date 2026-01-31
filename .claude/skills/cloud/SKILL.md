@@ -56,6 +56,10 @@ gcloud run services describe desktop-backend \
 ## Deployment
 
 ### Full Redeploy (build + push + deploy)
+
+**IMPORTANT**: Use `release.sh` for production deployments - it handles all env vars correctly.
+
+For manual deploys, you MUST preserve env vars:
 ```bash
 # Build for linux/amd64 (required for Cloud Run)
 docker build --platform linux/amd64 -t gcr.io/based-hardware/desktop-backend:latest Backend-Rust/
@@ -63,7 +67,8 @@ docker build --platform linux/amd64 -t gcr.io/based-hardware/desktop-backend:lat
 # Push to GCR
 docker push gcr.io/based-hardware/desktop-backend:latest
 
-# Deploy to Cloud Run
+# Deploy to Cloud Run (preserves existing env vars with --no-traffic then migrate)
+# WARNING: Using --set-env-vars will REPLACE all env vars. Always use release.sh instead.
 gcloud run deploy desktop-backend \
     --image gcr.io/based-hardware/desktop-backend:latest \
     --project based-hardware \
@@ -71,6 +76,7 @@ gcloud run deploy desktop-backend \
     --platform managed \
     --allow-unauthenticated \
     --quiet
+# NOTE: This command does NOT set env vars - they must already exist or be added separately
 ```
 
 ### Update Environment Variables Only
