@@ -115,6 +115,17 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy binary
 cp -f "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
+# Add rpath for Frameworks folder (needed for Sparkle)
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+
+# Copy Sparkle framework
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+SPARKLE_FRAMEWORK="Desktop/.build/arm64-apple-macosx/debug/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    rm -rf "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
+fi
+
 # Copy and fix Info.plist
 cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
@@ -143,8 +154,15 @@ echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 # Sign app with hardened runtime (preserves TCC permissions across builds)
 echo "Signing app with hardened runtime..."
 if security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
+    # Sign Sparkle framework first
+    if [ -d "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" ]; then
+        codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    fi
     codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
 elif security find-identity -v -p codesigning | grep -q "Omi Dev"; then
+    if [ -d "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" ]; then
+        codesign --force --options runtime --sign "Omi Dev" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    fi
     codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "Omi Dev" "$APP_BUNDLE"
 else
     echo "Warning: No persistent signing identity found. Using ad-hoc (permissions won't persist)."
