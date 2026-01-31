@@ -172,6 +172,36 @@ async fn get_latest_version(State(state): State<AppState>) -> impl IntoResponse 
     }
 }
 
+/// GET /download - Redirect to latest DMG download
+/// This derives the DMG URL from the ZIP URL stored in Firestore
+async fn download_redirect(State(state): State<AppState>) -> impl IntoResponse {
+    match state.firestore.get_desktop_releases().await {
+        Ok(releases) => {
+            if let Some(latest) = releases.into_iter().filter(|r| r.is_live).next() {
+                // Convert ZIP URL to DMG URL
+                // e.g., .../Omi.zip -> .../Omi.Computer.dmg
+                let dmg_url = latest.download_url.replace("Omi.zip", "Omi.Computer.dmg");
+                tracing::info!("Redirecting download to: {}", dmg_url);
+                axum::response::Redirect::temporary(&dmg_url).into_response()
+            } else {
+                (
+                    StatusCode::NOT_FOUND,
+                    "No live releases found",
+                )
+                    .into_response()
+            }
+        }
+        Err(e) => {
+            tracing::error!("Failed to fetch releases for download redirect: {}", e);
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to fetch releases: {}", e),
+            )
+                .into_response()
+        }
+    }
+}
+
 /// Request body for creating a release
 #[derive(Debug, Deserialize)]
 pub struct CreateReleaseRequest {
@@ -268,4 +298,5 @@ pub fn updates_routes() -> Router<AppState> {
         .route("/appcast.xml", get(get_appcast))
         .route("/updates/latest", get(get_latest_version))
         .route("/updates/releases", post(create_release))
+        .route("/download", get(download_redirect))
 }
