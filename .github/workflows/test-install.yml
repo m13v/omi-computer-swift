@@ -37,7 +37,7 @@ jobs:
           # Get release tag
           TAG="${{ github.event.inputs.release_tag }}"
           if [ "$TAG" = "latest" ] || [ -z "$TAG" ]; then
-            TAG=$(gh release list --repo BasedHardware/omi --limit 1 | head -1 | awk '{print $3}')
+            TAG=$(gh release list --repo BasedHardware/omi --limit 1 --json tagName --jq '.[0].tagName')
             echo "Using latest release: $TAG"
           fi
 
