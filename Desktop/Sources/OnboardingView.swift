@@ -641,7 +641,7 @@ struct AnimatedGIFView: NSViewRepresentable {
         imageView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         imageView.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
 
-        if let url = Bundle.module.url(forResource: gifName, withExtension: "gif"),
+        if let url = Bundle.resourceBundle.url(forResource: gifName, withExtension: "gif"),
            let image = NSImage(contentsOf: url) {
             imageView.image = image
         }
