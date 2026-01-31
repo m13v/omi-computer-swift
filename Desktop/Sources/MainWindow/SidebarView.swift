@@ -249,7 +249,7 @@ struct SidebarView: View {
             // Logo and brand name
             HStack(spacing: 12) {
                 // Omi logo icon - using the herologo from Resources
-                if let logoImage = NSImage(contentsOf: Bundle.module.url(forResource: "herologo", withExtension: "png")!) {
+                if let logoImage = NSImage(contentsOf: Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png")!) {
                     Image(nsImage: logoImage)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
@@ -335,7 +335,7 @@ struct SidebarView: View {
         }) {
             HStack(spacing: 12) {
                 // Omi device image
-                if let deviceUrl = Bundle.module.url(forResource: "omi-with-rope-no-padding", withExtension: "webp"),
+                if let deviceUrl = Bundle.resourceBundle.url(forResource: "omi-with-rope-no-padding", withExtension: "webp"),
                    let deviceImage = NSImage(contentsOf: deviceUrl) {
                     Image(nsImage: deviceImage)
                         .resizable()
