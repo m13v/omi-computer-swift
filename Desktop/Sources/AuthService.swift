@@ -276,9 +276,10 @@ class AuthService {
                 loadNameFromFirebaseIfNeeded()
             }
 
-            // Track sign-in completed and identify user
-            AnalyticsManager.shared.signInCompleted(provider: provider)
+            // Identify user first, then track sign-in completed
+            // (identify must happen before events for PostHog person profiles to work)
             AnalyticsManager.shared.identify()
+            AnalyticsManager.shared.signInCompleted(provider: provider)
 
             // Set Sentry user context for error tracking
             let sentryUser = User(userId: userId)
