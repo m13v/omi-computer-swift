@@ -100,6 +100,9 @@ struct GeminiGenerationConfig {
     #[serde(rename = "responseMimeType")]
     response_mime_type: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "responseSchema")]
+    response_schema: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     temperature: Option<f32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "maxOutputTokens")]
@@ -143,8 +146,13 @@ impl LlmClient {
         self
     }
 
-    /// Call the LLM and get a response
+    /// Call the LLM and get a response (without schema enforcement)
     async fn call(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        self.call_with_schema(prompt, temperature, max_tokens, None).await
+    }
+
+    /// Call the LLM with a specific JSON schema for structured output
+    async fn call_with_schema(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>, schema: Option<serde_json::Value>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let request = GeminiRequest {
             contents: vec![GeminiContent {
                 parts: vec![GeminiPart {
@@ -153,6 +161,7 @@ impl LlmClient {
             }],
             generation_config: Some(GeminiGenerationConfig {
                 response_mime_type: "application/json".to_string(),
+                response_schema: schema,
                 temperature,
                 max_output_tokens: max_tokens,
             }),
@@ -202,7 +211,17 @@ impl LlmClient {
         }
 
         let prompt = DISCARD_CHECK_PROMPT.replace("{transcript_text}", transcript);
-        let response = self.call(&prompt, Some(0.3), Some(100)).await?;
+
+        // Define schema for structured output
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "discard": {"type": "boolean"}
+            },
+            "required": ["discard"]
+        });
+
+        let response = self.call_with_schema(&prompt, Some(0.3), Some(100), Some(schema)).await?;
 
         #[derive(Deserialize)]
         struct DiscardResponse {
@@ -241,7 +260,32 @@ impl LlmClient {
             .replace("{categories}", &Category::all_as_string())
             .replace("{calendar_prompt_section}", &calendar_prompt_section);
 
-        let response = self.call(&prompt, Some(0.7), Some(1500)).await?;
+        // Define schema for structured output
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "overview": {"type": "string"},
+                "emoji": {"type": "string"},
+                "category": {"type": "string"},
+                "events": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "title": {"type": "string"},
+                            "description": {"type": "string"},
+                            "start": {"type": "string"},
+                            "duration": {"type": "integer"}
+                        },
+                        "required": ["title", "start"]
+                    }
+                }
+            },
+            "required": ["title", "overview", "emoji", "category"]
+        });
+
+        let response = self.call_with_schema(&prompt, Some(0.7), Some(1500), Some(schema)).await?;
 
         #[derive(Deserialize)]
         struct StructureResponse {
@@ -340,7 +384,26 @@ impl LlmClient {
             .replace("{existing_items_context}", &existing_items_context)
             .replace("{calendar_prompt_section}", &calendar_prompt_section);
 
-        let response = self.call(&prompt, Some(0.7), Some(1500)).await?;
+        // Define schema for structured output
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "action_items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "description": {"type": "string"},
+                            "due_at": {"type": "string"}
+                        },
+                        "required": ["description"]
+                    }
+                }
+            },
+            "required": ["action_items"]
+        });
+
+        let response = self.call_with_schema(&prompt, Some(0.7), Some(1500), Some(schema)).await?;
 
         #[derive(Deserialize)]
         struct ActionItemsResponse {
@@ -399,7 +462,26 @@ impl LlmClient {
             .replace("{user_name}", user_name)
             .replace("{existing_memories_str}", &existing_memories_str);
 
-        let response = self.call(&prompt, Some(0.5), Some(500)).await?;
+        // Define schema for structured output
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "memories": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "content": {"type": "string"},
+                            "category": {"type": "string", "enum": ["system", "interesting"]}
+                        },
+                        "required": ["content", "category"]
+                    }
+                }
+            },
+            "required": ["memories"]
+        });
+
+        let response = self.call_with_schema(&prompt, Some(0.5), Some(500), Some(schema)).await?;
 
         #[derive(Deserialize)]
         struct MemoriesResponse {
