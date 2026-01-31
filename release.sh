@@ -261,12 +261,20 @@ echo "[6/11] Creating installer DMG..."
 rm -f "$DMG_PATH"
 
 # Copy app to temp staging directory
+# IMPORTANT: Use ditto instead of cp -R to preserve extended attributes
+# (extended attributes contain the notarization stapling ticket)
 STAGING_DIR="/tmp/omi-dmg-staging-$$"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
 DMG_APP_NAME="Omi Computer"
-cp -R "$APP_BUNDLE" "$STAGING_DIR/$DMG_APP_NAME.app"
+ditto "$APP_BUNDLE" "$STAGING_DIR/$DMG_APP_NAME.app"
 STAGED_APP="$STAGING_DIR/$DMG_APP_NAME.app"
+
+# Verify stapling was preserved, re-staple if needed
+if ! xcrun stapler validate "$STAGED_APP" 2>/dev/null; then
+    echo "  Re-stapling app in staging directory..."
+    xcrun stapler staple "$STAGED_APP"
+fi
 
 # Use create-dmg for a proper installer DMG with Applications shortcut
 if command -v create-dmg &> /dev/null; then
