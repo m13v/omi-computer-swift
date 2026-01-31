@@ -123,6 +123,17 @@ class AuthService {
                 // Firebase doesn't have user, but we have saved state
                 // This can happen with ad-hoc signing where Keychain doesn't persist
                 NSLog("OMI AUTH: Restored auth state from UserDefaults (Firebase session expired)")
+
+                // Migration: Fix empty userId by extracting from stored idToken
+                let savedUserId = UserDefaults.standard.string(forKey: kAuthUserId) ?? ""
+                if savedUserId.isEmpty, let storedToken = storedIdToken {
+                    if let payload = decodeJWT(storedToken),
+                       let userId = payload["user_id"] as? String ?? payload["sub"] as? String {
+                        NSLog("OMI AUTH: Migrating empty userId - extracted from JWT: %@", userId)
+                        UserDefaults.standard.set(userId, forKey: kAuthUserId)
+                    }
+                }
+
                 // Update synchronously since we're called from main thread
                 DispatchQueue.main.async {
                     self.isSignedIn = true
@@ -594,8 +605,16 @@ class AuthService {
             expiresIn = 3600
         }
 
-        // localId might be missing
-        let localId = json["localId"] as? String ?? ""
+        // localId might be missing from REST API response - extract from JWT if needed
+        var localId = json["localId"] as? String ?? ""
+        if localId.isEmpty {
+            // Extract user_id from the JWT token payload
+            if let payload = decodeJWT(idToken),
+               let userId = payload["user_id"] as? String ?? payload["sub"] as? String {
+                localId = userId
+                NSLog("OMI AUTH: Extracted user_id from JWT: %@", localId)
+            }
+        }
 
         return FirebaseTokenResult(
             idToken: idToken,
