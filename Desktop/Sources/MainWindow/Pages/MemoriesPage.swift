@@ -517,6 +517,7 @@ struct MemoriesPage: View {
         do {
             try await APIClient.shared.deleteMemory(id: memory.id)
             memories.removeAll { $0.id == memory.id }
+            AnalyticsManager.shared.memoryDeleted(conversationId: memory.id)
         } catch {
             logError("Failed to delete memory", error: error)
         }
