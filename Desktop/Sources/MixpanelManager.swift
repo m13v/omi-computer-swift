@@ -535,4 +535,30 @@ extension MixpanelManager {
             "version": version
         ])
     }
+
+    // MARK: - Notification Events
+
+    func notificationSent(notificationId: String, title: String, assistantId: String) {
+        track("Notification Sent", properties: [
+            "notification_id": notificationId,
+            "title": title,
+            "assistant_id": assistantId
+        ])
+    }
+
+    func notificationClicked(notificationId: String, title: String, assistantId: String) {
+        track("Notification Clicked", properties: [
+            "notification_id": notificationId,
+            "title": title,
+            "assistant_id": assistantId
+        ])
+    }
+
+    func notificationDismissed(notificationId: String, title: String, assistantId: String) {
+        track("Notification Dismissed", properties: [
+            "notification_id": notificationId,
+            "title": title,
+            "assistant_id": assistantId
+        ])
+    }
 }
