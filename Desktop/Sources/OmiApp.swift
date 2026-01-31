@@ -13,6 +13,7 @@ class AuthState: ObservableObject {
     // UserDefaults keys (must match AuthService)
     private static let kAuthIsSignedIn = "auth_isSignedIn"
     private static let kAuthUserEmail = "auth_userEmail"
+    private static let kAuthUserId = "auth_userId"
 
     @Published var isSignedIn: Bool
     @Published var isLoading: Bool = false
@@ -32,6 +33,11 @@ class AuthState: ObservableObject {
     func update(isSignedIn: Bool, userEmail: String? = nil) {
         self.isSignedIn = isSignedIn
         self.userEmail = userEmail
+    }
+
+    /// Get the user's Firebase UID from UserDefaults (fallback when Firebase SDK auth fails)
+    var userId: String? {
+        UserDefaults.standard.string(forKey: Self.kAuthUserId)
     }
 }
 
@@ -105,6 +111,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         AnalyticsManager.shared.appLaunched()
         AnalyticsManager.shared.trackFirstLaunchIfNeeded()
 
+        // Start resource monitoring (memory, CPU, disk)
+        ResourceMonitor.shared.start()
+
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
             AnalyticsManager.shared.identify()
@@ -169,6 +178,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         sentryHeartbeatTimer?.invalidate()
         sentryHeartbeatTimer = nil
 
+        // Report final resources before termination
+        ResourceMonitor.shared.reportResourcesNow(context: "app_terminating")
+        ResourceMonitor.shared.stop()
+
         // Capture final session snapshot before termination
         SentrySDK.capture(message: "App Terminating") { scope in
             scope.setLevel(.info)
@@ -187,6 +200,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         Task { @MainActor in
             AuthService.shared.handleOAuthCallback(url: url)
         }
+    }
+
+    func applicationDidBecomeActive(_ notification: Notification) {
+        AnalyticsManager.shared.appBecameActive()
+    }
+
+    func applicationWillResignActive(_ notification: Notification) {
+        AnalyticsManager.shared.appResignedActive()
     }
 }
 
