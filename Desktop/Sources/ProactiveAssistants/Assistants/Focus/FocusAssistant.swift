@@ -91,12 +91,14 @@ actor FocusAssistant: ProactiveAssistant {
             if let frame = frameQueue.first {
                 frameQueue.removeFirst()
                 // Fire off analysis in background (don't wait) - like Python version
-                let task = Task {
+                // Use implicitly unwrapped optional to capture task reference for self-cleanup
+                var task: Task<Void, Never>!
+                task = Task {
                     await self.processFrame(frame)
+                    // Remove from pendingTasks when done (runs on actor after processFrame completes)
+                    self.pendingTasks.remove(task)
                 }
                 pendingTasks.insert(task)
-                // Clean up completed tasks periodically
-                pendingTasks = pendingTasks.filter { !$0.isCancelled }
             } else {
                 try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
             }
@@ -311,6 +313,11 @@ actor FocusAssistant: ProactiveAssistant {
                 // Update notified state BEFORE other actions to prevent race with parallel frames
                 lastNotifiedState = .distracted
 
+                // Track distraction detected (use frame.windowTitle which has the actual window title)
+                await MainActor.run {
+                    AnalyticsManager.shared.distractionDetected(app: analysis.appOrSite, windowTitle: frame.windowTitle)
+                }
+
                 // Save to SQLite and sync to backend
                 await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId)
 
@@ -362,6 +369,11 @@ actor FocusAssistant: ProactiveAssistant {
 
                 // Only trigger glow and notification when returning FROM distracted
                 if wasDistracted {
+                    // Track focus restored
+                    await MainActor.run {
+                        AnalyticsManager.shared.focusRestored(app: analysis.appOrSite)
+                    }
+
                     // Trigger the glow effect
                     onRefocus?()
 
