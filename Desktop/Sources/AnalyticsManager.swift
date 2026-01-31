@@ -436,4 +436,21 @@ class AnalyticsManager {
         MixpanelManager.shared.updateInstalled(version: version)
         PostHogManager.shared.updateInstalled(version: version)
     }
+
+    // MARK: - Notification Events
+
+    func notificationSent(notificationId: String, title: String, assistantId: String) {
+        MixpanelManager.shared.notificationSent(notificationId: notificationId, title: title, assistantId: assistantId)
+        PostHogManager.shared.notificationSent(notificationId: notificationId, title: title, assistantId: assistantId)
+    }
+
+    func notificationClicked(notificationId: String, title: String, assistantId: String) {
+        MixpanelManager.shared.notificationClicked(notificationId: notificationId, title: title, assistantId: assistantId)
+        PostHogManager.shared.notificationClicked(notificationId: notificationId, title: title, assistantId: assistantId)
+    }
+
+    func notificationDismissed(notificationId: String, title: String, assistantId: String) {
+        MixpanelManager.shared.notificationDismissed(notificationId: notificationId, title: title, assistantId: assistantId)
+        PostHogManager.shared.notificationDismissed(notificationId: notificationId, title: title, assistantId: assistantId)
+    }
 }
