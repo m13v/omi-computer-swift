@@ -87,7 +87,7 @@ echo ""
 # -----------------------------------------------------------------------------
 # Step 1: Deploy Backend to Cloud Run
 # -----------------------------------------------------------------------------
-echo "[1/11] Deploying Rust backend to Cloud Run..."
+echo "[1/12] Deploying Rust backend to Cloud Run..."
 
 # Check if Docker is running
 if ! docker info &>/dev/null; then
@@ -128,7 +128,7 @@ echo "  ✓ Backend deployed"
 # -----------------------------------------------------------------------------
 # Step 2: Build Desktop App
 # -----------------------------------------------------------------------------
-echo "[2/11] Building $APP_NAME..."
+echo "[2/12] Building $APP_NAME..."
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
@@ -196,7 +196,7 @@ echo "  ✓ Build complete"
 # -----------------------------------------------------------------------------
 # Step 3: Sign App
 # -----------------------------------------------------------------------------
-echo "[3/11] Signing app with Developer ID..."
+echo "[3/12] Signing app with Developer ID..."
 
 # Sign Sparkle framework components (innermost first)
 # XPC Services
@@ -230,7 +230,7 @@ echo "  ✓ App signed"
 # -----------------------------------------------------------------------------
 # Step 4: Notarize App
 # -----------------------------------------------------------------------------
-echo "[4/11] Notarizing app (this may take a minute)..."
+echo "[4/12] Notarizing app (this may take a minute)..."
 
 # Create temporary zip for notarization
 TEMP_ZIP="$BUILD_DIR/notarize-temp.zip"
@@ -248,7 +248,7 @@ echo "  ✓ App notarized"
 # -----------------------------------------------------------------------------
 # Step 5: Staple App
 # -----------------------------------------------------------------------------
-echo "[5/11] Stapling notarization ticket to app..."
+echo "[5/12] Stapling notarization ticket to app..."
 
 xcrun stapler staple "$APP_BUNDLE"
 echo "  ✓ App stapled"
@@ -256,7 +256,7 @@ echo "  ✓ App stapled"
 # -----------------------------------------------------------------------------
 # Step 6: Create DMG (with Applications shortcut for drag-to-install)
 # -----------------------------------------------------------------------------
-echo "[6/11] Creating installer DMG..."
+echo "[6/12] Creating installer DMG..."
 
 rm -f "$DMG_PATH"
 
@@ -314,7 +314,7 @@ echo "  ✓ DMG created"
 # -----------------------------------------------------------------------------
 # Step 7: Sign DMG
 # -----------------------------------------------------------------------------
-echo "[7/11] Signing DMG..."
+echo "[7/12] Signing DMG..."
 
 codesign --force --sign "$SIGN_IDENTITY" "$DMG_PATH"
 echo "  ✓ DMG signed"
@@ -322,7 +322,7 @@ echo "  ✓ DMG signed"
 # -----------------------------------------------------------------------------
 # Step 8: Notarize DMG
 # -----------------------------------------------------------------------------
-echo "[8/11] Notarizing DMG..."
+echo "[8/12] Notarizing DMG..."
 
 xcrun notarytool submit "$DMG_PATH" \
     --apple-id "$APPLE_ID" \
@@ -335,7 +335,7 @@ echo "  ✓ DMG notarized"
 # -----------------------------------------------------------------------------
 # Step 9: Staple DMG
 # -----------------------------------------------------------------------------
-echo "[9/11] Stapling notarization ticket to DMG..."
+echo "[9/12] Stapling notarization ticket to DMG..."
 
 xcrun stapler staple "$DMG_PATH"
 echo "  ✓ DMG stapled"
@@ -353,7 +353,7 @@ fi
 # -----------------------------------------------------------------------------
 # Step 10: Create Sparkle ZIP and Sign for Auto-Update
 # -----------------------------------------------------------------------------
-echo "[10/11] Creating Sparkle update package..."
+echo "[10/12] Creating Sparkle update package..."
 
 # Check if Sparkle tools are available
 SPARKLE_BIN=""
@@ -389,7 +389,7 @@ fi
 # -----------------------------------------------------------------------------
 # Step 11: Create GitHub Release & Register in Firestore
 # -----------------------------------------------------------------------------
-echo "[11/11] Publishing to GitHub and registering release..."
+echo "[11/12] Publishing to GitHub and registering release..."
 
 # Tag format: v{version}+{build}-macos
 RELEASE_TAG="v${VERSION}+${BUILD_NUMBER}-macos"
@@ -476,6 +476,28 @@ fi
 echo ""
 echo "Creating local git tag..."
 git tag "v$VERSION" 2>/dev/null && echo "  ✓ Created tag v$VERSION" || echo "  Tag v$VERSION already exists"
+
+# -----------------------------------------------------------------------------
+# Step 12: Trigger Installation Test
+# -----------------------------------------------------------------------------
+echo ""
+echo "[12/12] Triggering installation test on GitHub Actions..."
+
+# Trigger the test workflow via repository_dispatch
+TEST_REPO="m13v/omi-computer-swift"
+if command -v gh &> /dev/null; then
+    gh workflow run test-install.yml \
+        --repo "$TEST_REPO" \
+        -f release_tag="$RELEASE_TAG" 2>/dev/null && {
+        echo "  ✓ Installation test triggered"
+        echo "  View results: https://github.com/$TEST_REPO/actions/workflows/test-install.yml"
+    } || {
+        echo "  Warning: Could not trigger test workflow"
+        echo "  You can run it manually: gh workflow run test-install.yml --repo $TEST_REPO"
+    }
+else
+    echo "  Warning: GitHub CLI (gh) not found, skipping test trigger"
+fi
 
 # -----------------------------------------------------------------------------
 # Done
