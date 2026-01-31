@@ -135,15 +135,13 @@ async fn create_conversation_from_segments(
         request.transcript_segments.len()
     );
 
-    // Get LLM client
+    // Get LLM client (Gemini)
     let llm_client = if let Some(api_key) = &state.config.gemini_api_key {
-        LlmClient::gemini(api_key.clone())
-    } else if let Some(api_key) = &state.config.openai_api_key {
-        LlmClient::openai(api_key.clone())
+        LlmClient::new(api_key.clone())
     } else {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "No LLM API key configured".to_string(),
+            "GEMINI_API_KEY not configured".to_string(),
         ));
     };
 
@@ -333,15 +331,13 @@ async fn reprocess_conversation(
         "Analyze this conversation and provide insights.".to_string()
     });
 
-    // Get LLM client
+    // Get LLM client (Gemini)
     let llm_client = if let Some(api_key) = &state.config.gemini_api_key {
-        LlmClient::gemini(api_key.clone())
-    } else if let Some(api_key) = &state.config.openai_api_key {
-        LlmClient::openai(api_key.clone())
+        LlmClient::new(api_key.clone())
     } else {
         return Err((
             StatusCode::INTERNAL_SERVER_ERROR,
-            "No LLM API key configured".to_string(),
+            "GEMINI_API_KEY not configured".to_string(),
         ));
     };
 
