@@ -26,11 +26,11 @@ class MixpanelManager {
             return
         }
 
-        Mixpanel.initialize(token: token)
+        Mixpanel.initialize(token: token, flushInterval: 10)  // Flush every 10 seconds
         Mixpanel.mainInstance().loggingEnabled = false
 
         isInitialized = true
-        log("MixPanel: Initialized successfully")
+        log("MixPanel: Initialized successfully with token: \(token.prefix(8))...")
     }
 
     /// Get the MixPanel token from environment or .env file
@@ -138,6 +138,13 @@ class MixpanelManager {
         guard isInitialized else { return }
         Mixpanel.mainInstance().track(event: eventName, properties: properties)
         log("MixPanel: Tracked event '\(eventName)'")
+    }
+
+    /// Flush events to server immediately
+    func flush() {
+        guard isInitialized else { return }
+        Mixpanel.mainInstance().flush()
+        log("MixPanel: Flushed events to server")
     }
 
     /// Start timing an event (call track with same name to finish)
