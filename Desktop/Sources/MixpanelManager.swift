@@ -77,31 +77,48 @@ class MixpanelManager {
     func identify() {
         guard isInitialized else { return }
 
-        guard let user = Auth.auth().currentUser else {
+        var userId: String?
+        var email: String?
+        var name: String?
+
+        // Try Firebase Auth first
+        if let user = Auth.auth().currentUser {
+            userId = user.uid
+            email = user.email
+            name = user.displayName
+        } else if AuthState.shared.isSignedIn, let storedUserId = AuthState.shared.userId {
+            // Fall back to stored auth state (when Firebase SDK auth failed but REST API auth succeeded)
+            userId = storedUserId
+            email = AuthState.shared.userEmail
+            name = AuthService.shared.displayName.isEmpty ? nil : AuthService.shared.displayName
+            log("MixPanel: Using stored auth state (Firebase SDK auth not available)")
+        }
+
+        guard let uid = userId else {
             log("MixPanel: Cannot identify - no user signed in")
             return
         }
 
-        Mixpanel.mainInstance().identify(distinctId: user.uid)
+        Mixpanel.mainInstance().identify(distinctId: uid)
 
         // Set user profile properties
-        setPeopleValues(user: user)
+        setPeopleValues(email: email, name: name)
 
-        log("MixPanel: Identified user \(user.uid)")
+        log("MixPanel: Identified user \(uid)")
     }
 
     /// Set user profile properties
-    private func setPeopleValues(user: User) {
+    private func setPeopleValues(email: String?, name: String?) {
         var properties: [String: MixpanelType] = [
             "Platform": "macos",
             "App Version": Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
         ]
 
-        if let email = user.email {
+        if let email = email {
             properties["$email"] = email
         }
 
-        if let name = user.displayName {
+        if let name = name {
             properties["$name"] = name
         }
 
