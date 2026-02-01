@@ -42,6 +42,9 @@ struct ConversationsPage: View {
     @State private var searchError: String? = nil
     @StateObject private var searchDebouncer = SearchDebouncer()
 
+    // Date picker state
+    @State private var showDatePicker: Bool = false
+
     var body: some View {
         Group {
             if let selected = selectedConversation {
@@ -241,6 +244,9 @@ struct ConversationsPage: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(OmiColors.backgroundTertiary.opacity(0.5))
                 )
+
+                // Filter buttons row
+                filterButtonsRow
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -358,6 +364,127 @@ struct ConversationsPage: View {
                 isSearching = false
             }
         }
+    }
+
+    // MARK: - Filter Buttons
+
+    private var filterButtonsRow: some View {
+        HStack(spacing: 8) {
+            // Starred filter button
+            Button(action: {
+                Task {
+                    await appState.toggleStarredFilter()
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: appState.showStarredOnly ? "star.fill" : "star")
+                        .font(.system(size: 12))
+                    Text("Starred")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .foregroundColor(appState.showStarredOnly ? OmiColors.amber : OmiColors.textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(appState.showStarredOnly ? OmiColors.amber.opacity(0.15) : OmiColors.backgroundTertiary.opacity(0.6))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(appState.showStarredOnly ? OmiColors.amber.opacity(0.4) : Color.clear, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+
+            // Date filter button
+            Button(action: {
+                showDatePicker.toggle()
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "calendar")
+                        .font(.system(size: 12))
+                    if let date = appState.selectedDateFilter {
+                        Text(formatFilterDate(date))
+                            .font(.system(size: 12, weight: .medium))
+                        // Clear button
+                        Button(action: {
+                            Task {
+                                await appState.setDateFilter(nil)
+                            }
+                        }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 10))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Text("Date")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                }
+                .foregroundColor(appState.selectedDateFilter != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(appState.selectedDateFilter != nil ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary.opacity(0.6))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(appState.selectedDateFilter != nil ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showDatePicker) {
+                datePickerPopover
+            }
+
+            Spacer()
+
+            // Clear all filters button (only show if any filter is active)
+            if appState.showStarredOnly || appState.selectedDateFilter != nil {
+                Button(action: {
+                    Task {
+                        await appState.clearFilters()
+                    }
+                }) {
+                    Text("Clear")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, 8)
+    }
+
+    private var datePickerPopover: some View {
+        VStack(spacing: 12) {
+            DatePicker(
+                "Select Date",
+                selection: Binding(
+                    get: { appState.selectedDateFilter ?? Date() },
+                    set: { newDate in
+                        Task {
+                            await appState.setDateFilter(newDate)
+                        }
+                        showDatePicker = false
+                    }
+                ),
+                in: ...Date(),
+                displayedComponents: .date
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+        }
+        .padding()
+        .frame(width: 300)
+        .background(OmiColors.backgroundSecondary)
+    }
+
+    private func formatFilterDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d"
+        return formatter.string(from: date)
     }
 
     // MARK: - Recording Header
