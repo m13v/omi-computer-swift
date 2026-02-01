@@ -158,6 +158,9 @@ cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null ||
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# Remove extended attributes before signing (prevents "resource fork, Finder information" errors)
+xattr -cr "$APP_BUNDLE"
+
 # Sign app with hardened runtime (preserves TCC permissions across builds)
 echo "Signing app with hardened runtime..."
 if security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
