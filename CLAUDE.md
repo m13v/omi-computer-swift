@@ -66,7 +66,7 @@ See `.claude/settings.json` for connection details.
 ## Development Workflow
 
 ### After Implementing Changes
-- **DO NOT** automatically run the app after making changes
-- Only build (`swift build`) to verify compilation
-- Let the user run and test the app manually
+- **DO NOT** run build commands (`swift build`, `xcodebuild`, etc.) after making changes
+- **DO NOT** run the app after making changes
+- Let the user build, run, and test the app manually
 - Wait for user feedback before making additional changes
