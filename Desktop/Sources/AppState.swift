@@ -45,6 +45,7 @@ class AppState: ObservableObject {
     @Published var hasScreenRecordingPermission = false
     @Published var hasAutomationPermission = false
 
+
     /// Returns list of missing permissions that are required for full functionality
     var missingPermissions: [String] {
         var missing: [String] = []
@@ -594,6 +595,13 @@ class AppState: ObservableObject {
         await loadConversations()
     }
 
+    /// Update the starred status of a conversation locally
+    func setConversationStarred(_ conversationId: String, starred: Bool) {
+        if let index = conversations.firstIndex(where: { $0.id == conversationId }) {
+            conversations[index].starred = starred
+        }
+    }
+
     /// Finalize and save the current conversation to the backend
     private func finalizeConversation() async -> FinishConversationResult {
         guard !speakerSegments.isEmpty, let startTime = recordingStartTime else {
@@ -759,10 +767,16 @@ class AppState: ObservableObject {
 
     /// Request microphone permission
     func requestMicrophonePermission() {
+        // Activate app to ensure permission dialog appears
+        NSApp.activate(ignoringOtherApps: true)
+
+        log("Requesting microphone permission, current status: \(AudioCaptureService.authorizationStatus().rawValue)")
+
         Task {
             let granted = await AudioCaptureService.requestPermission()
             await MainActor.run {
                 self.hasMicrophonePermission = granted
+                log("Microphone permission request completed, granted: \(granted)")
                 if granted {
                     log("Microphone permission granted")
                     // Only start transcription if onboarding is complete
@@ -772,10 +786,7 @@ class AppState: ObservableObject {
                     }
                 } else {
                     log("Microphone permission denied")
-                    self.showAlert(
-                        title: "Microphone Access Required",
-                        message: "Please enable microphone access in System Settings > Privacy & Security > Microphone"
-                    )
+                    // UI will show the denied state with reset options inline
                 }
             }
         }
@@ -784,6 +795,95 @@ class AppState: ObservableObject {
     /// Check microphone permission status
     func checkMicrophonePermission() {
         hasMicrophonePermission = AudioCaptureService.checkPermission()
+    }
+
+    /// Check if microphone permission was explicitly denied
+    func isMicrophonePermissionDenied() -> Bool {
+        return AudioCaptureService.isPermissionDenied()
+    }
+
+    /// Restart the app by launching a new instance and terminating the current one
+    func restartApp() {
+        log("Restarting app...")
+
+        guard let bundleURL = Bundle.main.bundleURL as URL? else {
+            log("Failed to get bundle URL for restart")
+            return
+        }
+
+        // Use a shell script to wait briefly, then relaunch the app
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "sleep 0.5 && open \"\(bundleURL.path)\""]
+
+        do {
+            try task.run()
+            log("Restart scheduled, terminating current instance...")
+
+            // Terminate the current app
+            DispatchQueue.main.async {
+                NSApplication.shared.terminate(nil)
+            }
+        } catch {
+            log("Failed to schedule restart: \(error)")
+        }
+    }
+
+    /// Reset microphone permission using tccutil (Option 1: Direct)
+    /// Returns true if the reset command was executed successfully
+    /// If shouldRestart is true, the app will restart after reset
+    func resetMicrophonePermissionDirect(shouldRestart: Bool = false) -> Bool {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
+        log("Resetting microphone permission for \(bundleId) via tccutil...")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Microphone", bundleId]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let success = process.terminationStatus == 0
+            log("tccutil reset completed with exit code: \(process.terminationStatus)")
+
+            if success && shouldRestart {
+                restartApp()
+            }
+
+            return success
+        } catch {
+            log("Failed to run tccutil: \(error)")
+            return false
+        }
+    }
+
+    /// Reset microphone permission via Terminal (Option 2: Visible to user)
+    /// If shouldRestart is true, the app will restart after the terminal command
+    func resetMicrophonePermissionViaTerminal(shouldRestart: Bool = false) {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
+        let appPath = Bundle.main.bundleURL.path
+        log("Opening Terminal to reset microphone permission for \(bundleId)...")
+
+        // Build the shell command - escape single quotes in path for shell
+        let escapedPath = appPath.replacingOccurrences(of: "'", with: "'\\''")
+        let restartCommand = shouldRestart ? " && open '\(escapedPath)'" : ""
+        let shellCommand = "tccutil reset Microphone \(bundleId) && echo 'Done! Permission reset.'\(restartCommand)"
+
+        // AppleScript to open Terminal and run the command
+        let script = "tell application \"Terminal\"\nactivate\ndo script \"\(shellCommand)\"\nend tell"
+
+        var error: NSDictionary?
+        if let appleScript = NSAppleScript(source: script) {
+            appleScript.executeAndReturnError(&error)
+            if let error = error {
+                log("AppleScript error: \(error)")
+            } else if shouldRestart {
+                // Terminate current app after terminal script is running
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                    NSApplication.shared.terminate(nil)
+                }
+            }
+        }
     }
 
     /// Check system audio permission status
