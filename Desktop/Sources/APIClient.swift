@@ -1175,14 +1175,33 @@ struct UserProfile: Codable {
 
 // MARK: - Action Items API
 
+/// Response wrapper for paginated action items list
+struct ActionItemsListResponse: Codable {
+    let items: [TaskActionItem]
+    let hasMore: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case items
+        case hasMore = "has_more"
+    }
+}
+
 extension APIClient {
 
-    /// Fetches action items from the API with optional filtering
+    /// Fetches action items from the API with optional filtering and sorting
     func getActionItems(
         limit: Int = 100,
         offset: Int = 0,
-        completed: Bool? = nil
-    ) async throws -> [TaskActionItem] {
+        completed: Bool? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        dueStartDate: Date? = nil,
+        dueEndDate: Date? = nil,
+        sortBy: String? = nil
+    ) async throws -> ActionItemsListResponse {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
         var queryItems: [String] = [
             "limit=\(limit)",
             "offset=\(offset)"
@@ -1192,8 +1211,33 @@ extension APIClient {
             queryItems.append("completed=\(completed)")
         }
 
+        if let startDate = startDate {
+            queryItems.append("start_date=\(formatter.string(from: startDate))")
+        }
+
+        if let endDate = endDate {
+            queryItems.append("end_date=\(formatter.string(from: endDate))")
+        }
+
+        if let dueStartDate = dueStartDate {
+            queryItems.append("due_start_date=\(formatter.string(from: dueStartDate))")
+        }
+
+        if let dueEndDate = dueEndDate {
+            queryItems.append("due_end_date=\(formatter.string(from: dueEndDate))")
+        }
+
+        if let sortBy = sortBy {
+            queryItems.append("sort_by=\(sortBy)")
+        }
+
         let endpoint = "v1/action-items?\(queryItems.joined(separator: "&"))"
         return try await get(endpoint)
+    }
+
+    /// Fetches a single action item by ID
+    func getActionItem(id: String) async throws -> TaskActionItem {
+        return try await get("v1/action-items/\(id)")
     }
 
     /// Updates an action item
@@ -1273,6 +1317,56 @@ extension APIClient {
         )
 
         return try await post("v1/action-items", body: request)
+    }
+
+    /// Creates multiple action items at once
+    func batchCreateActionItems(_ items: [CreateActionItemRequest]) async throws -> [TaskActionItem] {
+        struct BatchRequest: Encodable {
+            let items: [CreateActionItemRequest]
+        }
+
+        let request = BatchRequest(items: items)
+        return try await post("v1/action-items/batch", body: request)
+    }
+}
+
+/// Request body for creating an action item (used in batch operations)
+struct CreateActionItemRequest: Encodable {
+    let description: String
+    let dueAt: String?
+    let source: String?
+    let priority: String?
+    let metadata: String?
+
+    enum CodingKeys: String, CodingKey {
+        case description
+        case dueAt = "due_at"
+        case source, priority, metadata
+    }
+
+    init(
+        description: String,
+        dueAt: Date? = nil,
+        source: String? = nil,
+        priority: String? = nil,
+        metadata: [String: Any]? = nil
+    ) {
+        self.description = description
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        self.dueAt = dueAt.map { formatter.string(from: $0) }
+
+        self.source = source
+        self.priority = priority
+
+        if let metadata = metadata,
+           let data = try? JSONSerialization.data(withJSONObject: metadata),
+           let str = String(data: data, encoding: .utf8) {
+            self.metadata = str
+        } else {
+            self.metadata = nil
+        }
     }
 }
 
@@ -2159,6 +2253,87 @@ extension APIClient {
         }
 
         return try decoder.decode(MessageDeleteResponse.self, from: data)
+    }
+
+    /// Fetch messages for a specific session
+    func getMessages(
+        sessionId: String,
+        limit: Int = 100,
+        offset: Int = 0
+    ) async throws -> [ChatMessageDB] {
+        var queryItems: [String] = [
+            "session_id=\(sessionId)",
+            "limit=\(limit)",
+            "offset=\(offset)"
+        ]
+
+        let endpoint = "v2/messages?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+}
+
+// MARK: - Chat Sessions API
+
+extension APIClient {
+
+    /// Create a new chat session
+    func createChatSession(
+        title: String? = nil,
+        appId: String? = nil
+    ) async throws -> ChatSession {
+        struct CreateRequest: Encodable {
+            let title: String?
+            let app_id: String?
+        }
+        let body = CreateRequest(title: title, app_id: appId)
+        return try await post("v2/chat-sessions", body: body)
+    }
+
+    /// Fetch chat sessions
+    func getChatSessions(
+        appId: String? = nil,
+        limit: Int = 50,
+        offset: Int = 0,
+        starred: Bool? = nil
+    ) async throws -> [ChatSession] {
+        var queryItems: [String] = [
+            "limit=\(limit)",
+            "offset=\(offset)"
+        ]
+
+        if let appId = appId {
+            queryItems.append("app_id=\(appId)")
+        }
+        if let starred = starred {
+            queryItems.append("starred=\(starred)")
+        }
+
+        let endpoint = "v2/chat-sessions?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Get a single chat session
+    func getChatSession(sessionId: String) async throws -> ChatSession {
+        return try await get("v2/chat-sessions/\(sessionId)")
+    }
+
+    /// Update a chat session (title, starred)
+    func updateChatSession(
+        sessionId: String,
+        title: String? = nil,
+        starred: Bool? = nil
+    ) async throws -> ChatSession {
+        struct UpdateRequest: Encodable {
+            let title: String?
+            let starred: Bool?
+        }
+        let body = UpdateRequest(title: title, starred: starred)
+        return try await patch("v2/chat-sessions/\(sessionId)", body: body)
+    }
+
+    /// Delete a chat session and its messages
+    func deleteChatSession(sessionId: String) async throws {
+        try await delete("v2/chat-sessions/\(sessionId)")
     }
 }
 
