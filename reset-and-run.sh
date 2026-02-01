@@ -121,6 +121,25 @@ mkdir -p "$APP_BUNDLE/Contents/Resources"
 # Copy binary
 cp "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
+# Add rpath for Frameworks folder (needed for Sparkle)
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+
+# Copy Sparkle framework (keep original signatures intact)
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
+SPARKLE_FRAMEWORK="Desktop/.build/arm64-apple-macosx/debug/Sparkle.framework"
+if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    rm -rf "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+    cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
+    echo "  Copied Sparkle.framework"
+fi
+
+# Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
+RESOURCE_BUNDLE="Desktop/.build/arm64-apple-macosx/debug/Omi Computer_Omi Computer.bundle"
+if [ -d "$RESOURCE_BUNDLE" ]; then
+    cp -Rf "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
+    echo "  Copied resource bundle"
+fi
+
 # Copy and fix Info.plist
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
@@ -143,23 +162,36 @@ echo "Using backend: $TUNNEL_URL"
 # Copy app icon
 cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
 
+# Create PkgInfo
+echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
+
+# Sign Sparkle framework components individually (like release.sh does)
+echo "Signing Sparkle framework components..."
+SPARKLE_FW="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
+if [ -d "$SPARKLE_FW" ]; then
+    # Sign innermost components first
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" \
+        "$SPARKLE_FW/Versions/B/XPCServices/Downloader.xpc" 2>/dev/null || true
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" \
+        "$SPARKLE_FW/Versions/B/XPCServices/Installer.xpc" 2>/dev/null || true
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" \
+        "$SPARKLE_FW/Versions/B/Autoupdate" 2>/dev/null || true
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" \
+        "$SPARKLE_FW/Versions/B/Updater.app" 2>/dev/null || true
+    # Sign framework itself
+    codesign --force --options runtime --sign "$SIGN_IDENTITY" "$SPARKLE_FW"
+fi
+
+# Sign main app
+echo "Signing app..."
+codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
+
 # Install to /Applications
 echo "Installing to /Applications..."
 rm -rf "$APP_PATH"
-cp -r "$APP_BUNDLE" /Applications/
+ditto "$APP_BUNDLE" "$APP_PATH"
 
-# Sign app with hardened runtime (preserves TCC permissions across builds)
-echo "Signing app with hardened runtime..."
-if security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
-    codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "$SIGN_IDENTITY" "$APP_PATH"
-elif security find-identity -v -p codesigning | grep -q "Omi Dev"; then
-    codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "Omi Dev" "$APP_PATH"
-else
-    echo "Warning: No persistent signing identity found. Using ad-hoc (permissions won't persist)."
-    codesign --force --deep --sign - "$APP_PATH"
-fi
-
-# Reset permissions
+# Reset permissions for the bundle ID
 # Note: System audio capture (Core Audio Taps) uses the same ScreenCapture permission
 echo "Resetting permissions for $BUNDLE_ID..."
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true  # Also resets system audio access
@@ -187,7 +219,7 @@ echo "App:      $APP_PATH"
 echo "========================"
 echo ""
 
-# Remove quarantine and start app
+# Remove quarantine and start app from /Applications
 echo "Starting app..."
 xattr -cr "$APP_PATH"
 open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$APP_NAME" &
