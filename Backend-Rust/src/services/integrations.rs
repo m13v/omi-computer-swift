@@ -13,8 +13,6 @@ use crate::models::{App, Conversation, TriggerEvent};
 pub struct WebhookResponse {
     /// Optional message to display to the user
     pub message: Option<String>,
-    /// Optional notification data for proactive notifications
-    pub notification: Option<Value>,
 }
 
 /// Result of triggering an integration
