@@ -289,6 +289,25 @@ extension APIClient {
         }
     }
 
+    /// Updates the title of a conversation
+    func updateConversationTitle(id: String, title: String) async throws {
+        struct TitleUpdate: Encodable {
+            let title: String
+        }
+
+        let url = URL(string: baseURL + "v1/conversations/\(id)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+        request.httpBody = try JSONEncoder().encode(TitleUpdate(title: title))
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+    }
+
     /// Searches conversations with a query
     func searchConversations(
         query: String,
@@ -386,7 +405,7 @@ struct ServerConversation: Codable, Identifiable {
     let startedAt: Date?
     let finishedAt: Date?
 
-    let structured: Structured
+    var structured: Structured
     let transcriptSegments: [TranscriptSegment]
     let geolocation: Geolocation?
     let photos: [ConversationPhoto]
@@ -485,7 +504,7 @@ struct ServerConversation: Codable, Identifiable {
 }
 
 struct Structured: Codable {
-    let title: String
+    var title: String
     let overview: String
     let emoji: String
     let category: String
@@ -1867,3 +1886,134 @@ struct CreateAdviceRequest: Encodable {
 
 /// Empty body for POST requests with no body
 struct EmptyBody: Encodable {}
+
+// MARK: - Chat Messages API (Persistence)
+
+extension APIClient {
+
+    /// Save a chat message to the backend
+    func saveMessage(
+        text: String,
+        sender: String,
+        appId: String? = nil,
+        sessionId: String? = nil
+    ) async throws -> SaveMessageResponse {
+        struct SaveRequest: Encodable {
+            let text: String
+            let sender: String
+            let app_id: String?
+            let session_id: String?
+        }
+        let body = SaveRequest(text: text, sender: sender, app_id: appId, session_id: sessionId)
+        return try await post("v2/messages", body: body)
+    }
+
+    /// Fetch chat message history
+    func getMessages(
+        appId: String? = nil,
+        limit: Int = 100,
+        offset: Int = 0
+    ) async throws -> [ChatMessageDB] {
+        var queryItems: [String] = [
+            "limit=\(limit)",
+            "offset=\(offset)"
+        ]
+
+        if let appId = appId {
+            queryItems.append("app_id=\(appId)")
+        }
+
+        let endpoint = "v2/messages?\(queryItems.joined(separator: "&"))"
+        return try await get(endpoint)
+    }
+
+    /// Clear chat message history
+    func deleteMessages(appId: String? = nil) async throws -> MessageDeleteResponse {
+        var endpoint = "v2/messages"
+        if let appId = appId {
+            endpoint += "?app_id=\(appId)"
+        }
+
+        let url = URL(string: baseURL + endpoint)!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw APIError.invalidResponse
+        }
+
+        if httpResponse.statusCode == 401 {
+            throw APIError.unauthorized
+        }
+
+        guard (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: httpResponse.statusCode)
+        }
+
+        return try decoder.decode(MessageDeleteResponse.self, from: data)
+    }
+}
+
+// MARK: - Chat Message Models
+
+/// Response from saving a message
+struct SaveMessageResponse: Codable {
+    let id: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case createdAt = "created_at"
+    }
+}
+
+/// Persisted chat message from database
+struct ChatMessageDB: Codable, Identifiable {
+    let id: String
+    let text: String
+    let createdAt: Date
+    let sender: String
+    let appId: String?
+    let sessionId: String?
+    let rating: Int?
+    let reported: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case id, text, sender, rating, reported
+        case createdAt = "created_at"
+        case appId = "app_id"
+        case sessionId = "session_id"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        text = try container.decodeIfPresent(String.self, forKey: .text) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        sender = try container.decodeIfPresent(String.self, forKey: .sender) ?? "human"
+        appId = try container.decodeIfPresent(String.self, forKey: .appId)
+        sessionId = try container.decodeIfPresent(String.self, forKey: .sessionId)
+        rating = try container.decodeIfPresent(Int.self, forKey: .rating)
+        reported = try container.decodeIfPresent(Bool.self, forKey: .reported) ?? false
+    }
+}
+
+/// Response from deleting messages
+struct MessageDeleteResponse: Codable {
+    let status: String
+    let deletedCount: Int?
+
+    enum CodingKeys: String, CodingKey {
+        case status
+        case deletedCount = "deleted_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "ok"
+        deletedCount = try container.decodeIfPresent(Int.self, forKey: .deletedCount)
+    }
+}
