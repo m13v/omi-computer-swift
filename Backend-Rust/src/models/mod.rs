@@ -22,8 +22,8 @@ pub use app::{
 };
 pub use category::{Category, MemoryCategory};
 pub use conversation::{
-    ActionItem, AppResult, Conversation, ConversationSource, ConversationStatus, Event, Structured,
-    TranscriptSegment,
+    ActionItem, AppResult, Conversation, ConversationPhoto, ConversationSource, ConversationStatus,
+    Event, Geolocation, Structured, TranscriptSegment,
 };
 pub use folder::{
     BulkMoveRequest, BulkMoveResponse, CreateFolderRequest, DeleteFolderQuery, Folder,
