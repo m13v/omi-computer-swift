@@ -32,12 +32,12 @@ pub struct ChatContextRequest {
     /// User's timezone (e.g., "America/Los_Angeles")
     #[serde(default = "default_timezone")]
     pub timezone: String,
-    /// Optional app ID for app-specific context
-    #[serde(default)]
-    pub app_id: Option<String>,
-    /// Previous messages for context (optional)
-    #[serde(default)]
-    pub messages: Vec<ChatMessageInput>,
+    /// Optional app ID for app-specific context (TODO: wire up to get_chat_session)
+    #[serde(default, rename = "app_id")]
+    pub _app_id: Option<String>,
+    /// Previous messages for context (TODO: implement conversation history)
+    #[serde(default, rename = "messages")]
+    pub _messages: Vec<ChatMessageInput>,
 }
 
 fn default_timezone() -> String {
@@ -46,8 +46,10 @@ fn default_timezone() -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct ChatMessageInput {
-    pub text: String,
-    pub sender: String, // "human" or "ai"
+    #[serde(rename = "text")]
+    pub _text: String,
+    #[serde(rename = "sender")]
+    pub _sender: String, // "human" or "ai"
 }
 
 /// Response with context for building prompts
@@ -63,6 +65,47 @@ pub struct ChatContextResponse {
     pub memories: Vec<MemorySummary>,
     /// Formatted context string ready for prompt injection
     pub context_string: String,
+}
+
+/// Request for initial message generation
+#[derive(Debug, Deserialize)]
+pub struct InitialMessageRequest {
+    /// Session ID to associate the message with
+    pub session_id: String,
+    /// Optional app ID for app-specific persona
+    #[serde(default)]
+    pub app_id: Option<String>,
+}
+
+/// Response with generated initial message
+#[derive(Debug, Serialize)]
+pub struct InitialMessageResponse {
+    /// The generated greeting message
+    pub message: String,
+    /// The message ID (saved to database)
+    pub message_id: String,
+}
+
+/// Request for session title generation
+#[derive(Debug, Deserialize)]
+pub struct GenerateTitleRequest {
+    /// Session ID to update
+    pub session_id: String,
+    /// Messages to analyze for title generation
+    pub messages: Vec<TitleMessageInput>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TitleMessageInput {
+    pub text: String,
+    pub sender: String, // "human" or "ai"
+}
+
+/// Response with generated title
+#[derive(Debug, Serialize)]
+pub struct GenerateTitleResponse {
+    /// The generated title
+    pub title: String,
 }
 
 #[derive(Debug, Serialize)]
@@ -218,6 +261,178 @@ async fn get_chat_context(
         memories,
         context_string,
     }))
+}
+
+/// POST /v2/chat/initial-message - Generate personalized initial greeting
+async fn generate_initial_message(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<InitialMessageRequest>,
+) -> Result<Json<InitialMessageResponse>, StatusCode> {
+    tracing::info!(
+        "Generating initial message for user {} session {} (app_id={:?})",
+        user.uid,
+        request.session_id,
+        request.app_id
+    );
+
+    // Get API key for LLM calls
+    let api_key = match &state.config.gemini_api_key {
+        Some(key) => key.clone(),
+        None => {
+            tracing::warn!("No Gemini API key configured, returning default greeting");
+            // Save and return default greeting
+            return save_and_return_greeting(
+                &state,
+                &user.uid,
+                &request.session_id,
+                request.app_id.as_deref(),
+                "Hello! I'm here to help. What's on your mind?",
+            )
+            .await;
+        }
+    };
+
+    let llm = LlmClient::new(api_key);
+
+    // Fetch user memories (top 10)
+    let memories: Vec<String> = match state.firestore.get_memories(&user.uid, 10).await {
+        Ok(mems) => mems.into_iter().map(|m| m.content).collect(),
+        Err(e) => {
+            tracing::warn!("Failed to fetch memories for initial message: {}", e);
+            vec![]
+        }
+    };
+
+    // Get app persona if app_id provided
+    let (app_name, app_persona) = if let Some(app_id) = &request.app_id {
+        match state.firestore.get_app(&user.uid, app_id).await {
+            Ok(Some(app)) => (Some(app.name), app.chat_prompt),
+            Ok(None) => {
+                tracing::warn!("App not found: {}", app_id);
+                (None, None)
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch app: {}", e);
+                (None, None)
+            }
+        }
+    } else {
+        (None, None)
+    };
+
+    // Generate personalized greeting
+    let greeting = match llm
+        .generate_initial_message(&memories, app_name.as_deref(), app_persona.as_deref())
+        .await
+    {
+        Ok(msg) => msg.trim().to_string(),
+        Err(e) => {
+            tracing::error!("Failed to generate initial message: {}", e);
+            "Hello! I'm here to help. What's on your mind?".to_string()
+        }
+    };
+
+    // Save the greeting as an AI message and return
+    save_and_return_greeting(
+        &state,
+        &user.uid,
+        &request.session_id,
+        request.app_id.as_deref(),
+        &greeting,
+    )
+    .await
+}
+
+/// Helper to save greeting as AI message and return response
+async fn save_and_return_greeting(
+    state: &AppState,
+    uid: &str,
+    session_id: &str,
+    app_id: Option<&str>,
+    greeting: &str,
+) -> Result<Json<InitialMessageResponse>, StatusCode> {
+    match state
+        .firestore
+        .save_message(uid, greeting, "ai", app_id, Some(session_id))
+        .await
+    {
+        Ok(message) => {
+            // Update session with preview
+            if let Err(e) = state
+                .firestore
+                .update_chat_session_with_message(uid, session_id, greeting, None)
+                .await
+            {
+                tracing::warn!("Failed to update session preview: {}", e);
+            }
+
+            Ok(Json(InitialMessageResponse {
+                message: greeting.to_string(),
+                message_id: message.id,
+            }))
+        }
+        Err(e) => {
+            tracing::error!("Failed to save initial message: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// POST /v2/chat/generate-title - Generate a title for a chat session
+async fn generate_session_title(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<GenerateTitleRequest>,
+) -> Result<Json<GenerateTitleResponse>, StatusCode> {
+    tracing::info!(
+        "Generating title for user {} session {} ({} messages)",
+        user.uid,
+        request.session_id,
+        request.messages.len()
+    );
+
+    // Get API key for LLM calls
+    let api_key = match &state.config.gemini_api_key {
+        Some(key) => key.clone(),
+        None => {
+            tracing::warn!("No Gemini API key configured, returning default title");
+            return Ok(Json(GenerateTitleResponse {
+                title: "New Chat".to_string(),
+            }));
+        }
+    };
+
+    let llm = LlmClient::new(api_key);
+
+    // Convert messages to the format expected by the LLM
+    let messages: Vec<(String, String)> = request
+        .messages
+        .iter()
+        .map(|m| (m.text.clone(), m.sender.clone()))
+        .collect();
+
+    // Generate title
+    let title = match llm.generate_session_title(&messages).await {
+        Ok(t) => t,
+        Err(e) => {
+            tracing::error!("Failed to generate session title: {}", e);
+            "New Chat".to_string()
+        }
+    };
+
+    // Update the session with the new title
+    if let Err(e) = state
+        .firestore
+        .update_chat_session(&user.uid, &request.session_id, Some(&title), None)
+        .await
+    {
+        tracing::warn!("Failed to update session title: {}", e);
+    }
+
+    tracing::info!("Generated title for session {}: {}", request.session_id, title);
+
+    Ok(Json(GenerateTitleResponse { title }))
 }
 
 // ============================================================================
@@ -416,5 +631,8 @@ async fn get_basic_context(
 // ============================================================================
 
 pub fn chat_routes() -> Router<AppState> {
-    Router::new().route("/v2/chat-context", post(get_chat_context))
+    Router::new()
+        .route("/v2/chat-context", post(get_chat_context))
+        .route("/v2/chat/initial-message", post(generate_initial_message))
+        .route("/v2/chat/generate-title", post(generate_session_title))
 }
