@@ -3,14 +3,13 @@
 
 use axum::Router;
 use std::fs::OpenOptions;
-use std::io::{LineWriter, Write as IoWrite};
+use std::io::LineWriter;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::fmt::format::Writer;
 use tracing_subscriber::fmt::time::FormatTime;
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt};
-use std::fmt::Write as FmtWrite;
 
 /// Custom time formatter: [HH:mm:ss] [backend]
 #[derive(Clone)]
