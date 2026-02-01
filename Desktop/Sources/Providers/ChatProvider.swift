@@ -23,6 +23,7 @@ enum ChatSender {
 }
 
 /// State management for chat functionality with client-side Gemini
+/// Uses hybrid architecture: Swift → Gemini for streaming, Backend for persistence
 @MainActor
 class ChatProvider: ObservableObject {
     @Published var messages: [ChatMessage] = []
@@ -36,6 +37,9 @@ class ChatProvider: ObservableObject {
     // MARK: - Cached Context for Prompts
     private var cachedMemories: [ServerMemory] = []
     private var memoriesLoaded = false
+
+    // MARK: - Session ID for message grouping
+    private let sessionId: String = UUID().uuidString
 
     // MARK: - System Prompt
     // Prompts are defined in ChatPrompts.swift (converted from Python backend)
@@ -100,19 +104,40 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Fetch Messages
 
-    /// Fetch chat messages and load context
+    /// Fetch chat messages from backend and load context
     func fetchMessages() async {
-        // For client-side chat, we start fresh each session
-        messages.removeAll()
+        isLoading = true
         errorMessage = nil
+
+        // Load persisted messages from backend
+        do {
+            let persistedMessages = try await APIClient.shared.getMessages(appId: selectedAppId, limit: 100)
+            messages = persistedMessages.map { dbMessage in
+                ChatMessage(
+                    id: dbMessage.id,
+                    text: dbMessage.text,
+                    createdAt: dbMessage.createdAt,
+                    sender: dbMessage.sender == "human" ? .user : .ai,
+                    isStreaming: false
+                )
+            }
+            log("ChatProvider loaded \(messages.count) persisted messages")
+        } catch {
+            logError("Failed to load persisted messages", error: error)
+            // Continue without persisted messages - start fresh
+            messages.removeAll()
+        }
 
         // Load memories for context (non-blocking, best-effort)
         await loadMemoriesIfNeeded()
+
+        isLoading = false
     }
 
     // MARK: - Send Message
 
     /// Send a message and get streaming AI response
+    /// Persists both user and AI messages to backend
     func sendMessage(_ text: String) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
@@ -125,8 +150,26 @@ class ChatProvider: ObservableObject {
         isSending = true
         errorMessage = nil
 
-        // Add user message
+        // Save user message to backend (fire and forget - don't block UI)
+        let userMessageId = UUID().uuidString
+        Task {
+            do {
+                let response = try await APIClient.shared.saveMessage(
+                    text: trimmedText,
+                    sender: "human",
+                    appId: selectedAppId,
+                    sessionId: sessionId
+                )
+                log("Saved user message to backend: \(response.id)")
+            } catch {
+                logError("Failed to persist user message", error: error)
+                // Non-critical - continue with chat
+            }
+        }
+
+        // Add user message to UI
         let userMessage = ChatMessage(
+            id: userMessageId,
             text: trimmedText,
             sender: .user
         )
@@ -163,6 +206,25 @@ class ChatProvider: ObservableObject {
             // Mark streaming complete
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                 messages[index].isStreaming = false
+
+                // Save AI response to backend
+                let aiResponseText = messages[index].text
+                if !aiResponseText.isEmpty {
+                    Task {
+                        do {
+                            let response = try await APIClient.shared.saveMessage(
+                                text: aiResponseText,
+                                sender: "ai",
+                                appId: self.selectedAppId,
+                                sessionId: self.sessionId
+                            )
+                            log("Saved AI response to backend: \(response.id)")
+                        } catch {
+                            logError("Failed to persist AI response", error: error)
+                            // Non-critical - continue
+                        }
+                    }
+                }
             }
 
             log("Chat response complete")
@@ -200,21 +262,35 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Clear Chat
 
-    /// Clear all messages
+    /// Clear all messages (local and backend)
     func clearChat() async {
         messages.removeAll()
         errorMessage = nil
+
+        // Clear from backend (fire and forget)
+        Task {
+            do {
+                let response = try await APIClient.shared.deleteMessages(appId: selectedAppId)
+                log("Cleared \(response.deletedCount ?? 0) messages from backend")
+            } catch {
+                logError("Failed to clear messages from backend", error: error)
+                // Non-critical - local clear still works
+            }
+        }
+
         log("Chat cleared")
         AnalyticsManager.shared.chatCleared()
     }
 
     // MARK: - App Selection
 
-    /// Select a chat app (for future app-specific chat)
-    func selectApp(_ appId: String?) {
+    /// Select a chat app and load its message history
+    func selectApp(_ appId: String?) async {
         guard selectedAppId != appId else { return }
         selectedAppId = appId
-        messages.removeAll()
         errorMessage = nil
+
+        // Load messages for the selected app
+        await fetchMessages()
     }
 }
