@@ -141,7 +141,6 @@ class FocusStorage: ObservableObject {
             .map { (appOrSite: $0.key, totalSeconds: $0.value.seconds, count: $0.value.count) }
             .sorted { $0.totalSeconds > $1.totalSeconds }
             .prefix(5)
-            .map { $0 }
 
         return FocusDayStats(
             date: Date(),
