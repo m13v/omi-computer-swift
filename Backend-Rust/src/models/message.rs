@@ -48,6 +48,13 @@ pub struct DeleteMessagesQuery {
     pub app_id: Option<String>,
 }
 
+/// Request to rate a message
+#[derive(Debug, Clone, Deserialize)]
+pub struct RateMessageRequest {
+    /// Rating: 1 (thumbs up), -1 (thumbs down), null (clear rating)
+    pub rating: Option<i32>,
+}
+
 fn default_limit() -> usize {
     100
 }
