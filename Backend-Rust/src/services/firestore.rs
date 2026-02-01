@@ -15,7 +15,7 @@ use crate::encryption;
 use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
     Conversation, DailySummarySettings, DistractionEntry, FocusSessionDB,
-    FocusStats, FocusStatus, Memory, MemoryCategory, MemoryDB,
+    FocusStats, FocusStatus, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, Structured, TranscriptSegment, TranscriptionPreferences, UserProfile,
 };
 
@@ -53,6 +53,7 @@ pub const APPS_COLLECTION: &str = "plugins_data";
 pub const ENABLED_APPS_SUBCOLLECTION: &str = "enabled_plugins";
 pub const FOCUS_SESSIONS_SUBCOLLECTION: &str = "focus_sessions";
 pub const ADVICE_SUBCOLLECTION: &str = "advice";
+pub const MESSAGES_SUBCOLLECTION: &str = "messages";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -680,6 +681,84 @@ impl FirestoreService {
         Ok(())
     }
 
+    /// Delete a conversation
+    pub async fn delete_conversation(
+        &self,
+        uid: &str,
+        conversation_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CONVERSATIONS_SUBCOLLECTION,
+            conversation_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::DELETE, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore delete error: {}", error_text).into());
+        }
+
+        tracing::info!("Deleted conversation {} for user {}", conversation_id, uid);
+        Ok(())
+    }
+
+    /// Update a conversation's title
+    pub async fn update_conversation_title(
+        &self,
+        uid: &str,
+        conversation_id: &str,
+        title: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}?updateMask.fieldPaths=structured.title",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CONVERSATIONS_SUBCOLLECTION,
+            conversation_id
+        );
+
+        let doc = json!({
+            "fields": {
+                "structured": {
+                    "mapValue": {
+                        "fields": {
+                            "title": {"stringValue": title}
+                        }
+                    }
+                }
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!(
+            "Updated conversation {} title for user {}",
+            conversation_id,
+            uid
+        );
+        Ok(())
+    }
+
     // =========================================================================
     // MEMORIES
     // =========================================================================
@@ -724,7 +803,7 @@ impl FirestoreService {
             .into_iter()
             .filter_map(|doc| {
                 doc.get("document")
-                    .and_then(|d| self.parse_memory(d).ok())
+                    .and_then(|d| self.parse_memory(d, uid).ok())
             })
             // Filter out rejected memories
             .filter(|m| m.user_review != Some(false))
@@ -810,7 +889,7 @@ impl FirestoreService {
         }
 
         let doc: Value = response.json().await?;
-        let memory = self.parse_memory(&doc)?;
+        let memory = self.parse_memory(&doc, uid)?;
         Ok(Some(memory))
     }
 
@@ -3442,6 +3521,271 @@ impl FirestoreService {
 
         tracing::info!("Created desktop release: {}", doc_id);
         Ok(doc_id)
+    }
+
+    // =========================================================================
+    // MESSAGES (Chat Persistence)
+    // =========================================================================
+
+    /// Save a chat message to Firestore
+    /// Used for chat history persistence
+    pub async fn save_message(
+        &self,
+        uid: &str,
+        text: &str,
+        sender: &str,
+        app_id: Option<&str>,
+        session_id: Option<&str>,
+    ) -> Result<MessageDB, Box<dyn std::error::Error + Send + Sync>> {
+        let message_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MESSAGES_SUBCOLLECTION,
+            message_id
+        );
+
+        let mut fields = json!({
+            "text": {"stringValue": text},
+            "sender": {"stringValue": sender},
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "reported": {"booleanValue": false}
+        });
+
+        if let Some(app) = app_id {
+            fields["app_id"] = json!({"stringValue": app});
+        }
+
+        if let Some(session) = session_id {
+            fields["session_id"] = json!({"stringValue": session});
+        }
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore create error: {}", error_text).into());
+        }
+
+        let message = MessageDB {
+            id: message_id.clone(),
+            text: text.to_string(),
+            created_at: now,
+            sender: sender.to_string(),
+            app_id: app_id.map(|s| s.to_string()),
+            session_id: session_id.map(|s| s.to_string()),
+            rating: None,
+            reported: false,
+        };
+
+        tracing::info!(
+            "Saved {} message {} for user {} (app_id={:?})",
+            sender,
+            message_id,
+            uid,
+            app_id
+        );
+        Ok(message)
+    }
+
+    /// Get chat messages for a user with optional app_id filter
+    pub async fn get_messages(
+        &self,
+        uid: &str,
+        app_id: Option<&str>,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<MessageDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        // Build filters
+        let mut filters: Vec<Value> = Vec::new();
+
+        if let Some(app) = app_id {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "app_id"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": app}
+                }
+            }));
+        }
+
+        // Build the where clause
+        let where_clause = if filters.is_empty() {
+            None
+        } else if filters.len() == 1 {
+            Some(filters.into_iter().next().unwrap())
+        } else {
+            Some(json!({
+                "compositeFilter": {
+                    "op": "AND",
+                    "filters": filters
+                }
+            }))
+        };
+
+        // Build structured query - order by created_at ascending for chat history
+        let mut structured_query = json!({
+            "from": [{"collectionId": MESSAGES_SUBCOLLECTION}],
+            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "ASCENDING"}],
+            "limit": limit,
+            "offset": offset
+        });
+
+        if let Some(where_filter) = where_clause {
+            structured_query["where"] = where_filter;
+        }
+
+        let query = json!({
+            "structuredQuery": structured_query
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            tracing::error!("Firestore query error: {}", error_text);
+            return Ok(vec![]);
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let messages = results
+            .into_iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| self.parse_message(d).ok())
+            })
+            .collect();
+
+        Ok(messages)
+    }
+
+    /// Delete chat messages for a user with optional app_id filter
+    /// Returns the count of deleted messages
+    pub async fn delete_messages(
+        &self,
+        uid: &str,
+        app_id: Option<&str>,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        // First, get all message IDs to delete
+        let messages = self.get_messages(uid, app_id, 1000, 0).await?;
+        let count = messages.len();
+
+        if count == 0 {
+            return Ok(0);
+        }
+
+        // Delete each message
+        for message in messages {
+            let url = format!(
+                "{}/{}/{}/{}/{}",
+                self.base_url(),
+                USERS_COLLECTION,
+                uid,
+                MESSAGES_SUBCOLLECTION,
+                message.id
+            );
+
+            let response = self
+                .build_request(reqwest::Method::DELETE, &url)
+                .await?
+                .send()
+                .await?;
+
+            if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+                let error_text = response.text().await?;
+                tracing::error!("Failed to delete message {}: {}", message.id, error_text);
+            }
+        }
+
+        tracing::info!(
+            "Deleted {} messages for user {} (app_id={:?})",
+            count,
+            uid,
+            app_id
+        );
+        Ok(count)
+    }
+
+    /// Parse a Firestore document into a MessageDB
+    fn parse_message(&self, doc: &Value) -> Result<MessageDB, Box<dyn std::error::Error + Send + Sync>> {
+        let fields = doc.get("fields").ok_or("Missing fields")?;
+        let name = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let id = name.split('/').last().unwrap_or("").to_string();
+
+        let text = fields
+            .get("text")
+            .and_then(|v| v.get("stringValue"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+
+        let sender = fields
+            .get("sender")
+            .and_then(|v| v.get("stringValue"))
+            .and_then(|v| v.as_str())
+            .unwrap_or("human")
+            .to_string();
+
+        let created_at = fields
+            .get("created_at")
+            .and_then(|v| v.get("timestampValue"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+            .map(|dt| dt.with_timezone(&Utc))
+            .unwrap_or_else(Utc::now);
+
+        let app_id = fields
+            .get("app_id")
+            .and_then(|v| v.get("stringValue"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let session_id = fields
+            .get("session_id")
+            .and_then(|v| v.get("stringValue"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let rating = fields
+            .get("rating")
+            .and_then(|v| v.get("integerValue"))
+            .and_then(|v| v.as_str())
+            .and_then(|s| s.parse::<i32>().ok());
+
+        let reported = fields
+            .get("reported")
+            .and_then(|v| v.get("booleanValue"))
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        Ok(MessageDB {
+            id,
+            text,
+            created_at,
+            sender,
+            app_id,
+            session_id,
+            rating,
+            reported,
+        })
     }
 }
 
