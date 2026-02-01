@@ -30,6 +30,14 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var lastStatus: FocusStatus?
     private var frameCount = 0
 
+    // Failure tracking for screen capture recovery
+    private var consecutiveFailures = 0
+    private let maxConsecutiveFailures = 5
+    private var lastCaptureSucceeded = true
+    private var wasMonitoringBeforeSleep = false
+    private var wasMonitoringBeforeLock = false
+    private var systemEventObservers: [NSObjectProtocol] = []
+
     // MARK: - Initialization
 
     private override init() {
@@ -42,6 +50,9 @@ public class ProactiveAssistantsPlugin: NSObject {
         AssistantCoordinator.shared.setEventCallback { [weak self] type, data in
             self?.sendEvent(type: type, data: data)
         }
+
+        // Set up system event observers for sleep/wake/lock recovery
+        setupSystemEventObservers()
 
         log("ProactiveAssistantsPlugin initialized")
     }
@@ -185,6 +196,8 @@ public class ProactiveAssistantsPlugin: NSObject {
         let (appName, _, _) = WindowMonitor.getActiveWindowInfoStatic()
         if let appName = appName {
             currentApp = appName
+            // Update FocusStorage with initial detected app
+            FocusStorage.shared.updateDetectedApp(appName)
             AssistantCoordinator.shared.notifyAppSwitch(newApp: appName)
         }
 
@@ -272,6 +285,9 @@ public class ProactiveAssistantsPlugin: NSObject {
         lastStatus = nil
         frameCount = 0
 
+        // Clear FocusStorage real-time state
+        FocusStorage.shared.clearRealtimeStatus()
+
         // Report resources after stopping
         ResourceMonitor.shared.reportResourcesNow(context: "after_monitoring_stop")
 
@@ -333,6 +349,9 @@ public class ProactiveAssistantsPlugin: NSObject {
         currentWindowID = nil
         currentWindowTitle = nil  // Reset window title on app switch
 
+        // Update FocusStorage immediately with detected app (before analysis)
+        FocusStorage.shared.updateDetectedApp(appName)
+
         // Notify all assistants
         AssistantCoordinator.shared.notifyAppSwitch(newApp: appName)
 
@@ -349,15 +368,21 @@ public class ProactiveAssistantsPlugin: NSObject {
             AssistantCoordinator.shared.clearAllPendingWork()
             log("App switch detected, starting \(delaySeconds)s analysis delay")
 
+            // Update FocusStorage with delay end time
+            let delayEndTime = Date().addingTimeInterval(TimeInterval(delaySeconds))
+            FocusStorage.shared.updateDelayEndTime(delayEndTime)
+
             analysisDelayTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(delaySeconds), repeats: false) { [weak self] _ in
                 Task { @MainActor in
                     self?.isInDelayPeriod = false
                     self?.analysisDelayTimer = nil
+                    FocusStorage.shared.updateDelayEndTime(nil)
                     log("Analysis delay ended, resuming frame processing")
                 }
             }
         } else {
             isInDelayPeriod = false
+            FocusStorage.shared.updateDelayEndTime(nil)
             Task { @MainActor in
                 await captureFrame()
             }
@@ -394,6 +419,13 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Always capture frames (other features may need them)
         if let jpegData = await screenCaptureService.captureActiveWindowAsync(),
            let appName = appName {
+            // Reset failure counter on success
+            if !lastCaptureSucceeded {
+                log("Screen capture recovered after \(consecutiveFailures) failures")
+            }
+            consecutiveFailures = 0
+            lastCaptureSucceeded = true
+
             frameCount += 1
 
             let frame = CapturedFrame(
@@ -412,6 +444,14 @@ public class ProactiveAssistantsPlugin: NSObject {
             Task {
                 await RewindIndexer.shared.processFrame(frame)
             }
+        } else {
+            // Track capture failures
+            consecutiveFailures += 1
+            lastCaptureSucceeded = false
+
+            if consecutiveFailures >= maxConsecutiveFailures {
+                handleRepeatedCaptureFailures()
+            }
         }
     }
 
@@ -427,10 +467,15 @@ public class ProactiveAssistantsPlugin: NSObject {
         AssistantCoordinator.shared.clearAllPendingWork()
         log("Window switch detected (ID: \(windowID)), starting \(delaySeconds)s analysis delay")
 
+        // Update FocusStorage with delay end time
+        let delayEndTime = Date().addingTimeInterval(TimeInterval(delaySeconds))
+        FocusStorage.shared.updateDelayEndTime(delayEndTime)
+
         analysisDelayTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(delaySeconds), repeats: false) { [weak self] _ in
             Task { @MainActor in
                 self?.isInDelayPeriod = false
                 self?.analysisDelayTimer = nil
+                FocusStorage.shared.updateDelayEndTime(nil)
                 log("Analysis delay ended, resuming frame processing")
             }
         }
@@ -461,6 +506,157 @@ public class ProactiveAssistantsPlugin: NSObject {
     /// Trigger glow effect manually (for testing)
     func triggerGlow(colorMode: GlowColorMode = .focused) {
         OverlayService.shared.showGlowAroundActiveWindow(colorMode: colorMode)
+    }
+
+    // MARK: - System Event Handling
+
+    /// Set up observers for system sleep/wake and screen lock/unlock events
+    private func setupSystemEventObservers() {
+        // System about to sleep - track state before sleep
+        let sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.wasMonitoringBeforeSleep = self?.isMonitoring ?? false
+                log("ProactiveAssistantsPlugin: System going to sleep, wasMonitoring=\(self?.wasMonitoringBeforeSleep ?? false)")
+            }
+        }
+        systemEventObservers.append(sleepObserver)
+
+        // System wake from sleep
+        let wakeObserver = NotificationCenter.default.addObserver(
+            forName: .systemDidWake,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleSystemWake()
+            }
+        }
+        systemEventObservers.append(wakeObserver)
+
+        // Screen locked
+        let lockObserver = NotificationCenter.default.addObserver(
+            forName: .screenDidLock,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScreenLock()
+            }
+        }
+        systemEventObservers.append(lockObserver)
+
+        // Screen unlocked
+        let unlockObserver = NotificationCenter.default.addObserver(
+            forName: .screenDidUnlock,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.handleScreenUnlock()
+            }
+        }
+        systemEventObservers.append(unlockObserver)
+    }
+
+    /// Handle system wake from sleep
+    private func handleSystemWake() {
+        log("ProactiveAssistantsPlugin: System woke from sleep")
+
+        // Reset failure counter
+        consecutiveFailures = 0
+        lastCaptureSucceeded = true
+
+        // If we were monitoring before sleep, reinitialize capture service
+        if wasMonitoringBeforeSleep && isMonitoring {
+            log("ProactiveAssistantsPlugin: Restarting screen capture after wake")
+
+            // Reinitialize the screen capture service
+            screenCaptureService = ScreenCaptureService()
+
+            // Refresh permission state
+            refreshScreenRecordingPermission()
+        }
+
+        wasMonitoringBeforeSleep = false
+    }
+
+    /// Handle screen lock - pause capture
+    private func handleScreenLock() {
+        log("ProactiveAssistantsPlugin: Screen locked - pausing capture")
+
+        wasMonitoringBeforeLock = isMonitoring
+
+        // Pause the capture timer while locked
+        captureTimer?.invalidate()
+        captureTimer = nil
+    }
+
+    /// Handle screen unlock - resume capture
+    private func handleScreenUnlock() {
+        log("ProactiveAssistantsPlugin: Screen unlocked - resuming capture")
+
+        // Reset failure counter
+        consecutiveFailures = 0
+        lastCaptureSucceeded = true
+
+        if wasMonitoringBeforeLock && isMonitoring {
+            log("ProactiveAssistantsPlugin: Restarting capture timer after unlock")
+
+            // Reinitialize screen capture service to ensure fresh state
+            screenCaptureService = ScreenCaptureService()
+
+            // Restart capture timer
+            captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    await self?.captureFrame()
+                }
+            }
+        } else if wasMonitoringBeforeLock && !isMonitoring {
+            // We stopped monitoring while locked, restart it
+            log("ProactiveAssistantsPlugin: Restarting monitoring after unlock")
+            startMonitoring { success, error in
+                if !success, let error = error {
+                    log("Failed to restart monitoring after unlock: \(error)")
+                }
+            }
+        }
+
+        wasMonitoringBeforeLock = false
+    }
+
+    /// Handle repeated capture failures (likely permission issue)
+    private func handleRepeatedCaptureFailures() {
+        log("ProactiveAssistantsPlugin: Detected \(consecutiveFailures) consecutive capture failures")
+
+        // Refresh permission state
+        refreshScreenRecordingPermission()
+
+        // Check if permission is actually lost
+        if !hasScreenRecordingPermission {
+            log("ProactiveAssistantsPlugin: Screen recording permission lost")
+
+            // Post notification for AppState to update UI
+            NotificationCenter.default.post(name: .screenCapturePermissionLost, object: nil)
+
+            // Stop monitoring since we can't capture
+            stopMonitoring()
+
+            // Send user notification
+            NotificationService.shared.sendNotification(
+                title: "Screen Recording Permission Required",
+                message: "Omi needs screen recording permission to continue monitoring. Please re-enable it in System Settings."
+            )
+        } else {
+            // Permission is still granted but capture is failing
+            // Try reinitializing the capture service
+            log("ProactiveAssistantsPlugin: Permission still granted, reinitializing capture service")
+            screenCaptureService = ScreenCaptureService()
+            consecutiveFailures = 0
+        }
     }
 }
 
