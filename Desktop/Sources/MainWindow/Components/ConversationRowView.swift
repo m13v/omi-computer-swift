@@ -7,6 +7,12 @@ struct ConversationRowView: View {
     let onTap: () -> Void
     let folders: [Folder]
     let onMoveToFolder: (String, String?) async -> Void
+
+    // Multi-select support
+    var isMultiSelectMode: Bool = false
+    var isSelected: Bool = false
+    var onToggleSelection: (() -> Void)? = nil
+
     @EnvironmentObject var appState: AppState
     @State private var isStarring = false
 
@@ -137,14 +143,36 @@ struct ConversationRowView: View {
     }
 
     var body: some View {
-        Button(action: onTap) {
+        Button(action: {
+            if isMultiSelectMode {
+                onToggleSelection?()
+            } else {
+                onTap()
+            }
+        }) {
             HStack(spacing: 12) {
+                // Checkbox for multi-select mode
+                if isMultiSelectMode {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 20))
+                        .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                }
+
                 // Title and overview
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(conversation.title)
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .lineLimit(1)
+                    HStack(spacing: 6) {
+                        Text(conversation.title)
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .lineLimit(1)
+
+                        // Show ID for untitled conversations
+                        if conversation.structured.title.isEmpty {
+                            Text("(\(conversation.id.prefix(8))...)")
+                                .font(.system(size: 11, design: .monospaced))
+                                .foregroundColor(OmiColors.textQuaternary)
+                        }
+                    }
 
                     if !conversation.overview.isEmpty {
                         Text(conversation.overview)
@@ -189,7 +217,11 @@ struct ConversationRowView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)
+                    .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 2)
             )
             .contentShape(Rectangle())
         }
