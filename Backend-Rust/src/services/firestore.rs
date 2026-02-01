@@ -294,6 +294,10 @@ impl FirestoreService {
         offset: usize,
         include_discarded: bool,
         statuses: &[String],
+        starred: Option<bool>,
+        folder_id: Option<&str>,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
     ) -> Result<Vec<Conversation>, Box<dyn std::error::Error + Send + Sync>> {
         // Build filters array (match Python behavior)
         let mut filters: Vec<Value> = Vec::new();
@@ -321,6 +325,49 @@ impl FirestoreService {
                             "values": statuses.iter().map(|s| json!({"stringValue": s})).collect::<Vec<_>>()
                         }
                     }
+                }
+            }));
+        }
+
+        // Filter by starred status
+        if let Some(starred_val) = starred {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "starred"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": starred_val}
+                }
+            }));
+        }
+
+        // Filter by folder_id
+        if let Some(fid) = folder_id {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "folder_id"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": fid}
+                }
+            }));
+        }
+
+        // Filter by date range
+        if let Some(start) = start_date {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "created_at"},
+                    "op": "GREATER_THAN_OR_EQUAL",
+                    "value": {"timestampValue": start}
+                }
+            }));
+        }
+
+        if let Some(end) = end_date {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "created_at"},
+                    "op": "LESS_THAN",
+                    "value": {"timestampValue": end}
                 }
             }));
         }
