@@ -16,7 +16,7 @@ enum SidebarNavItem: Int, CaseIterable {
     var title: String {
         switch self {
         case .conversations: return "Conversations"
-        case .chat: return "Chat"
+        case .chat: return "AI chat"
         case .memories: return "Memories"
         case .tasks: return "Tasks"
         case .focus: return "Focus"
@@ -387,7 +387,7 @@ struct SidebarView: View {
 
     // Check if any permission is specifically denied (not just missing)
     private var hasPermissionDenied: Bool {
-        appState.isMicrophonePermissionDenied()
+        appState.isMicrophonePermissionDenied() || appState.isScreenRecordingPermissionDenied()
     }
 
     // Color based on denied (red) vs missing (orange)
