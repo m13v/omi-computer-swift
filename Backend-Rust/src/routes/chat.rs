@@ -280,7 +280,7 @@ async fn get_relevant_conversations(
     let statuses = vec!["completed".to_string()];
 
     match firestore
-        .get_conversations(uid, 50, 0, false, &statuses)
+        .get_conversations(uid, 50, 0, false, &statuses, None, None, None, None)
         .await
     {
         Ok(conversations) => {
