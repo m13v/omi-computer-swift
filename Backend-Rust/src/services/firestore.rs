@@ -10,6 +10,8 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
+use crate::encryption;
+
 use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
     Conversation, DailySummarySettings, DistractionEntry, FocusSessionDB,
@@ -67,11 +69,16 @@ pub struct FirestoreService {
     project_id: String,
     credentials: Option<ServiceAccountCredentials>,
     cached_token: Arc<RwLock<Option<CachedToken>>>,
+    /// Encryption secret for decrypting user data with enhanced protection level
+    encryption_secret: Option<Vec<u8>>,
 }
 
 impl FirestoreService {
     /// Create a new Firestore service
-    pub async fn new(project_id: String) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn new(
+        project_id: String,
+        encryption_secret: Option<Vec<u8>>,
+    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let client = Client::new();
 
         // Load service account credentials from GOOGLE_APPLICATION_CREDENTIALS
@@ -82,6 +89,7 @@ impl FirestoreService {
             project_id,
             credentials,
             cached_token: Arc::new(RwLock::new(None)),
+            encryption_secret,
         };
 
         // Pre-fetch an access token
@@ -2079,18 +2087,36 @@ impl FirestoreService {
     }
 
     /// Parse Firestore document to MemoryDB
+    /// Decrypts content if data_protection_level is "enhanced" and encryption secret is available.
     fn parse_memory(
         &self,
         doc: &Value,
+        uid: &str,
     ) -> Result<MemoryDB, Box<dyn std::error::Error + Send + Sync>> {
         let fields = doc.get("fields").ok_or("Missing fields")?;
         let name = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let id = name.split('/').last().unwrap_or("").to_string();
 
+        // Get raw content
+        let mut content = self.parse_string(fields, "content").unwrap_or_default();
+
+        // Check if content is encrypted (data_protection_level = "enhanced")
+        let data_protection_level = self.parse_string(fields, "data_protection_level");
+        if data_protection_level.as_deref() == Some("enhanced") {
+            if let Some(ref secret) = self.encryption_secret {
+                content = encryption::decrypt(&content, uid, secret);
+            } else {
+                tracing::debug!(
+                    "Memory {} has enhanced protection but no encryption secret configured",
+                    id
+                );
+            }
+        }
+
         Ok(MemoryDB {
             id: id.clone(),
             uid: "".to_string(), // Not stored in document
-            content: self.parse_string(fields, "content").unwrap_or_default(),
+            content,
             category: self.parse_string(fields, "category")
                 .and_then(|s| serde_json::from_str(&format!("\"{}\"", s)).ok())
                 .unwrap_or_default(),
