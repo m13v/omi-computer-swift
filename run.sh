@@ -4,6 +4,27 @@ set -e
 # Clear system OPENAI_API_KEY so .env takes precedence
 unset OPENAI_API_KEY
 
+# Timing utilities
+SCRIPT_START_TIME=$(date +%s.%N)
+STEP_START_TIME=$SCRIPT_START_TIME
+
+step() {
+    local now=$(date +%s.%N)
+    local step_elapsed=$(echo "$now - $STEP_START_TIME" | bc)
+    local total_elapsed=$(echo "$now - $SCRIPT_START_TIME" | bc)
+    if [ "$STEP_START_TIME" != "$SCRIPT_START_TIME" ]; then
+        printf "  └─ done (%.2fs)\n" "$step_elapsed"
+    fi
+    STEP_START_TIME=$now
+    printf "[%6.1fs] %s\n" "$total_elapsed" "$1"
+}
+
+substep() {
+    local now=$(date +%s.%N)
+    local total_elapsed=$(echo "$now - $SCRIPT_START_TIME" | bc)
+    printf "[%6.1fs]   ├─ %s\n" "$total_elapsed" "$1"
+}
+
 # App configuration
 APP_NAME="Omi Computer"
 BUNDLE_ID="com.omi.computer-macos.development"
@@ -31,8 +52,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Kill existing instances
-echo "Killing existing instances..."
+step "Killing existing instances..."
 pkill "$APP_NAME" 2>/dev/null || true
 pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
@@ -41,8 +61,7 @@ lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 # Clear log file for fresh run (must be before backend starts)
 rm -f /tmp/omi.log 2>/dev/null || true
 
-# Clean up conflicting app bundles with same bundle ID
-echo "Cleaning up conflicting app bundles..."
+step "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi.app"
     "$HOME/Desktop/Omi.app"
@@ -54,19 +73,17 @@ CONFLICTING_APPS=(
 )
 for app in "${CONFLICTING_APPS[@]}"; do
     if [ -d "$app" ]; then
-        echo "  Removing: $app"
+        substep "Removing: $app"
         rm -rf "$app"
     fi
 done
 
-# Start Cloudflare tunnel
-echo "Starting Cloudflare tunnel..."
+step "Starting Cloudflare tunnel..."
 cloudflared tunnel run omi-computer-dev &
 TUNNEL_PID=$!
 sleep 2
 
-# Start Rust backend
-echo "Starting Rust backend..."
+step "Starting Rust backend..."
 cd "$BACKEND_DIR"
 
 # Copy .env if not present
@@ -81,7 +98,7 @@ fi
 
 # Build if binary doesn't exist or source is newer
 if [ ! -f "target/release/omi-desktop-backend" ] || [ -n "$(find src -newer target/release/omi-desktop-backend 2>/dev/null)" ]; then
-    echo "Building Rust backend..."
+    step "Building Rust backend (cargo build --release)..."
     cargo build --release
 fi
 
@@ -89,11 +106,10 @@ fi
 BACKEND_PID=$!
 cd - > /dev/null
 
-# Wait for backend to be ready
-echo "Waiting for backend to start..."
+step "Waiting for backend to start..."
 for i in {1..30}; do
     if curl -s http://localhost:8080 > /dev/null 2>&1; then
-        echo "Backend is ready!"
+        substep "Backend is ready!"
         break
     fi
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
@@ -103,94 +119,109 @@ for i in {1..30}; do
     sleep 0.5
 done
 
-# Build debug
-echo "Building app..."
+# Check if another SwiftPM instance is running (will block our build)
+SWIFTPM_PID=$(pgrep -f "swiftpm-workspace-state|swift-build|swift-package" 2>/dev/null | head -1)
+if [ -n "$SWIFTPM_PID" ]; then
+    step "Waiting for other SwiftPM instance (PID: $SWIFTPM_PID) to finish..."
+    while kill -0 "$SWIFTPM_PID" 2>/dev/null; do
+        sleep 1
+    done
+fi
+
+step "Building Swift app (swift build -c debug)..."
 swift build -c debug --package-path Desktop
 
-# Create/update app bundle in place (preserves TCC permissions)
-echo "Creating app bundle..."
+step "Creating app bundle..."
+substep "Creating directories"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
-# Copy binary
+substep "Copying binary ($(du -h "Desktop/.build/debug/$APP_NAME" 2>/dev/null | cut -f1))"
 cp -f "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
 
-# Add rpath for Frameworks folder (needed for Sparkle)
+substep "Adding rpath for Frameworks"
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
 
 # Copy Sparkle framework
-mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 SPARKLE_FRAMEWORK="Desktop/.build/arm64-apple-macosx/debug/Sparkle.framework"
 if [ -d "$SPARKLE_FRAMEWORK" ]; then
+    substep "Copying Sparkle framework ($(du -sh "$SPARKLE_FRAMEWORK" 2>/dev/null | cut -f1))"
     rm -rf "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
 fi
 
-# Copy and fix Info.plist
+substep "Copying Info.plist"
 cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
 
-# Copy GoogleService-Info.plist for Firebase
+substep "Copying GoogleService-Info.plist"
 cp -f Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
-# Note: Bundle goes in Contents/Resources/ - our custom BundleExtension.swift looks for it there
 RESOURCE_BUNDLE="Desktop/.build/arm64-apple-macosx/debug/Omi Computer_Omi Computer.bundle"
 if [ -d "$RESOURCE_BUNDLE" ]; then
+    substep "Copying resource bundle ($(du -sh "$RESOURCE_BUNDLE" 2>/dev/null | cut -f1))"
     cp -Rf "$RESOURCE_BUNDLE" "$APP_BUNDLE/Contents/Resources/"
 fi
 
-# Copy .env.app (app runtime secrets only) and add API URL
+substep "Copying .env.app"
 if [ -f ".env.app" ]; then
     cp -f .env.app "$APP_BUNDLE/Contents/Resources/.env"
 else
     touch "$APP_BUNDLE/Contents/Resources/.env"
 fi
-# Set API URL to tunnel for development (overrides production default)
 echo "OMI_API_URL=$TUNNEL_URL" >> "$APP_BUNDLE/Contents/Resources/.env"
-echo "Using backend: $TUNNEL_URL"
 
-# Copy app icon
+substep "Copying app icon"
 cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
 
-# Create PkgInfo
+substep "Creating PkgInfo"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-# Remove extended attributes before signing (prevents "resource fork, Finder information" errors)
+step "Removing extended attributes (xattr -cr)..."
 xattr -cr "$APP_BUNDLE"
 
-# Sign app with hardened runtime (preserves TCC permissions across builds)
-echo "Signing app with hardened runtime..."
+step "Signing app with hardened runtime..."
 if security find-identity -v -p codesigning | grep -q "$SIGN_IDENTITY"; then
-    # Sign Sparkle framework first
     if [ -d "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" ]; then
+        substep "Signing Sparkle framework"
         codesign --force --options runtime --sign "$SIGN_IDENTITY" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     fi
+    substep "Signing app bundle"
     codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "$SIGN_IDENTITY" "$APP_BUNDLE"
 elif security find-identity -v -p codesigning | grep -q "Omi Dev"; then
     if [ -d "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework" ]; then
+        substep "Signing Sparkle framework"
         codesign --force --options runtime --sign "Omi Dev" "$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
     fi
+    substep "Signing app bundle"
     codesign --force --options runtime --entitlements Desktop/Omi.entitlements --sign "Omi Dev" "$APP_BUNDLE"
 else
-    echo "Warning: No persistent signing identity found. Using ad-hoc (permissions won't persist)."
-    echo "To fix: Create a self-signed certificate named 'Omi Dev' in Keychain Access."
+    substep "Warning: No persistent signing identity found. Using ad-hoc."
     codesign --force --deep --sign - "$APP_BUNDLE"
 fi
 
+step "Removing quarantine attributes..."
+xattr -cr "$APP_BUNDLE"
+
+step "Starting app..."
+
+# Print summary
+NOW=$(date +%s.%N)
+TOTAL_TIME=$(echo "$NOW - $SCRIPT_START_TIME" | bc)
+printf "  └─ done (%.2fs)\n" "$(echo "$NOW - $STEP_START_TIME" | bc)"
 echo ""
-echo "=== Services Running ==="
+echo "=== Services Running (total: ${TOTAL_TIME%.*}s) ==="
 echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
 echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
-echo "App:      $APP_BUNDLE (running from build directory)"
-echo "========================"
+echo "App:      $APP_BUNDLE"
+echo "Using backend: $TUNNEL_URL"
+echo "========================================"
 echo ""
 
-# Remove quarantine and start app from build directory
-echo "Starting app..."
-xattr -cr "$APP_BUNDLE"
 open "$APP_BUNDLE" || "$APP_BUNDLE/Contents/MacOS/$APP_NAME" &
 
 # Wait for backend process (keeps script running and shows logs)
