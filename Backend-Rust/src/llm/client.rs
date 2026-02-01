@@ -708,4 +708,95 @@ impl LlmClient {
             .map(|p| p.text.clone())
             .unwrap_or_default())
     }
+
+    // =========================================================================
+    // CHAT CONTEXT - For RAG context retrieval
+    // Ported from Python: utils/llm/chat.py
+    // =========================================================================
+
+    /// Check if a question requires context to answer
+    /// Ported from Python requires_context()
+    pub async fn check_requires_context(
+        &self,
+        prompt: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "requires_context": {
+                    "type": "boolean",
+                    "description": "Whether the question requires personal context to answer"
+                }
+            },
+            "required": ["requires_context"]
+        });
+
+        let response = self.call_with_schema(prompt, Some(0.1), Some(50), Some(schema)).await?;
+
+        #[derive(Deserialize)]
+        struct RequiresContextResponse {
+            requires_context: bool,
+        }
+
+        let result: RequiresContextResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse requires_context response: {} - {}", e, response))?;
+
+        Ok(result.requires_context)
+    }
+
+    /// Extract date range from a question
+    /// Ported from Python retrieve_context_dates_by_question()
+    pub async fn extract_date_range(
+        &self,
+        prompt: &str,
+    ) -> Result<Option<(DateTime<Utc>, DateTime<Utc>)>, Box<dyn std::error::Error + Send + Sync>> {
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "has_date_reference": {
+                    "type": "boolean",
+                    "description": "Whether the question contains a date/time reference"
+                },
+                "start_date": {
+                    "type": "string",
+                    "description": "Start of date range in ISO 8601 format (UTC)"
+                },
+                "end_date": {
+                    "type": "string",
+                    "description": "End of date range in ISO 8601 format (UTC)"
+                }
+            },
+            "required": ["has_date_reference"]
+        });
+
+        let response = self.call_with_schema(prompt, Some(0.1), Some(200), Some(schema)).await?;
+
+        #[derive(Deserialize)]
+        struct DateRangeResponse {
+            has_date_reference: bool,
+            start_date: Option<String>,
+            end_date: Option<String>,
+        }
+
+        let result: DateRangeResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse date range response: {} - {}", e, response))?;
+
+        if !result.has_date_reference {
+            return Ok(None);
+        }
+
+        // Parse dates
+        let start = result.start_date
+            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        let end = result.end_date
+            .and_then(|s| DateTime::parse_from_rfc3339(&s).ok())
+            .map(|dt| dt.with_timezone(&Utc));
+
+        match (start, end) {
+            (Some(s), Some(e)) => Ok(Some((s, e))),
+            _ => Ok(None),
+        }
+    }
 }
