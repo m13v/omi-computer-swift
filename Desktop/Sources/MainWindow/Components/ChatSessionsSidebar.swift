@@ -4,14 +4,19 @@ import SwiftUI
 struct ChatSessionsSidebar: View {
     @ObservedObject var chatProvider: ChatProvider
 
+    @State private var isTogglingStarredFilter = false
+
     private let sidebarWidth: CGFloat = 220
 
     var body: some View {
         VStack(spacing: 0) {
-            // New Chat button
-            newChatButton
-                .padding(.horizontal, 12)
-                .padding(.vertical, 12)
+            // New Chat button and starred filter
+            VStack(spacing: 8) {
+                newChatButton
+                starredFilterButton
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
 
             Divider()
                 .background(OmiColors.backgroundTertiary)
@@ -53,6 +58,45 @@ struct ChatSessionsSidebar: View {
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Starred Filter Button
+
+    private var starredFilterButton: some View {
+        Button(action: {
+            Task {
+                isTogglingStarredFilter = true
+                await chatProvider.toggleStarredFilter()
+                isTogglingStarredFilter = false
+            }
+        }) {
+            HStack(spacing: 6) {
+                if isTogglingStarredFilter {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: 12, height: 12)
+                } else {
+                    Image(systemName: chatProvider.showStarredOnly ? "star.fill" : "star")
+                        .font(.system(size: 12))
+                }
+                Text("Starred")
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+            }
+            .foregroundColor(chatProvider.showStarredOnly ? OmiColors.amber : OmiColors.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(chatProvider.showStarredOnly ? OmiColors.amber.opacity(0.15) : OmiColors.backgroundTertiary.opacity(0.6))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(chatProvider.showStarredOnly ? OmiColors.amber.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .disabled(isTogglingStarredFilter)
     }
 
     // MARK: - Sessions List
@@ -115,15 +159,15 @@ struct ChatSessionsSidebar: View {
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Spacer()
-            Image(systemName: "bubble.left.and.bubble.right")
+            Image(systemName: chatProvider.showStarredOnly ? "star" : "bubble.left.and.bubble.right")
                 .font(.system(size: 32))
                 .foregroundColor(OmiColors.textTertiary)
 
-            Text("No chats yet")
+            Text(chatProvider.showStarredOnly ? "No starred chats" : "No chats yet")
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(OmiColors.textSecondary)
 
-            Text("Start a conversation")
+            Text(chatProvider.showStarredOnly ? "Star a chat to see it here" : "Start a conversation")
                 .font(.system(size: 12))
                 .foregroundColor(OmiColors.textTertiary)
             Spacer()
