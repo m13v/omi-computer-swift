@@ -764,26 +764,75 @@ impl FirestoreService {
     // MEMORIES
     // =========================================================================
 
-    /// Get memories for a user
+    /// Get memories for a user with optional filtering
     /// Copied from Python get_memories
     /// Enriches memories with source from linked conversations
-    pub async fn get_memories(
+    pub async fn get_memories_filtered(
         &self,
         uid: &str,
         limit: usize,
+        offset: usize,
+        category: Option<&str>,
+        include_dismissed: bool,
     ) -> Result<Vec<MemoryDB>, Box<dyn std::error::Error + Send + Sync>> {
         let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
 
+        // Build filters
+        let mut filters: Vec<Value> = Vec::new();
+
+        // Filter by category if specified
+        if let Some(cat) = category {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "category"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": cat}
+                }
+            }));
+        }
+
+        // Filter out dismissed unless include_dismissed is true
+        if !include_dismissed {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "is_dismissed"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": false}
+                }
+            }));
+        }
+
+        // Build the where clause
+        let where_clause = if filters.is_empty() {
+            None
+        } else if filters.len() == 1 {
+            Some(filters.into_iter().next().unwrap())
+        } else {
+            Some(json!({
+                "compositeFilter": {
+                    "op": "AND",
+                    "filters": filters
+                }
+            }))
+        };
+
         // Query with ordering by scoring DESC
+        let mut structured_query = json!({
+            "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
+            "orderBy": [
+                {"field": {"fieldPath": "scoring"}, "direction": "DESCENDING"},
+                {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
+            ],
+            "limit": limit,
+            "offset": offset
+        });
+
+        if let Some(where_filter) = where_clause {
+            structured_query["where"] = where_filter;
+        }
+
         let query = json!({
-            "structuredQuery": {
-                "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
-                "orderBy": [
-                    {"field": {"fieldPath": "scoring"}, "direction": "DESCENDING"},
-                    {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
-                ],
-                "limit": limit
-            }
+            "structuredQuery": structured_query
         });
 
         let response = self
@@ -814,6 +863,17 @@ impl FirestoreService {
         self.enrich_memories_with_source(uid, &mut memories).await;
 
         Ok(memories)
+    }
+
+    /// Get memories for a user (simple version for backward compatibility)
+    /// Copied from Python get_memories
+    /// Enriches memories with source from linked conversations
+    pub async fn get_memories(
+        &self,
+        uid: &str,
+        limit: usize,
+    ) -> Result<Vec<MemoryDB>, Box<dyn std::error::Error + Send + Sync>> {
+        self.get_memories_filtered(uid, limit, 0, None, false).await
     }
 
     /// Batch fetch conversations and populate source field on memories
@@ -1045,16 +1105,30 @@ impl FirestoreService {
         Ok(())
     }
 
-    /// Create a manual memory
-    pub async fn create_manual_memory(
+    /// Create a memory (manual or extracted)
+    pub async fn create_memory(
         &self,
         uid: &str,
         content: &str,
         visibility: &str,
+        category: Option<MemoryCategory>,
+        confidence: Option<f64>,
+        source_app: Option<&str>,
+        context_summary: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let memory_id = document_id_from_seed(content);
         let now = Utc::now();
-        let scoring = MemoryDB::calculate_scoring(&MemoryCategory::Manual, &now, true);
+
+        // Determine if this is a manual memory
+        let is_manual = category.is_none() || matches!(category, Some(MemoryCategory::Manual));
+        let actual_category = category.unwrap_or(MemoryCategory::Manual);
+        let scoring = MemoryDB::calculate_scoring(&actual_category, &now, is_manual);
+
+        let category_str = match actual_category {
+            MemoryCategory::System => "system",
+            MemoryCategory::Interesting => "interesting",
+            MemoryCategory::Manual => "manual",
+        };
 
         let url = format!(
             "{}/{}/{}/{}/{}",
@@ -1065,19 +1139,33 @@ impl FirestoreService {
             memory_id
         );
 
-        let doc = json!({
-            "fields": {
-                "content": {"stringValue": content},
-                "category": {"stringValue": "manual"},
-                "created_at": {"timestampValue": now.to_rfc3339()},
-                "updated_at": {"timestampValue": now.to_rfc3339()},
-                "reviewed": {"booleanValue": true},
-                "user_review": {"booleanValue": true},
-                "visibility": {"stringValue": visibility},
-                "manually_added": {"booleanValue": true},
-                "scoring": {"stringValue": scoring}
-            }
+        // Build fields - always include base fields
+        let mut fields = json!({
+            "content": {"stringValue": content},
+            "category": {"stringValue": category_str},
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "updated_at": {"timestampValue": now.to_rfc3339()},
+            "reviewed": {"booleanValue": is_manual},
+            "user_review": {"booleanValue": is_manual},
+            "visibility": {"stringValue": visibility},
+            "manually_added": {"booleanValue": is_manual},
+            "scoring": {"stringValue": scoring},
+            "is_read": {"booleanValue": false},
+            "is_dismissed": {"booleanValue": false}
         });
+
+        // Add optional fields if present
+        if let Some(conf) = confidence {
+            fields["confidence"] = json!({"doubleValue": conf});
+        }
+        if let Some(app) = source_app {
+            fields["source_app"] = json!({"stringValue": app});
+        }
+        if let Some(summary) = context_summary {
+            fields["context_summary"] = json!({"stringValue": summary});
+        }
+
+        let doc = json!({ "fields": fields });
 
         let response = self
             .build_request(reqwest::Method::PATCH, &url)
@@ -1091,8 +1179,156 @@ impl FirestoreService {
             return Err(format!("Firestore create error: {}", error_text).into());
         }
 
-        tracing::info!("Created manual memory {} for user {}", memory_id, uid);
+        tracing::info!("Created memory {} for user {} (category: {})", memory_id, uid, category_str);
         Ok(memory_id)
+    }
+
+    /// Create a manual memory (convenience wrapper)
+    pub async fn create_manual_memory(
+        &self,
+        uid: &str,
+        content: &str,
+        visibility: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        self.create_memory(uid, content, visibility, None, None, None, None).await
+    }
+
+    /// Update memory read/dismissed status
+    pub async fn update_memory_read_status(
+        &self,
+        uid: &str,
+        memory_id: &str,
+        is_read: Option<bool>,
+        is_dismissed: Option<bool>,
+    ) -> Result<MemoryDB, Box<dyn std::error::Error + Send + Sync>> {
+        let mut update_fields = vec!["updated_at"];
+        let mut fields = json!({
+            "updated_at": {"timestampValue": Utc::now().to_rfc3339()}
+        });
+
+        if let Some(read) = is_read {
+            update_fields.push("is_read");
+            fields["is_read"] = json!({"booleanValue": read});
+        }
+        if let Some(dismissed) = is_dismissed {
+            update_fields.push("is_dismissed");
+            fields["is_dismissed"] = json!({"booleanValue": dismissed});
+        }
+
+        let update_mask = update_fields
+            .iter()
+            .map(|f| format!("updateMask.fieldPaths={}", f))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let url = format!(
+            "{}/{}/{}/{}/{}?{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MEMORIES_SUBCOLLECTION,
+            memory_id,
+            update_mask
+        );
+
+        let doc = json!({ "fields": fields });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!("Updated memory {} read status for user {}", memory_id, uid);
+
+        // Fetch and return the updated memory
+        self.get_memory(uid, memory_id)
+            .await?
+            .ok_or_else(|| "Memory not found after update".into())
+    }
+
+    /// Mark all memories as read
+    pub async fn mark_all_memories_read(
+        &self,
+        uid: &str,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        // First get all unread memories
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "is_read"},
+                        "op": "EQUAL",
+                        "value": {"booleanValue": false}
+                    }
+                },
+                "limit": 500
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let memory_ids: Vec<String> = results
+            .iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| d.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.split('/').last().unwrap_or("").to_string())
+            })
+            .filter(|id| !id.is_empty())
+            .collect();
+
+        let count = memory_ids.len();
+
+        // Update each memory
+        for memory_id in memory_ids {
+            let url = format!(
+                "{}/{}/{}/{}/{}?updateMask.fieldPaths=is_read&updateMask.fieldPaths=updated_at",
+                self.base_url(),
+                USERS_COLLECTION,
+                uid,
+                MEMORIES_SUBCOLLECTION,
+                memory_id
+            );
+
+            let doc = json!({
+                "fields": {
+                    "is_read": {"booleanValue": true},
+                    "updated_at": {"timestampValue": Utc::now().to_rfc3339()}
+                }
+            });
+
+            let _ = self
+                .build_request(reqwest::Method::PATCH, &url)
+                .await?
+                .json(&doc)
+                .send()
+                .await;
+        }
+
+        tracing::info!("Marked {} memories as read for user {}", count, uid);
+        Ok(count)
     }
 
     /// Save memories to Firestore
@@ -2254,6 +2490,11 @@ impl FirestoreService {
             manually_added: self.parse_bool(fields, "manually_added").unwrap_or(false),
             scoring: self.parse_string(fields, "scoring"),
             source: None, // Enriched later from linked conversation
+            confidence: self.parse_double(fields, "confidence").ok(),
+            source_app: self.parse_string(fields, "source_app"),
+            context_summary: self.parse_string(fields, "context_summary"),
+            is_read: self.parse_bool(fields, "is_read").unwrap_or(false),
+            is_dismissed: self.parse_bool(fields, "is_dismissed").unwrap_or(false),
         })
     }
 
