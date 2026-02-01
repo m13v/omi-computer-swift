@@ -27,18 +27,28 @@ struct DesktopHomeView: View {
                         log("DesktopHomeView: Showing mainContent (signed in and onboarded)")
                         // Check all permissions on launch
                         appState.checkAllPermissions()
-                        // Auto-start transcription on app launch
-                        if !appState.isTranscribing {
+
+                        let settings = AssistantSettings.shared
+
+                        // Auto-start transcription if enabled in settings
+                        if settings.transcriptionEnabled && !appState.isTranscribing {
                             log("DesktopHomeView: Auto-starting transcription")
                             appState.startTranscription()
+                        } else if !settings.transcriptionEnabled {
+                            log("DesktopHomeView: Transcription disabled in settings, skipping auto-start")
                         }
-                        // Start proactive assistants monitoring
-                        ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
-                            if success {
-                                log("DesktopHomeView: Proactive assistants started")
-                            } else {
-                                log("DesktopHomeView: Proactive assistants failed to start: \(error ?? "unknown")")
+
+                        // Start proactive assistants monitoring if enabled in settings
+                        if settings.screenAnalysisEnabled {
+                            ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
+                                if success {
+                                    log("DesktopHomeView: Screen analysis started")
+                                } else {
+                                    log("DesktopHomeView: Screen analysis failed to start: \(error ?? "unknown")")
+                                }
                             }
+                        } else {
+                            log("DesktopHomeView: Screen analysis disabled in settings, skipping auto-start")
                         }
                     }
             }
@@ -46,6 +56,7 @@ struct DesktopHomeView: View {
         .background(OmiColors.backgroundPrimary)
         .frame(minWidth: 900, minHeight: 600)
         .preferredColorScheme(.dark)
+        .tint(OmiColors.purplePrimary)
         .onAppear {
             log("DesktopHomeView: View appeared - isSignedIn=\(authState.isSignedIn), hasCompletedOnboarding=\(appState.hasCompletedOnboarding)")
             // Force dark appearance on the window
@@ -99,7 +110,7 @@ struct DesktopHomeView: View {
                     case 7:
                         AppsPage()
                     case 8:
-                        SettingsPage()
+                        SettingsPage(appState: appState)
                     case 9:
                         PermissionsPage(appState: appState)
                     default:
