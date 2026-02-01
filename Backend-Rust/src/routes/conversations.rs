@@ -4,7 +4,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, patch, post},
+    routing::{delete, get, patch, post},
     Json, Router,
 };
 use chrono::Utc;
@@ -504,6 +504,69 @@ async fn set_conversation_starred(
     }
 }
 
+#[derive(Deserialize)]
+pub struct UpdateConversationRequest {
+    title: Option<String>,
+}
+
+/// DELETE /v1/conversations/:id - Delete a conversation
+async fn delete_conversation(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<String>,
+) -> Result<StatusCode, StatusCode> {
+    tracing::info!(
+        "Deleting conversation {} for user {}",
+        conversation_id,
+        user.uid
+    );
+
+    match state
+        .firestore
+        .delete_conversation(&user.uid, &conversation_id)
+        .await
+    {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(e) => {
+            tracing::error!("Failed to delete conversation: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// PATCH /v1/conversations/:id - Update a conversation (title, etc.)
+async fn update_conversation(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<String>,
+    Json(request): Json<UpdateConversationRequest>,
+) -> Result<Json<StatusResponse>, StatusCode> {
+    tracing::info!(
+        "Updating conversation {} for user {}",
+        conversation_id,
+        user.uid
+    );
+
+    // Update title if provided
+    if let Some(title) = &request.title {
+        match state
+            .firestore
+            .update_conversation_title(&user.uid, &conversation_id, title)
+            .await
+        {
+            Ok(()) => {},
+            Err(e) => {
+                tracing::error!("Failed to update conversation title: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    Ok(Json(StatusResponse {
+        status: "ok".to_string(),
+    }))
+}
+
 pub fn conversations_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/conversations", get(get_conversations))
@@ -520,5 +583,9 @@ pub fn conversations_routes() -> Router<AppState> {
         .route(
             "/v1/conversations/:id/starred",
             patch(set_conversation_starred),
+        )
+        .route(
+            "/v1/conversations/:id",
+            patch(update_conversation).delete(delete_conversation),
         )
 }
