@@ -132,7 +132,9 @@ pub struct GoogleCallbackQuery {
 pub struct TokenRequest {
     grant_type: String,
     code: String,
-    redirect_uri: String,
+    /// OAuth spec field - not validated but needed for deserialization
+    #[serde(default, rename = "redirect_uri")]
+    _redirect_uri: String,
     #[serde(default)]
     use_custom_token: bool,
 }
