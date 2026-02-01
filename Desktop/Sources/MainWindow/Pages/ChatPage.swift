@@ -5,6 +5,7 @@ struct ChatPage: View {
     @StateObject private var chatProvider = ChatProvider()
     @State private var inputText = ""
     @State private var showAppPicker = false
+    @State private var showSessionsSidebar = true
 
     var selectedApp: OmiApp? {
         guard let appId = chatProvider.selectedAppId else { return nil }
@@ -12,29 +13,40 @@ struct ChatPage: View {
     }
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header with app picker
-            chatHeader
-                .padding()
+        HStack(spacing: 0) {
+            // Sessions sidebar
+            if showSessionsSidebar {
+                ChatSessionsSidebar(chatProvider: chatProvider)
 
-            Divider()
-                .background(OmiColors.backgroundTertiary)
+                Divider()
+                    .background(OmiColors.backgroundTertiary)
+            }
 
-            // Messages area
-            messagesView
+            // Main chat area
+            VStack(spacing: 0) {
+                // Header with app picker
+                chatHeader
+                    .padding()
 
-            Divider()
-                .background(OmiColors.backgroundTertiary)
+                Divider()
+                    .background(OmiColors.backgroundTertiary)
 
-            // Input area
-            inputArea
-                .padding()
+                // Messages area
+                messagesView
+
+                Divider()
+                    .background(OmiColors.backgroundTertiary)
+
+                // Input area
+                inputArea
+                    .padding()
+            }
         }
         .background(OmiColors.backgroundPrimary)
         .task {
             await appProvider.fetchApps()
-            // Fetch messages for default OMI assistant (no app selected)
-            await chatProvider.fetchMessages()
+            // Initialize chat: fetch sessions and load messages
+            await chatProvider.initialize()
         }
     }
 
@@ -42,6 +54,15 @@ struct ChatPage: View {
 
     private var chatHeader: some View {
         HStack {
+            // Toggle sidebar button
+            Button(action: { showSessionsSidebar.toggle() }) {
+                Image(systemName: showSessionsSidebar ? "sidebar.left" : "sidebar.left")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help(showSessionsSidebar ? "Hide sidebar" : "Show sidebar")
+
             // App selector
             Button(action: { showAppPicker.toggle() }) {
                 HStack(spacing: 10) {
