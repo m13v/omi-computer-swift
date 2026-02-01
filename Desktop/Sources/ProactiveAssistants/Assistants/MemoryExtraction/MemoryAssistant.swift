@@ -157,7 +157,7 @@ actor MemoryAssistant: ProactiveAssistant {
         }
 
         // Save to SQLite first
-        var extractionRecord = await saveMemoryToSQLite(
+        let extractionRecord = await saveMemoryToSQLite(
             memory: memory,
             screenshotId: screenshotId,
             contextSummary: memoryResult.contextSummary

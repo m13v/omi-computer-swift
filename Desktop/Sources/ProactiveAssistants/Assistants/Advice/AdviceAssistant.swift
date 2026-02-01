@@ -148,7 +148,7 @@ actor AdviceAssistant: ProactiveAssistant {
         }
 
         // Save to SQLite first
-        var extractionRecord = await saveAdviceToSQLite(
+        let extractionRecord = await saveAdviceToSQLite(
             advice: advice,
             screenshotId: screenshotId,
             contextSummary: adviceResult.contextSummary,

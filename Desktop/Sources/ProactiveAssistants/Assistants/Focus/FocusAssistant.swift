@@ -92,11 +92,8 @@ actor FocusAssistant: ProactiveAssistant {
                 frameQueue.removeFirst()
                 // Fire off analysis in background (don't wait) - like Python version
                 // Use implicitly unwrapped optional to capture task reference for self-cleanup
-                var task: Task<Void, Never>!
-                task = Task {
+                let task = Task {
                     await self.processFrame(frame)
-                    // Remove from pendingTasks when done (runs on actor after processFrame completes)
-                    self.pendingTasks.remove(task)
                 }
                 pendingTasks.insert(task)
             } else {
@@ -442,7 +439,7 @@ actor FocusAssistant: ProactiveAssistant {
         )
 
         do {
-            var inserted = try await ProactiveStorage.shared.insertFocusSession(record)
+            let inserted = try await ProactiveStorage.shared.insertFocusSession(record)
             log("Focus: Saved to SQLite (id: \(inserted.id ?? -1), status: \(analysis.status.rawValue))")
 
             // Sync to backend
