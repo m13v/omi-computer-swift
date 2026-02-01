@@ -16,9 +16,9 @@ pub mod user_settings;
 pub use action_item::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, CreateActionItemRequest, UpdateActionItemRequest};
 pub use advice::{AdviceCategory, AdviceDB, AdviceStatusResponse, CreateAdviceRequest, GetAdviceQuery, UpdateAdviceRequest};
 pub use app::{
-    App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ChatTool, ExternalIntegration,
-    ListAppsQuery, ProactiveNotification, SearchAppsQuery, SubmitReviewRequest, ToggleAppRequest,
-    ToggleAppResponse, TriggerEvent, UserEnabledApp, get_app_capabilities, get_app_categories,
+    App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ListAppsQuery, SearchAppsQuery,
+    SubmitReviewRequest, ToggleAppRequest, ToggleAppResponse, TriggerEvent, get_app_capabilities,
+    get_app_categories,
 };
 pub use category::{Category, MemoryCategory};
 pub use conversation::{
@@ -35,8 +35,8 @@ pub use memory::{
     UpdateVisibilityRequest,
 };
 pub use message::{
-    DeleteMessagesQuery, GetMessagesQuery, MessageDB, MessageStatusResponse, SaveMessageRequest,
-    SaveMessageResponse,
+    DeleteMessagesQuery, GetMessagesQuery, MessageDB, MessageStatusResponse, RateMessageRequest,
+    SaveMessageRequest, SaveMessageResponse,
 };
 pub use request::{CreateConversationRequest, CreateConversationResponse};
 pub use focus_session::{
@@ -45,10 +45,9 @@ pub use focus_session::{
 };
 pub use user_settings::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
-    SetPrivateCloudSyncRequest, SetRecordingPermissionRequest, TranscriptionPreferences,
-    UpdateDailySummaryRequest, UpdateLanguageRequest, UpdateNotificationSettingsRequest,
-    UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsResponse,
-    UserSettingsStatusResponse,
+    TranscriptionPreferences, UpdateDailySummaryRequest, UpdateLanguageRequest,
+    UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest, UserLanguage,
+    UserProfile, UserSettingsStatusResponse,
 };
 pub use chat_session::{
     ChatSessionDB, ChatSessionStatusResponse, CreateChatSessionRequest, GetChatSessionsQuery,
