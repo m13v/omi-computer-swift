@@ -328,16 +328,6 @@ public class ProactiveAssistantsPlugin: NSObject {
     // MARK: - Frame Capture
 
     private func onAppActivated(appName: String) {
-        // Ignore our own app and system dialogs - don't monitor these (causes flickering)
-        let ignoredApps = [
-            "Omi Computer",           // Our own app
-            "universalAccessAuthWarn", // macOS permission dialog
-            "System Settings",         // System Settings app
-            "System Preferences",      // Older macOS name
-            "SecurityAgent",           // Security prompts
-            "UserNotificationCenter"   // Notification center
-        ]
-        guard !ignoredApps.contains(appName) else { return }
         guard appName != currentApp else { return }
         currentApp = appName
         currentWindowID = nil
@@ -377,8 +367,8 @@ public class ProactiveAssistantsPlugin: NSObject {
     private func captureFrame() async {
         guard isMonitoring, let screenCaptureService = screenCaptureService else { return }
 
-        // Check for window switch and get window title
-        let (_, windowTitle, windowID) = WindowMonitor.getActiveWindowInfoStatic()
+        // Get current window info (use real app name, not cached)
+        let (realAppName, windowTitle, windowID) = WindowMonitor.getActiveWindowInfoStatic()
 
         // Track window ID changes
         if let windowID = windowID, windowID != currentWindowID {
@@ -398,9 +388,12 @@ public class ProactiveAssistantsPlugin: NSObject {
             currentWindowTitle = windowTitle
         }
 
+        // Use real app name from window info, fall back to cached if unavailable
+        let appName = realAppName ?? currentApp
+
         // Always capture frames (other features may need them)
         if let jpegData = await screenCaptureService.captureActiveWindowAsync(),
-           let appName = currentApp {
+           let appName = appName {
             frameCount += 1
 
             let frame = CapturedFrame(
