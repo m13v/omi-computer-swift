@@ -405,7 +405,7 @@ struct FocusPage: View {
             } else {
                 LazyVStack(spacing: 8) {
                     ForEach(viewModel.filteredSessions) { session in
-                        SessionRow(
+                        FocusSessionRow(
                             session: session,
                             onDelete: { viewModel.deleteSession(session.id) }
                         )
@@ -447,9 +447,9 @@ struct FocusPage: View {
     }
 }
 
-// MARK: - Session Row
+// MARK: - Focus Session Row
 
-struct SessionRow: View {
+struct FocusSessionRow: View {
     let session: StoredFocusSession
     let onDelete: () -> Void
 
