@@ -69,16 +69,23 @@ async fn get_messages(
     Query(query): Query<GetMessagesQuery>,
 ) -> Json<Vec<MessageDB>> {
     tracing::info!(
-        "Getting messages for user {} (app_id={:?}, limit={}, offset={})",
+        "Getting messages for user {} (app_id={:?}, session_id={:?}, limit={}, offset={})",
         user.uid,
         query.app_id,
+        query.session_id,
         query.limit,
         query.offset
     );
 
     match state
         .firestore
-        .get_messages(&user.uid, query.app_id.as_deref(), query.limit, query.offset)
+        .get_messages(
+            &user.uid,
+            query.app_id.as_deref(),
+            query.session_id.as_deref(),
+            query.limit,
+            query.offset,
+        )
         .await
     {
         Ok(messages) => Json(messages),
