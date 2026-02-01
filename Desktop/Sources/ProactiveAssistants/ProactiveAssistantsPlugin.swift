@@ -460,6 +460,13 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         guard delaySeconds > 0 else { return }
 
+        // Don't reset the delay if we're already in a delay period
+        // This prevents the timer from constantly resetting on rapid window changes
+        if isInDelayPeriod {
+            log("Window switch detected (ID: \(windowID)), but already in delay period - ignoring")
+            return
+        }
+
         analysisDelayTimer?.invalidate()
         analysisDelayTimer = nil
 
