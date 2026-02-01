@@ -5,9 +5,6 @@
 /// Minimum word count to process (below this = discard)
 pub const MIN_WORD_COUNT: usize = 5;
 
-/// Default LLM model
-pub const DEFAULT_MODEL: &str = "gpt-5.1";
-
 /// Prompt to determine if a conversation should be discarded
 /// Placeholders: {transcript_text}
 pub const DISCARD_CHECK_PROMPT: &str = r#"You will receive a transcript. Your task is to decide if this content is meaningful enough to be saved as a memory. Length is never a reason to discard.
@@ -683,12 +680,3 @@ CRITICAL: If CALENDAR MEETING CONTEXT is provided with participant names, you MU
 - Consider the meeting notes/description when analyzing the conversation's purpose
 - If there are 2-3 participants with known names, naturally mention them in the title (e.g., "Sarah and John Discuss Q2 Budget", "Team Meeting with Alex, Maria, and Chris")
 "#;
-
-/// Template for calendar context string
-/// Used to build calendar context for prompts
-pub const CALENDAR_CONTEXT_TEMPLATE: &str = r#"CALENDAR MEETING CONTEXT:
-- Meeting Title: {title}
-- Scheduled Time: {start_time}
-- Duration: {duration_minutes} minutes
-- Platform: {platform}
-- Participants: {participants}"#;
