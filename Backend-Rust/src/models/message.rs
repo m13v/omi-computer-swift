@@ -29,6 +29,9 @@ pub struct GetMessagesQuery {
     /// Filter by app ID (null = main Omi chat)
     #[serde(default)]
     pub app_id: Option<String>,
+    /// Filter by session ID
+    #[serde(default)]
+    pub session_id: Option<String>,
     /// Maximum number of messages to return
     #[serde(default = "default_limit")]
     pub limit: usize,
