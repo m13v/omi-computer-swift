@@ -330,6 +330,16 @@ class AnalyticsManager {
         PostHogManager.shared.chatCleared()
     }
 
+    func chatSessionCreated() {
+        MixpanelManager.shared.track("Chat Session Created", properties: [:])
+        PostHogManager.shared.track("chat_session_created", properties: [:])
+    }
+
+    func chatSessionDeleted() {
+        MixpanelManager.shared.track("Chat Session Deleted", properties: [:])
+        PostHogManager.shared.track("chat_session_deleted", properties: [:])
+    }
+
     // MARK: - Conversation Events (Additional)
 
     func conversationReprocessed(conversationId: String, appId: String) {
