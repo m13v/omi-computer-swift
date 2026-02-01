@@ -4,6 +4,8 @@ import SwiftUI
 struct ConversationRowView: View {
     let conversation: ServerConversation
     let onTap: () -> Void
+    @EnvironmentObject var appState: AppState
+    @State private var isStarring = false
 
     /// The timestamp to display (prefer startedAt, fall back to createdAt)
     private var displayDate: Date {
@@ -56,6 +58,23 @@ struct ConversationRowView: View {
         }
     }
 
+    private func toggleStar() async {
+        guard !isStarring else { return }
+        isStarring = true
+        let newStarred = !conversation.starred
+
+        do {
+            try await APIClient.shared.setConversationStarred(id: conversation.id, starred: newStarred)
+            await MainActor.run {
+                appState.setConversationStarred(conversation.id, starred: newStarred)
+            }
+        } catch {
+            log("Failed to update starred status: \(error)")
+        }
+
+        isStarring = false
+    }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -75,6 +94,19 @@ struct ConversationRowView: View {
                 }
 
                 Spacer()
+
+                // Star button
+                Button(action: {
+                    Task {
+                        await toggleStar()
+                    }
+                }) {
+                    Image(systemName: conversation.starred ? "star.fill" : "star")
+                        .font(.system(size: 14))
+                        .foregroundColor(conversation.starred ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        .opacity(isStarring ? 0.5 : 1.0)
+                }
+                .buttonStyle(.plain)
 
                 // Time, duration, and source
                 VStack(alignment: .trailing, spacing: 4) {
