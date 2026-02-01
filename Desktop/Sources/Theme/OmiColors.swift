@@ -9,6 +9,9 @@ enum OmiColors {
     static let backgroundTertiary = Color(hex: 0x252525)   // Cards and components
     static let backgroundQuaternary = Color(hex: 0x2A2A2A) // Hover states
 
+    // MARK: - Border Colors
+    static let border = Color(hex: 0x333333)               // Subtle border
+
     // MARK: - Purple Accent System
     static let purplePrimary = Color(hex: 0x8B5CF6)    // Main purple
     static let purpleSecondary = Color(hex: 0xA855F7)  // Lighter purple
