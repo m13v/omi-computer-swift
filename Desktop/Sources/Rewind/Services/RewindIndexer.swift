@@ -6,8 +6,6 @@ actor RewindIndexer {
     static let shared = RewindIndexer()
 
     private var isInitialized = false
-    private var isProcessingOCR = false
-    private var ocrTask: Task<Void, Never>?
 
     // MARK: - Initialization
 
@@ -27,9 +25,6 @@ actor RewindIndexer {
 
         isInitialized = true
         log("RewindIndexer: Initialized successfully")
-
-        // Start background OCR processing
-        startOCRProcessing()
     }
 
     // MARK: - Frame Processing
@@ -64,7 +59,23 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
-            // Create database record with video reference
+            // Run OCR directly on the JPEG data (avoids video extraction issues)
+            var ocrText: String?
+            var ocrDataJson: String?
+            var isIndexed = false
+
+            do {
+                let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
+                ocrText = ocrResult.fullText
+                if let data = try? JSONEncoder().encode(ocrResult) {
+                    ocrDataJson = String(data: data, encoding: .utf8)
+                }
+                isIndexed = true
+            } catch {
+                logError("RewindIndexer: OCR failed for frame: \(error)")
+            }
+
+            // Create database record with video reference and OCR results
             let screenshot = Screenshot(
                 timestamp: frame.captureTime,
                 appName: frame.appName,
@@ -72,7 +83,9 @@ actor RewindIndexer {
                 imagePath: "",
                 videoChunkPath: encodedFrame?.videoChunkPath,
                 frameOffset: encodedFrame?.frameOffset,
-                isIndexed: false
+                ocrText: ocrText,
+                ocrDataJson: ocrDataJson,
+                isIndexed: isIndexed
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
@@ -110,6 +123,22 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
+            // Run OCR directly on the JPEG data (avoids video extraction issues)
+            var ocrText: String?
+            var ocrDataJson: String?
+            var isIndexed = false
+
+            do {
+                let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
+                ocrText = ocrResult.fullText
+                if let data = try? JSONEncoder().encode(ocrResult) {
+                    ocrDataJson = String(data: data, encoding: .utf8)
+                }
+                isIndexed = true
+            } catch {
+                logError("RewindIndexer: OCR failed for frame with metadata: \(error)")
+            }
+
             // Encode tasks and advice as JSON
             var tasksJson: String?
             if let tasks = extractedTasks, !tasks.isEmpty {
@@ -126,7 +155,9 @@ actor RewindIndexer {
                 imagePath: "",
                 videoChunkPath: encodedFrame?.videoChunkPath,
                 frameOffset: encodedFrame?.frameOffset,
-                isIndexed: false,
+                ocrText: ocrText,
+                ocrDataJson: ocrDataJson,
+                isIndexed: isIndexed,
                 focusStatus: focusStatus,
                 extractedTasksJson: tasksJson,
                 adviceJson: adviceJson
@@ -136,57 +167,6 @@ actor RewindIndexer {
 
         } catch {
             logError("RewindIndexer: Failed to process frame with metadata: \(error)")
-        }
-    }
-
-    // MARK: - Background OCR Processing
-
-    private func startOCRProcessing() {
-        ocrTask?.cancel()
-        ocrTask = Task {
-            while !Task.isCancelled {
-                await processOCRBatch()
-                // Wait before next batch
-                try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
-            }
-        }
-    }
-
-    private func processOCRBatch() async {
-        guard !isProcessingOCR else { return }
-        isProcessingOCR = true
-        defer { isProcessingOCR = false }
-
-        do {
-            // Get pending screenshots
-            let pending = try await RewindDatabase.shared.getPendingOCRScreenshots(limit: 5)
-
-            for screenshot in pending {
-                guard !Task.isCancelled else { break }
-                guard let id = screenshot.id else { continue }
-
-                do {
-                    // Load image data using unified interface (handles both JPEG and video storage)
-                    let imageData = try await RewindStorage.shared.loadScreenshotData(for: screenshot)
-
-                    // Extract text with bounding boxes
-                    let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: imageData)
-
-                    // Update database with full OCR result (including bounding boxes)
-                    try await RewindDatabase.shared.updateOCRResult(id: id, ocrResult: ocrResult)
-
-                    log("RewindIndexer: OCR completed for screenshot \(id), extracted \(ocrResult.fullText.count) characters, \(ocrResult.blocks.count) text blocks")
-
-                } catch {
-                    logError("RewindIndexer: OCR failed for screenshot \(id): \(error)")
-                    // Mark as indexed anyway to prevent retrying forever
-                    let emptyResult = OCRResult(fullText: "", blocks: [], processedAt: Date())
-                    try? await RewindDatabase.shared.updateOCRResult(id: id, ocrResult: emptyResult)
-                }
-            }
-
-        } catch {
-            logError("RewindIndexer: Failed to get pending OCR screenshots: \(error)")
         }
     }
 
@@ -226,7 +206,7 @@ actor RewindIndexer {
         }
     }
 
-    /// Stop the indexer and cancel background tasks
+    /// Stop the indexer
     func stop() async {
         // Flush any pending video frames before stopping
         do {
@@ -235,8 +215,6 @@ actor RewindIndexer {
             logError("RewindIndexer: Failed to flush video chunk: \(error)")
         }
 
-        ocrTask?.cancel()
-        ocrTask = nil
         log("RewindIndexer: Stopped")
     }
 
