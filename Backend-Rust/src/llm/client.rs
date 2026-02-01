@@ -146,11 +146,6 @@ impl LlmClient {
         self
     }
 
-    /// Call the LLM and get a response (without schema enforcement)
-    async fn call(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        self.call_with_schema(prompt, temperature, max_tokens, None).await
-    }
-
     /// Call the LLM with a specific JSON schema for structured output
     async fn call_with_schema(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>, schema: Option<serde_json::Value>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let request = GeminiRequest {
@@ -803,6 +798,116 @@ impl LlmClient {
         match (start, end) {
             (Some(s), Some(e)) => Ok(Some((s, e))),
             _ => Ok(None),
+        }
+    }
+
+    // =========================================================================
+    // INITIAL MESSAGE GENERATION - For chat session greeting
+    // =========================================================================
+
+    /// Generate a personalized initial greeting message for a new chat session
+    pub async fn generate_initial_message(
+        &self,
+        memories: &[String],
+        app_name: Option<&str>,
+        app_persona: Option<&str>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let memories_context = if memories.is_empty() {
+            "No memories available yet - this appears to be a new user.".to_string()
+        } else {
+            let mem_list: Vec<String> = memories.iter().take(10).map(|m| format!("- {}", m)).collect();
+            format!("User facts and memories:\n{}", mem_list.join("\n"))
+        };
+
+        let persona_context = match (app_name, app_persona) {
+            (Some(name), Some(persona)) => format!(
+                "You are {}, an AI assistant with this persona: {}\n\nGenerate a greeting that reflects this persona.",
+                name, persona
+            ),
+            (Some(name), None) => format!(
+                "You are {}, an AI assistant.",
+                name
+            ),
+            _ => "You are OMI, a friendly personal AI assistant that helps users with their daily life.".to_string(),
+        };
+
+        let prompt = format!(
+            r#"{persona_context}
+
+{memories_context}
+
+Generate a short, warm, personalized greeting message to start a new chat session. The greeting should:
+- Be friendly and conversational (1-2 sentences max)
+- Reference something specific from the user's memories if available
+- Feel natural, not robotic
+- NOT ask "how can I help you today?" or similar generic questions
+- Be casual and engaging
+
+Return ONLY the greeting text, nothing else."#,
+            persona_context = persona_context,
+            memories_context = memories_context
+        );
+
+        self.call_text(&prompt, Some(0.8), Some(150)).await
+    }
+
+    // =========================================================================
+    // SESSION TITLE GENERATION - For auto-titling chat sessions
+    // =========================================================================
+
+    /// Generate a concise title for a chat session based on the conversation
+    pub async fn generate_session_title(
+        &self,
+        messages: &[(String, String)], // (text, sender)
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        if messages.is_empty() {
+            return Ok("New Chat".to_string());
+        }
+
+        // Format messages for the prompt
+        let messages_text: Vec<String> = messages
+            .iter()
+            .take(6) // Only use first 6 messages for title generation
+            .map(|(text, sender)| {
+                let role = if sender == "human" { "User" } else { "Assistant" };
+                format!("{}: {}", role, text)
+            })
+            .collect();
+
+        let prompt = format!(
+            r#"Based on this conversation, generate a short, descriptive title (3-6 words max).
+
+Conversation:
+{}
+
+Rules:
+- Title should capture the main topic or purpose of the conversation
+- Be concise and specific (3-6 words)
+- Use title case
+- Don't use quotes or punctuation
+- Don't start with "Chat about" or similar phrases
+- Examples of good titles: "Python API Error Fix", "Weekend Trip Planning", "Resume Review Feedback"
+
+Return ONLY the title text, nothing else."#,
+            messages_text.join("\n")
+        );
+
+        let title = self.call_text(&prompt, Some(0.5), Some(50)).await?;
+
+        // Clean up the title
+        let cleaned = title
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+
+        // Ensure reasonable length
+        if cleaned.len() > 50 {
+            Ok(cleaned.chars().take(47).collect::<String>() + "...")
+        } else if cleaned.is_empty() {
+            Ok("New Chat".to_string())
+        } else {
+            Ok(cleaned)
         }
     }
 }
