@@ -270,6 +270,7 @@ struct ConversationsPage: View {
                     conversations: appState.conversations,
                     isLoading: appState.isLoadingConversations,
                     error: appState.conversationsError,
+                    folders: appState.folders,
                     onSelect: { conversation in
                         AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
                         selectedConversation = conversation
@@ -278,6 +279,9 @@ struct ConversationsPage: View {
                         Task {
                             await appState.refreshConversations()
                         }
+                    },
+                    onMoveToFolder: { conversationId, folderId in
+                        await appState.moveConversationToFolder(conversationId, folderId: folderId)
                     }
                 )
             }
@@ -330,6 +334,10 @@ struct ConversationsPage: View {
                                 onTap: {
                                     AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
                                     selectedConversation = conversation
+                                },
+                                folders: appState.folders,
+                                onMoveToFolder: { conversationId, folderId in
+                                    await appState.moveConversationToFolder(conversationId, folderId: folderId)
                                 }
                             )
                         }
