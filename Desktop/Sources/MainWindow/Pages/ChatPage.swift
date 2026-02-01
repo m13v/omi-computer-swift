@@ -7,6 +7,7 @@ struct ChatPage: View {
     @State private var inputText = ""
     @State private var showAppPicker = false
     @State private var showHistoryPopover = false
+    @FocusState private var isInputFocused: Bool
 
     var selectedApp: OmiApp? {
         guard let appId = chatProvider.selectedAppId else { return nil }
@@ -24,9 +25,6 @@ struct ChatPage: View {
 
             // Messages area
             messagesView
-
-            Divider()
-                .background(OmiColors.backgroundTertiary)
 
             // Input area
             inputArea
@@ -134,6 +132,15 @@ struct ChatPage: View {
             }
 
             Spacer()
+
+            // Model indicator
+            Text(chatProvider.currentModel)
+                .font(.system(size: 11))
+                .foregroundColor(OmiColors.textTertiary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(OmiColors.backgroundSecondary)
+                .cornerRadius(8)
 
             // Clear chat button
             if !chatProvider.messages.isEmpty {
@@ -288,12 +295,18 @@ struct ChatPage: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
+                .focused($isInputFocused)
                 .padding(12)
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(20)
                 .lineLimit(1...5)
                 .onSubmit {
                     sendMessage()
+                }
+                .frame(maxWidth: .infinity)
+                .background(OmiColors.backgroundSecondary)
+                .cornerRadius(20)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    isInputFocused = true
                 }
 
             Button(action: sendMessage) {
@@ -379,8 +392,8 @@ struct ChatBubble: View {
                         .cornerRadius(18)
                 }
 
-                // Rating buttons and timestamp row for AI messages
-                if message.sender == .ai && !message.isStreaming {
+                // Rating buttons and timestamp row for AI messages (only when synced with backend)
+                if message.sender == .ai && !message.isStreaming && message.isSynced {
                     HStack(spacing: 8) {
                         ratingButtons
 
@@ -766,7 +779,9 @@ struct HistorySessionRow: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? OmiColors.backgroundSecondary : (isHovering ? OmiColors.backgroundSecondary.opacity(0.5) : Color.clear))
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
@@ -837,12 +852,5 @@ extension Theme {
         }
         .link {
             ForegroundColor(OmiColors.purplePrimary)
-        }
-        .listItem { configuration in
-            HStack(alignment: .top, spacing: 8) {
-                Text("•")
-                    .foregroundColor(OmiColors.textSecondary)
-                configuration.label
-            }
         }
 }
