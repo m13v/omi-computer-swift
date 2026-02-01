@@ -4266,18 +4266,14 @@ impl FirestoreService {
         move_to_folder_id: Option<&str>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if let Some(target_id) = move_to_folder_id {
-            let conversations = self.get_conversations(uid, 100, 0, true, &[]).await?;
+            let conversations = self.get_conversations(uid, 100, 0, true, &[], None, Some(folder_id), None, None).await?;
             for conv in conversations {
-                if conv.folder_id.as_deref() == Some(folder_id) {
-                    let _ = self.set_conversation_folder(uid, &conv.id, Some(target_id)).await;
-                }
+                let _ = self.set_conversation_folder(uid, &conv.id, Some(target_id)).await;
             }
         } else {
-            let conversations = self.get_conversations(uid, 100, 0, true, &[]).await?;
+            let conversations = self.get_conversations(uid, 100, 0, true, &[], None, Some(folder_id), None, None).await?;
             for conv in conversations {
-                if conv.folder_id.as_deref() == Some(folder_id) {
-                    let _ = self.set_conversation_folder(uid, &conv.id, None).await;
-                }
+                let _ = self.set_conversation_folder(uid, &conv.id, None).await;
             }
         }
 
