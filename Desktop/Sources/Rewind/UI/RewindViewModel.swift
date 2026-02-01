@@ -75,6 +75,9 @@ class RewindViewModel: ObservableObject {
 
     // MARK: - Search
 
+    /// Whether to apply date filter to search (when user explicitly selected a date)
+    @Published var applyDateFilterToSearch: Bool = false
+
     private func performSearch(query: String) async {
         // Cancel any existing search
         searchTask?.cancel()
@@ -82,13 +85,17 @@ class RewindViewModel: ObservableObject {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedQuery.isEmpty {
-            // Reset to recent screenshots
+            // Reset to recent screenshots or date-filtered view
             isSearching = false
             activeSearchQuery = nil
-            do {
-                screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
-            } catch {
-                logError("RewindViewModel: Failed to load recent screenshots: \(error)")
+            if applyDateFilterToSearch {
+                await loadScreenshotsForDate(selectedDate)
+            } else {
+                do {
+                    screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
+                } catch {
+                    logError("RewindViewModel: Failed to load recent screenshots: \(error)")
+                }
             }
             return
         }
@@ -99,11 +106,22 @@ class RewindViewModel: ObservableObject {
         // Track rewind search
         AnalyticsManager.shared.rewindSearchPerformed(queryLength: trimmedQuery.count)
 
+        // Calculate date range if date filter is applied
+        var startDate: Date? = nil
+        var endDate: Date? = nil
+        if applyDateFilterToSearch {
+            let calendar = Calendar.current
+            startDate = calendar.startOfDay(for: selectedDate)
+            endDate = calendar.date(byAdding: .day, value: 1, to: startDate!)
+        }
+
         searchTask = Task {
             do {
                 let results = try await RewindDatabase.shared.search(
                     query: trimmedQuery,
                     appFilter: selectedApp,
+                    startDate: startDate,
+                    endDate: endDate,
                     limit: 100
                 )
 
@@ -136,7 +154,27 @@ class RewindViewModel: ObservableObject {
 
     func filterByDate(_ date: Date) async {
         selectedDate = date
-        await loadScreenshotsForDate(date)
+        applyDateFilterToSearch = true
+
+        if !searchQuery.isEmpty {
+            await performSearch(query: searchQuery)
+        } else {
+            await loadScreenshotsForDate(date)
+        }
+    }
+
+    /// Clear date filter to search all time
+    func clearDateFilter() async {
+        applyDateFilterToSearch = false
+        if !searchQuery.isEmpty {
+            await performSearch(query: searchQuery)
+        } else {
+            do {
+                screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
+            } catch {
+                logError("RewindViewModel: Failed to load recent screenshots: \(error)")
+            }
+        }
     }
 
     private func loadScreenshotsForDate(_ date: Date) async {
