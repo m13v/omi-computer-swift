@@ -48,6 +48,11 @@ struct ConversationsPage: View {
     // Folder picker state
     @State private var showFolderPicker: Bool = false
 
+    // Filter loading states (to show loading on the clicked button)
+    @State private var isFilteringStarred: Bool = false
+    @State private var isFilteringDate: Bool = false
+    @State private var isFilteringFolder: Bool = false
+
     var body: some View {
         Group {
             if let selected = selectedConversation {
@@ -390,12 +395,20 @@ struct ConversationsPage: View {
             // Starred filter button
             Button(action: {
                 Task {
+                    isFilteringStarred = true
                     await appState.toggleStarredFilter()
+                    isFilteringStarred = false
                 }
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: appState.showStarredOnly ? "star.fill" : "star")
-                        .font(.system(size: 12))
+                    if isFilteringStarred {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: appState.showStarredOnly ? "star.fill" : "star")
+                            .font(.system(size: 12))
+                    }
                     Text("Starred")
                         .font(.system(size: 12, weight: .medium))
                 }
@@ -412,21 +425,30 @@ struct ConversationsPage: View {
                 )
             }
             .buttonStyle(.plain)
+            .disabled(isFilteringStarred)
 
             // Date filter button
             Button(action: {
                 showDatePicker.toggle()
             }) {
                 HStack(spacing: 6) {
-                    Image(systemName: "calendar")
-                        .font(.system(size: 12))
+                    if isFilteringDate {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: "calendar")
+                            .font(.system(size: 12))
+                    }
                     if let date = appState.selectedDateFilter {
                         Text(formatFilterDate(date))
                             .font(.system(size: 12, weight: .medium))
                         // Clear button
                         Button(action: {
                             Task {
+                                isFilteringDate = true
                                 await appState.setDateFilter(nil)
+                                isFilteringDate = false
                             }
                         }) {
                             Image(systemName: "xmark.circle.fill")
@@ -451,6 +473,7 @@ struct ConversationsPage: View {
                 )
             }
             .buttonStyle(.plain)
+            .disabled(isFilteringDate)
             .popover(isPresented: $showDatePicker) {
                 datePickerPopover
             }
@@ -461,8 +484,14 @@ struct ConversationsPage: View {
                     showFolderPicker.toggle()
                 }) {
                     HStack(spacing: 6) {
-                        Image(systemName: "folder")
-                            .font(.system(size: 12))
+                        if isFilteringFolder {
+                            ProgressView()
+                                .scaleEffect(0.5)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "folder")
+                                .font(.system(size: 12))
+                        }
                         if let folderId = appState.selectedFolderId,
                            let folder = appState.folders.first(where: { $0.id == folderId }) {
                             Text(folder.name)
@@ -471,7 +500,9 @@ struct ConversationsPage: View {
                             // Clear button
                             Button(action: {
                                 Task {
+                                    isFilteringFolder = true
                                     await appState.setFolderFilter(nil)
+                                    isFilteringFolder = false
                                 }
                             }) {
                                 Image(systemName: "xmark.circle.fill")
@@ -496,6 +527,7 @@ struct ConversationsPage: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(isFilteringFolder)
                 .popover(isPresented: $showFolderPicker) {
                     folderPickerPopover
                 }
@@ -527,10 +559,12 @@ struct ConversationsPage: View {
                 selection: Binding(
                     get: { appState.selectedDateFilter ?? Date() },
                     set: { newDate in
-                        Task {
-                            await appState.setDateFilter(newDate)
-                        }
                         showDatePicker = false
+                        Task {
+                            isFilteringDate = true
+                            await appState.setDateFilter(newDate)
+                            isFilteringDate = false
+                        }
                     }
                 ),
                 in: ...Date(),
@@ -560,10 +594,12 @@ struct ConversationsPage: View {
 
             ForEach(appState.folders) { folder in
                 Button(action: {
-                    Task {
-                        await appState.setFolderFilter(folder.id)
-                    }
                     showFolderPicker = false
+                    Task {
+                        isFilteringFolder = true
+                        await appState.setFolderFilter(folder.id)
+                        isFilteringFolder = false
+                    }
                 }) {
                     HStack(spacing: 8) {
                         Circle()
