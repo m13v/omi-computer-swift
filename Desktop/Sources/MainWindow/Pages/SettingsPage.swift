@@ -3,6 +3,8 @@ import Sparkle
 
 /// Settings page that wraps SettingsView with proper dark theme styling for the main window
 struct SettingsPage: View {
+    @ObservedObject var appState: AppState
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -19,7 +21,7 @@ struct SettingsPage: View {
                 .padding(.bottom, 24)
 
                 // Settings content - embedded SettingsView with dark theme override
-                SettingsContentView()
+                SettingsContentView(appState: appState)
                     .padding(.horizontal, 32)
 
                 Spacer()
@@ -34,13 +36,21 @@ struct SettingsPage: View {
 
 /// Dark-themed settings content matching the main window style
 struct SettingsContentView: View {
+    // AppState for transcription control
+    @ObservedObject var appState: AppState
+
     // Updater view model
     @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
 
-    // Master monitoring state
+    // Master monitoring state (screen analysis)
     @State private var isMonitoring: Bool
     @State private var isToggling: Bool = false
     @State private var permissionError: String?
+
+    // Transcription state
+    @State private var isTranscribing: Bool
+    @State private var isTogglingTranscription: Bool = false
+    @State private var transcriptionError: String?
 
     // Focus Assistant states
     @State private var focusEnabled: Bool
@@ -122,9 +132,11 @@ struct SettingsContentView: View {
         case about = "About"
     }
 
-    init() {
+    init(appState: AppState) {
+        self.appState = appState
         let settings = AssistantSettings.shared
         _isMonitoring = State(initialValue: ProactiveAssistantsPlugin.shared.isMonitoring)
+        _isTranscribing = State(initialValue: appState.isTranscribing)
         _focusEnabled = State(initialValue: FocusAssistantSettings.shared.isEnabled)
         _cooldownInterval = State(initialValue: FocusAssistantSettings.shared.cooldownInterval)
         _glowOverlayEnabled = State(initialValue: settings.glowOverlayEnabled)
@@ -182,11 +194,16 @@ struct SettingsContentView: View {
         }
         .onAppear {
             loadBackendSettings()
+            // Sync transcription state with appState
+            isTranscribing = appState.isTranscribing
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             if let userInfo = notification.userInfo, let state = userInfo["isMonitoring"] as? Bool {
                 isMonitoring = state
             }
+        }
+        .onChange(of: appState.isTranscribing) { _, newValue in
+            isTranscribing = newValue
         }
     }
 
@@ -194,7 +211,7 @@ struct SettingsContentView: View {
 
     private var proactiveAssistantSection: some View {
         VStack(spacing: 20) {
-            // Master monitoring toggle
+            // Screen Analysis toggle
             settingsCard {
                 HStack(spacing: 16) {
                     Circle()
@@ -203,11 +220,11 @@ struct SettingsContentView: View {
                         .shadow(color: isMonitoring ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Proactive Monitoring")
+                        Text("Screen Analysis")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(OmiColors.textPrimary)
 
-                        Text(permissionError ?? (isMonitoring ? "Analyzing your screen" : "Monitoring is paused"))
+                        Text(permissionError ?? (isMonitoring ? "Analyzing your screen" : "Screen analysis is paused"))
                             .font(.system(size: 13))
                             .foregroundColor(permissionError != nil ? OmiColors.warning : OmiColors.textTertiary)
                     }
@@ -223,6 +240,40 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: isMonitoring) { _, newValue in
                                 toggleMonitoring(enabled: newValue)
+                            }
+                    }
+                }
+            }
+
+            // Transcription toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Circle()
+                        .fill(isTranscribing ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
+                        .frame(width: 12, height: 12)
+                        .shadow(color: isTranscribing ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Transcription")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(transcriptionError ?? (isTranscribing ? "Recording and transcribing audio" : "Transcription is paused"))
+                            .font(.system(size: 13))
+                            .foregroundColor(transcriptionError != nil ? OmiColors.warning : OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    if isTogglingTranscription {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Toggle("", isOn: $isTranscribing)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: isTranscribing) { _, newValue in
+                                toggleTranscription(enabled: newValue)
                             }
                     }
                 }
@@ -1131,6 +1182,37 @@ struct SettingsContentView: View {
             ProactiveAssistantsPlugin.shared.stopMonitoring()
             isToggling = false
         }
+
+        // Persist the setting
+        AssistantSettings.shared.screenAnalysisEnabled = enabled
+    }
+
+    private func toggleTranscription(enabled: Bool) {
+        // Check microphone permission
+        if enabled && !appState.hasMicrophonePermission {
+            transcriptionError = "Microphone permission required"
+            isTranscribing = false
+            return
+        }
+
+        transcriptionError = nil
+        isTogglingTranscription = true
+
+        // Track setting change
+        AnalyticsManager.shared.settingToggled(setting: "transcription", enabled: enabled)
+
+        if enabled {
+            appState.startTranscription()
+            isTogglingTranscription = false
+            isTranscribing = true
+        } else {
+            appState.stopTranscription()
+            isTogglingTranscription = false
+            isTranscribing = false
+        }
+
+        // Persist the setting
+        AssistantSettings.shared.transcriptionEnabled = enabled
     }
 
     private func startGlowPreview() {
@@ -1324,5 +1406,5 @@ struct SettingsContentView: View {
 }
 
 #Preview {
-    SettingsPage()
+    SettingsPage(appState: AppState())
 }
