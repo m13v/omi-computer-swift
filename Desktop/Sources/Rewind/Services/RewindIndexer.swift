@@ -69,7 +69,7 @@ actor RewindIndexer {
                 timestamp: frame.captureTime,
                 appName: frame.appName,
                 windowTitle: frame.windowTitle,
-                imagePath: nil,
+                imagePath: "",
                 videoChunkPath: encodedFrame?.videoChunkPath,
                 frameOffset: encodedFrame?.frameOffset,
                 isIndexed: false
@@ -123,7 +123,7 @@ actor RewindIndexer {
                 timestamp: frame.captureTime,
                 appName: frame.appName,
                 windowTitle: frame.windowTitle,
-                imagePath: nil,
+                imagePath: "",
                 videoChunkPath: encodedFrame?.videoChunkPath,
                 frameOffset: encodedFrame?.frameOffset,
                 isIndexed: false,
