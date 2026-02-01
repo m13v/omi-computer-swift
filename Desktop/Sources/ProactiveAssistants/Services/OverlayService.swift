@@ -1,12 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// Controller that manages the glow overlay window
+/// Controller that manages the glow overlay using edge windows positioned around the target
 @MainActor
 class OverlayService {
     static let shared = OverlayService()
 
-    private var overlayWindow: GlowOverlayWindow?
+    /// The 4 edge windows (top, bottom, left, right)
+    private var edgeWindows: [GlowEdge: GlowEdgeWindow] = [:]
     private var dismissTask: Task<Void, Never>?
 
     private init() {}
@@ -46,24 +47,28 @@ class OverlayService {
         // Dismiss any existing overlay
         dismissOverlay()
 
-        // Create the overlay window
-        let overlay = GlowOverlayWindow(contentRect: frame)
+        // Create the 4 edge windows
+        let edges: [GlowEdge] = [.top, .bottom, .left, .right]
 
-        // Create the SwiftUI glow view with the specified color mode
-        let glowView = GlowBorderView(targetSize: frame.size, colorMode: colorMode)
-        let hostingView = NSHostingView(rootView: glowView)
-        hostingView.frame = overlay.contentView?.bounds ?? .zero
-        hostingView.autoresizingMask = [.width, .height]
+        for edge in edges {
+            let edgeWindow = GlowEdgeWindow(edge: edge)
 
-        overlay.contentView?.addSubview(hostingView)
-        overlay.updateFrame(to: frame)
+            // Create the SwiftUI glow view for this edge
+            let glowView = GlowEdgeView(edge: edge, colorMode: colorMode)
+            let hostingView = NSHostingView(rootView: glowView)
+            hostingView.frame = edgeWindow.contentView?.bounds ?? .zero
+            hostingView.autoresizingMask = [.width, .height]
 
-        // Show the window
-        overlay.orderFrontRegardless()
+            edgeWindow.contentView?.addSubview(hostingView)
+            edgeWindow.updateFrame(for: frame)
 
-        self.overlayWindow = overlay
+            // Show the window
+            edgeWindow.orderFrontRegardless()
 
-        log("Showing \(colorMode == .focused ? "green" : "red") glow effect around window at \(frame)\(isPreview ? " (preview)" : "")")
+            edgeWindows[edge] = edgeWindow
+        }
+
+        log("Showing \(colorMode == .focused ? "green" : "red") edge glow effect around window at \(frame)\(isPreview ? " (preview)" : "")")
 
         // Auto-dismiss after animation completes
         dismissTask = Task {
@@ -74,27 +79,27 @@ class OverlayService {
                 }
             } catch {
                 // Task was cancelled (e.g., new glow shown before this one finished)
-                // Don't dismiss - the new glow's task will handle dismissal
             }
         }
     }
 
-    /// Dismiss the overlay window
+    /// Dismiss the overlay windows
     func dismissOverlay() {
         dismissTask?.cancel()
         dismissTask = nil
 
-        // Remove the content view first to stop SwiftUI animations
-        overlayWindow?.contentView?.subviews.forEach { $0.removeFromSuperview() }
+        for (_, window) in edgeWindows {
+            // Remove the content view first to stop SwiftUI animations
+            window.contentView?.subviews.forEach { $0.removeFromSuperview() }
 
-        // Disable window animations to prevent use-after-free crash
-        // The crash occurs when _NSWindowTransformAnimation tries to access
-        // a deallocated window during autorelease pool drain
-        overlayWindow?.animationBehavior = .none
+            // Disable window animations
+            window.animationBehavior = .none
 
-        // Use orderOut instead of close to avoid triggering additional animations
-        overlayWindow?.orderOut(nil)
-        overlayWindow = nil
+            // Use orderOut instead of close
+            window.orderOut(nil)
+        }
+
+        edgeWindows.removeAll()
     }
 
     /// Get the frame of the currently active window
