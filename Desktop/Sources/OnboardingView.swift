@@ -25,6 +25,7 @@ struct OnboardingView: View {
     @State private var nameError: String = ""
     @FocusState private var isNameFieldFocused: Bool
 
+
     var body: some View {
         ZStack {
             // Full dark background
@@ -271,14 +272,7 @@ struct OnboardingView: View {
         case 4:
             screenRecordingStepView
         case 5:
-            stepView(
-                icon: appState.hasMicrophonePermission ? "checkmark.circle.fill" : "mic",
-                iconColor: appState.hasMicrophonePermission ? .white : OmiColors.purplePrimary,
-                title: "Microphone",
-                description: appState.hasMicrophonePermission
-                    ? "Microphone access granted! Omi can now transcribe your conversations."
-                    : "Omi needs microphone access to transcribe your conversations and provide context-aware assistance."
-            )
+            microphoneStepView
         case 6:
             systemAudioStepView
         case 7:
@@ -438,6 +432,212 @@ struct OnboardingView: View {
         return appState.hasSystemAudioPermission ? "Continue" : "Enable System Audio"
     }
 
+    // MARK: - Microphone Step View
+
+    @State private var micResetInProgress = false
+    @State private var micResetButtonText = "Reset & Restart"
+
+    private var isMicrophonePermissionDenied: Bool {
+        appState.isMicrophonePermissionDenied()
+    }
+
+    private var microphoneStepView: some View {
+        VStack(spacing: 16) {
+            if appState.hasMicrophonePermission {
+                // Granted state
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.white)
+
+                Text("Microphone")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Microphone access granted! Omi can now transcribe your conversations.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+            } else if isMicrophonePermissionDenied {
+                // Denied state - show reset options
+                // Note: Grant Access button is NOT shown here because macOS won't show the permission
+                // dialog again after the user denied it. They must reset the permission first.
+                Image(systemName: "mic.slash.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.red)
+
+                Text("Microphone Permission Denied")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Permission was previously denied. Reset it to try again:")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                VStack(spacing: 8) {
+                    // Option 1: Quick Reset
+                    Button(action: micTryDirectReset) {
+                        HStack(spacing: 8) {
+                            if micResetInProgress {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 14))
+                            }
+                            Text(micResetButtonText)
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(width: 260)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(micResetInProgress)
+
+                    // Option 2: Terminal
+                    Button(action: micTryTerminalReset) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 14))
+                            Text("Reset via Terminal")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(width: 260)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Option 3: Manual
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Option 3: Manual")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(.secondary)
+
+                        // Step 1
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("1.")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Open System Settings")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+                                Button(action: micOpenSystemSettings) {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "gear")
+                                            .font(.system(size: 12))
+                                        Text("Open Settings")
+                                            .font(.system(size: 12, weight: .medium))
+                                    }
+                                    .foregroundColor(.primary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        // Step 2
+                        HStack(alignment: .top, spacing: 6) {
+                            Text("2.")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.secondary)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Find \"Omi\" and toggle it ON")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(.secondary)
+
+                                // Screenshot
+                                if let image = NSImage(contentsOfFile: Bundle.module.path(forResource: "microphone-settings", ofType: "png") ?? "") {
+                                    Image(nsImage: image)
+                                        .resizable()
+                                        .scaledToFit()
+                                        .frame(maxWidth: 220)
+                                        .cornerRadius(6)
+                                        .overlay(
+                                            RoundedRectangle(cornerRadius: 6)
+                                                .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                        )
+                                }
+                            }
+                        }
+                    }
+                    .frame(width: 260, alignment: .leading)
+                }
+
+            } else {
+                // Not determined state - normal flow
+                Image(systemName: "mic")
+                    .font(.system(size: 48))
+                    .foregroundColor(OmiColors.purplePrimary)
+
+                Text("Microphone")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Omi needs microphone access to transcribe your conversations and provide context-aware assistance.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            }
+        }
+    }
+
+    private func micTryDirectReset() {
+        micResetInProgress = true
+        micResetButtonText = "Resetting & Restarting..."
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Reset and restart the app - macOS requires restart to show permission dialog again
+            let success = appState.resetMicrophonePermissionDirect(shouldRestart: true)
+
+            if !success {
+                DispatchQueue.main.async {
+                    micResetButtonText = "Failed - Try Terminal"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        micResetInProgress = false
+                        micResetButtonText = "Reset & Restart"
+                    }
+                }
+            }
+            // If success, app will restart automatically
+        }
+    }
+
+    private func micTryTerminalReset() {
+        // Reset via terminal and restart - macOS requires restart to show permission dialog again
+        appState.resetMicrophonePermissionViaTerminal(shouldRestart: true)
+    }
+
+    private func micOpenSystemSettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
+            NSWorkspace.shared.open(url)
+        }
+        // User will manually grant permission in System Settings
+        // No automatic restart needed - they can grant it directly there
+    }
+
     // MARK: - Screen Recording Step with Tutorial GIF
 
     private var screenRecordingStepView: some View {
@@ -589,6 +789,7 @@ struct OnboardingView: View {
                 AnalyticsManager.shared.permissionGranted(permission: "microphone")
                 currentStep += 1
             } else {
+                // Request permission - UI will update based on denied/not determined state
                 AnalyticsManager.shared.permissionRequested(permission: "microphone")
                 hasTriggeredMicrophone = true
                 appState.requestMicrophonePermission()
@@ -653,3 +854,4 @@ struct AnimatedGIFView: NSViewRepresentable {
         nsView.animates = true
     }
 }
+
