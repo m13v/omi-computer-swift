@@ -25,6 +25,7 @@ impl FormatTime for BackendTimer {
 
 mod auth;
 mod config;
+mod encryption;
 mod llm;
 mod models;
 mod routes;
@@ -105,11 +106,12 @@ async fn main() {
     // Initialize Firestore
     let firestore = match FirestoreService::new(
         config.firebase_project_id.clone().unwrap_or_else(|| "based-hardware".to_string()),
+        config.encryption_secret.clone(),
     ).await {
         Ok(fs) => Arc::new(fs),
         Err(e) => {
             tracing::warn!("Failed to initialize Firestore: {} - using placeholder", e);
-            Arc::new(FirestoreService::new("based-hardware".to_string()).await.unwrap())
+            Arc::new(FirestoreService::new("based-hardware".to_string(), config.encryption_secret.clone()).await.unwrap())
         }
     };
 
