@@ -171,8 +171,10 @@ struct ConversationListView: View {
         conversations: [],
         isLoading: false,
         error: nil,
+        folders: [],
         onSelect: { _ in },
-        onRefresh: { }
+        onRefresh: { },
+        onMoveToFolder: { _, _ in }
     )
     .frame(width: 400, height: 600)
     .background(OmiColors.backgroundSecondary)
