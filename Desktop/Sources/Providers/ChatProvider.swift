@@ -23,7 +23,7 @@ enum ChatSender {
 }
 
 /// State management for chat functionality with client-side Gemini
-/// Uses hybrid architecture: Swift → Gemini for streaming, Backend for persistence
+/// Uses hybrid architecture: Swift → Gemini for streaming, Backend for persistence + context
 @MainActor
 class ChatProvider: ObservableObject {
     @Published var messages: [ChatMessage] = []
@@ -35,6 +35,7 @@ class ChatProvider: ObservableObject {
     private var geminiClient: GeminiClient?
 
     // MARK: - Cached Context for Prompts
+    private var cachedContext: ChatContextResponse?
     private var cachedMemories: [ServerMemory] = []
     private var memoriesLoaded = false
 
@@ -85,17 +86,63 @@ class ChatProvider: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Fetch Context from Backend
+
+    /// Fetches rich context (conversations + memories) from backend using LLM-based retrieval
+    private func fetchContext(for question: String) async -> String {
+        // Build previous messages for context
+        let previousMessages: [(text: String, sender: String)] = messages.suffix(10).map { msg in
+            (text: msg.text, sender: msg.sender == .user ? "human" : "ai")
+        }
+
+        do {
+            let context = try await APIClient.shared.getChatContext(
+                question: question,
+                timezone: TimeZone.current.identifier,
+                appId: selectedAppId,
+                previousMessages: previousMessages
+            )
+
+            cachedContext = context
+
+            if context.requiresContext {
+                log("ChatProvider fetched context: \(context.conversations.count) conversations, \(context.memories.count) memories")
+                return context.contextString
+            } else {
+                log("ChatProvider: question doesn't require context")
+                // Return just memories for personalization
+                return context.contextString
+            }
+        } catch {
+            logError("Failed to fetch chat context", error: error)
+            // Fall back to cached memories
+            return formatMemoriesSection()
+        }
+    }
+
     // MARK: - Build System Prompt with Variables
 
     /// Builds the system prompt with dynamic template variables
-    private func buildSystemPrompt() -> String {
+    private func buildSystemPrompt(contextString: String) -> String {
         // Get user name from AuthService
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
 
-        // Build memories section from cached memories
-        let memoriesSection = formatMemoriesSection()
+        // Use the context string from backend (includes memories + conversations)
+        // Fall back to just memories if context is empty
+        let contextSection = contextString.isEmpty ? formatMemoriesSection() : contextString
 
         // Use ChatPromptBuilder to build the prompt with all variables
+        return ChatPromptBuilder.buildDesktopChat(
+            userName: userName,
+            memoriesSection: contextSection
+        )
+    }
+
+    /// Builds system prompt using cached memories only (for simple messages)
+    private func buildSystemPromptSimple() -> String {
+        let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
+        let memoriesSection = formatMemoriesSection()
+
         return ChatPromptBuilder.buildDesktopChat(
             userName: userName,
             memoriesSection: memoriesSection
@@ -186,11 +233,14 @@ class ChatProvider: ObservableObject {
         messages.append(aiMessage)
 
         do {
+            // Fetch context from backend (LLM determines if context is needed)
+            let contextString = await fetchContext(for: trimmedText)
+
             // Build chat history for Gemini
             let chatHistory = buildChatHistory()
 
-            // Build system prompt with user-specific variables
-            let systemPrompt = buildSystemPrompt()
+            // Build system prompt with fetched context
+            let systemPrompt = buildSystemPrompt(contextString: contextString)
 
             // Stream response from Gemini
             let _ = try await client.sendChatStreamRequest(
