@@ -201,6 +201,20 @@ actor RewindDatabase {
                 """)
         }
 
+        // Migration 7: Add video chunk storage columns
+        migrator.registerMigration("addVideoChunkColumns") { db in
+            try db.alter(table: "screenshots") { t in
+                t.add(column: "videoChunkPath", .text)
+                t.add(column: "frameOffset", .integer)
+            }
+            // Make imagePath nullable for new video-based screenshots
+            // Note: SQLite doesn't support ALTER COLUMN, but new rows can have NULL imagePath
+
+            // Index for efficient chunk-based queries
+            try db.create(index: "idx_screenshots_videoChunkPath",
+                          on: "screenshots", columns: ["videoChunkPath"])
+        }
+
         try migrator.migrate(queue)
     }
 
@@ -350,24 +364,48 @@ actor RewindDatabase {
         }
     }
 
+    // MARK: - Delete Result Types
+
+    /// Result of bulk screenshot deletion (for cleanup)
+    struct DeleteResult {
+        let imagePaths: [String]           // Legacy JPEG paths to delete
+        let orphanedVideoChunks: [String]  // Video chunks with all frames deleted
+    }
+
+    /// Result of single screenshot deletion
+    struct SingleDeleteResult {
+        let imagePath: String?
+        let videoChunkPath: String?
+        let isLastFrameInChunk: Bool
+    }
+
     // MARK: - Cleanup
 
     /// Delete screenshots older than the specified date
-    func deleteScreenshotsOlderThan(_ date: Date) throws -> [String] {
+    func deleteScreenshotsOlderThan(_ date: Date) throws -> DeleteResult {
         guard let dbQueue = dbQueue else {
             throw RewindError.databaseNotInitialized
         }
 
-        // First get the image paths to delete
+        // First get the image paths to delete (legacy JPEGs)
         let imagePaths = try dbQueue.read { db -> [String] in
             try String.fetchAll(
                 db,
-                sql: "SELECT imagePath FROM screenshots WHERE timestamp < ?",
+                sql: "SELECT imagePath FROM screenshots WHERE timestamp < ? AND imagePath IS NOT NULL",
                 arguments: [date]
             )
         }
 
-        // Then delete the records
+        // Get video chunk paths that will have frames deleted
+        let videoChunksToCheck = try dbQueue.read { db -> [String] in
+            try String.fetchAll(
+                db,
+                sql: "SELECT DISTINCT videoChunkPath FROM screenshots WHERE timestamp < ? AND videoChunkPath IS NOT NULL",
+                arguments: [date]
+            )
+        }
+
+        // Delete the records
         try dbQueue.write { db in
             try db.execute(
                 sql: "DELETE FROM screenshots WHERE timestamp < ?",
@@ -375,22 +413,57 @@ actor RewindDatabase {
             )
         }
 
-        return imagePaths
+        // Check which video chunks are now orphaned (no remaining frames)
+        let orphanedChunks = try dbQueue.read { db -> [String] in
+            var orphaned: [String] = []
+            for chunkPath in videoChunksToCheck {
+                let remainingCount = try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM screenshots WHERE videoChunkPath = ?",
+                    arguments: [chunkPath]
+                ) ?? 0
+                if remainingCount == 0 {
+                    orphaned.append(chunkPath)
+                }
+            }
+            return orphaned
+        }
+
+        return DeleteResult(imagePaths: imagePaths, orphanedVideoChunks: orphanedChunks)
     }
 
     /// Delete a specific screenshot
-    func deleteScreenshot(id: Int64) throws -> String? {
+    func deleteScreenshot(id: Int64) throws -> SingleDeleteResult? {
         guard let dbQueue = dbQueue else {
             throw RewindError.databaseNotInitialized
         }
 
-        // Get the image path first
-        let imagePath = try dbQueue.read { db -> String? in
-            try String.fetchOne(
+        // Get the storage info first
+        let storageInfo = try dbQueue.read { db -> (imagePath: String?, videoChunkPath: String?)? in
+            try Row.fetchOne(
                 db,
-                sql: "SELECT imagePath FROM screenshots WHERE id = ?",
+                sql: "SELECT imagePath, videoChunkPath FROM screenshots WHERE id = ?",
                 arguments: [id]
-            )
+            ).map { row in
+                (imagePath: row["imagePath"] as String?, videoChunkPath: row["videoChunkPath"] as String?)
+            }
+        }
+
+        guard let info = storageInfo else {
+            return nil
+        }
+
+        // Check if this is the last frame in the video chunk
+        var isLastFrame = false
+        if let videoChunkPath = info.videoChunkPath {
+            let frameCount = try dbQueue.read { db -> Int in
+                try Int.fetchOne(
+                    db,
+                    sql: "SELECT COUNT(*) FROM screenshots WHERE videoChunkPath = ?",
+                    arguments: [videoChunkPath]
+                ) ?? 0
+            }
+            isLastFrame = frameCount == 1
         }
 
         // Delete the record
@@ -401,7 +474,11 @@ actor RewindDatabase {
             )
         }
 
-        return imagePath
+        return SingleDeleteResult(
+            imagePath: info.imagePath,
+            videoChunkPath: info.videoChunkPath,
+            isLastFrameInChunk: isLastFrame
+        )
     }
 
     /// Get total screenshot count

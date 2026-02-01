@@ -17,8 +17,14 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
     /// Title of the window (if available)
     var windowTitle: String?
 
-    /// Relative path to the JPEG image file
-    var imagePath: String
+    /// Relative path to the JPEG image file (legacy, nil for video storage)
+    var imagePath: String?
+
+    /// Relative path to the video chunk file (new video storage)
+    var videoChunkPath: String?
+
+    /// Frame index within the video chunk
+    var frameOffset: Int?
 
     /// Extracted OCR text (nullable until indexed)
     var ocrText: String?
@@ -40,6 +46,13 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
 
     static let databaseTableName = "screenshots"
 
+    // MARK: - Storage Type
+
+    /// Whether this screenshot uses video chunk storage (vs legacy JPEG)
+    var usesVideoStorage: Bool {
+        videoChunkPath != nil && frameOffset != nil
+    }
+
     // MARK: - Initialization
 
     init(
@@ -47,7 +60,9 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
         timestamp: Date = Date(),
         appName: String,
         windowTitle: String? = nil,
-        imagePath: String,
+        imagePath: String? = nil,
+        videoChunkPath: String? = nil,
+        frameOffset: Int? = nil,
         ocrText: String? = nil,
         ocrDataJson: String? = nil,
         isIndexed: Bool = false,
@@ -60,6 +75,8 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
         self.appName = appName
         self.windowTitle = windowTitle
         self.imagePath = imagePath
+        self.videoChunkPath = videoChunkPath
+        self.frameOffset = frameOffset
         self.ocrText = ocrText
         self.ocrDataJson = ocrDataJson
         self.isIndexed = isIndexed
