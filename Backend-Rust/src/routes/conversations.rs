@@ -4,7 +4,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::Utc;
@@ -91,7 +91,19 @@ async fn get_conversations(
         )
         .await
     {
-        Ok(conversations) => Ok(Json(conversations)),
+        Ok(conversations) => {
+            // Debug: log any conversations with empty titles
+            for conv in &conversations {
+                if conv.structured.title.is_empty() {
+                    tracing::warn!(
+                        "DEBUG: Conversation {} has empty title! structured={:?}",
+                        conv.id,
+                        conv.structured
+                    );
+                }
+            }
+            Ok(Json(conversations))
+        }
         Err(e) => {
             tracing::error!("Failed to get conversations: {}", e);
             Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get conversations: {}", e)))
@@ -787,6 +799,8 @@ async fn merge_conversations(
             {
                 Ok(processed) => {
                     merged_conversation.structured = processed.structured;
+                    // Append "(merged)" to title to indicate this is a merged conversation
+                    merged_conversation.structured.title = format!("{} (merged)", merged_conversation.structured.title);
                     merged_conversation.status = ConversationStatus::Completed;
 
                     // Save action items if any
