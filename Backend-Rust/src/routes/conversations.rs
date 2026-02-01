@@ -200,6 +200,7 @@ async fn create_conversation_from_segments(
         structured: processed.structured,
         transcript_segments: request.transcript_segments.clone(),
         apps_results: vec![],
+        folder_id: None,
     };
 
     // Save conversation
