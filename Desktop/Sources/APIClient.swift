@@ -362,6 +362,22 @@ extension APIClient {
         return response.count
     }
 
+    /// Merges multiple conversations into a new conversation
+    func mergeConversations(ids: [String], reprocess: Bool = true) async throws -> MergeConversationsResponse {
+        struct MergeRequest: Encodable {
+            let conversationIds: [String]
+            let reprocess: Bool
+
+            enum CodingKeys: String, CodingKey {
+                case conversationIds = "conversation_ids"
+                case reprocess
+            }
+        }
+
+        let body = MergeRequest(conversationIds: ids, reprocess: reprocess)
+        return try await post("v1/conversations/merge", body: body)
+    }
+
     // MARK: - Folder API
 
     /// Gets all folders for the user
@@ -733,6 +749,23 @@ struct ConversationSearchResult: Codable {
         case items
         case currentPage = "current_page"
         case totalPages = "total_pages"
+    }
+}
+
+// MARK: - Merge Response
+
+/// Response from merge conversations API
+struct MergeConversationsResponse: Decodable {
+    let status: String
+    let message: String
+    let warning: String?
+    let conversationIds: [String]
+    let newConversationId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case status, message, warning
+        case conversationIds = "conversation_ids"
+        case newConversationId = "new_conversation_id"
     }
 }
 
