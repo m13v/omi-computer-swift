@@ -45,6 +45,9 @@ struct ConversationsPage: View {
     // Date picker state
     @State private var showDatePicker: Bool = false
 
+    // Folder picker state
+    @State private var showFolderPicker: Bool = false
+
     var body: some View {
         Group {
             if let selected = selectedConversation {
@@ -65,6 +68,12 @@ struct ConversationsPage: View {
             if appState.conversations.isEmpty {
                 Task {
                     await appState.loadConversations()
+                }
+            }
+            // Load folders
+            if appState.folders.isEmpty {
+                Task {
+                    await appState.loadFolders()
                 }
             }
         }
@@ -438,10 +447,56 @@ struct ConversationsPage: View {
                 datePickerPopover
             }
 
+            // Folder filter button (only show if folders exist)
+            if !appState.folders.isEmpty {
+                Button(action: {
+                    showFolderPicker.toggle()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "folder")
+                            .font(.system(size: 12))
+                        if let folderId = appState.selectedFolderId,
+                           let folder = appState.folders.first(where: { $0.id == folderId }) {
+                            Text(folder.name)
+                                .font(.system(size: 12, weight: .medium))
+                                .lineLimit(1)
+                            // Clear button
+                            Button(action: {
+                                Task {
+                                    await appState.setFolderFilter(nil)
+                                }
+                            }) {
+                                Image(systemName: "xmark.circle.fill")
+                                    .font(.system(size: 10))
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Text("Folder")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                    }
+                    .foregroundColor(appState.selectedFolderId != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(appState.selectedFolderId != nil ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary.opacity(0.6))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(appState.selectedFolderId != nil ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+                .popover(isPresented: $showFolderPicker) {
+                    folderPickerPopover
+                }
+            }
+
             Spacer()
 
             // Clear all filters button (only show if any filter is active)
-            if appState.showStarredOnly || appState.selectedDateFilter != nil {
+            if appState.showStarredOnly || appState.selectedDateFilter != nil || appState.selectedFolderId != nil {
                 Button(action: {
                     Task {
                         await appState.clearFilters()
@@ -485,6 +540,50 @@ struct ConversationsPage: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
+    }
+
+    private var folderPickerPopover: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Filter by Folder")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(OmiColors.textSecondary)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 4)
+
+            ForEach(appState.folders) { folder in
+                Button(action: {
+                    Task {
+                        await appState.setFolderFilter(folder.id)
+                    }
+                    showFolderPicker = false
+                }) {
+                    HStack(spacing: 8) {
+                        Circle()
+                            .fill(Color(hex: folder.color) ?? OmiColors.textTertiary)
+                            .frame(width: 8, height: 8)
+                        Text(folder.name)
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textPrimary)
+                        Spacer()
+                        if appState.selectedFolderId == folder.id {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(OmiColors.purplePrimary)
+                        }
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(appState.selectedFolderId == folder.id ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .frame(minWidth: 180)
+        .background(OmiColors.backgroundSecondary)
     }
 
     // MARK: - Recording Header
