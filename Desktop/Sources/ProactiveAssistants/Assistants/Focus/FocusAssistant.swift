@@ -154,6 +154,10 @@ actor FocusAssistant: ProactiveAssistant {
             if analysisCooldownEndTime != nil {
                 log("Focus: Context switch detected, clearing cooldown - will analyze")
                 analysisCooldownEndTime = nil
+                // Clear cooldown in UI
+                Task { @MainActor in
+                    FocusStorage.shared.updateCooldownEndTime(nil)
+                }
             } else {
                 log("Focus: Context changed (app: \(lastAnalyzedApp ?? "nil") → \(frame.appName), window: \(lastAnalyzedWindowTitle ?? "nil") → \(frame.windowTitle ?? "nil")) - will analyze")
             }
@@ -169,6 +173,10 @@ actor FocusAssistant: ProactiveAssistant {
                 // Cooldown expired, clear it
                 analysisCooldownEndTime = nil
                 log("Focus: Cooldown ended, resuming analysis")
+                // Clear cooldown in UI
+                Task { @MainActor in
+                    FocusStorage.shared.updateCooldownEndTime(nil)
+                }
             }
         }
 
@@ -225,6 +233,11 @@ actor FocusAssistant: ProactiveAssistant {
         lastStatus = nil
         lastNotifiedState = nil
         analysisCooldownEndTime = nil
+
+        // Clear cooldown in UI
+        await MainActor.run {
+            FocusStorage.shared.updateCooldownEndTime(nil)
+        }
     }
 
     // MARK: - Legacy API (for backward compatibility)
@@ -332,6 +345,11 @@ actor FocusAssistant: ProactiveAssistant {
                 }
                 analysisCooldownEndTime = Date().addingTimeInterval(cooldownSeconds)
                 log("Focus: Started \(Int(cooldownSeconds))s analysis cooldown")
+
+                // Expose cooldown end time to UI
+                await MainActor.run {
+                    FocusStorage.shared.updateCooldownEndTime(analysisCooldownEndTime)
+                }
 
                 if let message = analysis.message {
                     let fullMessage = "\(analysis.appOrSite) - \(message)"
