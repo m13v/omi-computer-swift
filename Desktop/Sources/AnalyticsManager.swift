@@ -361,6 +361,11 @@ class AnalyticsManager {
         PostHogManager.shared.track("chat_starred_filter_toggled", properties: ["enabled": enabled])
     }
 
+    func sessionRenamed() {
+        MixpanelManager.shared.track("Session Renamed", properties: [:])
+        PostHogManager.shared.track("session_renamed", properties: [:])
+    }
+
     // MARK: - Conversation Events (Additional)
 
     func conversationReprocessed(conversationId: String, appId: String) {
