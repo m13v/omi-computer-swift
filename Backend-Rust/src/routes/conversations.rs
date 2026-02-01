@@ -447,7 +447,7 @@ async fn search_conversations(
     // Fetch all conversations (we'll filter in memory since Firestore doesn't support full-text search)
     let all_conversations = match state
         .firestore
-        .get_conversations(&user.uid, 500, 0, request.include_discarded, &["completed".to_string()])
+        .get_conversations(&user.uid, 500, 0, request.include_discarded, &["completed".to_string()], None, None, None, None)
         .await
     {
         Ok(convs) => convs,
