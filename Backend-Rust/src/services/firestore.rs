@@ -14,7 +14,7 @@ use crate::encryption;
 
 use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
-    Conversation, DailySummarySettings, DistractionEntry, FocusSessionDB,
+    Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
     FocusStats, FocusStatus, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, Structured, TranscriptSegment, TranscriptionPreferences, UserProfile,
 };
@@ -54,6 +54,7 @@ pub const ENABLED_APPS_SUBCOLLECTION: &str = "enabled_plugins";
 pub const FOCUS_SESSIONS_SUBCOLLECTION: &str = "focus_sessions";
 pub const ADVICE_SUBCOLLECTION: &str = "advice";
 pub const MESSAGES_SUBCOLLECTION: &str = "messages";
+pub const FOLDERS_SUBCOLLECTION: &str = "folders";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -2160,6 +2161,7 @@ impl FirestoreService {
                 .unwrap_or_default(),
             discarded: self.parse_bool(fields, "discarded").unwrap_or(false),
             starred: self.parse_bool(fields, "starred").unwrap_or(false),
+            folder_id: self.parse_string(fields, "folder_id"),
             structured: self.parse_structured(fields)?,
             transcript_segments: self.parse_transcript_segments(fields)?,
             apps_results,

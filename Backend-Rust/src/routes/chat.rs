@@ -388,7 +388,7 @@ fn format_memories_context(memories: &[MemorySummary]) -> String {
 
 /// Fallback: Get basic context without LLM calls
 async fn get_basic_context(
-    firestore: &FirestoreService,
+    firestore: &Arc<FirestoreService>,
     uid: &str,
     _request: &ChatContextRequest,
 ) -> Result<Json<ChatContextResponse>, StatusCode> {
