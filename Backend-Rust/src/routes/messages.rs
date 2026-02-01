@@ -1,17 +1,17 @@
 // Chat Messages routes - For chat persistence
-// Endpoints: POST, GET, DELETE /v2/messages
+// Endpoints: POST, GET, DELETE /v2/messages, PATCH /v2/messages/{id}/rating
 
 use axum::{
-    extract::{Query, State},
+    extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, post},
+    routing::{get, patch},
     Json, Router,
 };
 
 use crate::auth::AuthUser;
 use crate::models::{
-    DeleteMessagesQuery, GetMessagesQuery, MessageDB, MessageStatusResponse, SaveMessageRequest,
-    SaveMessageResponse,
+    DeleteMessagesQuery, GetMessagesQuery, MessageDB, MessageStatusResponse, RateMessageRequest,
+    SaveMessageRequest, SaveMessageResponse,
 };
 use crate::AppState;
 
@@ -124,9 +124,53 @@ async fn delete_messages(
     }
 }
 
+/// PATCH /v2/messages/{id}/rating - Rate a message (thumbs up/down)
+async fn rate_message(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(message_id): Path<String>,
+    Json(request): Json<RateMessageRequest>,
+) -> Result<Json<MessageStatusResponse>, StatusCode> {
+    // Validate rating value if present
+    if let Some(rating) = request.rating {
+        if rating != 1 && rating != -1 {
+            tracing::warn!("Invalid rating value: {}", rating);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    }
+
+    tracing::info!(
+        "Rating message {} for user {} with rating={:?}",
+        message_id,
+        user.uid,
+        request.rating
+    );
+
+    match state
+        .firestore
+        .update_message_rating(&user.uid, &message_id, request.rating)
+        .await
+    {
+        Ok(()) => Ok(Json(MessageStatusResponse {
+            status: "ok".to_string(),
+            deleted_count: None,
+        })),
+        Err(e) => {
+            tracing::error!("Failed to rate message: {}", e);
+            if e.to_string().contains("not found") {
+                Err(StatusCode::NOT_FOUND)
+            } else {
+                Err(StatusCode::INTERNAL_SERVER_ERROR)
+            }
+        }
+    }
+}
+
 pub fn messages_routes() -> Router<AppState> {
-    Router::new().route(
-        "/v2/messages",
-        get(get_messages).post(save_message).delete(delete_messages),
-    )
+    Router::new()
+        .route(
+            "/v2/messages",
+            get(get_messages).post(save_message).delete(delete_messages),
+        )
+        .route("/v2/messages/:id/rating", patch(rate_message))
 }
