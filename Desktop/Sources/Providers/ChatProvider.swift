@@ -183,7 +183,7 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Send Message
 
-    /// Send a message and get streaming AI response
+    /// Send a message and get AI response with tool calling support
     /// Persists both user and AI messages to backend
     func sendMessage(_ text: String) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -222,7 +222,7 @@ class ChatProvider: ObservableObject {
         )
         messages.append(userMessage)
 
-        // Create placeholder AI message for streaming
+        // Create placeholder AI message
         let aiMessageId = UUID().uuidString
         let aiMessage = ChatMessage(
             id: aiMessageId,
@@ -242,16 +242,36 @@ class ChatProvider: ObservableObject {
             // Build system prompt with fetched context
             let systemPrompt = buildSystemPrompt(contextString: contextString)
 
-            // Stream response from Gemini
-            let _ = try await client.sendChatStreamRequest(
+            // First, try tool-enabled request to see if tools are needed
+            let result = try await client.sendToolChatRequest(
                 messages: chatHistory,
                 systemPrompt: systemPrompt,
-                onChunk: { [weak self] chunk in
-                    Task { @MainActor in
-                        self?.appendToMessage(id: aiMessageId, text: chunk)
-                    }
-                }
+                tools: GeminiClient.chatTools
             )
+
+            var finalResponse: String
+
+            if result.requiresToolExecution && !result.toolCalls.isEmpty {
+                // Execute tool calls
+                log("Executing \(result.toolCalls.count) tool call(s)")
+                updateMessage(id: aiMessageId, text: "Using tools...")
+
+                let toolResults = await ChatToolExecutor.executeAll(result.toolCalls)
+
+                // Continue with tool results to get final response
+                finalResponse = try await client.continueWithToolResults(
+                    originalMessages: chatHistory,
+                    toolCalls: result.toolCalls,
+                    toolResults: toolResults,
+                    systemPrompt: systemPrompt
+                )
+            } else {
+                // No tools needed, use direct response
+                finalResponse = result.text
+            }
+
+            // Update AI message with final response
+            updateMessage(id: aiMessageId, text: finalResponse)
 
             // Mark streaming complete
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
@@ -287,6 +307,13 @@ class ChatProvider: ObservableObject {
         }
 
         isSending = false
+    }
+
+    /// Update message text (replaces entire text)
+    private func updateMessage(id: String, text: String) {
+        if let index = messages.firstIndex(where: { $0.id == id }) {
+            messages[index].text = text
+        }
     }
 
     /// Append text to a streaming message
