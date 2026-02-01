@@ -58,14 +58,17 @@ struct ChatMessage: Identifiable {
     var isStreaming: Bool
     /// Rating: 1 = thumbs up, -1 = thumbs down, nil = no rating
     var rating: Int?
+    /// Whether the message has been synced with the backend (has valid server ID)
+    var isSynced: Bool
 
-    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil) {
+    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil, isSynced: Bool = false) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
         self.sender = sender
         self.isStreaming = isStreaming
         self.rating = rating
+        self.isSynced = isSynced
     }
 }
 
@@ -90,9 +93,20 @@ class ChatProvider: ObservableObject {
     @Published var hasMoreMessages = false
     @Published var isLoadingMoreMessages = false
     @Published var showStarredOnly = false
+    @Published var searchQuery = ""
 
     private var geminiClient: GeminiClient?
     private let messagesPageSize = 50
+
+    // MARK: - Filtered Sessions
+    var filteredSessions: [ChatSession] {
+        guard !searchQuery.isEmpty else { return sessions }
+        let query = searchQuery.lowercased()
+        return sessions.filter { session in
+            session.title.lowercased().contains(query) ||
+            (session.preview?.lowercased().contains(query) ?? false)
+        }
+    }
 
     // MARK: - Cached Context for Prompts
     private var cachedContext: ChatContextResponse?
@@ -102,6 +116,11 @@ class ChatProvider: ObservableObject {
     // MARK: - Current Session ID
     var currentSessionId: String? {
         currentSession?.id
+    }
+
+    // MARK: - Current Model
+    var currentModel: String {
+        "Gemini 3 Pro"
     }
 
     // MARK: - System Prompt
@@ -179,14 +198,15 @@ class ChatProvider: ObservableObject {
                 appId: selectedAppId
             )
 
-            // Add the AI greeting to messages
+            // Add the AI greeting to messages (already has server ID)
             let greetingMessage = ChatMessage(
                 id: response.messageId,
                 text: response.message,
                 createdAt: Date(),
                 sender: .ai,
                 isStreaming: false,
-                rating: nil
+                rating: nil,
+                isSynced: true
             )
             messages.append(greetingMessage)
 
@@ -226,7 +246,8 @@ class ChatProvider: ObservableObject {
                     createdAt: dbMessage.createdAt,
                     sender: dbMessage.sender == "human" ? .user : .ai,
                     isStreaming: false,
-                    rating: dbMessage.rating
+                    rating: dbMessage.rating,
+                    isSynced: true  // Messages from backend have valid server IDs
                 )
             }
             // If we got a full page, there might be more messages
@@ -263,7 +284,8 @@ class ChatProvider: ObservableObject {
                     createdAt: dbMessage.createdAt,
                     sender: dbMessage.sender == "human" ? .user : .ai,
                     isStreaming: false,
-                    rating: dbMessage.rating
+                    rating: dbMessage.rating,
+                    isSynced: true  // Messages from backend have valid server IDs
                 )
             }
 
@@ -328,7 +350,7 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Update session title
+    /// Update session title (user-initiated rename)
     func updateSessionTitle(_ session: ChatSession, title: String) async {
         do {
             let updated = try await APIClient.shared.updateChatSession(
@@ -347,6 +369,7 @@ class ChatProvider: ObservableObject {
             }
 
             log("Updated title for session \(session.id): \(title)")
+            AnalyticsManager.shared.sessionRenamed()
         } catch {
             logError("Failed to update session title", error: error)
         }
@@ -468,7 +491,8 @@ class ChatProvider: ObservableObject {
                         createdAt: dbMessage.createdAt,
                         sender: dbMessage.sender == "human" ? .user : .ai,
                         isStreaming: false,
-                        rating: dbMessage.rating
+                        rating: dbMessage.rating,
+                        isSynced: true  // Messages from backend have valid server IDs
                     )
                 }
                 log("ChatProvider loaded \(messages.count) persisted messages")
@@ -527,10 +551,11 @@ class ChatProvider: ObservableObject {
                     appId: selectedAppId,
                     sessionId: sessionId
                 )
-                // Sync local message ID with server ID for rating functionality
+                // Sync local message ID with server ID
                 await MainActor.run {
                     if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
                         self?.messages[index].id = response.id
+                        self?.messages[index].isSynced = true
                     }
                 }
                 log("Saved user message to backend: \(response.id)")
@@ -599,32 +624,29 @@ class ChatProvider: ObservableObject {
             // Update AI message with final response
             updateMessage(id: aiMessageId, text: finalResponse)
 
-            // Mark streaming complete
+            // Mark streaming complete (but not synced yet - rating disabled until synced)
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                 messages[index].isStreaming = false
 
-                // Save AI response to backend and sync ID
+                // Save AI response to backend and sync ID (awaited, not fire-and-forget)
                 let aiResponseText = messages[index].text
                 if !aiResponseText.isEmpty {
-                    Task { [weak self] in
-                        do {
-                            let response = try await APIClient.shared.saveMessage(
-                                text: aiResponseText,
-                                sender: "ai",
-                                appId: self?.selectedAppId,
-                                sessionId: sessionId
-                            )
-                            // Sync local message ID with server ID for rating functionality
-                            await MainActor.run {
-                                if let index = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
-                                    self?.messages[index].id = response.id
-                                }
-                            }
-                            log("Saved AI response to backend: \(response.id)")
-                        } catch {
-                            logError("Failed to persist AI response", error: error)
-                            // Non-critical - continue
+                    do {
+                        let response = try await APIClient.shared.saveMessage(
+                            text: aiResponseText,
+                            sender: "ai",
+                            appId: selectedAppId,
+                            sessionId: sessionId
+                        )
+                        // Sync local message with server response (like Flutter does)
+                        if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                            messages[syncIndex].id = response.id
+                            messages[syncIndex].isSynced = true
                         }
+                        log("Saved and synced AI response: \(response.id)")
+                    } catch {
+                        logError("Failed to persist AI response", error: error)
+                        // Message remains unsynced - rating will be disabled
                     }
                 }
             }
@@ -774,7 +796,7 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Session Grouping Helpers
 
-    /// Group sessions by date for sidebar display
+    /// Group sessions by date for sidebar display (uses filteredSessions for search)
     var groupedSessions: [(String, [ChatSession])] {
         let calendar = Calendar.current
         let now = Date()
@@ -784,7 +806,7 @@ class ChatProvider: ObservableObject {
         var thisWeek: [ChatSession] = []
         var older: [ChatSession] = []
 
-        for session in sessions {
+        for session in filteredSessions {
             if calendar.isDateInToday(session.updatedAt) {
                 today.append(session)
             } else if calendar.isDateInYesterday(session.updatedAt) {
