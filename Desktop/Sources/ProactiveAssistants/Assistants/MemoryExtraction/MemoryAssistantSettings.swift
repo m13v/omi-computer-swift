@@ -11,12 +11,14 @@ class MemoryAssistantSettings {
     private let analysisPromptKey = "memoryAnalysisPrompt"
     private let extractionIntervalKey = "memoryExtractionInterval"
     private let minConfidenceKey = "memoryMinConfidence"
+    private let notificationsEnabledKey = "memoryNotificationsEnabled"
 
     // MARK: - Default Values
 
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes
     private let defaultMinConfidence: Double = 0.7
+    private let defaultNotificationsEnabled = false
 
     /// Default system prompt for memory extraction from screenshots
     /// Adapted from the backend MEMORIES_PROMPT for visual/screenshot context
@@ -162,6 +164,7 @@ class MemoryAssistantSettings {
             enabledKey: defaultEnabled,
             extractionIntervalKey: defaultExtractionInterval,
             minConfidenceKey: defaultMinConfidence,
+            notificationsEnabledKey: defaultNotificationsEnabled,
         ])
     }
 
@@ -218,6 +221,15 @@ class MemoryAssistantSettings {
         }
     }
 
+    /// Whether to show notifications when memories are extracted
+    var notificationsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: notificationsEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: notificationsEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
     /// Reset only the analysis prompt to default
     func resetPromptToDefault() {
         UserDefaults.standard.removeObject(forKey: analysisPromptKey)
@@ -230,6 +242,7 @@ class MemoryAssistantSettings {
         isEnabled = defaultEnabled
         extractionInterval = defaultExtractionInterval
         minConfidence = defaultMinConfidence
+        notificationsEnabled = defaultNotificationsEnabled
         resetPromptToDefault()
     }
 }
