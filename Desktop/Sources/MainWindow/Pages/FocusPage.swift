@@ -30,6 +30,21 @@ class FocusViewModel: ObservableObject {
         storage.currentApp
     }
 
+    /// The detected app name (updated immediately on app switch, before analysis)
+    var detectedAppName: String? {
+        storage.detectedAppName
+    }
+
+    /// When the analysis delay period will end (nil if not in delay)
+    var delayEndTime: Date? {
+        storage.delayEndTime
+    }
+
+    /// When the analysis cooldown period will end (nil if not in cooldown)
+    var cooldownEndTime: Date? {
+        storage.cooldownEndTime
+    }
+
     var stats: FocusDayStats {
         storage.todayStats
     }
@@ -66,6 +81,10 @@ struct FocusPage: View {
     @StateObject private var viewModel = FocusViewModel()
     @ObservedObject private var storage = FocusStorage.shared
     @State private var showClearConfirmation = false
+    @State private var currentTime = Date()
+
+    // Timer to update countdown displays
+    private let countdownTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -74,10 +93,8 @@ struct FocusPage: View {
 
             ScrollView {
                 VStack(spacing: 20) {
-                    // Current status banner
-                    if let status = viewModel.currentStatus {
-                        currentStatusBanner(status)
-                    }
+                    // Current status banner (shows detected app, delay, cooldown, or analyzed status)
+                    statusBanner
 
                     // Today's summary stats
                     statsSection
@@ -110,6 +127,190 @@ struct FocusPage: View {
         .task {
             await viewModel.refresh()
         }
+        .onReceive(countdownTimer) { time in
+            currentTime = time
+        }
+    }
+
+    // MARK: - Status Banner
+
+    @ViewBuilder
+    private var statusBanner: some View {
+        if let delayEndTime = storage.delayEndTime {
+            // In delay period - show countdown
+            delayStatusBanner(endTime: delayEndTime)
+        } else if let cooldownEndTime = storage.cooldownEndTime {
+            // In cooldown period - show cooldown countdown
+            cooldownStatusBanner(endTime: cooldownEndTime)
+        } else if let status = viewModel.currentStatus {
+            // Normal analyzed status
+            currentStatusBanner(status)
+        } else if let detectedApp = storage.detectedAppName {
+            // Have detected app but no status yet
+            pendingStatusBanner(appName: detectedApp)
+        }
+    }
+
+    // MARK: - Delay Status Banner
+
+    private func delayStatusBanner(endTime: Date) -> some View {
+        let remaining = max(0, endTime.timeIntervalSince(currentTime))
+        let seconds = Int(remaining)
+
+        return HStack(spacing: 16) {
+            // Status icon
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.2))
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: "clock.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(Color.blue)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Waiting to Analyze")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                HStack(spacing: 8) {
+                    if let app = storage.detectedAppName {
+                        Text(app)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        Text("•")
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Text("Analyzing in \(seconds)s")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
+            Spacer()
+
+            // Countdown indicator
+            Text("\(seconds)")
+                .font(.system(size: 24, weight: .bold, design: .monospaced))
+                .foregroundColor(Color.blue)
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.blue.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+
+    // MARK: - Cooldown Status Banner
+
+    private func cooldownStatusBanner(endTime: Date) -> some View {
+        let remaining = max(0, endTime.timeIntervalSince(currentTime))
+        let minutes = Int(remaining) / 60
+        let seconds = Int(remaining) % 60
+
+        return HStack(spacing: 16) {
+            // Status icon
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.2))
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: "pause.circle.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(Color.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Cooldown Active")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                HStack(spacing: 8) {
+                    if let app = storage.detectedAppName ?? viewModel.currentApp {
+                        Text(app)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        Text("•")
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Text("Next check in \(minutes):\(String(format: "%02d", seconds))")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
+            Spacer()
+
+            // Countdown indicator
+            VStack(spacing: 2) {
+                Text("\(minutes):\(String(format: "%02d", seconds))")
+                    .font(.system(size: 20, weight: .bold, design: .monospaced))
+                    .foregroundColor(Color.orange)
+                Text("remaining")
+                    .font(.system(size: 10))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.orange.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.orange.opacity(0.2), lineWidth: 1)
+                )
+        )
+    }
+
+    // MARK: - Pending Status Banner
+
+    private func pendingStatusBanner(appName: String) -> some View {
+        HStack(spacing: 16) {
+            // Status icon
+            ZStack {
+                Circle()
+                    .fill(Color.gray.opacity(0.2))
+                    .frame(width: 56, height: 56)
+
+                Image(systemName: "eye.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(Color.gray)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Analyzing...")
+                    .font(.system(size: 20, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Text(appName)
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textSecondary)
+            }
+
+            Spacer()
+
+            // Spinner
+            ProgressView()
+                .scaleEffect(0.8)
+        }
+        .padding(20)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color.gray.opacity(0.08))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(Color.gray.opacity(0.2), lineWidth: 1)
+                )
+        )
     }
 
     // MARK: - Header
@@ -180,10 +381,13 @@ struct FocusPage: View {
         .padding(.bottom, 16)
     }
 
-    // MARK: - Current Status Banner
+    // MARK: - Current Status Banner (Analyzed)
 
     private func currentStatusBanner(_ status: FocusStatus) -> some View {
-        HStack(spacing: 16) {
+        // Use detected app as fallback if currentApp isn't set yet
+        let appName = viewModel.currentApp ?? storage.detectedAppName
+
+        return HStack(spacing: 16) {
             // Status icon
             ZStack {
                 Circle()
@@ -200,7 +404,7 @@ struct FocusPage: View {
                     .font(.system(size: 20, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
-                if let app = viewModel.currentApp {
+                if let app = appName {
                     Text(app)
                         .font(.system(size: 14))
                         .foregroundColor(OmiColors.textSecondary)
