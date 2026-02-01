@@ -53,6 +53,19 @@ pub struct ActionItemStatusResponse {
     pub status: String,
 }
 
+/// Response wrapper for paginated action items list
+#[derive(Debug, Clone, Serialize)]
+pub struct ActionItemsListResponse {
+    pub items: Vec<ActionItemDB>,
+    pub has_more: bool,
+}
+
+/// Request body for batch creating action items
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchCreateActionItemsRequest {
+    pub items: Vec<CreateActionItemRequest>,
+}
+
 /// Request body for creating a new action item
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateActionItemRequest {
