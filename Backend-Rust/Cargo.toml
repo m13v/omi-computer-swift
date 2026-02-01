@@ -43,4 +43,8 @@ flate2 = "1.0"
 # URL encoding for OAuth
 urlencoding = "2.1"
 
+# Encryption (for decrypting user data with enhanced protection level)
+aes-gcm = "0.10"
+hkdf = "0.12"
+
 # Note: Using Firestore REST API directly instead of gcloud-sdk for compatibility
