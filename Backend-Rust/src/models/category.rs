@@ -75,6 +75,11 @@ pub enum MemoryCategory {
     Interesting,
     /// Manually added by user
     Manual,
+    // Legacy categories for backward compatibility with old data
+    Core,
+    Hobbies,
+    Lifestyle,
+    Interests,
 }
 
 impl Default for MemoryCategory {
