@@ -637,6 +637,49 @@ impl FirestoreService {
         Ok(())
     }
 
+    /// Set the starred status of a conversation
+    pub async fn set_conversation_starred(
+        &self,
+        uid: &str,
+        conversation_id: &str,
+        starred: bool,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}?updateMask.fieldPaths=starred",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CONVERSATIONS_SUBCOLLECTION,
+            conversation_id
+        );
+
+        let doc = json!({
+            "fields": {
+                "starred": {"booleanValue": starred}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!(
+            "Set conversation {} starred={} for user {}",
+            conversation_id,
+            starred,
+            uid
+        );
+        Ok(())
+    }
+
     // =========================================================================
     // MEMORIES
     // =========================================================================
@@ -2037,6 +2080,7 @@ impl FirestoreService {
                 .and_then(|s| serde_json::from_str(&format!("\"{}\"", s)).ok())
                 .unwrap_or_default(),
             discarded: self.parse_bool(fields, "discarded").unwrap_or(false),
+            starred: self.parse_bool(fields, "starred").unwrap_or(false),
             structured: self.parse_structured(fields)?,
             transcript_segments: self.parse_transcript_segments(fields)?,
             apps_results,
