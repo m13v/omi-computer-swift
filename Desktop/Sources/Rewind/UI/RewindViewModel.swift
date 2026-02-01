@@ -212,10 +212,16 @@ class RewindViewModel: ObservableObject {
         guard let id = screenshot.id else { return }
 
         do {
-            // Delete from database (returns image path)
-            if let imagePath = try await RewindDatabase.shared.deleteScreenshot(id: id) {
-                // Delete from storage
-                try await RewindStorage.shared.deleteScreenshot(relativePath: imagePath)
+            // Delete from database (returns storage info)
+            if let result = try await RewindDatabase.shared.deleteScreenshot(id: id) {
+                // Delete legacy JPEG if present
+                if let imagePath = result.imagePath {
+                    try await RewindStorage.shared.deleteScreenshot(relativePath: imagePath)
+                }
+                // Delete video chunk if this was the last frame in it
+                if result.isLastFrameInChunk, let videoChunkPath = result.videoChunkPath {
+                    try await RewindStorage.shared.deleteVideoChunk(relativePath: videoChunkPath)
+                }
             }
 
             // Remove from local array
