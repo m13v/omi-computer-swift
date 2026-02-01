@@ -53,6 +53,13 @@ struct ConversationsPage: View {
     @State private var isFilteringDate: Bool = false
     @State private var isFilteringFolder: Bool = false
 
+    // Multi-select state for merging
+    @State private var isMultiSelectMode: Bool = false
+    @State private var selectedConversationIds: Set<String> = []
+    @State private var showMergeConfirmation: Bool = false
+    @State private var isMerging: Bool = false
+    @State private var mergeError: String? = nil
+
     var body: some View {
         Group {
             if let selected = selectedConversation {
@@ -217,9 +224,24 @@ struct ConversationsPage: View {
                         ProgressView()
                             .scaleEffect(0.6)
                     }
+
+                    // Select button for multi-select mode
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isMultiSelectMode.toggle()
+                            if !isMultiSelectMode {
+                                selectedConversationIds.removeAll()
+                            }
+                        }
+                    }) {
+                        Text(isMultiSelectMode ? "Cancel" : "Select")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(isMultiSelectMode ? OmiColors.error : OmiColors.purplePrimary)
+                    }
+                    .buttonStyle(.plain)
                 }
 
-                // Search bar
+                // Search bar (hidden in multi-select mode)
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 13))
@@ -271,24 +293,41 @@ struct ConversationsPage: View {
                 searchResultsView
             } else {
                 // Regular conversation list
-                ConversationListView(
-                    conversations: appState.conversations,
-                    isLoading: appState.isLoadingConversations,
-                    error: appState.conversationsError,
-                    folders: appState.folders,
-                    onSelect: { conversation in
-                        AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
-                        selectedConversation = conversation
-                    },
-                    onRefresh: {
-                        Task {
-                            await appState.refreshConversations()
+                ZStack(alignment: .bottom) {
+                    ConversationListView(
+                        conversations: appState.conversations,
+                        isLoading: appState.isLoadingConversations,
+                        error: appState.conversationsError,
+                        folders: appState.folders,
+                        onSelect: { conversation in
+                            AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
+                            selectedConversation = conversation
+                        },
+                        onRefresh: {
+                            Task {
+                                await appState.refreshConversations()
+                            }
+                        },
+                        onMoveToFolder: { conversationId, folderId in
+                            await appState.moveConversationToFolder(conversationId, folderId: folderId)
+                        },
+                        isMultiSelectMode: isMultiSelectMode,
+                        selectedIds: selectedConversationIds,
+                        onToggleSelection: { conversationId in
+                            if selectedConversationIds.contains(conversationId) {
+                                selectedConversationIds.remove(conversationId)
+                            } else {
+                                selectedConversationIds.insert(conversationId)
+                            }
                         }
-                    },
-                    onMoveToFolder: { conversationId, folderId in
-                        await appState.moveConversationToFolder(conversationId, folderId: folderId)
+                    )
+
+                    // Floating merge action bar
+                    if isMultiSelectMode && !selectedConversationIds.isEmpty {
+                        mergeActionBar
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
                     }
-                )
+                }
             }
         }
     }
@@ -331,24 +370,41 @@ struct ConversationsPage: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 8) {
-                        ForEach(searchResults) { conversation in
-                            ConversationRowView(
-                                conversation: conversation,
-                                onTap: {
-                                    AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
-                                    selectedConversation = conversation
-                                },
-                                folders: appState.folders,
-                                onMoveToFolder: { conversationId, folderId in
-                                    await appState.moveConversationToFolder(conversationId, folderId: folderId)
-                                }
-                            )
+                ZStack(alignment: .bottom) {
+                    ScrollView {
+                        LazyVStack(spacing: 8) {
+                            ForEach(searchResults) { conversation in
+                                ConversationRowView(
+                                    conversation: conversation,
+                                    onTap: {
+                                        AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
+                                        selectedConversation = conversation
+                                    },
+                                    folders: appState.folders,
+                                    onMoveToFolder: { conversationId, folderId in
+                                        await appState.moveConversationToFolder(conversationId, folderId: folderId)
+                                    },
+                                    isMultiSelectMode: isMultiSelectMode,
+                                    isSelected: selectedConversationIds.contains(conversation.id),
+                                    onToggleSelection: {
+                                        if selectedConversationIds.contains(conversation.id) {
+                                            selectedConversationIds.remove(conversation.id)
+                                        } else {
+                                            selectedConversationIds.insert(conversation.id)
+                                        }
+                                    }
+                                )
+                            }
                         }
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, isMultiSelectMode && !selectedConversationIds.isEmpty ? 80 : 16)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 16)
+
+                    // Floating merge action bar (also show in search results)
+                    if isMultiSelectMode && !selectedConversationIds.isEmpty {
+                        mergeActionBar
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                    }
                 }
             }
         }
@@ -628,6 +684,120 @@ struct ConversationsPage: View {
         .padding(8)
         .frame(minWidth: 180)
         .background(OmiColors.backgroundSecondary)
+    }
+
+    // MARK: - Merge Action Bar
+
+    private var mergeActionBar: some View {
+        HStack(spacing: 16) {
+            // Selection count
+            Text("\(selectedConversationIds.count) selected")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(OmiColors.textSecondary)
+
+            Spacer()
+
+            // Select All / Deselect All
+            Button(action: {
+                if selectedConversationIds.count == appState.conversations.count {
+                    selectedConversationIds.removeAll()
+                } else {
+                    selectedConversationIds = Set(appState.conversations.map { $0.id })
+                }
+            }) {
+                Text(selectedConversationIds.count == appState.conversations.count ? "Deselect All" : "Select All")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OmiColors.textSecondary)
+            }
+            .buttonStyle(.plain)
+
+            // Merge button (only enabled when 2+ selected)
+            Button(action: {
+                showMergeConfirmation = true
+            }) {
+                HStack(spacing: 6) {
+                    if isMerging {
+                        ProgressView()
+                            .scaleEffect(0.5)
+                            .frame(width: 14, height: 14)
+                    } else {
+                        Image(systemName: "arrow.triangle.merge")
+                            .font(.system(size: 12))
+                    }
+                    Text("Merge")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(selectedConversationIds.count >= 2 ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                )
+            }
+            .buttonStyle(.plain)
+            .disabled(selectedConversationIds.count < 2 || isMerging)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(OmiColors.backgroundTertiary)
+                .shadow(color: .black.opacity(0.3), radius: 10, y: -2)
+        )
+        .padding(.horizontal, 16)
+        .padding(.bottom, 16)
+        .alert("Merge Conversations", isPresented: $showMergeConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Merge") {
+                Task {
+                    await performMerge()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to merge \(selectedConversationIds.count) conversations? This will combine them into a single conversation and delete the originals. This action cannot be undone.")
+        }
+        .alert("Merge Failed", isPresented: .init(
+            get: { mergeError != nil },
+            set: { if !$0 { mergeError = nil } }
+        )) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(mergeError ?? "Unknown error")
+        }
+    }
+
+    private func performMerge() async {
+        guard selectedConversationIds.count >= 2 else { return }
+
+        isMerging = true
+        mergeError = nil
+
+        do {
+            let ids = Array(selectedConversationIds)
+            let response = try await APIClient.shared.mergeConversations(ids: ids)
+
+            log("Merge completed: \(response.message)")
+
+            // Show warning if there was one
+            if let warning = response.warning {
+                log("Merge warning: \(warning)")
+            }
+
+            // Refresh conversations to show the merged one
+            await appState.refreshConversations()
+
+            // Exit multi-select mode
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isMultiSelectMode = false
+                selectedConversationIds.removeAll()
+            }
+        } catch {
+            logError("Merge failed", error: error)
+            mergeError = error.localizedDescription
+        }
+
+        isMerging = false
     }
 
     // MARK: - Recording Header
