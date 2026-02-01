@@ -384,20 +384,34 @@ struct SidebarView: View {
     }
 
     // MARK: - Permission Warning Button
+
+    // Check if any permission is specifically denied (not just missing)
+    private var hasPermissionDenied: Bool {
+        appState.isMicrophonePermissionDenied()
+    }
+
+    // Color based on denied (red) vs missing (orange)
+    private var permissionColor: Color {
+        hasPermissionDenied ? .red : OmiColors.warning
+    }
+
+    @State private var permissionPulse = false
+
     private var permissionWarningButton: some View {
         Button(action: {
             selectedIndex = SidebarNavItem.permissions.rawValue
         }) {
             HStack(spacing: 12) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: hasPermissionDenied ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
                     .font(.system(size: 17))
-                    .foregroundColor(OmiColors.warning)
+                    .foregroundColor(permissionColor)
                     .frame(width: iconWidth)
+                    .scaleEffect(permissionPulse && hasPermissionDenied ? 1.1 : 1.0)
 
                 if !isCollapsed {
-                    Text("Permissions")
+                    Text(hasPermissionDenied ? "Permission Denied" : "Permissions")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.warning)
+                        .foregroundColor(permissionColor)
 
                     Spacer()
                 }
@@ -406,16 +420,33 @@ struct SidebarView: View {
             .padding(.vertical, 11)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(OmiColors.warning.opacity(0.15))
+                    .fill(permissionColor.opacity(permissionPulse && hasPermissionDenied ? 0.25 : 0.15))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10)
-                            .stroke(OmiColors.warning.opacity(0.3), lineWidth: 1)
+                            .stroke(permissionColor.opacity(0.3), lineWidth: hasPermissionDenied ? 2 : 1)
                     )
             )
         }
         .buttonStyle(.plain)
         .padding(.bottom, 8)
-        .help(isCollapsed ? "Permissions missing" : "")
+        .help(isCollapsed ? (hasPermissionDenied ? "Permission denied - action required" : "Permissions missing") : "")
+        .onAppear {
+            // Start pulsing animation when denied
+            if hasPermissionDenied {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    permissionPulse = true
+                }
+            }
+        }
+        .onChange(of: hasPermissionDenied) { _, denied in
+            if denied {
+                withAnimation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true)) {
+                    permissionPulse = true
+                }
+            } else {
+                permissionPulse = false
+            }
+        }
     }
 }
 
