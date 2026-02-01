@@ -288,32 +288,6 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Screen Recording Permission
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "rectangle.inset.filled.and.person.filled")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.purplePrimary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Screen Recording Permission")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Required for proactive monitoring")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Button("Grant Access") {
-                        ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(OmiColors.purplePrimary)
-                }
-            }
         }
     }
 
@@ -397,7 +371,7 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Task Assistant (simplified - toggle only)
+            // Task Assistant (with extraction interval slider)
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
@@ -422,6 +396,41 @@ struct SettingsContentView: View {
                     Text("Extract tasks and action items from your screen")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
+
+                    if taskEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        // Extraction Interval Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Extraction Interval")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                    Text("How often to scan for new tasks")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+
+                                Spacer()
+
+                                Text(formatExtractionInterval(taskExtractionInterval))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                    .frame(width: 80, alignment: .trailing)
+                            }
+
+                            Slider(value: Binding(
+                                get: { Double(taskIntervalSliderIndex) },
+                                set: { taskExtractionInterval = extractionIntervalOptions[Int($0)] }
+                            ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
+                                .tint(OmiColors.purplePrimary)
+                                .onChange(of: taskExtractionInterval) { _, newValue in
+                                    TaskAssistantSettings.shared.extractionInterval = newValue
+                                }
+                        }
+                    }
                 }
             }
 
@@ -488,7 +497,7 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Memory Assistant (simplified - toggle only)
+            // Memory Assistant (with extraction interval slider)
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
@@ -513,6 +522,41 @@ struct SettingsContentView: View {
                     Text("Extract facts and wisdom from your screen")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
+
+                    if memoryEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        // Extraction Interval Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Extraction Interval")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                    Text("How often to scan for new memories")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+
+                                Spacer()
+
+                                Text(formatExtractionInterval(memoryExtractionInterval))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                    .frame(width: 80, alignment: .trailing)
+                            }
+
+                            Slider(value: Binding(
+                                get: { Double(memoryIntervalSliderIndex) },
+                                set: { memoryExtractionInterval = extractionIntervalOptions[Int($0)] }
+                            ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
+                                .tint(OmiColors.purplePrimary)
+                                .onChange(of: memoryExtractionInterval) { _, newValue in
+                                    MemoryAssistantSettings.shared.extractionInterval = newValue
+                                }
+                        }
+                    }
                 }
             }
 
@@ -780,19 +824,6 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    settingRow(title: "Extraction Interval", subtitle: "How often to scan for new tasks") {
-                        Picker("", selection: $taskExtractionInterval) {
-                            ForEach(extractionIntervalOptions, id: \.self) { seconds in
-                                Text(formatExtractionInterval(seconds)).tag(seconds)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 120)
-                        .onChange(of: taskExtractionInterval) { _, newValue in
-                            TaskAssistantSettings.shared.extractionInterval = newValue
-                        }
-                    }
-
                     // Minimum Confidence Slider
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
@@ -916,19 +947,6 @@ struct SettingsContentView: View {
 
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
-
-                    settingRow(title: "Extraction Interval", subtitle: "How often to scan for new memories") {
-                        Picker("", selection: $memoryExtractionInterval) {
-                            ForEach(extractionIntervalOptions, id: \.self) { seconds in
-                                Text(formatExtractionInterval(seconds)).tag(seconds)
-                            }
-                        }
-                        .pickerStyle(.menu)
-                        .frame(width: 120)
-                        .onChange(of: memoryExtractionInterval) { _, newValue in
-                            MemoryAssistantSettings.shared.extractionInterval = newValue
-                        }
-                    }
 
                     // Minimum Confidence Slider
                     VStack(alignment: .leading, spacing: 8) {
@@ -1344,8 +1362,16 @@ struct SettingsContentView: View {
         analysisDelayOptions.firstIndex(of: analysisDelay) ?? 0
     }
 
+    private var taskIntervalSliderIndex: Int {
+        extractionIntervalOptions.firstIndex(of: taskExtractionInterval) ?? 0
+    }
+
     private var adviceIntervalSliderIndex: Int {
         extractionIntervalOptions.firstIndex(of: adviceExtractionInterval) ?? 0
+    }
+
+    private var memoryIntervalSliderIndex: Int {
+        extractionIntervalOptions.firstIndex(of: memoryExtractionInterval) ?? 0
     }
 
     // MARK: - Helpers
