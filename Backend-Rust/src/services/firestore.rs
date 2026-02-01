@@ -2681,8 +2681,15 @@ impl FirestoreService {
         let structured = fields.get("structured").and_then(|s| s.get("mapValue")).and_then(|m| m.get("fields"));
 
         if let Some(s) = structured {
+            let title = self.parse_string(s, "title").unwrap_or_default();
+            if title.is_empty() {
+                tracing::warn!(
+                    "DEBUG parse_structured: title is empty! structured fields: {}",
+                    serde_json::to_string_pretty(s).unwrap_or_default()
+                );
+            }
             Ok(Structured {
-                title: self.parse_string(s, "title").unwrap_or_default(),
+                title,
                 overview: self.parse_string(s, "overview").unwrap_or_default(),
                 emoji: self.parse_string(s, "emoji").unwrap_or_else(|| "🧠".to_string()),
                 category: self.parse_string(s, "category")
@@ -2692,6 +2699,10 @@ impl FirestoreService {
                 events: self.parse_events_from_structured(s),
             })
         } else {
+            tracing::warn!(
+                "DEBUG parse_structured: no structured field found! fields: {}",
+                serde_json::to_string_pretty(fields).unwrap_or_default()
+            );
             Ok(Structured::default())
         }
     }
@@ -4788,6 +4799,92 @@ impl FirestoreService {
             app_id
         );
         Ok(count)
+    }
+
+    /// Update a message's rating (thumbs up/down)
+    /// rating: 1 = thumbs up, -1 = thumbs down, None = clear rating
+    pub async fn update_message_rating(
+        &self,
+        uid: &str,
+        message_id: &str,
+        rating: Option<i32>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            MESSAGES_SUBCOLLECTION,
+            message_id
+        );
+
+        // First, get the existing message to preserve other fields
+        let get_response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if get_response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Err("Message not found".into());
+        }
+
+        if !get_response.status().is_success() {
+            let error_text = get_response.text().await?;
+            return Err(format!("Failed to get message: {}", error_text).into());
+        }
+
+        let doc: Value = get_response.json().await?;
+        let existing_fields = doc.get("fields").ok_or("Missing fields")?;
+
+        // Build updated fields, preserving existing values
+        let mut fields = json!({
+            "text": existing_fields.get("text").cloned().unwrap_or(json!({"stringValue": ""})),
+            "sender": existing_fields.get("sender").cloned().unwrap_or(json!({"stringValue": "human"})),
+            "created_at": existing_fields.get("created_at").cloned().unwrap_or(json!({"timestampValue": Utc::now().to_rfc3339()})),
+            "reported": existing_fields.get("reported").cloned().unwrap_or(json!({"booleanValue": false}))
+        });
+
+        // Preserve optional fields if they exist
+        if let Some(app_id) = existing_fields.get("app_id") {
+            fields["app_id"] = app_id.clone();
+        }
+        if let Some(session_id) = existing_fields.get("session_id") {
+            fields["session_id"] = session_id.clone();
+        }
+
+        // Set the rating (or null to clear)
+        match rating {
+            Some(r) => {
+                fields["rating"] = json!({"integerValue": r.to_string()});
+            }
+            None => {
+                fields["rating"] = json!({"nullValue": null});
+            }
+        }
+
+        let update_doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&update_doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Failed to update message rating: {}", error_text).into());
+        }
+
+        tracing::info!(
+            "Updated rating for message {} (user {}): {:?}",
+            message_id,
+            uid,
+            rating
+        );
+
+        Ok(())
     }
 
     /// Parse a Firestore document into a MessageDB
