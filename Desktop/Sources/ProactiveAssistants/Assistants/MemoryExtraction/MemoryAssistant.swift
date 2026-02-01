@@ -183,8 +183,13 @@ actor MemoryAssistant: ProactiveAssistant {
             AnalyticsManager.shared.memoryExtracted(memoryCount: 1)
         }
 
-        // Send notification
-        await sendMemoryNotification(memory: memory)
+        // Send notification if enabled
+        let notificationsEnabled = await MainActor.run {
+            MemoryAssistantSettings.shared.notificationsEnabled
+        }
+        if notificationsEnabled {
+            await sendMemoryNotification(memory: memory)
+        }
 
         // Send event to Flutter
         sendEvent("memoryExtracted", [
