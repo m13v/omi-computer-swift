@@ -87,31 +87,77 @@ struct FocusPage: View {
     private let countdownTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            header
+        VStack(spacing: 20) {
+            // Header row with title and actions
+            HStack {
+                // Monitoring status indicator
+                HStack(spacing: 8) {
+                    Circle()
+                        .fill(viewModel.isMonitoring ? Color.green : OmiColors.textTertiary)
+                        .frame(width: 8, height: 8)
 
-            ScrollView {
-                VStack(spacing: 20) {
-                    // Current status banner (shows detected app, delay, cooldown, or analyzed status)
-                    statusBanner
+                    Text(viewModel.isMonitoring ? "Monitoring" : "Not monitoring")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
 
-                    // Today's summary stats
-                    statsSection
+                    Text("•")
+                        .foregroundColor(OmiColors.textTertiary)
 
-                    // Top distractions (if any)
-                    if !viewModel.stats.topDistractions.isEmpty {
-                        topDistractionsSection
-                    }
-
-                    // Session history
-                    historySection
+                    Text("\(viewModel.todayCount) sessions today")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 24)
+
+                Spacer()
+
+                // Actions
+                HStack(spacing: 12) {
+                    Toggle(isOn: $viewModel.showHistorical) {
+                        Text("Show all")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
+                    }
+                    .toggleStyle(.switch)
+                    .controlSize(.small)
+
+                    Menu {
+                        Button {
+                            Task { await viewModel.refresh() }
+                        } label: {
+                            Label("Refresh", systemImage: "arrow.clockwise")
+                        }
+
+                        Divider()
+
+                        Button(role: .destructive) {
+                            showClearConfirmation = true
+                        } label: {
+                            Label("Clear All History", systemImage: "trash")
+                        }
+                        .disabled(storage.sessions.isEmpty)
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                            .font(.system(size: 18))
+                            .foregroundColor(OmiColors.textSecondary)
+                    }
+                    .menuStyle(.borderlessButton)
+                }
             }
+
+            // Current status banner (shows detected app, delay, cooldown, or analyzed status)
+            statusBanner
+
+            // Today's summary stats
+            statsSection
+
+            // Top distractions (if any)
+            if !viewModel.stats.topDistractions.isEmpty {
+                topDistractionsSection
+            }
+
+            // Session history
+            historySection
         }
-        .background(Color.clear)
         .confirmationDialog(
             "Clear All History",
             isPresented: $showClearConfirmation,
@@ -132,16 +178,30 @@ struct FocusPage: View {
         }
     }
 
+    // MARK: - Countdown Helpers
+
+    /// Compute remaining seconds for delay countdown (reactive to currentTime)
+    private var delayRemainingSeconds: Int {
+        guard let endTime = storage.delayEndTime else { return 0 }
+        return max(0, Int(endTime.timeIntervalSince(currentTime)))
+    }
+
+    /// Compute remaining seconds for cooldown countdown (reactive to currentTime)
+    private var cooldownRemainingSeconds: Int {
+        guard let endTime = storage.cooldownEndTime else { return 0 }
+        return max(0, Int(endTime.timeIntervalSince(currentTime)))
+    }
+
     // MARK: - Status Banner
 
     @ViewBuilder
     private var statusBanner: some View {
-        if let delayEndTime = storage.delayEndTime {
+        if storage.delayEndTime != nil && delayRemainingSeconds > 0 {
             // In delay period - show countdown
-            delayStatusBanner(endTime: delayEndTime)
-        } else if let cooldownEndTime = storage.cooldownEndTime {
+            delayStatusBanner
+        } else if storage.cooldownEndTime != nil && cooldownRemainingSeconds > 0 {
             // In cooldown period - show cooldown countdown
-            cooldownStatusBanner(endTime: cooldownEndTime)
+            cooldownStatusBanner
         } else if let status = viewModel.currentStatus {
             // Normal analyzed status
             currentStatusBanner(status)
@@ -153,9 +213,8 @@ struct FocusPage: View {
 
     // MARK: - Delay Status Banner
 
-    private func delayStatusBanner(endTime: Date) -> some View {
-        let remaining = max(0, endTime.timeIntervalSince(currentTime))
-        let seconds = Int(remaining)
+    private var delayStatusBanner: some View {
+        let seconds = delayRemainingSeconds
 
         return HStack(spacing: 16) {
             // Status icon
@@ -210,10 +269,10 @@ struct FocusPage: View {
 
     // MARK: - Cooldown Status Banner
 
-    private func cooldownStatusBanner(endTime: Date) -> some View {
-        let remaining = max(0, endTime.timeIntervalSince(currentTime))
-        let minutes = Int(remaining) / 60
-        let seconds = Int(remaining) % 60
+    private var cooldownStatusBanner: some View {
+        let totalSeconds = cooldownRemainingSeconds
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
 
         return HStack(spacing: 16) {
             // Status icon
@@ -311,74 +370,6 @@ struct FocusPage: View {
                         .stroke(Color.gray.opacity(0.2), lineWidth: 1)
                 )
         )
-    }
-
-    // MARK: - Header
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Focus")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                HStack(spacing: 8) {
-                    // Monitoring status
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(viewModel.isMonitoring ? Color.green : OmiColors.textTertiary)
-                            .frame(width: 8, height: 8)
-
-                        Text(viewModel.isMonitoring ? "Monitoring" : "Not monitoring")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Text("\(viewModel.todayCount) sessions today")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-            }
-
-            Spacer()
-
-            // Actions
-            HStack(spacing: 12) {
-                // Toggle historical view
-                Toggle(isOn: $viewModel.showHistorical) {
-                    Text("Show all")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textSecondary)
-                }
-                .toggleStyle(.switch)
-                .controlSize(.small)
-
-                Menu {
-                    Button {
-                        Task { await viewModel.refresh() }
-                    } label: {
-                        Label("Refresh", systemImage: "arrow.clockwise")
-                    }
-
-                    Divider()
-
-                    Button(role: .destructive) {
-                        showClearConfirmation = true
-                    } label: {
-                        Label("Clear All History", systemImage: "trash")
-                    }
-                    .disabled(storage.sessions.isEmpty)
-                } label: {
-                    Image(systemName: "ellipsis.circle")
-                        .font(.system(size: 18))
-                        .foregroundColor(OmiColors.textSecondary)
-                }
-                .menuStyle(.borderlessButton)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.top, 20)
-        .padding(.bottom, 16)
     }
 
     // MARK: - Current Status Banner (Analyzed)
