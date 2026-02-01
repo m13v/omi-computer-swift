@@ -86,7 +86,7 @@ class ChatProvider: ObservableObject {
     @Published var sessions: [ChatSession] = []
     @Published var currentSession: ChatSession?
     @Published var isLoading = false
-    @Published var isLoadingSessions = false
+    @Published var isLoadingSessions = true  // Start true since we load sessions on init
     @Published var isSending = false
     @Published var errorMessage: String?
     @Published var selectedAppId: String?
