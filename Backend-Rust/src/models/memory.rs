@@ -9,12 +9,20 @@ use super::category::MemoryCategory;
 // REQUEST TYPES
 // =========================================================================
 
-/// Request to create a new manual memory
+/// Request to create a new memory (manual or extracted)
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateMemoryRequest {
     pub content: String,
     #[serde(default = "default_visibility")]
     pub visibility: String,
+    /// Optional category (defaults to manual for manual creation)
+    pub category: Option<MemoryCategory>,
+    /// AI confidence score (0.0 - 1.0)
+    pub confidence: Option<f64>,
+    /// App where the memory was extracted from
+    pub source_app: Option<String>,
+    /// Summary of the context when memory was generated
+    pub context_summary: Option<String>,
 }
 
 /// Request to edit a memory's content
@@ -33,6 +41,33 @@ pub struct UpdateVisibilityRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct ReviewMemoryRequest {
     pub value: bool,
+}
+
+/// Request to update memory read/dismissed status
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateMemoryReadRequest {
+    /// Mark as read
+    pub is_read: Option<bool>,
+    /// Mark as dismissed/archived
+    pub is_dismissed: Option<bool>,
+}
+
+/// Query parameters for getting memories
+#[derive(Debug, Clone, Deserialize)]
+pub struct GetMemoriesQuery {
+    #[serde(default = "default_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub offset: usize,
+    /// Filter by category
+    pub category: Option<String>,
+    /// Include dismissed memories (default: false)
+    #[serde(default)]
+    pub include_dismissed: bool,
+}
+
+fn default_limit() -> usize {
+    100
 }
 
 // =========================================================================
@@ -78,7 +113,7 @@ pub struct MemoryDB {
     #[serde(default)]
     pub reviewed: bool,
     pub user_review: Option<bool>,
-    #[serde(default = "default_visibility")]
+    #[serde(default = "default_visibility_field")]
     pub visibility: String,
     #[serde(default)]
     pub manually_added: bool,
@@ -87,9 +122,26 @@ pub struct MemoryDB {
     /// Source device (enriched from linked conversation, not stored in Firestore)
     #[serde(skip_deserializing)]
     pub source: Option<String>,
+    /// AI confidence score (0.0 - 1.0) - for extracted memories
+    #[serde(default)]
+    pub confidence: Option<f64>,
+    /// App where the memory was extracted from
+    pub source_app: Option<String>,
+    /// Summary of the context when memory was generated
+    pub context_summary: Option<String>,
+    /// Whether the user has read this memory
+    #[serde(default)]
+    pub is_read: bool,
+    /// Whether the memory has been dismissed/archived
+    #[serde(default)]
+    pub is_dismissed: bool,
 }
 
 fn default_visibility() -> String {
+    "private".to_string()
+}
+
+fn default_visibility_field() -> String {
     "private".to_string()
 }
 
