@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 
 /// Coordinates the capture → storage → database → OCR pipeline for Rewind
@@ -49,18 +50,28 @@ actor RewindIndexer {
         }
 
         do {
-            // 1. Save the screenshot to disk
-            let imagePath = try await RewindStorage.shared.saveScreenshot(
-                jpegData: frame.jpegData,
+            // Convert JPEG to CGImage for video encoding
+            guard let nsImage = NSImage(data: frame.jpegData),
+                  let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else {
+                logError("RewindIndexer: Failed to create CGImage from frame data")
+                return
+            }
+
+            // Add frame to video encoder
+            let encodedFrame = try await VideoChunkEncoder.shared.addFrame(
+                image: cgImage,
                 timestamp: frame.captureTime
             )
 
-            // 2. Create database record
+            // Create database record with video reference
             let screenshot = Screenshot(
                 timestamp: frame.captureTime,
                 appName: frame.appName,
                 windowTitle: frame.windowTitle,
-                imagePath: imagePath,
+                imagePath: nil,
+                videoChunkPath: encodedFrame?.videoChunkPath,
+                frameOffset: encodedFrame?.frameOffset,
                 isIndexed: false
             )
 
@@ -85,13 +96,22 @@ actor RewindIndexer {
         }
 
         do {
-            let imagePath = try await RewindStorage.shared.saveScreenshot(
-                jpegData: frame.jpegData,
+            // Convert JPEG to CGImage for video encoding
+            guard let nsImage = NSImage(data: frame.jpegData),
+                  let cgImage = nsImage.cgImage(forProposedRect: nil, context: nil, hints: nil)
+            else {
+                logError("RewindIndexer: Failed to create CGImage from frame data")
+                return
+            }
+
+            // Add frame to video encoder
+            let encodedFrame = try await VideoChunkEncoder.shared.addFrame(
+                image: cgImage,
                 timestamp: frame.captureTime
             )
 
             // Encode tasks and advice as JSON
-            var tasksJson: String? = nil
+            var tasksJson: String?
             if let tasks = extractedTasks, !tasks.isEmpty {
                 let data = try JSONEncoder().encode(tasks)
                 tasksJson = String(data: data, encoding: .utf8)
@@ -103,7 +123,9 @@ actor RewindIndexer {
                 timestamp: frame.captureTime,
                 appName: frame.appName,
                 windowTitle: frame.windowTitle,
-                imagePath: imagePath,
+                imagePath: nil,
+                videoChunkPath: encodedFrame?.videoChunkPath,
+                frameOffset: encodedFrame?.frameOffset,
                 isIndexed: false,
                 focusStatus: focusStatus,
                 extractedTasksJson: tasksJson,
@@ -144,10 +166,8 @@ actor RewindIndexer {
                 guard let id = screenshot.id else { continue }
 
                 do {
-                    // Load image data
-                    let imageData = try await RewindStorage.shared.loadScreenshot(
-                        relativePath: screenshot.imagePath
-                    )
+                    // Load image data using unified interface (handles both JPEG and video storage)
+                    let imageData = try await RewindStorage.shared.loadScreenshotData(for: screenshot)
 
                     // Extract text with bounding boxes
                     let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: imageData)
@@ -180,17 +200,25 @@ actor RewindIndexer {
             // Get cutoff date
             let cutoffDate = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date())!
 
-            // Delete from database and get image paths
-            let imagePaths = try await RewindDatabase.shared.deleteScreenshotsOlderThan(cutoffDate)
+            // Delete from database and get paths to delete
+            let deleteResult = try await RewindDatabase.shared.deleteScreenshotsOlderThan(cutoffDate)
 
-            // Delete from storage
-            try await RewindStorage.shared.deleteScreenshots(relativePaths: imagePaths)
+            // Delete legacy JPEG files
+            if !deleteResult.imagePaths.isEmpty {
+                try await RewindStorage.shared.deleteScreenshots(relativePaths: deleteResult.imagePaths)
+            }
+
+            // Delete orphaned video chunks (all frames deleted)
+            if !deleteResult.orphanedVideoChunks.isEmpty {
+                try await RewindStorage.shared.deleteVideoChunks(relativePaths: deleteResult.orphanedVideoChunks)
+            }
 
             // Clean up empty directories
             try await RewindStorage.shared.cleanupEmptyDirectories()
 
-            if !imagePaths.isEmpty {
-                log("RewindIndexer: Cleaned up \(imagePaths.count) old screenshots")
+            let totalDeleted = deleteResult.imagePaths.count + deleteResult.orphanedVideoChunks.count
+            if totalDeleted > 0 {
+                log("RewindIndexer: Cleaned up \(deleteResult.imagePaths.count) old JPEGs and \(deleteResult.orphanedVideoChunks.count) video chunks")
             }
 
         } catch {
@@ -199,7 +227,14 @@ actor RewindIndexer {
     }
 
     /// Stop the indexer and cancel background tasks
-    func stop() {
+    func stop() async {
+        // Flush any pending video frames before stopping
+        do {
+            _ = try await VideoChunkEncoder.shared.flushCurrentChunk()
+        } catch {
+            logError("RewindIndexer: Failed to flush video chunk: \(error)")
+        }
+
         ocrTask?.cancel()
         ocrTask = nil
         log("RewindIndexer: Stopped")
