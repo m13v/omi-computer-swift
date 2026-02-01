@@ -340,6 +340,22 @@ class AnalyticsManager {
         PostHogManager.shared.track("chat_session_deleted", properties: [:])
     }
 
+    func messageRated(rating: Int) {
+        let ratingString = rating == 1 ? "thumbs_up" : "thumbs_down"
+        MixpanelManager.shared.track("Message Rated", properties: ["rating": ratingString])
+        PostHogManager.shared.track("message_rated", properties: ["rating": ratingString])
+    }
+
+    func initialMessageGenerated(hasApp: Bool) {
+        MixpanelManager.shared.track("Initial Message Generated", properties: ["has_app": hasApp])
+        PostHogManager.shared.track("initial_message_generated", properties: ["has_app": hasApp])
+    }
+
+    func sessionTitleGenerated() {
+        MixpanelManager.shared.track("Session Title Generated", properties: [:])
+        PostHogManager.shared.track("session_title_generated", properties: [:])
+    }
+
     // MARK: - Conversation Events (Additional)
 
     func conversationReprocessed(conversationId: String, appId: String) {
