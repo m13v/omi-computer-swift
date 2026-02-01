@@ -4,7 +4,7 @@
 use axum::{
     extract::{Query, State},
     http::StatusCode,
-    routing::{get, patch, post},
+    routing::get,
     Json, Router,
 };
 use serde::Deserialize;
@@ -12,9 +12,9 @@ use serde::Deserialize;
 use crate::auth::AuthUser;
 use crate::models::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
-    SetPrivateCloudSyncRequest, SetRecordingPermissionRequest, TranscriptionPreferences,
-    UpdateDailySummaryRequest, UpdateLanguageRequest, UpdateNotificationSettingsRequest,
-    UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsStatusResponse,
+    TranscriptionPreferences, UpdateDailySummaryRequest, UpdateLanguageRequest,
+    UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest, UserLanguage,
+    UserProfile, UserSettingsStatusResponse,
 };
 use crate::AppState;
 
