@@ -13,9 +13,10 @@ use axum::{
 use chrono::{DateTime, Duration, Utc};
 use serde::{Deserialize, Serialize};
 
+use std::sync::Arc;
+
 use crate::auth::AuthUser;
 use crate::llm::LlmClient;
-use crate::models::MemoryDB;
 use crate::services::FirestoreService;
 use crate::AppState;
 
@@ -271,7 +272,7 @@ async fn extract_date_range(
 
 /// Get relevant conversations from Firestore
 async fn get_relevant_conversations(
-    firestore: &FirestoreService,
+    firestore: &Arc<FirestoreService>,
     uid: &str,
     date_range: Option<&DateRange>,
 ) -> Vec<ConversationSummary> {
@@ -314,8 +315,8 @@ async fn get_relevant_conversations(
 }
 
 /// Get user memories from Firestore
-async fn get_user_memories(firestore: &FirestoreService, uid: &str) -> Vec<MemorySummary> {
-    match firestore.get_memories(uid, 50, 0, None).await {
+async fn get_user_memories(firestore: &Arc<FirestoreService>, uid: &str) -> Vec<MemorySummary> {
+    match firestore.get_memories(uid, 50).await {
         Ok(memories) => memories
             .into_iter()
             .map(|m| MemorySummary {
