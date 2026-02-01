@@ -72,6 +72,16 @@ class AudioCaptureService {
         }
     }
 
+    /// Check if microphone permission was explicitly denied by the user
+    static func isPermissionDenied() -> Bool {
+        return AVCaptureDevice.authorizationStatus(for: .audio) == .denied
+    }
+
+    /// Get the current authorization status
+    static func authorizationStatus() -> AVAuthorizationStatus {
+        return AVCaptureDevice.authorizationStatus(for: .audio)
+    }
+
     /// Request microphone permission
     static func requestPermission() async -> Bool {
         return await withCheckedContinuation { continuation in
