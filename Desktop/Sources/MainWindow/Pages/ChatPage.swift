@@ -202,7 +202,19 @@ struct ChatPage: View {
                         .padding(.vertical, 8)
                     }
 
-                    if chatProvider.messages.isEmpty && !chatProvider.isLoading {
+                    if chatProvider.isLoading && chatProvider.messages.isEmpty {
+                        // Show loading indicator while fetching messages
+                        VStack(spacing: 12) {
+                            Spacer()
+                            ProgressView()
+                                .scaleEffect(0.8)
+                            Text("Loading messages...")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if chatProvider.messages.isEmpty {
                         welcomeMessage
                     } else {
                         ForEach(chatProvider.messages) { message in
