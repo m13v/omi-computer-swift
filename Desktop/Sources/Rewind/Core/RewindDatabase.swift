@@ -215,6 +215,57 @@ actor RewindDatabase {
                           on: "screenshots", columns: ["videoChunkPath"])
         }
 
+        // Migration 8: Rebuild FTS to include appName for better search
+        migrator.registerMigration("rebuildFTSWithAppName") { db in
+            // Drop old FTS table and triggers
+            try db.execute(sql: "DROP TRIGGER IF EXISTS screenshots_ai")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS screenshots_ad")
+            try db.execute(sql: "DROP TRIGGER IF EXISTS screenshots_au")
+            try db.execute(sql: "DROP TABLE IF EXISTS screenshots_fts")
+
+            // Create new FTS table with appName included
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE screenshots_fts USING fts5(
+                    ocrText,
+                    windowTitle,
+                    appName,
+                    content='screenshots',
+                    content_rowid='id',
+                    tokenize='unicode61'
+                )
+                """)
+
+            // Recreate triggers to keep FTS in sync
+            try db.execute(sql: """
+                CREATE TRIGGER screenshots_ai AFTER INSERT ON screenshots BEGIN
+                    INSERT INTO screenshots_fts(rowid, ocrText, windowTitle, appName)
+                    VALUES (new.id, new.ocrText, new.windowTitle, new.appName);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER screenshots_ad AFTER DELETE ON screenshots BEGIN
+                    INSERT INTO screenshots_fts(screenshots_fts, rowid, ocrText, windowTitle, appName)
+                    VALUES ('delete', old.id, old.ocrText, old.windowTitle, old.appName);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER screenshots_au AFTER UPDATE ON screenshots BEGIN
+                    INSERT INTO screenshots_fts(screenshots_fts, rowid, ocrText, windowTitle, appName)
+                    VALUES ('delete', old.id, old.ocrText, old.windowTitle, old.appName);
+                    INSERT INTO screenshots_fts(rowid, ocrText, windowTitle, appName)
+                    VALUES (new.id, new.ocrText, new.windowTitle, new.appName);
+                END
+                """)
+
+            // Repopulate FTS with existing data
+            try db.execute(sql: """
+                INSERT INTO screenshots_fts(rowid, ocrText, windowTitle, appName)
+                SELECT id, ocrText, windowTitle, appName FROM screenshots
+                """)
+        }
+
         try migrator.migrate(queue)
     }
 
@@ -338,10 +389,110 @@ actor RewindDatabase {
 
     // MARK: - Search
 
-    /// Full-text search on OCR text and window titles
-    func search(query: String, appFilter: String? = nil, limit: Int = 100) throws -> [Screenshot] {
+    /// Expand a search query by splitting compound words (camelCase, numbers)
+    /// e.g., "ActivityPerformance" -> "(ActivityPerformance* OR Activity* OR Performance*)"
+    private func expandSearchQuery(_ query: String) -> String {
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "" }
+
+        // Split query into words
+        let words = trimmed.components(separatedBy: .whitespaces).filter { !$0.isEmpty }
+
+        let expandedWords = words.map { word -> String in
+            var parts: [String] = [word]
+
+            // Split camelCase: "ActivityPerformance" -> ["Activity", "Performance"]
+            let camelCaseParts = splitCamelCase(word)
+            if camelCaseParts.count > 1 {
+                parts.append(contentsOf: camelCaseParts)
+            }
+
+            // Split on number boundaries: "test123" -> ["test", "123"]
+            let numberParts = splitOnNumbers(word)
+            if numberParts.count > 1 {
+                parts.append(contentsOf: numberParts)
+            }
+
+            // Remove duplicates and create OR query with prefix matching
+            let uniqueParts = Array(Set(parts)).filter { $0.count >= 2 }
+            if uniqueParts.count == 1 {
+                return "\(uniqueParts[0])*"
+            } else {
+                let prefixParts = uniqueParts.map { "\($0)*" }
+                return "(\(prefixParts.joined(separator: " OR ")))"
+            }
+        }
+
+        return expandedWords.joined(separator: " ")
+    }
+
+    /// Split camelCase string into parts
+    private func splitCamelCase(_ string: String) -> [String] {
+        var parts: [String] = []
+        var currentPart = ""
+
+        for char in string {
+            if char.isUppercase && !currentPart.isEmpty {
+                parts.append(currentPart)
+                currentPart = String(char)
+            } else {
+                currentPart.append(char)
+            }
+        }
+
+        if !currentPart.isEmpty {
+            parts.append(currentPart)
+        }
+
+        return parts.filter { $0.count >= 2 }
+    }
+
+    /// Split string on number boundaries
+    private func splitOnNumbers(_ string: String) -> [String] {
+        var parts: [String] = []
+        var currentPart = ""
+        var wasDigit = false
+
+        for char in string {
+            let isDigit = char.isNumber
+            if !currentPart.isEmpty && isDigit != wasDigit {
+                parts.append(currentPart)
+                currentPart = String(char)
+            } else {
+                currentPart.append(char)
+            }
+            wasDigit = isDigit
+        }
+
+        if !currentPart.isEmpty {
+            parts.append(currentPart)
+        }
+
+        return parts.filter { $0.count >= 2 }
+    }
+
+    /// Full-text search on OCR text, window titles, and app names
+    /// - Parameters:
+    ///   - query: Search query (supports compound word expansion)
+    ///   - appFilter: Optional app name filter (exact match)
+    ///   - startDate: Optional start date for time range
+    ///   - endDate: Optional end date for time range
+    ///   - limit: Maximum results to return
+    func search(
+        query: String,
+        appFilter: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        limit: Int = 100
+    ) throws -> [Screenshot] {
         guard let dbQueue = dbQueue else {
             throw RewindError.databaseNotInitialized
+        }
+
+        // Expand the query for better matching
+        let expandedQuery = expandSearchQuery(query)
+        guard !expandedQuery.isEmpty else {
+            return []
         }
 
         return try dbQueue.read { db in
@@ -350,14 +501,27 @@ actor RewindDatabase {
                 JOIN screenshots_fts ON screenshots.id = screenshots_fts.rowid
                 WHERE screenshots_fts MATCH ?
                 """
-            var arguments: [DatabaseValueConvertible] = [query + "*"]
+            var arguments: [DatabaseValueConvertible] = [expandedQuery]
 
+            // App filter (exact match, separate from FTS)
             if let app = appFilter {
                 sql += " AND screenshots.appName = ?"
                 arguments.append(app)
             }
 
-            sql += " ORDER BY screenshots.timestamp DESC LIMIT ?"
+            // Time range filtering
+            if let start = startDate {
+                sql += " AND screenshots.timestamp >= ?"
+                arguments.append(start)
+            }
+
+            if let end = endDate {
+                sql += " AND screenshots.timestamp <= ?"
+                arguments.append(end)
+            }
+
+            // Order by relevance (BM25) then by timestamp
+            sql += " ORDER BY bm25(screenshots_fts) ASC, screenshots.timestamp DESC LIMIT ?"
             arguments.append(limit)
 
             return try Screenshot.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
