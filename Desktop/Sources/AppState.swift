@@ -85,6 +85,14 @@ class AppState: ObservableObject {
     // Observers for app lifecycle
     private var willTerminateObserver: NSObjectProtocol?
     private var willSleepObserver: NSObjectProtocol?
+    private var didWakeObserver: NSObjectProtocol?
+    private var screenLockedObserver: NSObjectProtocol?
+    private var screenUnlockedObserver: NSObjectProtocol?
+    private var screenCapturePermissionLostObserver: NSObjectProtocol?
+
+    // Debounce timestamps to prevent duplicate system notifications
+    private var lastScreenLockTime: Date?
+    private var lastScreenUnlockTime: Date?
 
     init() {
         // Load API key from environment or .env file
@@ -92,6 +100,18 @@ class AppState: ObservableObject {
 
         // Setup lifecycle observers for saving conversations
         setupLifecycleObservers()
+
+        // Listen for screen capture permission loss notifications
+        screenCapturePermissionLostObserver = NotificationCenter.default.addObserver(
+            forName: .screenCapturePermissionLost,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.hasScreenRecordingPermission = false
+                log("AppState: Screen recording permission lost")
+            }
+        }
 
         // Check if system audio capture is supported (macOS 14.4+)
         // Note: hasSystemAudioPermission stays false until actually tested during onboarding
@@ -132,6 +152,46 @@ class AppState: ObservableObject {
                 }
             }
         }
+
+        // Computer woke from sleep
+        didWakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didWakeNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            log("System woke from sleep")
+            NotificationCenter.default.post(name: .systemDidWake, object: nil)
+        }
+
+        // Screen locked (debounced - macOS sometimes fires multiple times)
+        screenLockedObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsLocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            let now = Date()
+            if let lastTime = self?.lastScreenLockTime, now.timeIntervalSince(lastTime) < 1.0 {
+                return // Ignore duplicate within 1 second
+            }
+            self?.lastScreenLockTime = now
+            log("Screen locked")
+            NotificationCenter.default.post(name: .screenDidLock, object: nil)
+        }
+
+        // Screen unlocked (debounced - macOS sometimes fires multiple times)
+        screenUnlockedObserver = DistributedNotificationCenter.default().addObserver(
+            forName: NSNotification.Name("com.apple.screenIsUnlocked"),
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            let now = Date()
+            if let lastTime = self?.lastScreenUnlockTime, now.timeIntervalSince(lastTime) < 1.0 {
+                return // Ignore duplicate within 1 second
+            }
+            self?.lastScreenUnlockTime = now
+            log("Screen unlocked")
+            NotificationCenter.default.post(name: .screenDidUnlock, object: nil)
+        }
     }
 
     deinit {
@@ -140,6 +200,18 @@ class AppState: ObservableObject {
         }
         if let observer = willSleepObserver {
             NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        if let observer = didWakeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(observer)
+        }
+        if let observer = screenLockedObserver {
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+        if let observer = screenUnlockedObserver {
+            DistributedNotificationCenter.default().removeObserver(observer)
+        }
+        if let observer = screenCapturePermissionLostObserver {
+            NotificationCenter.default.removeObserver(observer)
         }
     }
 
@@ -569,12 +641,15 @@ class AppState: ObservableObject {
         conversationsError = nil
 
         // Calculate date range if date filter is set
-        var startDate: Date? = nil
-        var endDate: Date? = nil
+        let startDate: Date?
+        let endDate: Date?
         if let filterDate = selectedDateFilter {
             let calendar = Calendar.current
             startDate = calendar.startOfDay(for: filterDate)
             endDate = calendar.date(byAdding: .day, value: 1, to: startDate!)
+        } else {
+            startDate = nil
+            endDate = nil
         }
 
         // Fetch conversations and count in parallel
@@ -594,6 +669,11 @@ class AppState: ObservableObject {
             let fetchedConversations = try await conversationsTask
             conversations = fetchedConversations
             log("Conversations: Loaded \(fetchedConversations.count) conversations (starred=\(showStarredOnly), date=\(selectedDateFilter?.description ?? "nil"))")
+
+            // DEBUG: Log any conversations with empty titles
+            for conv in fetchedConversations where conv.structured.title.isEmpty {
+                log("DEBUG: Conversation \(conv.id) has EMPTY title! overview=\(conv.structured.overview.prefix(50))...")
+            }
         } catch {
             logError("Conversations: Failed to load", error: error)
             conversationsError = error.localizedDescription
@@ -701,7 +781,7 @@ class AppState: ObservableObject {
         do {
             try await APIClient.shared.moveConversationToFolder(conversationId: conversationId, folderId: folderId)
             // Update local state
-            if let index = conversations.firstIndex(where: { $0.id == conversationId }) {
+            if conversations.contains(where: { $0.id == conversationId }) {
                 // Reload to get updated conversation
                 await loadConversations()
             }
@@ -923,6 +1003,11 @@ class AppState: ObservableObject {
         return AudioCaptureService.isPermissionDenied()
     }
 
+    /// Check if screen recording permission is denied (onboarding complete but permission not granted)
+    func isScreenRecordingPermissionDenied() -> Bool {
+        return hasCompletedOnboarding && !CGPreflightScreenCaptureAccess()
+    }
+
     /// Restart the app by launching a new instance and terminating the current one
     nonisolated func restartApp() {
         log("Restarting app...")
@@ -1055,4 +1140,17 @@ class AppState: ObservableObject {
             }
         }
     }
+}
+
+// MARK: - System Event Notification Names
+
+extension Notification.Name {
+    /// Posted when the system wakes from sleep
+    static let systemDidWake = Notification.Name("systemDidWake")
+    /// Posted when the screen is locked
+    static let screenDidLock = Notification.Name("screenDidLock")
+    /// Posted when the screen is unlocked
+    static let screenDidUnlock = Notification.Name("screenDidUnlock")
+    /// Posted when screen capture permission is detected as lost
+    static let screenCapturePermissionLost = Notification.Name("screenCapturePermissionLost")
 }
