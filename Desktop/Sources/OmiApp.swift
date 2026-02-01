@@ -250,11 +250,6 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Proactive Assistant Settings") {
-                SettingsWindow.show()
-            }
-            .keyboardShortcut(",", modifiers: .command)
-
             Button("Grant Screen Permission") {
                 ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
             }
