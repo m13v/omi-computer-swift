@@ -174,6 +174,8 @@ pub struct Conversation {
     pub status: ConversationStatus,
     #[serde(default)]
     pub discarded: bool,
+    #[serde(default)]
+    pub starred: bool,
     pub structured: Structured,
     #[serde(default)]
     pub transcript_segments: Vec<TranscriptSegment>,
