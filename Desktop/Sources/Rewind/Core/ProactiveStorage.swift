@@ -36,9 +36,8 @@ actor ProactiveStorage {
     func insertExtraction(_ extraction: ProactiveExtractionRecord) async throws -> ProactiveExtractionRecord {
         let db = try await ensureInitialized()
 
-        var record = extraction
-        try await db.write { database in
-            try record.insert(database)
+        let record = try await db.write { database in
+            try extraction.inserted(database)
         }
         log("ProactiveStorage: Inserted \(extraction.type.rawValue) extraction (id: \(record.id ?? -1))")
         return record
@@ -254,9 +253,8 @@ actor ProactiveStorage {
     func insertFocusSession(_ session: FocusSessionRecord) async throws -> FocusSessionRecord {
         let db = try await ensureInitialized()
 
-        var record = session
-        try await db.write { database in
-            try record.insert(database)
+        let record = try await db.write { database in
+            try session.inserted(database)
         }
         log("ProactiveStorage: Inserted focus session (id: \(record.id ?? -1), status: \(session.status))")
         return record
