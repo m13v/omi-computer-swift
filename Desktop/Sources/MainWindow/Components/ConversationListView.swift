@@ -5,8 +5,10 @@ struct ConversationListView: View {
     let conversations: [ServerConversation]
     let isLoading: Bool
     let error: String?
+    let folders: [Folder]
     let onSelect: (ServerConversation) -> Void
     let onRefresh: () -> Void
+    let onMoveToFolder: (String, String?) async -> Void
 
     /// Group conversations by date
     private var groupedConversations: [(String, [ServerConversation])] {
@@ -149,7 +151,9 @@ struct ConversationListView: View {
                     ForEach(convos) { conversation in
                         ConversationRowView(
                             conversation: conversation,
-                            onTap: { onSelect(conversation) }
+                            onTap: { onSelect(conversation) },
+                            folders: folders,
+                            onMoveToFolder: onMoveToFolder
                         )
                     }
                 }
