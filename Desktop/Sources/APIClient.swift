@@ -2017,3 +2017,109 @@ struct MessageDeleteResponse: Codable {
         deletedCount = try container.decodeIfPresent(Int.self, forKey: .deletedCount)
     }
 }
+
+// MARK: - Chat Context API (RAG)
+
+extension APIClient {
+
+    /// Fetch context for building chat prompts (conversations + memories)
+    /// Uses LLM to determine if context is needed and extract date ranges
+    func getChatContext(
+        question: String,
+        timezone: String = TimeZone.current.identifier,
+        appId: String? = nil,
+        previousMessages: [(text: String, sender: String)] = []
+    ) async throws -> ChatContextResponse {
+        struct ContextRequest: Encodable {
+            let question: String
+            let timezone: String
+            let app_id: String?
+            let messages: [MessageInput]
+
+            struct MessageInput: Encodable {
+                let text: String
+                let sender: String
+            }
+        }
+
+        let body = ContextRequest(
+            question: question,
+            timezone: timezone,
+            app_id: appId,
+            messages: previousMessages.map { ContextRequest.MessageInput(text: $0.text, sender: $0.sender) }
+        )
+
+        return try await post("v2/chat-context", body: body)
+    }
+}
+
+// MARK: - Chat Context Models
+
+/// Response from chat context endpoint
+struct ChatContextResponse: Codable {
+    /// Whether the question requires context to answer
+    let requiresContext: Bool
+    /// Extracted date range from the question (if any)
+    let dateRange: ChatDateRange?
+    /// Relevant conversation summaries
+    let conversations: [ChatConversationSummary]
+    /// User memories/facts
+    let memories: [ChatMemorySummary]
+    /// Pre-formatted context string ready for prompt injection
+    let contextString: String
+
+    enum CodingKeys: String, CodingKey {
+        case requiresContext = "requires_context"
+        case dateRange = "date_range"
+        case conversations
+        case memories
+        case contextString = "context_string"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        requiresContext = try container.decodeIfPresent(Bool.self, forKey: .requiresContext) ?? false
+        dateRange = try container.decodeIfPresent(ChatDateRange.self, forKey: .dateRange)
+        conversations = try container.decodeIfPresent([ChatConversationSummary].self, forKey: .conversations) ?? []
+        memories = try container.decodeIfPresent([ChatMemorySummary].self, forKey: .memories) ?? []
+        contextString = try container.decodeIfPresent(String.self, forKey: .contextString) ?? ""
+    }
+}
+
+/// Date range extracted from question
+struct ChatDateRange: Codable {
+    let start: Date
+    let end: Date
+}
+
+/// Conversation summary for context
+struct ChatConversationSummary: Codable, Identifiable {
+    let id: String
+    let title: String
+    let overview: String
+    let emoji: String
+    let category: String
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, overview, emoji, category
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        overview = try container.decodeIfPresent(String.self, forKey: .overview) ?? ""
+        emoji = try container.decodeIfPresent(String.self, forKey: .emoji) ?? ""
+        category = try container.decodeIfPresent(String.self, forKey: .category) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
+}
+
+/// Memory summary for context
+struct ChatMemorySummary: Codable, Identifiable {
+    let id: String
+    let content: String
+    let category: String
+}
