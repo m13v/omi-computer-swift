@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Track release timing
+START_TIME=$(date +%s)
+
 # Load .env if present (for RELEASE_SECRET, SPARKLE_PRIVATE_KEY, etc.)
 # Using set -a/source instead of xargs to handle multiline values (APPLE_PRIVATE_KEY)
 if [ -f ".env" ]; then
@@ -207,6 +210,9 @@ echo "  ✓ Build complete"
 # Step 3: Sign App
 # -----------------------------------------------------------------------------
 echo "[3/12] Signing app with Developer ID..."
+
+# Remove extended attributes that block code signing
+xattr -cr "$APP_BUNDLE"
 
 # Sign Sparkle framework components (innermost first)
 # XPC Services
@@ -512,9 +518,15 @@ fi
 # -----------------------------------------------------------------------------
 # Done
 # -----------------------------------------------------------------------------
+END_TIME=$(date +%s)
+ELAPSED=$((END_TIME - START_TIME))
+ELAPSED_MIN=$((ELAPSED / 60))
+ELAPSED_SEC=$((ELAPSED % 60))
+
 echo ""
 echo "=============================================="
 echo "  Release $VERSION Complete!"
+echo "  Total time: ${ELAPSED_MIN}m ${ELAPSED_SEC}s"
 echo "=============================================="
 echo ""
 echo "Local files:"
