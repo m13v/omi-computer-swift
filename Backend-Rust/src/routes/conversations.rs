@@ -4,7 +4,7 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{get, post},
+    routing::{get, patch, post},
     Json, Router,
 };
 use chrono::Utc;
@@ -196,6 +196,7 @@ async fn create_conversation_from_segments(
         language: request.language.clone(),
         status: ConversationStatus::Completed,
         discarded: false,
+        starred: false,
         structured: processed.structured,
         transcript_segments: request.transcript_segments.clone(),
         apps_results: vec![],
@@ -464,6 +465,45 @@ async fn search_conversations(
     }))
 }
 
+#[derive(Deserialize)]
+pub struct StarredParams {
+    starred: bool,
+}
+
+#[derive(Serialize)]
+pub struct StatusResponse {
+    status: String,
+}
+
+/// PATCH /v1/conversations/:id/starred - Set conversation starred status
+async fn set_conversation_starred(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<String>,
+    Query(params): Query<StarredParams>,
+) -> Result<Json<StatusResponse>, StatusCode> {
+    tracing::info!(
+        "Setting conversation {} starred={} for user {}",
+        conversation_id,
+        params.starred,
+        user.uid
+    );
+
+    match state
+        .firestore
+        .set_conversation_starred(&user.uid, &conversation_id, params.starred)
+        .await
+    {
+        Ok(()) => Ok(Json(StatusResponse {
+            status: "ok".to_string(),
+        })),
+        Err(e) => {
+            tracing::error!("Failed to set starred: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub fn conversations_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/conversations", get(get_conversations))
@@ -476,5 +516,9 @@ pub fn conversations_routes() -> Router<AppState> {
         .route(
             "/v1/conversations/:id/reprocess",
             post(reprocess_conversation),
+        )
+        .route(
+            "/v1/conversations/:id/starred",
+            patch(set_conversation_starred),
         )
 }
