@@ -176,6 +176,8 @@ pub struct Conversation {
     pub discarded: bool,
     #[serde(default)]
     pub starred: bool,
+    #[serde(default)]
+    pub folder_id: Option<String>,
     pub structured: Structured,
     #[serde(default)]
     pub transcript_segments: Vec<TranscriptSegment>,
