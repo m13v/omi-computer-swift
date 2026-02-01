@@ -14,7 +14,7 @@ use crate::encryption;
 
 use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
-    Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
+    ChatSessionDB, Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
     FocusStats, FocusStatus, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, Structured, TranscriptSegment, TranscriptionPreferences, UserProfile,
 };
@@ -55,6 +55,7 @@ pub const FOCUS_SESSIONS_SUBCOLLECTION: &str = "focus_sessions";
 pub const ADVICE_SUBCOLLECTION: &str = "advice";
 pub const MESSAGES_SUBCOLLECTION: &str = "messages";
 pub const FOLDERS_SUBCOLLECTION: &str = "folders";
+pub const CHAT_SESSIONS_SUBCOLLECTION: &str = "chat_sessions";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -838,16 +839,9 @@ impl FirestoreService {
             }));
         }
 
-        // Filter out dismissed unless include_dismissed is true
-        if !include_dismissed {
-            filters.push(json!({
-                "fieldFilter": {
-                    "field": {"fieldPath": "is_dismissed"},
-                    "op": "EQUAL",
-                    "value": {"booleanValue": false}
-                }
-            }));
-        }
+        // NOTE: We do NOT filter is_dismissed in Firestore query because existing memories
+        // don't have this field. Firestore only returns documents where the field EXISTS and
+        // matches the value. Instead, we filter in-memory below (matching Python behavior).
 
         // Build the where clause
         let where_clause = if filters.is_empty() {
@@ -902,8 +896,11 @@ impl FirestoreService {
                 doc.get("document")
                     .and_then(|d| self.parse_memory(d, uid).ok())
             })
-            // Filter out rejected memories
+            // Filter out rejected memories (matches Python behavior)
             .filter(|m| m.user_review != Some(false))
+            // Filter out dismissed memories in-memory (not in Firestore query, since existing
+            // memories don't have is_dismissed field - Firestore requires field to exist for filters)
+            .filter(|m| include_dismissed || !m.is_dismissed)
             .collect();
 
         // Enrich memories with source from linked conversations
@@ -1405,15 +1402,29 @@ impl FirestoreService {
 
             let doc = json!({
                 "fields": {
+                    // CRITICAL: Include id field - Python model requires this
+                    "id": {"stringValue": memory_id},
+                    // Include uid - Python model requires this
+                    "uid": {"stringValue": uid},
                     "content": {"stringValue": memory.content},
                     "category": {"stringValue": format!("{:?}", memory.category).to_lowercase()},
                     "created_at": {"timestampValue": now.to_rfc3339()},
                     "updated_at": {"timestampValue": now.to_rfc3339()},
                     "conversation_id": {"stringValue": conversation_id},
+                    // Legacy field - same as conversation_id, used by get_memory_ids_for_conversation
+                    "memory_id": {"stringValue": conversation_id},
                     "reviewed": {"booleanValue": false},
+                    // CRITICAL: user_review must exist - Python filters on memory['user_review'] is not False
+                    // None/null means not yet reviewed by user (different from False which means rejected)
+                    "user_review": {"nullValue": null},
                     "visibility": {"stringValue": "private"},
                     "manually_added": {"booleanValue": false},
-                    "scoring": {"stringValue": scoring}
+                    "edited": {"booleanValue": false},
+                    "is_locked": {"booleanValue": false},
+                    "kg_extracted": {"booleanValue": false},
+                    "scoring": {"stringValue": scoring},
+                    // Empty tags array
+                    "tags": {"arrayValue": {"values": []}}
                 }
             });
 
@@ -1445,12 +1456,18 @@ impl FirestoreService {
 
     /// Get action items for a user
     /// Path: users/{uid}/action_items
+    #[allow(clippy::too_many_arguments)]
     pub async fn get_action_items(
         &self,
         uid: &str,
         limit: usize,
         offset: usize,
         completed_filter: Option<bool>,
+        start_date: Option<&str>,
+        end_date: Option<&str>,
+        due_start_date: Option<&str>,
+        due_end_date: Option<&str>,
+        sort_by: Option<&str>,
     ) -> Result<Vec<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
         let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
 
@@ -1463,6 +1480,48 @@ impl FirestoreService {
                     "field": {"fieldPath": "completed"},
                     "op": "EQUAL",
                     "value": {"booleanValue": completed}
+                }
+            }));
+        }
+
+        // Date range filters for created_at
+        if let Some(start) = start_date {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "created_at"},
+                    "op": "GREATER_THAN_OR_EQUAL",
+                    "value": {"timestampValue": start}
+                }
+            }));
+        }
+
+        if let Some(end) = end_date {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "created_at"},
+                    "op": "LESS_THAN_OR_EQUAL",
+                    "value": {"timestampValue": end}
+                }
+            }));
+        }
+
+        // Date range filters for due_at
+        if let Some(due_start) = due_start_date {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "due_at"},
+                    "op": "GREATER_THAN_OR_EQUAL",
+                    "value": {"timestampValue": due_start}
+                }
+            }));
+        }
+
+        if let Some(due_end) = due_end_date {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "due_at"},
+                    "op": "LESS_THAN_OR_EQUAL",
+                    "value": {"timestampValue": due_end}
                 }
             }));
         }
@@ -1481,10 +1540,25 @@ impl FirestoreService {
             }))
         };
 
+        // Build order by clause based on sort_by parameter
+        let order_by = match sort_by {
+            Some("due_at") => json!([
+                {"field": {"fieldPath": "due_at"}, "direction": "ASCENDING"},
+                {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
+            ]),
+            Some("priority") => json!([
+                {"field": {"fieldPath": "priority"}, "direction": "DESCENDING"},
+                {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
+            ]),
+            _ => json!([
+                {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
+            ]),
+        };
+
         // Build structured query
         let mut structured_query = json!({
             "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
-            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
+            "orderBy": order_by,
             "limit": limit,
             "offset": offset
         });
@@ -1520,6 +1594,41 @@ impl FirestoreService {
             .collect();
 
         Ok(action_items)
+    }
+
+    /// Get a single action item by ID
+    pub async fn get_action_item_by_id(
+        &self,
+        uid: &str,
+        item_id: &str,
+    ) -> Result<Option<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            ACTION_ITEMS_SUBCOLLECTION,
+            item_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore get error: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        let action_item = self.parse_action_item(&doc)?;
+        Ok(Some(action_item))
     }
 
     /// Update an action item
@@ -2681,45 +2790,92 @@ impl FirestoreService {
 
     /// Convert conversation to Firestore document format
     fn conversation_to_firestore(&self, conv: &Conversation) -> Value {
-        json!({
-            "fields": {
-                "created_at": {"timestampValue": conv.created_at.to_rfc3339()},
-                "started_at": {"timestampValue": conv.started_at.to_rfc3339()},
-                "finished_at": {"timestampValue": conv.finished_at.to_rfc3339()},
-                "source": {"stringValue": format!("{:?}", conv.source).to_lowercase()},
-                "language": {"stringValue": conv.language},
-                "status": {"stringValue": format!("{:?}", conv.status).to_lowercase()},
-                "discarded": {"booleanValue": conv.discarded},
-                "structured": {
-                    "mapValue": {
-                        "fields": {
-                            "title": {"stringValue": conv.structured.title},
-                            "overview": {"stringValue": conv.structured.overview},
-                            "emoji": {"stringValue": conv.structured.emoji},
-                            "category": {"stringValue": format!("{:?}", conv.structured.category).to_lowercase()}
-                        }
-                    }
-                },
-                "transcript_segments": {
-                    "arrayValue": {
-                        "values": conv.transcript_segments.iter().map(|seg| {
-                            json!({
-                                "mapValue": {
-                                    "fields": {
-                                        "text": {"stringValue": seg.text},
-                                        "speaker": {"stringValue": seg.speaker},
-                                        "speaker_id": {"integerValue": seg.speaker_id.to_string()},
-                                        "is_user": {"booleanValue": seg.is_user},
-                                        "start": {"doubleValue": seg.start},
-                                        "end": {"doubleValue": seg.end}
-                                    }
-                                }
-                            })
-                        }).collect::<Vec<_>>()
+        // Build action_items array for structured
+        let action_items_values: Vec<Value> = conv.structured.action_items.iter().map(|item| {
+            let mut fields = serde_json::Map::new();
+            fields.insert("description".to_string(), json!({"stringValue": item.description}));
+            fields.insert("completed".to_string(), json!({"booleanValue": item.completed}));
+            if let Some(due_at) = &item.due_at {
+                fields.insert("due_at".to_string(), json!({"timestampValue": due_at.to_rfc3339()}));
+            }
+            json!({"mapValue": {"fields": fields}})
+        }).collect();
+
+        // Build events array for structured
+        let events_values: Vec<Value> = conv.structured.events.iter().map(|event| {
+            json!({
+                "mapValue": {
+                    "fields": {
+                        "title": {"stringValue": event.title},
+                        "description": {"stringValue": event.description},
+                        "start": {"timestampValue": event.start.to_rfc3339()},
+                        "duration": {"integerValue": event.duration.to_string()}
                     }
                 }
+            })
+        }).collect();
+
+        // Build apps_results array
+        let apps_results_values: Vec<Value> = conv.apps_results.iter().map(|result| {
+            let mut fields = serde_json::Map::new();
+            if let Some(app_id) = &result.app_id {
+                fields.insert("app_id".to_string(), json!({"stringValue": app_id}));
             }
-        })
+            fields.insert("content".to_string(), json!({"stringValue": result.content}));
+            json!({"mapValue": {"fields": fields}})
+        }).collect();
+
+        // Build the main document
+        let mut fields = serde_json::Map::new();
+
+        // CRITICAL: Include the id field - Python backend requires this
+        fields.insert("id".to_string(), json!({"stringValue": conv.id}));
+        fields.insert("created_at".to_string(), json!({"timestampValue": conv.created_at.to_rfc3339()}));
+        fields.insert("started_at".to_string(), json!({"timestampValue": conv.started_at.to_rfc3339()}));
+        fields.insert("finished_at".to_string(), json!({"timestampValue": conv.finished_at.to_rfc3339()}));
+        fields.insert("source".to_string(), json!({"stringValue": format!("{:?}", conv.source).to_lowercase()}));
+        fields.insert("language".to_string(), json!({"stringValue": conv.language}));
+        fields.insert("status".to_string(), json!({"stringValue": format!("{:?}", conv.status).to_lowercase()}));
+        fields.insert("discarded".to_string(), json!({"booleanValue": conv.discarded}));
+        fields.insert("starred".to_string(), json!({"booleanValue": conv.starred}));
+
+        // Add folder_id if present
+        if let Some(folder_id) = &conv.folder_id {
+            fields.insert("folder_id".to_string(), json!({"stringValue": folder_id}));
+        }
+
+        // Build structured with action_items and events
+        let mut structured_fields = serde_json::Map::new();
+        structured_fields.insert("title".to_string(), json!({"stringValue": conv.structured.title}));
+        structured_fields.insert("overview".to_string(), json!({"stringValue": conv.structured.overview}));
+        structured_fields.insert("emoji".to_string(), json!({"stringValue": conv.structured.emoji}));
+        structured_fields.insert("category".to_string(), json!({"stringValue": format!("{:?}", conv.structured.category).to_lowercase()}));
+        structured_fields.insert("action_items".to_string(), json!({"arrayValue": {"values": action_items_values}}));
+        structured_fields.insert("events".to_string(), json!({"arrayValue": {"values": events_values}}));
+
+        fields.insert("structured".to_string(), json!({"mapValue": {"fields": structured_fields}}));
+
+        // Add transcript_segments
+        let transcript_values: Vec<Value> = conv.transcript_segments.iter().map(|seg| {
+            json!({
+                "mapValue": {
+                    "fields": {
+                        "text": {"stringValue": seg.text},
+                        "speaker": {"stringValue": seg.speaker},
+                        "speaker_id": {"integerValue": seg.speaker_id.to_string()},
+                        "is_user": {"booleanValue": seg.is_user},
+                        "start": {"doubleValue": seg.start},
+                        "end": {"doubleValue": seg.end}
+                    }
+                }
+            })
+        }).collect();
+        fields.insert("transcript_segments".to_string(), json!({"arrayValue": {"values": transcript_values}}));
+
+        // Add apps_results
+        fields.insert("apps_results".to_string(), json!({"arrayValue": {"values": apps_results_values}}));
+
+        json!({"fields": fields})
     }
 
     // Field parsing helpers
@@ -3378,6 +3534,472 @@ impl FirestoreService {
     }
 
     // =========================================================================
+    // CHAT SESSIONS
+    // =========================================================================
+
+    /// Create a chat session
+    /// Path: users/{uid}/chat_sessions/{session_id}
+    pub async fn create_chat_session(
+        &self,
+        uid: &str,
+        title: Option<&str>,
+        app_id: Option<&str>,
+    ) -> Result<ChatSessionDB, Box<dyn std::error::Error + Send + Sync>> {
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            session_id
+        );
+
+        let mut fields = json!({
+            "title": {"stringValue": title.unwrap_or("New Chat")},
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "updated_at": {"timestampValue": now.to_rfc3339()},
+            "message_count": {"integerValue": "0"},
+            "starred": {"booleanValue": false}
+        });
+
+        if let Some(app) = app_id {
+            fields["app_id"] = json!({"stringValue": app});
+        }
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore create error: {}", error_text).into());
+        }
+
+        tracing::info!(
+            "Created chat session {} for user {} with title={}",
+            session_id,
+            uid,
+            title.unwrap_or("New Chat")
+        );
+
+        Ok(ChatSessionDB {
+            id: session_id,
+            title: title.unwrap_or("New Chat").to_string(),
+            preview: None,
+            created_at: now,
+            updated_at: now,
+            app_id: app_id.map(|s| s.to_string()),
+            message_count: 0,
+            starred: false,
+        })
+    }
+
+    /// Get chat sessions for a user
+    /// Path: users/{uid}/chat_sessions
+    pub async fn get_chat_sessions(
+        &self,
+        uid: &str,
+        app_id: Option<&str>,
+        limit: usize,
+        offset: usize,
+        starred: Option<bool>,
+    ) -> Result<Vec<ChatSessionDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        // Build filters
+        let mut filters: Vec<Value> = Vec::new();
+
+        // Filter by app_id (null = main Omi chat)
+        if let Some(app) = app_id {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "app_id"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": app}
+                }
+            }));
+        }
+
+        // Filter by starred if specified
+        if let Some(is_starred) = starred {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "starred"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": is_starred}
+                }
+            }));
+        }
+
+        // Build the where clause
+        let where_clause = if filters.is_empty() {
+            None
+        } else if filters.len() == 1 {
+            Some(filters.into_iter().next().unwrap())
+        } else {
+            Some(json!({
+                "compositeFilter": {
+                    "op": "AND",
+                    "filters": filters
+                }
+            }))
+        };
+
+        // Build structured query
+        let mut structured_query = json!({
+            "from": [{"collectionId": CHAT_SESSIONS_SUBCOLLECTION}],
+            "orderBy": [{"field": {"fieldPath": "updated_at"}, "direction": "DESCENDING"}],
+            "limit": limit,
+            "offset": offset
+        });
+
+        if let Some(where_filter) = where_clause {
+            structured_query["where"] = where_filter;
+        }
+
+        let query = json!({
+            "structuredQuery": structured_query
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            tracing::error!("Firestore query error: {}", error_text);
+            return Ok(vec![]);
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let sessions = results
+            .into_iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| self.parse_chat_session(d).ok())
+            })
+            .collect();
+
+        Ok(sessions)
+    }
+
+    /// Get a single chat session
+    /// Path: users/{uid}/chat_sessions/{session_id}
+    pub async fn get_chat_session(
+        &self,
+        uid: &str,
+        session_id: &str,
+    ) -> Result<Option<ChatSessionDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            session_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore get error: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        Ok(Some(self.parse_chat_session(&doc)?))
+    }
+
+    /// Update a chat session (title, starred, preview, message_count)
+    /// Path: users/{uid}/chat_sessions/{session_id}
+    pub async fn update_chat_session(
+        &self,
+        uid: &str,
+        session_id: &str,
+        title: Option<&str>,
+        starred: Option<bool>,
+    ) -> Result<ChatSessionDB, Box<dyn std::error::Error + Send + Sync>> {
+        // First get the existing session
+        let existing = self.get_chat_session(uid, session_id).await?
+            .ok_or_else(|| format!("Chat session {} not found", session_id))?;
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            session_id
+        );
+
+        let now = Utc::now();
+        let mut fields = json!({
+            "title": {"stringValue": title.unwrap_or(&existing.title)},
+            "starred": {"booleanValue": starred.unwrap_or(existing.starred)},
+            "updated_at": {"timestampValue": now.to_rfc3339()},
+            "created_at": {"timestampValue": existing.created_at.to_rfc3339()},
+            "message_count": {"integerValue": existing.message_count.to_string()}
+        });
+
+        if let Some(preview) = &existing.preview {
+            fields["preview"] = json!({"stringValue": preview});
+        }
+        if let Some(app) = &existing.app_id {
+            fields["app_id"] = json!({"stringValue": app});
+        }
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!(
+            "Updated chat session {} for user {}",
+            session_id,
+            uid
+        );
+
+        Ok(ChatSessionDB {
+            id: session_id.to_string(),
+            title: title.unwrap_or(&existing.title).to_string(),
+            preview: existing.preview,
+            created_at: existing.created_at,
+            updated_at: now,
+            app_id: existing.app_id,
+            message_count: existing.message_count,
+            starred: starred.unwrap_or(existing.starred),
+        })
+    }
+
+    /// Update chat session preview and message count (called when new message is added)
+    pub async fn update_chat_session_with_message(
+        &self,
+        uid: &str,
+        session_id: &str,
+        preview: &str,
+        title: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // First get the existing session
+        let existing = match self.get_chat_session(uid, session_id).await? {
+            Some(s) => s,
+            None => return Ok(()), // Session doesn't exist, skip update
+        };
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            session_id
+        );
+
+        let now = Utc::now();
+        let new_count = existing.message_count + 1;
+
+        // Use provided title or keep existing (title is auto-generated from first message)
+        let final_title = title.unwrap_or(&existing.title);
+
+        let mut fields = json!({
+            "title": {"stringValue": final_title},
+            "preview": {"stringValue": preview.chars().take(100).collect::<String>()},
+            "updated_at": {"timestampValue": now.to_rfc3339()},
+            "created_at": {"timestampValue": existing.created_at.to_rfc3339()},
+            "message_count": {"integerValue": new_count.to_string()},
+            "starred": {"booleanValue": existing.starred}
+        });
+
+        if let Some(app) = &existing.app_id {
+            fields["app_id"] = json!({"stringValue": app});
+        }
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            tracing::warn!("Failed to update chat session with message: {}", error_text);
+        }
+
+        Ok(())
+    }
+
+    /// Delete a chat session and its associated messages
+    /// Path: users/{uid}/chat_sessions/{session_id}
+    pub async fn delete_chat_session(
+        &self,
+        uid: &str,
+        session_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // First, delete all messages with this session_id
+        if let Err(e) = self.delete_messages_by_session(uid, session_id).await {
+            tracing::warn!("Failed to delete messages for session {}: {}", session_id, e);
+            // Continue with session deletion
+        }
+
+        // Delete the session document
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            session_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::DELETE, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore delete error: {}", error_text).into());
+        }
+
+        tracing::info!("Deleted chat session {} for user {}", session_id, uid);
+        Ok(())
+    }
+
+    /// Delete all messages with a specific session_id
+    async fn delete_messages_by_session(
+        &self,
+        uid: &str,
+        session_id: &str,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        // Query messages with this session_id
+        let structured_query = json!({
+            "from": [{"collectionId": MESSAGES_SUBCOLLECTION}],
+            "where": {
+                "fieldFilter": {
+                    "field": {"fieldPath": "session_id"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": session_id}
+                }
+            },
+            "limit": 500  // Batch delete limit
+        });
+
+        let query = json!({
+            "structuredQuery": structured_query
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Failed to query messages: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut deleted_count = 0;
+
+        // Delete each message
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Some(name) = doc.get("name").and_then(|n| n.as_str()) {
+                    // Extract the full document path for deletion
+                    let delete_url = format!(
+                        "https://firestore.googleapis.com/v1/{}",
+                        name
+                    );
+
+                    let delete_response = self
+                        .build_request(reqwest::Method::DELETE, &delete_url)
+                        .await?
+                        .send()
+                        .await?;
+
+                    if delete_response.status().is_success() {
+                        deleted_count += 1;
+                    }
+                }
+            }
+        }
+
+        tracing::info!(
+            "Deleted {} messages for session {} (user {})",
+            deleted_count,
+            session_id,
+            uid
+        );
+
+        Ok(deleted_count)
+    }
+
+    /// Parse a chat session from Firestore document
+    fn parse_chat_session(
+        &self,
+        doc: &Value,
+    ) -> Result<ChatSessionDB, Box<dyn std::error::Error + Send + Sync>> {
+        let name = doc
+            .get("name")
+            .and_then(|n| n.as_str())
+            .ok_or("Missing document name")?;
+
+        let id = name.split('/').last().unwrap_or("unknown").to_string();
+
+        let fields = doc.get("fields").ok_or("Missing fields")?;
+
+        Ok(ChatSessionDB {
+            id,
+            title: self.parse_string(fields, "title").unwrap_or_else(|| "New Chat".to_string()),
+            preview: self.parse_string(fields, "preview"),
+            created_at: self
+                .parse_timestamp_optional(fields, "created_at")
+                .unwrap_or_else(Utc::now),
+            updated_at: self
+                .parse_timestamp_optional(fields, "updated_at")
+                .unwrap_or_else(Utc::now),
+            app_id: self.parse_string(fields, "app_id"),
+            message_count: self.parse_int(fields, "message_count").unwrap_or(0),
+            starred: self.parse_bool(fields, "starred").unwrap_or(false),
+        })
+    }
+
+    // =========================================================================
     // ADVICE
     // =========================================================================
 
@@ -3889,11 +4511,12 @@ impl FirestoreService {
         Ok(message)
     }
 
-    /// Get chat messages for a user with optional app_id filter
+    /// Get chat messages for a user with optional app_id and session_id filter
     pub async fn get_messages(
         &self,
         uid: &str,
         app_id: Option<&str>,
+        session_id: Option<&str>,
         limit: usize,
         offset: usize,
     ) -> Result<Vec<MessageDB>, Box<dyn std::error::Error + Send + Sync>> {
@@ -3908,6 +4531,16 @@ impl FirestoreService {
                     "field": {"fieldPath": "app_id"},
                     "op": "EQUAL",
                     "value": {"stringValue": app}
+                }
+            }));
+        }
+
+        if let Some(session) = session_id {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "session_id"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": session}
                 }
             }));
         }
@@ -3975,7 +4608,7 @@ impl FirestoreService {
         app_id: Option<&str>,
     ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
         // First, get all message IDs to delete
-        let messages = self.get_messages(uid, app_id, 1000, 0).await?;
+        let messages = self.get_messages(uid, app_id, None, 1000, 0).await?;
         let count = messages.len();
 
         if count == 0 {
