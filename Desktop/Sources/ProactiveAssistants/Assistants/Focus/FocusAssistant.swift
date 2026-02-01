@@ -347,8 +347,9 @@ actor FocusAssistant: ProactiveAssistant {
                 log("Focus: Started \(Int(cooldownSeconds))s analysis cooldown")
 
                 // Expose cooldown end time to UI
+                let cooldownEndTime = analysisCooldownEndTime
                 await MainActor.run {
-                    FocusStorage.shared.updateCooldownEndTime(analysisCooldownEndTime)
+                    FocusStorage.shared.updateCooldownEndTime(cooldownEndTime)
                 }
 
                 if let message = analysis.message {
