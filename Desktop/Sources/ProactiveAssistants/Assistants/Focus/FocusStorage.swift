@@ -72,11 +72,46 @@ class FocusStorage: ObservableObject {
     @Published private(set) var currentStatus: FocusStatus?
     @Published private(set) var currentApp: String?
 
+    // MARK: - Real-time Status Properties
+
+    /// The currently detected app (updated immediately on app switch, before analysis)
+    @Published private(set) var detectedAppName: String?
+
+    /// When the analysis delay period will end (nil if not in delay)
+    @Published private(set) var delayEndTime: Date?
+
+    /// When the analysis cooldown period will end (nil if not in cooldown)
+    @Published private(set) var cooldownEndTime: Date?
+
     private let storageKey = "omi.focus.sessions"
     private let maxStoredSessions = 500
 
     private init() {
         loadFromStorage()
+    }
+
+    // MARK: - Real-time Status Updates
+
+    /// Update the detected app name (called immediately on app switch)
+    func updateDetectedApp(_ appName: String?) {
+        detectedAppName = appName
+    }
+
+    /// Update the delay end time (called when delay period starts/ends)
+    func updateDelayEndTime(_ endTime: Date?) {
+        delayEndTime = endTime
+    }
+
+    /// Update the cooldown end time (called by FocusAssistant when cooldown starts/ends)
+    func updateCooldownEndTime(_ endTime: Date?) {
+        cooldownEndTime = endTime
+    }
+
+    /// Clear all real-time status (called when monitoring stops)
+    func clearRealtimeStatus() {
+        detectedAppName = nil
+        delayEndTime = nil
+        cooldownEndTime = nil
     }
 
     // MARK: - Public Methods
