@@ -72,6 +72,7 @@ struct SettingsContentView: View {
     @State private var memoryEnabled: Bool
     @State private var memoryExtractionInterval: Double
     @State private var memoryMinConfidence: Double
+    @State private var memoryNotificationsEnabled: Bool
 
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
@@ -153,6 +154,7 @@ struct SettingsContentView: View {
         _memoryEnabled = State(initialValue: MemoryAssistantSettings.shared.isEnabled)
         _memoryExtractionInterval = State(initialValue: MemoryAssistantSettings.shared.extractionInterval)
         _memoryMinConfidence = State(initialValue: MemoryAssistantSettings.shared.minConfidence)
+        _memoryNotificationsEnabled = State(initialValue: MemoryAssistantSettings.shared.notificationsEnabled)
     }
 
     var body: some View {
@@ -972,6 +974,15 @@ struct SettingsContentView: View {
                             .tint(OmiColors.purplePrimary)
                             .onChange(of: memoryMinConfidence) { _, newValue in
                                 MemoryAssistantSettings.shared.minConfidence = newValue
+                            }
+                    }
+
+                    settingRow(title: "Show Notifications", subtitle: "Show notification when a memory is extracted") {
+                        Toggle("", isOn: $memoryNotificationsEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: memoryNotificationsEnabled) { _, newValue in
+                                MemoryAssistantSettings.shared.notificationsEnabled = newValue
                             }
                     }
 
