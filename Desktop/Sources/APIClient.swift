@@ -399,7 +399,7 @@ struct ServerConversation: Codable, Identifiable {
     let discarded: Bool
     let deleted: Bool
     let isLocked: Bool
-    let starred: Bool
+    var starred: Bool
     let folderId: String?
 
     enum CodingKeys: String, CodingKey {
