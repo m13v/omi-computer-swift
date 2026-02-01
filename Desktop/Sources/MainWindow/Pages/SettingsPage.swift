@@ -127,6 +127,7 @@ struct SettingsContentView: View {
 
     enum SettingsSection: String, CaseIterable {
         case general = "General"
+        case focus = "Focus"
         case notifications = "Notifications"
         case privacy = "Privacy"
         case account = "Account"
@@ -192,6 +193,8 @@ struct SettingsContentView: View {
                 switch selectedSection {
                 case .general:
                     generalSection
+                case .focus:
+                    FocusPage()
                 case .notifications:
                     notificationsSection
                 case .privacy:
