@@ -5,6 +5,8 @@ import AppKit
 struct ConversationRowView: View {
     let conversation: ServerConversation
     let onTap: () -> Void
+    let folders: [Folder]
+    let onMoveToFolder: (String, String?) async -> Void
     @EnvironmentObject var appState: AppState
     @State private var isStarring = false
 
@@ -208,6 +210,42 @@ struct ConversationRowView: View {
                 showEditDialog = true
             }) {
                 Label("Edit Title", systemImage: "pencil")
+            }
+
+            // Move to Folder submenu
+            if !folders.isEmpty {
+                Menu {
+                    // Option to remove from folder
+                    if conversation.folderId != nil {
+                        Button(action: {
+                            Task {
+                                await onMoveToFolder(conversation.id, nil)
+                            }
+                        }) {
+                            Label("Remove from Folder", systemImage: "folder.badge.minus")
+                        }
+                        Divider()
+                    }
+
+                    // List available folders
+                    ForEach(folders) { folder in
+                        Button(action: {
+                            Task {
+                                await onMoveToFolder(conversation.id, folder.id)
+                            }
+                        }) {
+                            HStack {
+                                Text(folder.name)
+                                if conversation.folderId == folder.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        .disabled(conversation.folderId == folder.id)
+                    }
+                } label: {
+                    Label("Move to Folder", systemImage: "folder")
+                }
             }
 
             Divider()
