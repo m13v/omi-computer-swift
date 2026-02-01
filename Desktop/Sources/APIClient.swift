@@ -2303,6 +2303,23 @@ extension APIClient {
         let endpoint = "v2/messages?\(queryItems.joined(separator: "&"))"
         return try await get(endpoint)
     }
+
+    /// Rate a message (thumbs up/down)
+    /// - Parameters:
+    ///   - messageId: The message ID to rate
+    ///   - rating: 1 for thumbs up, -1 for thumbs down, nil to clear rating
+    func rateMessage(messageId: String, rating: Int?) async throws {
+        struct RateRequest: Encodable {
+            let rating: Int?
+        }
+        let body = RateRequest(rating: rating)
+        let _: MessageStatusResponse = try await patch("v2/messages/\(messageId)/rating", body: body)
+    }
+}
+
+/// Response from rating a message
+struct MessageStatusResponse: Codable {
+    let status: String
 }
 
 // MARK: - Chat Sessions API
@@ -2367,6 +2384,62 @@ extension APIClient {
     /// Delete a chat session and its messages
     func deleteChatSession(sessionId: String) async throws {
         try await delete("v2/chat-sessions/\(sessionId)")
+    }
+
+    /// Generate an initial greeting message for a new chat session
+    func getInitialMessage(sessionId: String, appId: String? = nil) async throws -> InitialMessageResponse {
+        struct InitialMessageRequest: Encodable {
+            let sessionId: String
+            let appId: String?
+
+            enum CodingKeys: String, CodingKey {
+                case sessionId = "session_id"
+                case appId = "app_id"
+            }
+        }
+
+        let body = InitialMessageRequest(sessionId: sessionId, appId: appId)
+        return try await post("v2/chat/initial-message", body: body)
+    }
+
+    /// Generate a title for a chat session based on its messages
+    func generateSessionTitle(sessionId: String, messages: [(text: String, sender: String)]) async throws -> GenerateTitleResponse {
+        struct TitleMessageInput: Encodable {
+            let text: String
+            let sender: String
+        }
+
+        struct GenerateTitleRequest: Encodable {
+            let sessionId: String
+            let messages: [TitleMessageInput]
+
+            enum CodingKeys: String, CodingKey {
+                case sessionId = "session_id"
+                case messages
+            }
+        }
+
+        let body = GenerateTitleRequest(
+            sessionId: sessionId,
+            messages: messages.map { TitleMessageInput(text: $0.text, sender: $0.sender) }
+        )
+        return try await post("v2/chat/generate-title", body: body)
+    }
+}
+
+/// Response from generating session title
+struct GenerateTitleResponse: Codable {
+    let title: String
+}
+
+/// Response from generating initial message
+struct InitialMessageResponse: Codable {
+    let message: String
+    let messageId: String
+
+    enum CodingKeys: String, CodingKey {
+        case message
+        case messageId = "message_id"
     }
 }
 
