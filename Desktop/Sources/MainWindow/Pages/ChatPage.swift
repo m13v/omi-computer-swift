@@ -108,7 +108,11 @@ struct ChatPage: View {
                     apps: appProvider.chatApps,
                     selectedAppId: Binding(
                         get: { chatProvider.selectedAppId },
-                        set: { chatProvider.selectApp($0) }
+                        set: { newAppId in
+                            Task {
+                                await chatProvider.selectApp(newAppId)
+                            }
+                        }
                     ),
                     onSelect: { showAppPicker = false }
                 )
