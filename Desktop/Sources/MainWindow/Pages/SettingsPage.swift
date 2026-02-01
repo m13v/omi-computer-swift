@@ -77,7 +77,7 @@ struct SettingsContentView: View {
     @State private var isPreviewRunning: Bool = false
 
     // Selected section
-    @State private var selectedSection: SettingsSection = .proactiveAssistant
+    @State private var selectedSection: SettingsSection = .general
 
     // Notification settings (from backend)
     @State private var dailySummaryEnabled: Bool = true
@@ -125,12 +125,15 @@ struct SettingsContentView: View {
     ]
 
     enum SettingsSection: String, CaseIterable {
-        case proactiveAssistant = "Proactive Assistant"
+        case general = "General"
         case notifications = "Notifications"
         case privacy = "Privacy"
         case account = "Account"
         case about = "About"
     }
+
+    // Track if showing developer settings sub-view
+    @State private var showingDeveloperSettings: Bool = false
 
     init(appState: AppState) {
         self.appState = appState
@@ -154,42 +157,48 @@ struct SettingsContentView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            // Section tabs
-            HStack(spacing: 8) {
-                ForEach(SettingsSection.allCases, id: \.self) { section in
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedSection = section
+            // Section tabs (hidden when showing developer settings)
+            if !showingDeveloperSettings {
+                HStack(spacing: 8) {
+                    ForEach(SettingsSection.allCases, id: \.self) { section in
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedSection = section
+                            }
+                        }) {
+                            Text(section.rawValue)
+                                .font(.system(size: 14, weight: selectedSection == section ? .semibold : .regular))
+                                .foregroundColor(selectedSection == section ? OmiColors.textPrimary : OmiColors.textTertiary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(selectedSection == section ? OmiColors.backgroundTertiary : Color.clear)
+                                )
                         }
-                    }) {
-                        Text(section.rawValue)
-                            .font(.system(size: 14, weight: selectedSection == section ? .semibold : .regular))
-                            .foregroundColor(selectedSection == section ? OmiColors.textPrimary : OmiColors.textTertiary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(selectedSection == section ? OmiColors.backgroundTertiary : Color.clear)
-                            )
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                }
 
-                Spacer()
+                    Spacer()
+                }
             }
 
             // Section content
-            switch selectedSection {
-            case .proactiveAssistant:
-                proactiveAssistantSection
-            case .notifications:
-                notificationsSection
-            case .privacy:
-                privacySection
-            case .account:
-                accountSection
-            case .about:
-                aboutSection
+            if showingDeveloperSettings {
+                developerSettingsSection
+            } else {
+                switch selectedSection {
+                case .general:
+                    generalSection
+                case .notifications:
+                    notificationsSection
+                case .privacy:
+                    privacySection
+                case .account:
+                    accountSection
+                case .about:
+                    aboutSection
+                }
             }
         }
         .onAppear {
@@ -207,9 +216,9 @@ struct SettingsContentView: View {
         }
     }
 
-    // MARK: - Proactive Assistant Section
+    // MARK: - General Section
 
-    private var proactiveAssistantSection: some View {
+    private var generalSection: some View {
         VStack(spacing: 20) {
             // Screen Analysis toggle
             settingsCard {
@@ -279,358 +288,6 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Focus Assistant
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "eye.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Focus Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $focusEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: focusEnabled) { _, newValue in
-                                FocusAssistantSettings.shared.isEnabled = newValue
-                            }
-                    }
-
-                    Text("Detect distractions and help you stay focused")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if focusEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        // Analysis Delay
-                        settingRow(title: "Analysis Delay", subtitle: "Wait before analyzing after switching apps") {
-                            Picker("", selection: $analysisDelay) {
-                                ForEach(analysisDelayOptions, id: \.self) { seconds in
-                                    Text(formatAnalysisDelay(seconds)).tag(seconds)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
-                            .onChange(of: analysisDelay) { _, newValue in
-                                AssistantSettings.shared.analysisDelay = newValue
-                            }
-                        }
-
-                        settingRow(title: "Focus Cooldown", subtitle: "Minimum time between distraction alerts") {
-                            Picker("", selection: $cooldownInterval) {
-                                ForEach(cooldownOptions, id: \.self) { minutes in
-                                    Text(formatMinutes(minutes)).tag(minutes)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
-                            .onChange(of: cooldownInterval) { _, newValue in
-                                FocusAssistantSettings.shared.cooldownInterval = newValue
-                            }
-                        }
-
-                        settingRow(title: "Visual Glow Effect", subtitle: "Show colored border when focus changes") {
-                            Toggle("", isOn: $glowOverlayEnabled)
-                                .toggleStyle(.switch)
-                                .labelsHidden()
-                                .disabled(isPreviewRunning)
-                                .onChange(of: glowOverlayEnabled) { _, newValue in
-                                    AssistantSettings.shared.glowOverlayEnabled = newValue
-                                    if newValue {
-                                        startGlowPreview()
-                                    }
-                                }
-                        }
-
-                        settingRow(title: "Focus Analysis Prompt", subtitle: "Customize AI instructions for focus analysis") {
-                            Button(action: {
-                                PromptEditorWindow.show()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Text("Edit")
-                                        .font(.system(size: 12))
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 11))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-
-            // Task Assistant
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Task Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $taskEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: taskEnabled) { _, newValue in
-                                TaskAssistantSettings.shared.isEnabled = newValue
-                            }
-                    }
-
-                    Text("Extract tasks and action items from your screen")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if taskEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        settingRow(title: "Extraction Interval", subtitle: "How often to scan for new tasks") {
-                            Picker("", selection: $taskExtractionInterval) {
-                                ForEach(extractionIntervalOptions, id: \.self) { seconds in
-                                    Text(formatExtractionInterval(seconds)).tag(seconds)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
-                            .onChange(of: taskExtractionInterval) { _, newValue in
-                                TaskAssistantSettings.shared.extractionInterval = newValue
-                            }
-                        }
-
-                        // Minimum Confidence Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Minimum Confidence")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("Only show tasks above this confidence level")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text("\(Int(taskMinConfidence * 100))%")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 40, alignment: .trailing)
-                            }
-
-                            Slider(value: $taskMinConfidence, in: 0.3...0.9, step: 0.1)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: taskMinConfidence) { _, newValue in
-                                    TaskAssistantSettings.shared.minConfidence = newValue
-                                }
-                        }
-
-                        settingRow(title: "Task Extraction Prompt", subtitle: "Customize AI instructions for task extraction") {
-                            Button(action: {
-                                TaskPromptEditorWindow.show()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Text("Edit")
-                                        .font(.system(size: 12))
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 11))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-
-            // Advice Assistant
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Advice Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $adviceEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: adviceEnabled) { _, newValue in
-                                AdviceAssistantSettings.shared.isEnabled = newValue
-                            }
-                    }
-
-                    Text("Get proactive tips and suggestions")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if adviceEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        settingRow(title: "Advice Interval", subtitle: "How often to check for advice opportunities") {
-                            Picker("", selection: $adviceExtractionInterval) {
-                                ForEach(extractionIntervalOptions, id: \.self) { seconds in
-                                    Text(formatExtractionInterval(seconds)).tag(seconds)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
-                            .onChange(of: adviceExtractionInterval) { _, newValue in
-                                AdviceAssistantSettings.shared.extractionInterval = newValue
-                            }
-                        }
-
-                        // Minimum Confidence Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Minimum Confidence")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("Only show advice above this confidence level")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text("\(Int(adviceMinConfidence * 100))%")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 40, alignment: .trailing)
-                            }
-
-                            Slider(value: $adviceMinConfidence, in: 0.5...0.95, step: 0.05)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: adviceMinConfidence) { _, newValue in
-                                    AdviceAssistantSettings.shared.minConfidence = newValue
-                                }
-                        }
-
-                        settingRow(title: "Advice Prompt", subtitle: "Customize AI instructions for advice") {
-                            Button(action: {
-                                AdvicePromptEditorWindow.show()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Text("Edit")
-                                        .font(.system(size: 12))
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 11))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-
-            // Memory Assistant
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Memory Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $memoryEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: memoryEnabled) { _, newValue in
-                                MemoryAssistantSettings.shared.isEnabled = newValue
-                            }
-                    }
-
-                    Text("Extract facts and wisdom from your screen")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if memoryEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        settingRow(title: "Extraction Interval", subtitle: "How often to scan for new memories") {
-                            Picker("", selection: $memoryExtractionInterval) {
-                                ForEach(extractionIntervalOptions, id: \.self) { seconds in
-                                    Text(formatExtractionInterval(seconds)).tag(seconds)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
-                            .onChange(of: memoryExtractionInterval) { _, newValue in
-                                MemoryAssistantSettings.shared.extractionInterval = newValue
-                            }
-                        }
-
-                        // Minimum Confidence Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Minimum Confidence")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("Only save memories above this confidence level")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text("\(Int(memoryMinConfidence * 100))%")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 40, alignment: .trailing)
-                            }
-
-                            Slider(value: $memoryMinConfidence, in: 0.5...0.95, step: 0.05)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: memoryMinConfidence) { _, newValue in
-                                    MemoryAssistantSettings.shared.minConfidence = newValue
-                                }
-                        }
-
-                        settingRow(title: "Memory Extraction Prompt", subtitle: "Customize AI instructions for memory extraction") {
-                            Button(action: {
-                                MemoryPromptEditorWindow.show()
-                            }) {
-                                HStack(spacing: 4) {
-                                    Text("Edit")
-                                        .font(.system(size: 12))
-                                    Image(systemName: "arrow.up.right.square")
-                                        .font(.system(size: 11))
-                                }
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
-                        }
-                    }
-                }
-            }
-
             // Screen Recording Permission
             settingsCard {
                 HStack(spacing: 16) {
@@ -664,6 +321,201 @@ struct SettingsContentView: View {
 
     private var notificationsSection: some View {
         VStack(spacing: 20) {
+            // Focus Assistant (simplified)
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "eye.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Focus Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $focusEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: focusEnabled) { _, newValue in
+                                FocusAssistantSettings.shared.isEnabled = newValue
+                            }
+                    }
+
+                    Text("Detect distractions and help you stay focused")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if focusEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        // Analysis Delay Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Analysis Delay")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                    Text("Wait before analyzing after switching apps")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+
+                                Spacer()
+
+                                Text(formatAnalysisDelay(analysisDelay))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                    .frame(width: 80, alignment: .trailing)
+                            }
+
+                            Slider(value: Binding(
+                                get: { Double(analysisDelaySliderIndex) },
+                                set: { analysisDelay = analysisDelayOptions[Int($0)] }
+                            ), in: 0...Double(analysisDelayOptions.count - 1), step: 1)
+                                .tint(OmiColors.purplePrimary)
+                                .onChange(of: analysisDelay) { _, newValue in
+                                    AssistantSettings.shared.analysisDelay = newValue
+                                }
+                        }
+
+                        settingRow(title: "Visual Glow Effect", subtitle: "Show colored border when focus changes") {
+                            Toggle("", isOn: $glowOverlayEnabled)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .disabled(isPreviewRunning)
+                                .onChange(of: glowOverlayEnabled) { _, newValue in
+                                    AssistantSettings.shared.glowOverlayEnabled = newValue
+                                    if newValue {
+                                        startGlowPreview()
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+
+            // Task Assistant (simplified - toggle only)
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Task Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $taskEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: taskEnabled) { _, newValue in
+                                TaskAssistantSettings.shared.isEnabled = newValue
+                            }
+                    }
+
+                    Text("Extract tasks and action items from your screen")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
+            // Advice Assistant (simplified - toggle + frequency slider)
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Advice Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $adviceEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: adviceEnabled) { _, newValue in
+                                AdviceAssistantSettings.shared.isEnabled = newValue
+                            }
+                    }
+
+                    Text("Get proactive tips and suggestions")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if adviceEnabled {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
+
+                        // Advice Frequency Slider
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text("Frequency")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                    Text("How often to check for advice opportunities")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+
+                                Spacer()
+
+                                Text(formatExtractionInterval(adviceExtractionInterval))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                    .frame(width: 80, alignment: .trailing)
+                            }
+
+                            Slider(value: Binding(
+                                get: { Double(adviceIntervalSliderIndex) },
+                                set: { adviceExtractionInterval = extractionIntervalOptions[Int($0)] }
+                            ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
+                                .tint(OmiColors.purplePrimary)
+                                .onChange(of: adviceExtractionInterval) { _, newValue in
+                                    AdviceAssistantSettings.shared.extractionInterval = newValue
+                                }
+                        }
+                    }
+                }
+            }
+
+            // Memory Assistant (simplified - toggle only)
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Memory Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $memoryEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: memoryEnabled) { _, newValue in
+                                MemoryAssistantSettings.shared.isEnabled = newValue
+                            }
+                    }
+
+                    Text("Extract facts and wisdom from your screen")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
             // Daily Summary
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -784,6 +636,340 @@ struct SettingsContentView: View {
                     .frame(width: 130)
                     .onChange(of: userLanguage) { _, newValue in
                         updateLanguage(newValue)
+                    }
+                }
+            }
+
+            // Developer Settings Button
+            settingsCard {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showingDeveloperSettings = true
+                    }
+                }) {
+                    HStack(spacing: 16) {
+                        Image(systemName: "gearshape.2.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Developer Settings")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Advanced configuration options")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: - Developer Settings Section
+
+    private var developerSettingsSection: some View {
+        VStack(spacing: 20) {
+            // Back button header
+            HStack {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showingDeveloperSettings = false
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.purplePrimary)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Text("Developer Settings")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                // Spacer to balance the back button
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 14, weight: .semibold))
+                    Text("Back")
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .opacity(0)
+            }
+            .padding(.bottom, 8)
+
+            // Focus Assistant Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "eye.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Focus Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Focus Cooldown", subtitle: "Minimum time between distraction alerts") {
+                        Picker("", selection: $cooldownInterval) {
+                            ForEach(cooldownOptions, id: \.self) { minutes in
+                                Text(formatMinutes(minutes)).tag(minutes)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 120)
+                        .onChange(of: cooldownInterval) { _, newValue in
+                            FocusAssistantSettings.shared.cooldownInterval = newValue
+                        }
+                    }
+
+                    settingRow(title: "Focus Analysis Prompt", subtitle: "Customize AI instructions for focus analysis") {
+                        Button(action: {
+                            PromptEditorWindow.show()
+                        }) {
+                            HStack(spacing: 4) {
+                                Text("Edit")
+                                    .font(.system(size: 12))
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 11))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+
+            // Task Assistant Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "checklist")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Task Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Extraction Interval", subtitle: "How often to scan for new tasks") {
+                        Picker("", selection: $taskExtractionInterval) {
+                            ForEach(extractionIntervalOptions, id: \.self) { seconds in
+                                Text(formatExtractionInterval(seconds)).tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 120)
+                        .onChange(of: taskExtractionInterval) { _, newValue in
+                            TaskAssistantSettings.shared.extractionInterval = newValue
+                        }
+                    }
+
+                    // Minimum Confidence Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Minimum Confidence")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("Only show tasks above this confidence level")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Text("\(Int(taskMinConfidence * 100))%")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .frame(width: 40, alignment: .trailing)
+                        }
+
+                        Slider(value: $taskMinConfidence, in: 0.3...0.9, step: 0.1)
+                            .tint(OmiColors.purplePrimary)
+                            .onChange(of: taskMinConfidence) { _, newValue in
+                                TaskAssistantSettings.shared.minConfidence = newValue
+                            }
+                    }
+
+                    settingRow(title: "Task Extraction Prompt", subtitle: "Customize AI instructions for task extraction") {
+                        Button(action: {
+                            TaskPromptEditorWindow.show()
+                        }) {
+                            HStack(spacing: 4) {
+                                Text("Edit")
+                                    .font(.system(size: 12))
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 11))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+
+            // Advice Assistant Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Advice Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Minimum Confidence Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Minimum Confidence")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("Only show advice above this confidence level")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Text("\(Int(adviceMinConfidence * 100))%")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .frame(width: 40, alignment: .trailing)
+                        }
+
+                        Slider(value: $adviceMinConfidence, in: 0.5...0.95, step: 0.05)
+                            .tint(OmiColors.purplePrimary)
+                            .onChange(of: adviceMinConfidence) { _, newValue in
+                                AdviceAssistantSettings.shared.minConfidence = newValue
+                            }
+                    }
+
+                    settingRow(title: "Advice Prompt", subtitle: "Customize AI instructions for advice") {
+                        Button(action: {
+                            AdvicePromptEditorWindow.show()
+                        }) {
+                            HStack(spacing: 4) {
+                                Text("Edit")
+                                    .font(.system(size: 12))
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 11))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+
+            // Memory Assistant Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Memory Assistant")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Extraction Interval", subtitle: "How often to scan for new memories") {
+                        Picker("", selection: $memoryExtractionInterval) {
+                            ForEach(extractionIntervalOptions, id: \.self) { seconds in
+                                Text(formatExtractionInterval(seconds)).tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 120)
+                        .onChange(of: memoryExtractionInterval) { _, newValue in
+                            MemoryAssistantSettings.shared.extractionInterval = newValue
+                        }
+                    }
+
+                    // Minimum Confidence Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Minimum Confidence")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("Only save memories above this confidence level")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Text("\(Int(memoryMinConfidence * 100))%")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .frame(width: 40, alignment: .trailing)
+                        }
+
+                        Slider(value: $memoryMinConfidence, in: 0.5...0.95, step: 0.05)
+                            .tint(OmiColors.purplePrimary)
+                            .onChange(of: memoryMinConfidence) { _, newValue in
+                                MemoryAssistantSettings.shared.minConfidence = newValue
+                            }
+                    }
+
+                    settingRow(title: "Memory Extraction Prompt", subtitle: "Customize AI instructions for memory extraction") {
+                        Button(action: {
+                            MemoryPromptEditorWindow.show()
+                        }) {
+                            HStack(spacing: 4) {
+                                Text("Edit")
+                                    .font(.system(size: 12))
+                                Image(systemName: "arrow.up.right.square")
+                                    .font(.system(size: 11))
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
                 }
             }
@@ -1150,6 +1336,16 @@ struct SettingsContentView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    // MARK: - Slider Index Helpers
+
+    private var analysisDelaySliderIndex: Int {
+        analysisDelayOptions.firstIndex(of: analysisDelay) ?? 0
+    }
+
+    private var adviceIntervalSliderIndex: Int {
+        extractionIntervalOptions.firstIndex(of: adviceExtractionInterval) ?? 0
     }
 
     // MARK: - Helpers
