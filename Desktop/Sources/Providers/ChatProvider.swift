@@ -51,18 +51,21 @@ struct ChatSession: Identifiable, Codable, Equatable {
 
 /// A single chat message
 struct ChatMessage: Identifiable {
-    let id: String
+    var id: String  // Mutable to sync with server-generated ID
     var text: String
     let createdAt: Date
     let sender: ChatSender
     var isStreaming: Bool
+    /// Rating: 1 = thumbs up, -1 = thumbs down, nil = no rating
+    var rating: Int?
 
-    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false) {
+    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
         self.sender = sender
         self.isStreaming = isStreaming
+        self.rating = rating
     }
 }
 
@@ -84,8 +87,12 @@ class ChatProvider: ObservableObject {
     @Published var isSending = false
     @Published var errorMessage: String?
     @Published var selectedAppId: String?
+    @Published var hasMoreMessages = false
+    @Published var isLoadingMoreMessages = false
+    @Published var showStarredOnly = false
 
     private var geminiClient: GeminiClient?
+    private let messagesPageSize = 50
 
     // MARK: - Cached Context for Prompts
     private var cachedContext: ChatContextResponse?
@@ -118,8 +125,11 @@ class ChatProvider: ObservableObject {
         defer { isLoadingSessions = false }
 
         do {
-            sessions = try await APIClient.shared.getChatSessions(appId: selectedAppId)
-            log("ChatProvider loaded \(sessions.count) sessions")
+            sessions = try await APIClient.shared.getChatSessions(
+                appId: selectedAppId,
+                starred: showStarredOnly ? true : nil
+            )
+            log("ChatProvider loaded \(sessions.count) sessions (starred filter: \(showStarredOnly))")
 
             // If we have sessions and no current session, select the most recent
             if currentSession == nil, let mostRecent = sessions.first {
@@ -131,6 +141,14 @@ class ChatProvider: ObservableObject {
         }
     }
 
+    /// Toggle the starred filter and reload sessions
+    func toggleStarredFilter() async {
+        showStarredOnly.toggle()
+        log("Toggled starred filter: \(showStarredOnly)")
+        AnalyticsManager.shared.chatStarredFilterToggled(enabled: showStarredOnly)
+        await fetchSessions()
+    }
+
     /// Create a new chat session
     func createNewSession() async -> ChatSession? {
         do {
@@ -138,13 +156,52 @@ class ChatProvider: ObservableObject {
             sessions.insert(session, at: 0)
             currentSession = session
             messages = []
+            hasMoreMessages = false
             log("Created new chat session: \(session.id)")
             AnalyticsManager.shared.chatSessionCreated()
+
+            // Generate initial greeting message
+            await fetchInitialMessage(for: session)
+
             return session
         } catch {
             logError("Failed to create chat session", error: error)
             errorMessage = "Failed to create new chat"
             return nil
+        }
+    }
+
+    /// Fetch and display an initial greeting message for a new session
+    private func fetchInitialMessage(for session: ChatSession) async {
+        do {
+            let response = try await APIClient.shared.getInitialMessage(
+                sessionId: session.id,
+                appId: selectedAppId
+            )
+
+            // Add the AI greeting to messages
+            let greetingMessage = ChatMessage(
+                id: response.messageId,
+                text: response.message,
+                createdAt: Date(),
+                sender: .ai,
+                isStreaming: false,
+                rating: nil
+            )
+            messages.append(greetingMessage)
+
+            // Update session preview
+            if let index = sessions.firstIndex(where: { $0.id == session.id }) {
+                sessions[index].preview = response.message
+            }
+
+            // Track analytics
+            AnalyticsManager.shared.initialMessageGenerated(hasApp: selectedAppId != nil)
+
+            log("Added initial greeting message for session \(session.id)")
+        } catch {
+            // Non-fatal: session still works without greeting
+            logError("Failed to fetch initial message", error: error)
         }
     }
 
@@ -155,25 +212,72 @@ class ChatProvider: ObservableObject {
         currentSession = session
         isLoading = true
         errorMessage = nil
+        hasMoreMessages = false
 
         do {
-            let persistedMessages = try await APIClient.shared.getMessages(sessionId: session.id, limit: 100)
+            let persistedMessages = try await APIClient.shared.getMessages(
+                sessionId: session.id,
+                limit: messagesPageSize
+            )
             messages = persistedMessages.map { dbMessage in
                 ChatMessage(
                     id: dbMessage.id,
                     text: dbMessage.text,
                     createdAt: dbMessage.createdAt,
                     sender: dbMessage.sender == "human" ? .user : .ai,
-                    isStreaming: false
+                    isStreaming: false,
+                    rating: dbMessage.rating
                 )
             }
-            log("ChatProvider loaded \(messages.count) messages for session \(session.id)")
+            // If we got a full page, there might be more messages
+            hasMoreMessages = persistedMessages.count == messagesPageSize
+            log("ChatProvider loaded \(messages.count) messages for session \(session.id), hasMore: \(hasMoreMessages)")
         } catch {
             logError("Failed to load messages for session", error: error)
             messages = []
         }
 
         isLoading = false
+    }
+
+    /// Load more (older) messages for the current session
+    func loadMoreMessages() async {
+        guard let sessionId = currentSessionId,
+              hasMoreMessages,
+              !isLoadingMoreMessages else { return }
+
+        isLoadingMoreMessages = true
+
+        do {
+            let offset = messages.count
+            let olderMessages = try await APIClient.shared.getMessages(
+                sessionId: sessionId,
+                limit: messagesPageSize,
+                offset: offset
+            )
+
+            let newMessages = olderMessages.map { dbMessage in
+                ChatMessage(
+                    id: dbMessage.id,
+                    text: dbMessage.text,
+                    createdAt: dbMessage.createdAt,
+                    sender: dbMessage.sender == "human" ? .user : .ai,
+                    isStreaming: false,
+                    rating: dbMessage.rating
+                )
+            }
+
+            // Append older messages (they come in ascending order, so append at end)
+            messages.append(contentsOf: newMessages)
+
+            // Check if there are more
+            hasMoreMessages = olderMessages.count == messagesPageSize
+            log("Loaded \(newMessages.count) more messages, total: \(messages.count), hasMore: \(hasMoreMessages)")
+        } catch {
+            logError("Failed to load more messages", error: error)
+        }
+
+        isLoadingMoreMessages = false
     }
 
     /// Delete a chat session
@@ -363,7 +467,8 @@ class ChatProvider: ObservableObject {
                         text: dbMessage.text,
                         createdAt: dbMessage.createdAt,
                         sender: dbMessage.sender == "human" ? .user : .ai,
-                        isStreaming: false
+                        isStreaming: false,
+                        rating: dbMessage.rating
                     )
                 }
                 log("ChatProvider loaded \(messages.count) persisted messages")
@@ -414,7 +519,7 @@ class ChatProvider: ObservableObject {
         // Save user message to backend (fire and forget - don't block UI)
         let userMessageId = UUID().uuidString
         let isFirstMessage = messages.isEmpty
-        Task {
+        Task { [weak self] in
             do {
                 let response = try await APIClient.shared.saveMessage(
                     text: trimmedText,
@@ -422,6 +527,12 @@ class ChatProvider: ObservableObject {
                     appId: selectedAppId,
                     sessionId: sessionId
                 )
+                // Sync local message ID with server ID for rating functionality
+                await MainActor.run {
+                    if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
+                        self?.messages[index].id = response.id
+                    }
+                }
                 log("Saved user message to backend: \(response.id)")
             } catch {
                 logError("Failed to persist user message", error: error)
@@ -492,17 +603,23 @@ class ChatProvider: ObservableObject {
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
                 messages[index].isStreaming = false
 
-                // Save AI response to backend
+                // Save AI response to backend and sync ID
                 let aiResponseText = messages[index].text
                 if !aiResponseText.isEmpty {
-                    Task {
+                    Task { [weak self] in
                         do {
                             let response = try await APIClient.shared.saveMessage(
                                 text: aiResponseText,
                                 sender: "ai",
-                                appId: self.selectedAppId,
+                                appId: self?.selectedAppId,
                                 sessionId: sessionId
                             )
+                            // Sync local message ID with server ID for rating functionality
+                            await MainActor.run {
+                                if let index = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                    self?.messages[index].id = response.id
+                                }
+                            }
                             log("Saved AI response to backend: \(response.id)")
                         } catch {
                             logError("Failed to persist AI response", error: error)
@@ -512,10 +629,9 @@ class ChatProvider: ObservableObject {
                 }
             }
 
-            // Update session preview and title (first message generates title)
+            // Auto-generate title after first exchange (user message + AI response)
             if isFirstMessage {
-                // Update session with preview from first user message
-                await updateSessionPreview(sessionId: sessionId, preview: trimmedText)
+                await generateSessionTitle(sessionId: sessionId)
             }
 
             log("Chat response complete")
@@ -530,28 +646,40 @@ class ChatProvider: ObservableObject {
         isSending = false
     }
 
-    /// Update session preview after first message
-    private func updateSessionPreview(sessionId: String, preview: String) async {
-        // Generate a title from the first message (truncate to ~50 chars)
-        let title = String(preview.prefix(50)) + (preview.count > 50 ? "..." : "")
+    /// Generate a title for the session using LLM
+    private func generateSessionTitle(sessionId: String) async {
+        // Need at least 2 messages (user + AI) for meaningful title
+        guard messages.count >= 2 else {
+            log("Not enough messages for title generation")
+            return
+        }
+
+        // Convert messages to the format expected by the API
+        let messageTuples: [(text: String, sender: String)] = messages.map { msg in
+            (text: msg.text, sender: msg.sender == .user ? "human" : "ai")
+        }
 
         do {
-            let updated = try await APIClient.shared.updateChatSession(
+            let response = try await APIClient.shared.generateSessionTitle(
                 sessionId: sessionId,
-                title: title
+                messages: messageTuples
             )
 
-            // Update in sessions list
+            // Update session in list
             if let index = sessions.firstIndex(where: { $0.id == sessionId }) {
-                sessions[index] = updated
+                sessions[index].title = response.title
             }
 
             // Update current session
             if currentSession?.id == sessionId {
-                currentSession = updated
+                currentSession?.title = response.title
             }
+
+            log("Generated session title: \(response.title)")
+            AnalyticsManager.shared.sessionTitleGenerated()
         } catch {
-            logError("Failed to update session preview", error: error)
+            logError("Failed to generate session title", error: error)
+            // Non-fatal - session continues with default title
         }
     }
 
@@ -580,6 +708,36 @@ class ChatProvider: ObservableObject {
                 role: message.sender == .user ? "user" : "model",
                 text: message.text
             )
+        }
+    }
+
+    // MARK: - Message Rating
+
+    /// Rate a message (thumbs up/down)
+    /// - Parameters:
+    ///   - messageId: The message ID to rate
+    ///   - rating: 1 for thumbs up, -1 for thumbs down, nil to clear rating
+    func rateMessage(_ messageId: String, rating: Int?) async {
+        // Update local state immediately for responsive UI
+        if let index = messages.firstIndex(where: { $0.id == messageId }) {
+            messages[index].rating = rating
+        }
+
+        // Persist to backend
+        do {
+            try await APIClient.shared.rateMessage(messageId: messageId, rating: rating)
+            log("Rated message \(messageId) with rating: \(String(describing: rating))")
+
+            // Track analytics
+            if let rating = rating {
+                AnalyticsManager.shared.messageRated(rating: rating)
+            }
+        } catch {
+            logError("Failed to rate message", error: error)
+            // Revert local state on failure
+            if let index = messages.firstIndex(where: { $0.id == messageId }) {
+                messages[index].rating = nil
+            }
         }
     }
 
