@@ -27,6 +27,10 @@ sha2 = "0.10"
 hex = "0.4"
 base64 = "0.21"
 
+# Encryption (for decrypting user data with enhanced protection level)
+aes-gcm = "0.10"
+hkdf = "0.12"
+
 # Logging
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "local-time"] }
