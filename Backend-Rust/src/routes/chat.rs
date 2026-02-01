@@ -199,11 +199,32 @@ async fn get_chat_context(
     }
 
     tracing::info!(
-        "Getting chat context for user {} - question: {} ({} previous messages)",
+        "Getting chat context for user {} - question: {} ({} previous messages, app_id={:?})",
         user.uid,
         &question[..question.len().min(50)],
-        request.messages.len()
+        request.messages.len(),
+        request.app_id
     );
+
+    // Fetch app details if app_id provided
+    let app_context = if let Some(app_id) = &request.app_id {
+        match state.firestore.get_app(&user.uid, app_id).await {
+            Ok(Some(app)) => {
+                tracing::info!("Loaded app: {} ({})", app.name, app_id);
+                Some((app.name, app.chat_prompt, app.persona_prompt))
+            }
+            Ok(None) => {
+                tracing::warn!("App not found: {}", app_id);
+                None
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch app {}: {}", app_id, e);
+                None
+            }
+        }
+    } else {
+        None
+    };
 
     // Get API key for LLM calls
     let api_key = match &state.config.gemini_api_key {
@@ -253,14 +274,34 @@ async fn get_chat_context(
     // Step 4: Fetch user memories
     let memories = get_user_memories(&state.firestore, &user.uid).await;
 
-    // Step 5: Build context string for prompt (including conversation history)
+    // Step 5: Build context string for prompt (including conversation history and app context)
     let base_context = build_context_string(&conversations, &memories);
-    let context_string = if request.messages.is_empty() {
+
+    // Add app-specific context if available
+    let context_with_app = if let Some((app_name, chat_prompt, persona_prompt)) = &app_context {
+        let mut app_section = format!("<app_context>\nYou are chatting as the \"{}\" assistant.\n", app_name);
+        if let Some(persona) = persona_prompt {
+            if !persona.is_empty() {
+                app_section.push_str(&format!("Persona: {}\n", persona));
+            }
+        }
+        if let Some(prompt) = chat_prompt {
+            if !prompt.is_empty() {
+                app_section.push_str(&format!("Instructions: {}\n", prompt));
+            }
+        }
+        app_section.push_str("</app_context>\n\n");
+        format!("{}{}", app_section, base_context)
+    } else {
         base_context
+    };
+
+    let context_string = if request.messages.is_empty() {
+        context_with_app
     } else {
         format!(
             "<current_conversation>\n{}\n</current_conversation>\n\n{}",
-            conversation_history, base_context
+            conversation_history, context_with_app
         )
     };
 
@@ -657,16 +698,46 @@ async fn get_basic_context(
         end: now,
     };
 
+    // Fetch app context if app_id provided
+    let app_context = if let Some(app_id) = &request.app_id {
+        match firestore.get_app(uid, app_id).await {
+            Ok(Some(app)) => Some((app.name, app.chat_prompt, app.persona_prompt)),
+            _ => None,
+        }
+    } else {
+        None
+    };
+
     let conversations = get_relevant_conversations(firestore, uid, Some(&date_range)).await;
     let memories = get_user_memories(firestore, uid).await;
 
     // Include conversation history in context string
     let conversation_history = format_conversation_history(&request.messages);
     let base_context = build_context_string(&conversations, &memories);
-    let context_string = if request.messages.is_empty() {
-        base_context
+
+    // Add app-specific context if available
+    let context_with_app = if let Some((app_name, chat_prompt, persona_prompt)) = &app_context {
+        let mut app_section = format!("<app_context>\nYou are chatting as the \"{}\" assistant.\n", app_name);
+        if let Some(persona) = persona_prompt {
+            if !persona.is_empty() {
+                app_section.push_str(&format!("Persona: {}\n", persona));
+            }
+        }
+        if let Some(prompt) = chat_prompt {
+            if !prompt.is_empty() {
+                app_section.push_str(&format!("Instructions: {}\n", prompt));
+            }
+        }
+        app_section.push_str("</app_context>\n\n");
+        format!("{}{}", app_section, base_context)
     } else {
-        format!("<current_conversation>\n{}\n</current_conversation>\n\n{}", conversation_history, base_context)
+        base_context
+    };
+
+    let context_string = if request.messages.is_empty() {
+        context_with_app
+    } else {
+        format!("<current_conversation>\n{}\n</current_conversation>\n\n{}", conversation_history, context_with_app)
     };
 
     Ok(Json(ChatContextResponse {
