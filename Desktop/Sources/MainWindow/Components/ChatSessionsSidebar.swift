@@ -10,10 +10,14 @@ struct ChatSessionsSidebar: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // New Chat button and starred filter
+            // New Chat button, starred filter, and search
             VStack(spacing: 8) {
                 newChatButton
-                starredFilterButton
+                HStack(spacing: 8) {
+                    starredFilterButton
+                    Spacer()
+                }
+                searchField
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 12)
@@ -24,7 +28,7 @@ struct ChatSessionsSidebar: View {
             // Sessions list
             if chatProvider.isLoadingSessions {
                 loadingView
-            } else if chatProvider.sessions.isEmpty {
+            } else if chatProvider.filteredSessions.isEmpty {
                 emptyStateView
             } else {
                 sessionsList
@@ -99,6 +103,36 @@ struct ChatSessionsSidebar: View {
         .disabled(isTogglingStarredFilter)
     }
 
+    // MARK: - Search Field
+
+    private var searchField: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 12))
+                .foregroundColor(OmiColors.textTertiary)
+
+            TextField("Search chats...", text: $chatProvider.searchQuery)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundColor(OmiColors.textPrimary)
+
+            if !chatProvider.searchQuery.isEmpty {
+                Button(action: {
+                    chatProvider.searchQuery = ""
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(OmiColors.backgroundTertiary.opacity(0.6))
+        .cornerRadius(8)
+    }
+
     // MARK: - Sessions List
 
     private var sessionsList: some View {
@@ -132,6 +166,11 @@ struct ChatSessionsSidebar: View {
                                 Task {
                                     await chatProvider.toggleStarred(session)
                                 }
+                            },
+                            onRename: { newTitle in
+                                Task {
+                                    await chatProvider.updateSessionTitle(session, title: newTitle)
+                                }
                             }
                         )
                     }
@@ -159,20 +198,50 @@ struct ChatSessionsSidebar: View {
     private var emptyStateView: some View {
         VStack(spacing: 12) {
             Spacer()
-            Image(systemName: chatProvider.showStarredOnly ? "star" : "bubble.left.and.bubble.right")
+            Image(systemName: emptyStateIcon)
                 .font(.system(size: 32))
                 .foregroundColor(OmiColors.textTertiary)
 
-            Text(chatProvider.showStarredOnly ? "No starred chats" : "No chats yet")
+            Text(emptyStateTitle)
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(OmiColors.textSecondary)
 
-            Text(chatProvider.showStarredOnly ? "Star a chat to see it here" : "Start a conversation")
+            Text(emptyStateSubtitle)
                 .font(.system(size: 12))
                 .foregroundColor(OmiColors.textTertiary)
             Spacer()
         }
         .padding()
+    }
+
+    private var emptyStateIcon: String {
+        if !chatProvider.searchQuery.isEmpty {
+            return "magnifyingglass"
+        } else if chatProvider.showStarredOnly {
+            return "star"
+        } else {
+            return "bubble.left.and.bubble.right"
+        }
+    }
+
+    private var emptyStateTitle: String {
+        if !chatProvider.searchQuery.isEmpty {
+            return "No results"
+        } else if chatProvider.showStarredOnly {
+            return "No starred chats"
+        } else {
+            return "No chats yet"
+        }
+    }
+
+    private var emptyStateSubtitle: String {
+        if !chatProvider.searchQuery.isEmpty {
+            return "Try a different search term"
+        } else if chatProvider.showStarredOnly {
+            return "Star a chat to see it here"
+        } else {
+            return "Start a conversation"
+        }
     }
 }
 
@@ -184,12 +253,20 @@ struct SessionRow: View {
     let onSelect: () -> Void
     let onDelete: () -> Void
     let onToggleStar: () -> Void
+    let onRename: (String) -> Void
 
     @State private var isHovering = false
     @State private var showDeleteConfirm = false
+    @State private var isEditing = false
+    @State private var editedTitle = ""
+    @FocusState private var isTitleFocused: Bool
 
     var body: some View {
-        Button(action: onSelect) {
+        Button(action: {
+            if !isEditing {
+                onSelect()
+            }
+        }) {
             HStack(spacing: 8) {
                 // Star indicator
                 if session.starred {
@@ -199,12 +276,26 @@ struct SessionRow: View {
                 }
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(session.title)
-                        .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                        .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textPrimary)
-                        .lineLimit(1)
+                    if isEditing {
+                        TextField("Chat title", text: $editedTitle)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                            .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textPrimary)
+                            .focused($isTitleFocused)
+                            .onSubmit {
+                                saveTitle()
+                            }
+                            .onExitCommand {
+                                cancelEditing()
+                            }
+                    } else {
+                        Text(session.title)
+                            .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
+                            .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textPrimary)
+                            .lineLimit(1)
+                    }
 
-                    if let preview = session.preview, !preview.isEmpty {
+                    if let preview = session.preview, !preview.isEmpty, !isEditing {
                         Text(preview)
                             .font(.system(size: 11))
                             .foregroundColor(OmiColors.textTertiary)
@@ -215,8 +306,16 @@ struct SessionRow: View {
                 Spacer()
 
                 // Hover actions
-                if isHovering {
+                if isHovering && !isEditing {
                     HStack(spacing: 4) {
+                        // Rename button
+                        Button(action: startEditing) {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 11))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+
                         // Star/unstar button
                         Button(action: onToggleStar) {
                             Image(systemName: session.starred ? "star.fill" : "star")
@@ -237,12 +336,17 @@ struct SessionRow: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(isSelected ? OmiColors.backgroundTertiary : (isHovering ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
+            .contentShape(Rectangle())
             .cornerRadius(8)
         }
         .buttonStyle(.plain)
         .padding(.horizontal, 8)
         .onHover { isHovering = $0 }
+        .onTapGesture(count: 2) {
+            startEditing()
+        }
         .alert("Delete Chat?", isPresented: $showDeleteConfirm) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
@@ -251,6 +355,25 @@ struct SessionRow: View {
         } message: {
             Text("This will permanently delete this chat and all its messages.")
         }
+    }
+
+    private func startEditing() {
+        editedTitle = session.title
+        isEditing = true
+        isTitleFocused = true
+    }
+
+    private func saveTitle() {
+        let trimmed = editedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty && trimmed != session.title {
+            onRename(trimmed)
+        }
+        isEditing = false
+    }
+
+    private func cancelEditing() {
+        isEditing = false
+        editedTitle = session.title
     }
 }
 
