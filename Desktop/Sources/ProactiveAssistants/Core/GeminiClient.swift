@@ -398,7 +398,390 @@ struct GeminiStreamChunk: Decodable {
 
             struct Part: Decodable {
                 let text: String?
+                let functionCall: FunctionCall?
+
+                enum CodingKeys: String, CodingKey {
+                    case text
+                    case functionCall = "functionCall"
+                }
             }
         }
+    }
+
+    struct FunctionCall: Decodable {
+        let name: String
+        let args: [String: AnyCodable]?
+    }
+}
+
+// MARK: - Tool Calling Support
+
+/// Wrapper for dynamic JSON values in function arguments
+struct AnyCodable: Decodable {
+    let value: Any
+
+    init(_ value: Any) {
+        self.value = value
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+
+        if let string = try? container.decode(String.self) {
+            value = string
+        } else if let int = try? container.decode(Int.self) {
+            value = int
+        } else if let double = try? container.decode(Double.self) {
+            value = double
+        } else if let bool = try? container.decode(Bool.self) {
+            value = bool
+        } else if let array = try? container.decode([AnyCodable].self) {
+            value = array.map { $0.value }
+        } else if let dict = try? container.decode([String: AnyCodable].self) {
+            value = dict.mapValues { $0.value }
+        } else {
+            value = NSNull()
+        }
+    }
+
+    var stringValue: String? { value as? String }
+    var intValue: Int? { value as? Int }
+    var doubleValue: Double? { value as? Double }
+    var boolValue: Bool? { value as? Bool }
+}
+
+/// Tool definition for Gemini function calling
+struct GeminiTool: Encodable {
+    let functionDeclarations: [FunctionDeclaration]
+
+    enum CodingKeys: String, CodingKey {
+        case functionDeclarations = "function_declarations"
+    }
+
+    struct FunctionDeclaration: Encodable {
+        let name: String
+        let description: String
+        let parameters: Parameters
+
+        struct Parameters: Encodable {
+            let type: String
+            let properties: [String: Property]
+            let required: [String]
+
+            struct Property: Encodable {
+                let type: String
+                let description: String
+                let `enum`: [String]?
+
+                init(type: String, description: String, enumValues: [String]? = nil) {
+                    self.type = type
+                    self.description = description
+                    self.enum = enumValues
+                }
+            }
+        }
+    }
+}
+
+/// Chat request with tools
+struct GeminiToolChatRequest: Encodable {
+    let contents: [Content]
+    let systemInstruction: SystemInstruction?
+    let generationConfig: GenerationConfig?
+    let tools: [GeminiTool]?
+
+    enum CodingKeys: String, CodingKey {
+        case contents
+        case systemInstruction = "system_instruction"
+        case generationConfig = "generation_config"
+        case tools
+    }
+
+    struct Content: Encodable {
+        let role: String
+        let parts: [Part]
+    }
+
+    struct Part: Encodable {
+        let text: String?
+        let functionCall: FunctionCallPart?
+        let functionResponse: FunctionResponsePart?
+
+        enum CodingKeys: String, CodingKey {
+            case text
+            case functionCall = "functionCall"
+            case functionResponse = "functionResponse"
+        }
+
+        init(text: String) {
+            self.text = text
+            self.functionCall = nil
+            self.functionResponse = nil
+        }
+
+        init(functionResponse: FunctionResponsePart) {
+            self.text = nil
+            self.functionCall = nil
+            self.functionResponse = functionResponse
+        }
+    }
+
+    struct FunctionCallPart: Encodable {
+        let name: String
+        let args: [String: String]
+    }
+
+    struct FunctionResponsePart: Encodable {
+        let name: String
+        let response: ResponseContent
+
+        struct ResponseContent: Encodable {
+            let result: String
+        }
+    }
+
+    struct SystemInstruction: Encodable {
+        let parts: [TextPart]
+
+        struct TextPart: Encodable {
+            let text: String
+        }
+    }
+
+    struct GenerationConfig: Encodable {
+        let temperature: Double?
+        let maxOutputTokens: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case temperature
+            case maxOutputTokens = "max_output_tokens"
+        }
+    }
+}
+
+/// Result of a tool-enabled chat (may include tool calls)
+struct ToolChatResult {
+    let text: String
+    let toolCalls: [ToolCall]
+    let requiresToolExecution: Bool
+}
+
+/// A function call from the model
+struct ToolCall {
+    let name: String
+    let arguments: [String: Any]
+}
+
+// MARK: - GeminiClient Tool Extensions
+
+extension GeminiClient {
+
+    /// Available chat tools
+    static let chatTools: [GeminiTool] = [
+        GeminiTool(functionDeclarations: [
+            // Create action item / task
+            GeminiTool.FunctionDeclaration(
+                name: "create_action_item",
+                description: "Create a new task or action item for the user. Use this when the user asks to remind them about something, create a task, add a to-do item, or set a reminder.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "description": .init(type: "string", description: "The task description - what needs to be done"),
+                        "due_date": .init(type: "string", description: "Optional due date in ISO 8601 format (e.g., 2024-01-15T10:00:00Z)"),
+                        "priority": .init(type: "string", description: "Task priority", enumValues: ["high", "medium", "low"])
+                    ],
+                    required: ["description"]
+                )
+            ),
+            // Get recent conversations
+            GeminiTool.FunctionDeclaration(
+                name: "get_conversations",
+                description: "Retrieve the user's recent conversations. Use this when the user asks about what they discussed, their conversation history, or needs context from past conversations.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "limit": .init(type: "integer", description: "Maximum number of conversations to return (default: 10)"),
+                        "days": .init(type: "integer", description: "Only include conversations from the last N days (default: 7)")
+                    ],
+                    required: []
+                )
+            ),
+            // Get user memories
+            GeminiTool.FunctionDeclaration(
+                name: "get_memories",
+                description: "Retrieve facts and memories about the user. Use this when you need to know more about the user's preferences, background, or personal information.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "limit": .init(type: "integer", description: "Maximum number of memories to return (default: 20)")
+                    ],
+                    required: []
+                )
+            )
+        ])
+    ]
+
+    /// Send a chat request with tool support (non-streaming)
+    func sendToolChatRequest(
+        messages: [ChatMessage],
+        systemPrompt: String,
+        tools: [GeminiTool]? = nil
+    ) async throws -> ToolChatResult {
+        // Build contents from chat messages
+        let contents = messages.map { message in
+            GeminiToolChatRequest.Content(
+                role: message.role,
+                parts: [GeminiToolChatRequest.Part(text: message.text)]
+            )
+        }
+
+        let request = GeminiToolChatRequest(
+            contents: contents,
+            systemInstruction: GeminiToolChatRequest.SystemInstruction(
+                parts: [GeminiToolChatRequest.SystemInstruction.TextPart(text: systemPrompt)]
+            ),
+            generationConfig: GeminiToolChatRequest.GenerationConfig(
+                temperature: 0.7,
+                maxOutputTokens: 8192
+            ),
+            tools: tools ?? Self.chatTools
+        )
+
+        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 300
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, _) = try await URLSession.shared.data(for: urlRequest)
+
+        // Parse response
+        let response = try JSONDecoder().decode(GeminiToolResponse.self, from: data)
+
+        if let error = response.error {
+            throw GeminiClientError.apiError(error.message)
+        }
+
+        guard let candidate = response.candidates?.first,
+              let parts = candidate.content?.parts else {
+            throw GeminiClientError.invalidResponse
+        }
+
+        // Check for function calls
+        var toolCalls: [ToolCall] = []
+        var textResponse = ""
+
+        for part in parts {
+            if let functionCall = part.functionCall {
+                let args = functionCall.args?.mapValues { $0.value } ?? [:]
+                toolCalls.append(ToolCall(name: functionCall.name, arguments: args))
+            }
+            if let text = part.text {
+                textResponse += text
+            }
+        }
+
+        return ToolChatResult(
+            text: textResponse,
+            toolCalls: toolCalls,
+            requiresToolExecution: !toolCalls.isEmpty
+        )
+    }
+
+    /// Continue a conversation after executing tools
+    func continueWithToolResults(
+        originalMessages: [ChatMessage],
+        toolCalls: [ToolCall],
+        toolResults: [String: String],
+        systemPrompt: String
+    ) async throws -> String {
+        // Build contents with original messages
+        var contents = originalMessages.map { message in
+            GeminiToolChatRequest.Content(
+                role: message.role,
+                parts: [GeminiToolChatRequest.Part(text: message.text)]
+            )
+        }
+
+        // Add function responses
+        for call in toolCalls {
+            let result = toolResults[call.name] ?? "No result"
+            contents.append(GeminiToolChatRequest.Content(
+                role: "function",
+                parts: [GeminiToolChatRequest.Part(
+                    functionResponse: GeminiToolChatRequest.FunctionResponsePart(
+                        name: call.name,
+                        response: .init(result: result)
+                    )
+                )]
+            ))
+        }
+
+        let request = GeminiToolChatRequest(
+            contents: contents,
+            systemInstruction: GeminiToolChatRequest.SystemInstruction(
+                parts: [GeminiToolChatRequest.SystemInstruction.TextPart(text: systemPrompt)]
+            ),
+            generationConfig: GeminiToolChatRequest.GenerationConfig(
+                temperature: 0.7,
+                maxOutputTokens: 8192
+            ),
+            tools: nil  // No tools for continuation
+        )
+
+        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 300
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, _) = try await URLSession.shared.data(for: urlRequest)
+
+        let response = try JSONDecoder().decode(GeminiToolResponse.self, from: data)
+
+        if let error = response.error {
+            throw GeminiClientError.apiError(error.message)
+        }
+
+        guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+            throw GeminiClientError.invalidResponse
+        }
+
+        return text
+    }
+}
+
+/// Response type for tool-enabled requests
+struct GeminiToolResponse: Decodable {
+    let candidates: [Candidate]?
+    let error: GeminiError?
+
+    struct Candidate: Decodable {
+        let content: Content?
+
+        struct Content: Decodable {
+            let parts: [Part]?
+
+            struct Part: Decodable {
+                let text: String?
+                let functionCall: FunctionCall?
+
+                enum CodingKeys: String, CodingKey {
+                    case text
+                    case functionCall = "functionCall"
+                }
+            }
+        }
+    }
+
+    struct FunctionCall: Decodable {
+        let name: String
+        let args: [String: AnyCodable]?
+    }
+
+    struct GeminiError: Decodable {
+        let message: String
     }
 }
