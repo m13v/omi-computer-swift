@@ -10,6 +10,11 @@ struct ConversationListView: View {
     let onRefresh: () -> Void
     let onMoveToFolder: (String, String?) async -> Void
 
+    // Multi-select support
+    var isMultiSelectMode: Bool = false
+    var selectedIds: Set<String> = []
+    var onToggleSelection: ((String) -> Void)? = nil
+
     /// Group conversations by date
     private var groupedConversations: [(String, [ServerConversation])] {
         let calendar = Calendar.current
@@ -153,7 +158,10 @@ struct ConversationListView: View {
                             conversation: conversation,
                             onTap: { onSelect(conversation) },
                             folders: folders,
-                            onMoveToFolder: onMoveToFolder
+                            onMoveToFolder: onMoveToFolder,
+                            isMultiSelectMode: isMultiSelectMode,
+                            isSelected: selectedIds.contains(conversation.id),
+                            onToggleSelection: { onToggleSelection?(conversation.id) }
                         )
                     }
                 }
