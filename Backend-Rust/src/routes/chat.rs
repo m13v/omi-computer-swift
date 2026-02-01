@@ -32,12 +32,12 @@ pub struct ChatContextRequest {
     /// User's timezone (e.g., "America/Los_Angeles")
     #[serde(default = "default_timezone")]
     pub timezone: String,
-    /// Optional app ID for app-specific context (TODO: wire up to get_chat_session)
-    #[serde(default, rename = "app_id")]
-    pub _app_id: Option<String>,
-    /// Previous messages for context (TODO: implement conversation history)
-    #[serde(default, rename = "messages")]
-    pub _messages: Vec<ChatMessageInput>,
+    /// Optional app ID for app-specific context
+    #[serde(default)]
+    pub app_id: Option<String>,
+    /// Previous messages for conversation history context
+    #[serde(default)]
+    pub messages: Vec<ChatMessageInput>,
 }
 
 fn default_timezone() -> String {
@@ -46,10 +46,8 @@ fn default_timezone() -> String {
 
 #[derive(Debug, Deserialize)]
 pub struct ChatMessageInput {
-    #[serde(rename = "text")]
-    pub _text: String,
-    #[serde(rename = "sender")]
-    pub _sender: String, // "human" or "ai"
+    pub text: String,
+    pub sender: String, // "human" or "ai"
 }
 
 /// Response with context for building prompts
@@ -136,22 +134,26 @@ pub struct MemorySummary {
 // ============================================================================
 
 const REQUIRES_CONTEXT_PROMPT: &str = r#"
-Based on the current question, determine whether the user is asking something that requires context from their past conversations or memories to answer properly.
+Based on the conversation, determine whether the user is asking something that requires context from their past conversations or memories to answer properly.
+
+{conversation_history}
+
+Current Question:
+{question}
 
 Return true if the question:
-- Asks about past events, conversations, or experiences
-- References specific people, topics, or time periods
+- Asks about past events, conversations, or experiences (beyond this chat session)
+- References specific people, topics, or time periods from their history
 - Needs personal context to answer accurately
 - Asks "what did I...", "when did I...", "who did I talk to about...", etc.
+- References something "earlier" or "before" that isn't in the conversation history above
 
 Return false if the question:
 - Is a greeting (Hi, Hello, How are you?)
 - Is a general knowledge question
 - Is a simple task request that doesn't need history
+- Can be answered from the current conversation alone
 - Can be answered without any personal context
-
-User's Question:
-{question}
 "#;
 
 const DATE_EXTRACTION_PROMPT: &str = r#"
@@ -197,9 +199,10 @@ async fn get_chat_context(
     }
 
     tracing::info!(
-        "Getting chat context for user {} - question: {}",
+        "Getting chat context for user {} - question: {} ({} previous messages)",
         user.uid,
-        &question[..question.len().min(50)]
+        &question[..question.len().min(50)],
+        request.messages.len()
     );
 
     // Get API key for LLM calls
@@ -213,8 +216,13 @@ async fn get_chat_context(
 
     let llm = LlmClient::new(api_key);
 
-    // Step 1: Determine if context is needed
-    let requires_context = check_requires_context(&llm, question).await.unwrap_or(true);
+    // Format conversation history for context-aware decisions
+    let conversation_history = format_conversation_history(&request.messages);
+
+    // Step 1: Determine if context is needed (considering conversation history)
+    let requires_context = check_requires_context(&llm, question, &conversation_history)
+        .await
+        .unwrap_or(true);
 
     if !requires_context {
         tracing::info!("Question does not require context");
@@ -245,13 +253,22 @@ async fn get_chat_context(
     // Step 4: Fetch user memories
     let memories = get_user_memories(&state.firestore, &user.uid).await;
 
-    // Step 5: Build context string for prompt
-    let context_string = build_context_string(&conversations, &memories);
+    // Step 5: Build context string for prompt (including conversation history)
+    let base_context = build_context_string(&conversations, &memories);
+    let context_string = if request.messages.is_empty() {
+        base_context
+    } else {
+        format!(
+            "<current_conversation>\n{}\n</current_conversation>\n\n{}",
+            conversation_history, base_context
+        )
+    };
 
     tracing::info!(
-        "Chat context: {} conversations, {} memories",
+        "Chat context: {} conversations, {} memories, {} prior messages",
         conversations.len(),
-        memories.len()
+        memories.len(),
+        request.messages.len()
     );
 
     Ok(Json(ChatContextResponse {
@@ -439,9 +456,36 @@ async fn generate_session_title(
 // HELPER FUNCTIONS
 // ============================================================================
 
+/// Format conversation history for inclusion in prompts
+fn format_conversation_history(messages: &[ChatMessageInput]) -> String {
+    if messages.is_empty() {
+        return "No previous messages in this conversation.".to_string();
+    }
+
+    let mut lines = vec!["Previous messages in this conversation:".to_string()];
+    // Take last 10 messages to avoid prompt bloat
+    for msg in messages.iter().rev().take(10).rev() {
+        let role = if msg.sender == "human" { "User" } else { "Assistant" };
+        // Truncate very long messages
+        let text = if msg.text.len() > 500 {
+            format!("{}...", &msg.text[..500])
+        } else {
+            msg.text.clone()
+        };
+        lines.push(format!("{}: {}", role, text));
+    }
+    lines.join("\n")
+}
+
 /// Check if the question requires context using LLM
-async fn check_requires_context(llm: &LlmClient, question: &str) -> Result<bool, ()> {
-    let prompt = REQUIRES_CONTEXT_PROMPT.replace("{question}", question);
+async fn check_requires_context(
+    llm: &LlmClient,
+    question: &str,
+    conversation_history: &str,
+) -> Result<bool, ()> {
+    let prompt = REQUIRES_CONTEXT_PROMPT
+        .replace("{question}", question)
+        .replace("{conversation_history}", conversation_history);
 
     match llm.check_requires_context(&prompt).await {
         Ok(result) => Ok(result),
@@ -605,7 +649,7 @@ fn format_memories_context(memories: &[MemorySummary]) -> String {
 async fn get_basic_context(
     firestore: &Arc<FirestoreService>,
     uid: &str,
-    _request: &ChatContextRequest,
+    request: &ChatContextRequest,
 ) -> Result<Json<ChatContextResponse>, StatusCode> {
     let now = Utc::now();
     let date_range = DateRange {
@@ -615,7 +659,15 @@ async fn get_basic_context(
 
     let conversations = get_relevant_conversations(firestore, uid, Some(&date_range)).await;
     let memories = get_user_memories(firestore, uid).await;
-    let context_string = build_context_string(&conversations, &memories);
+
+    // Include conversation history in context string
+    let conversation_history = format_conversation_history(&request.messages);
+    let base_context = build_context_string(&conversations, &memories);
+    let context_string = if request.messages.is_empty() {
+        base_context
+    } else {
+        format!("<current_conversation>\n{}\n</current_conversation>\n\n{}", conversation_history, base_context)
+    };
 
     Ok(Json(ChatContextResponse {
         requires_context: true,
