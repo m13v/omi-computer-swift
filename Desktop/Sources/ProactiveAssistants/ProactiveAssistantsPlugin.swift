@@ -469,11 +469,6 @@ public class ProactiveAssistantsPlugin: NSObject {
     func triggerGlow(colorMode: GlowColorMode = .focused) {
         OverlayService.shared.showGlowAroundActiveWindow(colorMode: colorMode)
     }
-
-    /// Show settings window
-    public func showSettings() {
-        SettingsWindow.show()
-    }
 }
 
 // MARK: - Notification Names
