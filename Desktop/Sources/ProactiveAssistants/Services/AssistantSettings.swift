@@ -10,12 +10,16 @@ class AssistantSettings {
     private let cooldownIntervalKey = "assistantsCooldownInterval"
     private let glowOverlayEnabledKey = "assistantsGlowOverlayEnabled"
     private let analysisDelayKey = "assistantsAnalysisDelay"
+    private let screenAnalysisEnabledKey = "screenAnalysisEnabled"
+    private let transcriptionEnabledKey = "transcriptionEnabled"
 
     // MARK: - Default Values
 
     private let defaultCooldownInterval = 10 // minutes
     private let defaultGlowOverlayEnabled = true
     private let defaultAnalysisDelay = 60 // seconds (1 minute)
+    private let defaultScreenAnalysisEnabled = true
+    private let defaultTranscriptionEnabled = true
 
     private init() {
         // Register defaults
@@ -23,6 +27,8 @@ class AssistantSettings {
             cooldownIntervalKey: defaultCooldownInterval,
             glowOverlayEnabledKey: defaultGlowOverlayEnabled,
             analysisDelayKey: defaultAnalysisDelay,
+            screenAnalysisEnabledKey: defaultScreenAnalysisEnabled,
+            transcriptionEnabledKey: defaultTranscriptionEnabled,
         ])
     }
 
@@ -66,11 +72,31 @@ class AssistantSettings {
         }
     }
 
+    /// Whether screen analysis (proactive monitoring) should be enabled
+    var screenAnalysisEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: screenAnalysisEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: screenAnalysisEnabledKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether transcription should be enabled
+    var transcriptionEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: transcriptionEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: transcriptionEnabledKey)
+            NotificationCenter.default.post(name: .transcriptionSettingsDidChange, object: nil)
+        }
+    }
+
     /// Reset all settings to defaults
     func resetToDefaults() {
         cooldownInterval = defaultCooldownInterval
         glowOverlayEnabled = defaultGlowOverlayEnabled
         analysisDelay = defaultAnalysisDelay
+        screenAnalysisEnabled = defaultScreenAnalysisEnabled
+        transcriptionEnabled = defaultTranscriptionEnabled
     }
 }
 
@@ -80,6 +106,7 @@ extension Notification.Name {
     static let assistantSettingsDidChange = Notification.Name("assistantSettingsDidChange")
     static let assistantMonitoringStateDidChange = Notification.Name("assistantMonitoringStateDidChange")
     static let assistantMonitoringToggleRequested = Notification.Name("assistantMonitoringToggleRequested")
+    static let transcriptionSettingsDidChange = Notification.Name("transcriptionSettingsDidChange")
 }
 
 // MARK: - Backward Compatibility
