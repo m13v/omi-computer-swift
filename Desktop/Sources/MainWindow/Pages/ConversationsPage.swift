@@ -29,11 +29,8 @@ struct ConversationsPage: View {
     @ObservedObject var appState: AppState
     @State private var selectedConversation: ServerConversation? = nil
 
-    // Splitter state - height of transcript section
-    @State private var transcriptHeight: CGFloat = 180
-    @State private var isTranscriptCollapsed: Bool = false
-    private let minTranscriptHeight: CGFloat = 60
-    private let maxTranscriptHeight: CGFloat = 400
+    // Transcript visibility state - hidden by default
+    @State private var isTranscriptCollapsed: Bool = true
 
     // Success state after finishing conversation
     @State private var showSavedSuccess: Bool = false
@@ -82,13 +79,16 @@ struct ConversationsPage: View {
                 Divider()
                     .background(OmiColors.backgroundTertiary)
 
-                // Live transcript when recording (with draggable splitter)
-                if appState.isTranscribing {
-                    transcriptSection
+                // When transcribing and expanded: full-page transcript
+                // When transcribing and collapsed: show splitter then conversation list
+                // When not transcribing: just conversation list
+                if appState.isTranscribing && !isTranscriptCollapsed {
+                    // Expanded: full-page transcript with back button
+                    fullPageTranscriptView
+                } else {
+                    // Collapsed or not recording: show conversation list
+                    conversationListSection
                 }
-
-                // Conversation list (always visible below)
-                conversationListSection
             }
 
             // Toast banner for discarded/error feedback
@@ -120,105 +120,48 @@ struct ConversationsPage: View {
         .padding(.horizontal, 16)
     }
 
-    // MARK: - Transcript Section with Splitter
+    // MARK: - Transcript Views
 
-    private var transcriptSection: some View {
+    /// Expanded state: full-page transcript with back button
+    private var fullPageTranscriptView: some View {
         VStack(spacing: 0) {
-            // Collapsible transcript area
-            if !isTranscriptCollapsed {
-                if appState.liveSpeakerSegments.isEmpty {
-                    // Empty state
-                    VStack(spacing: 12) {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 32))
-                            .foregroundColor(OmiColors.textTertiary.opacity(0.5))
-
-                        Text("Listening...")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textTertiary)
+            // Back to conversations button
+            HStack {
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isTranscriptCollapsed = true
                     }
-                    .frame(height: transcriptHeight)
-                    .frame(maxWidth: .infinity)
-                } else {
-                    LiveTranscriptView(segments: appState.liveSpeakerSegments)
-                        .frame(height: transcriptHeight)
-                }
-            }
-
-            // Draggable splitter
-            splitterHandle
-        }
-    }
-
-    private var splitterHandle: some View {
-        // Draggable splitter bar with centered button
-        ZStack {
-            // The splitter line itself - thick enough to grab
-            Rectangle()
-                .fill(OmiColors.backgroundTertiary)
-
-            // Centered button - shows "Show Transcript" when collapsed, chevron when expanded
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isTranscriptCollapsed.toggle()
-                }
-            }) {
-                if isTranscriptCollapsed {
-                    // Show text label when collapsed
-                    HStack(spacing: 4) {
-                        Text("Show Transcript")
-                            .font(.system(size: 10, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 8, weight: .bold))
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 12, weight: .medium))
+                        Text("Back to Conversations")
+                            .font(.system(size: 13, weight: .medium))
                     }
                     .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(
-                        Capsule()
-                            .fill(OmiColors.backgroundSecondary)
-                            .overlay(
-                                Capsule()
-                                    .strokeBorder(OmiColors.textQuaternary.opacity(0.3), lineWidth: 0.5)
-                            )
-                    )
-                } else {
-                    // Show just chevron when expanded
-                    Image(systemName: "chevron.up")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 28, height: 14)
-                        .background(
-                            Capsule()
-                                .fill(OmiColors.backgroundSecondary)
-                                .overlay(
-                                    Capsule()
-                                        .strokeBorder(OmiColors.textQuaternary.opacity(0.3), lineWidth: 0.5)
-                                )
-                        )
                 }
+                .buttonStyle(.plain)
+
+                Spacer()
             }
-            .buttonStyle(.plain)
-        }
-        .frame(height: 14)
-        .contentShape(Rectangle())
-        .gesture(
-            DragGesture()
-                .onChanged { value in
-                    if !isTranscriptCollapsed {
-                        let newHeight = transcriptHeight + value.translation.height
-                        transcriptHeight = min(max(newHeight, minTranscriptHeight), maxTranscriptHeight)
-                    }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .background(OmiColors.backgroundTertiary.opacity(0.5))
+
+            // Full-page transcript
+            if appState.liveSpeakerSegments.isEmpty {
+                VStack(spacing: 12) {
+                    Image(systemName: "waveform")
+                        .font(.system(size: 32))
+                        .foregroundColor(OmiColors.textTertiary.opacity(0.5))
+
+                    Text("Listening...")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
                 }
-        )
-        .onContinuousHover { phase in
-            switch phase {
-            case .active:
-                if !isTranscriptCollapsed {
-                    NSCursor.resizeUpDown.push()
-                }
-            case .ended:
-                NSCursor.pop()
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                LiveTranscriptView(segments: appState.liveSpeakerSegments)
             }
         }
     }
@@ -472,9 +415,40 @@ struct ConversationsPage: View {
             )
             .onAppear { isPulsing = true }
 
-            Text("Listening")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(OmiColors.textPrimary)
+            // Show inline transcript when collapsed, "Listening" when expanded or no text
+            if isTranscriptCollapsed, let latestText = latestTranscriptText {
+                // Inline transcript preview - clickable to expand
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isTranscriptCollapsed = false
+                    }
+                }) {
+                    HStack(spacing: 6) {
+                        Text(latestText)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .lineLimit(1)
+                            .truncationMode(.head)
+                            .frame(maxWidth: 280, alignment: .leading)
+
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(OmiColors.backgroundTertiary.opacity(0.5))
+                    )
+                }
+                .buttonStyle(.plain)
+                .contentShape(Rectangle())
+            } else {
+                Text("Listening")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OmiColors.textPrimary)
+            }
 
             // Audio level waveforms (restored original animation)
             HStack(spacing: 16) {
@@ -501,6 +475,13 @@ struct ConversationsPage: View {
                 }
             }
         }
+    }
+
+    /// Get the latest transcript text for inline display
+    private var latestTranscriptText: String? {
+        guard !appState.liveSpeakerSegments.isEmpty else { return nil }
+        // Get the last segment's text
+        return appState.liveSpeakerSegments.last?.text
     }
 
     // MARK: - Buttons
