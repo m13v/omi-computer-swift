@@ -67,12 +67,6 @@ pub struct RecordingPermission {
     pub enabled: bool,
 }
 
-/// Request to set recording permission
-#[derive(Debug, Clone, Deserialize)]
-pub struct SetRecordingPermissionRequest {
-    pub value: bool,
-}
-
 /// Private cloud sync settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PrivateCloudSync {
@@ -83,12 +77,6 @@ pub struct PrivateCloudSync {
 
 fn default_private_cloud_sync() -> bool {
     true
-}
-
-/// Request to set private cloud sync
-#[derive(Debug, Clone, Deserialize)]
-pub struct SetPrivateCloudSyncRequest {
-    pub value: bool,
 }
 
 /// Notification settings
