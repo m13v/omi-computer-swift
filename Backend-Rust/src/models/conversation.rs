@@ -142,6 +142,9 @@ pub enum ConversationSource {
     AppleWatch,
     Limitless,
     Plaud,
+    // Added for Python compatibility
+    ExternalIntegration,
+    Onboarding,
     #[serde(other)]
     Unknown,
 }
@@ -157,6 +160,27 @@ impl Default for ConversationSource {
 pub struct AppResult {
     pub app_id: Option<String>,
     pub content: String,
+}
+
+/// Geolocation data for a conversation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Geolocation {
+    pub google_place_id: Option<String>,
+    pub latitude: f64,
+    pub longitude: f64,
+    pub address: Option<String>,
+    pub location_type: Option<String>,
+}
+
+/// Photo attached to a conversation
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConversationPhoto {
+    pub id: Option<String>,
+    pub base64: String,
+    pub description: Option<String>,
+    pub created_at: DateTime<Utc>,
+    #[serde(default)]
+    pub discarded: bool,
 }
 
 /// Full conversation document as stored in Firestore
@@ -175,7 +199,11 @@ pub struct Conversation {
     #[serde(default)]
     pub discarded: bool,
     #[serde(default)]
+    pub deleted: bool,
+    #[serde(default)]
     pub starred: bool,
+    #[serde(default)]
+    pub is_locked: bool,
     #[serde(default)]
     pub folder_id: Option<String>,
     pub structured: Structured,
@@ -183,4 +211,10 @@ pub struct Conversation {
     pub transcript_segments: Vec<TranscriptSegment>,
     #[serde(default)]
     pub apps_results: Vec<AppResult>,
+    /// Geolocation data (from Python backend)
+    #[serde(default)]
+    pub geolocation: Option<Geolocation>,
+    /// Photos attached to conversation (from Python backend)
+    #[serde(default)]
+    pub photos: Vec<ConversationPhoto>,
 }
