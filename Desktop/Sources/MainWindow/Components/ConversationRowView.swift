@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Row view for a conversation in the list
 struct ConversationRowView: View {
@@ -6,6 +7,13 @@ struct ConversationRowView: View {
     let onTap: () -> Void
     @EnvironmentObject var appState: AppState
     @State private var isStarring = false
+
+    // Context menu action states
+    @State private var showEditDialog = false
+    @State private var showDeleteConfirmation = false
+    @State private var editedTitle: String = ""
+    @State private var isDeleting = false
+    @State private var isUpdatingTitle = false
 
     /// The timestamp to display (prefer startedAt, fall back to createdAt)
     private var displayDate: Date {
@@ -75,6 +83,57 @@ struct ConversationRowView: View {
         isStarring = false
     }
 
+    // MARK: - Context Menu Actions
+
+    private func copyTranscript() {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(conversation.transcript, forType: .string)
+        log("Copied transcript to clipboard")
+    }
+
+    private func copyLink() {
+        let link = "https://h.omi.me/conversations/\(conversation.id)"
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(link, forType: .string)
+        log("Copied conversation link to clipboard")
+    }
+
+    private func deleteConversation() async {
+        guard !isDeleting else { return }
+        isDeleting = true
+
+        do {
+            try await APIClient.shared.deleteConversation(id: conversation.id)
+            await MainActor.run {
+                appState.deleteConversationLocally(conversation.id)
+            }
+            log("Deleted conversation \(conversation.id)")
+        } catch {
+            log("Failed to delete conversation: \(error)")
+        }
+
+        isDeleting = false
+    }
+
+    private func updateTitle() async {
+        guard !isUpdatingTitle, !editedTitle.isEmpty else { return }
+        isUpdatingTitle = true
+
+        do {
+            try await APIClient.shared.updateConversationTitle(id: conversation.id, title: editedTitle)
+            await MainActor.run {
+                appState.updateConversationTitle(conversation.id, title: editedTitle)
+            }
+            log("Updated conversation title to: \(editedTitle)")
+        } catch {
+            log("Failed to update title: \(error)")
+        }
+
+        isUpdatingTitle = false
+    }
+
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 12) {
@@ -103,7 +162,7 @@ struct ConversationRowView: View {
                 }) {
                     Image(systemName: conversation.starred ? "star.fill" : "star")
                         .font(.system(size: 14))
-                        .foregroundColor(conversation.starred ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        .foregroundColor(conversation.starred ? OmiColors.amber : OmiColors.textTertiary)
                         .opacity(isStarring ? 0.5 : 1.0)
                 }
                 .buttonStyle(.plain)
@@ -133,6 +192,54 @@ struct ConversationRowView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(action: copyTranscript) {
+                Label("Copy Transcript", systemImage: "doc.on.doc")
+            }
+
+            Button(action: copyLink) {
+                Label("Copy Link", systemImage: "link")
+            }
+
+            Divider()
+
+            Button(action: {
+                editedTitle = conversation.title
+                showEditDialog = true
+            }) {
+                Label("Edit Title", systemImage: "pencil")
+            }
+
+            Divider()
+
+            Button(role: .destructive, action: {
+                showDeleteConfirmation = true
+            }) {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .alert("Edit Conversation Title", isPresented: $showEditDialog) {
+            TextField("Title", text: $editedTitle)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                Task {
+                    await updateTitle()
+                }
+            }
+            .disabled(editedTitle.isEmpty || isUpdatingTitle)
+        } message: {
+            Text("Enter a new title for this conversation")
+        }
+        .alert("Delete Conversation", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task {
+                    await deleteConversation()
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this conversation? This action cannot be undone.")
+        }
     }
 }
 
