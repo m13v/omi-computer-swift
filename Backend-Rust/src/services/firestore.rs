@@ -1172,6 +1172,11 @@ impl FirestoreService {
             MemoryCategory::System => "system",
             MemoryCategory::Interesting => "interesting",
             MemoryCategory::Manual => "manual",
+            // Legacy categories - preserve original value
+            MemoryCategory::Core => "core",
+            MemoryCategory::Hobbies => "hobbies",
+            MemoryCategory::Lifestyle => "lifestyle",
+            MemoryCategory::Interests => "interests",
         };
 
         let url = format!(
@@ -1184,7 +1189,12 @@ impl FirestoreService {
         );
 
         // Build fields - always include base fields
+        // CRITICAL: Include all fields that Python expects (matching save_memories)
         let mut fields = json!({
+            // CRITICAL: id field required - Python model requires this
+            "id": {"stringValue": &memory_id},
+            // CRITICAL: uid field required - Python model requires this
+            "uid": {"stringValue": uid},
             "content": {"stringValue": content},
             "category": {"stringValue": category_str},
             "created_at": {"timestampValue": now.to_rfc3339()},
@@ -1195,7 +1205,12 @@ impl FirestoreService {
             "manually_added": {"booleanValue": is_manual},
             "scoring": {"stringValue": scoring},
             "is_read": {"booleanValue": false},
-            "is_dismissed": {"booleanValue": false}
+            "is_dismissed": {"booleanValue": false},
+            // Additional fields for Python compatibility
+            "edited": {"booleanValue": false},
+            "is_locked": {"booleanValue": false},
+            "kg_extracted": {"booleanValue": false},
+            "tags": {"arrayValue": {"values": []}}
         });
 
         // Add optional fields if present
@@ -2552,11 +2567,15 @@ impl FirestoreService {
                 .and_then(|s| serde_json::from_str(&format!("\"{}\"", s)).ok())
                 .unwrap_or_default(),
             discarded: self.parse_bool(fields, "discarded").unwrap_or(false),
+            deleted: self.parse_bool(fields, "deleted").unwrap_or(false),
             starred: self.parse_bool(fields, "starred").unwrap_or(false),
+            is_locked: self.parse_bool(fields, "is_locked").unwrap_or(false),
             folder_id: self.parse_string(fields, "folder_id"),
             structured: self.parse_structured(fields)?,
             transcript_segments: self.parse_transcript_segments(fields)?,
             apps_results,
+            geolocation: self.parse_geolocation(fields),
+            photos: self.parse_photos(fields),
         })
     }
 
@@ -2669,12 +2688,88 @@ impl FirestoreService {
                 category: self.parse_string(s, "category")
                     .and_then(|c| serde_json::from_str(&format!("\"{}\"", c)).ok())
                     .unwrap_or_default(),
-                action_items: vec![], // Parsed separately if needed
-                events: vec![],       // Parsed separately if needed
+                action_items: self.parse_action_items_from_structured(s),
+                events: self.parse_events_from_structured(s),
             })
         } else {
             Ok(Structured::default())
         }
+    }
+
+    /// Parse action_items array from structured field
+    fn parse_action_items_from_structured(&self, structured_fields: &Value) -> Vec<crate::models::ActionItem> {
+        let array = match structured_fields.get("action_items")
+            .and_then(|a| a.get("arrayValue"))
+            .and_then(|a| a.get("values"))
+            .and_then(|a| a.as_array())
+        {
+            Some(arr) => arr,
+            None => return vec![],
+        };
+
+        array.iter().filter_map(|item| {
+            let map_fields = item.get("mapValue")?.get("fields")?;
+            let description = self.parse_string(map_fields, "description").unwrap_or_default();
+            let completed = self.parse_bool(map_fields, "completed").unwrap_or(false);
+            let due_at = self.parse_timestamp_optional(map_fields, "due_at");
+            Some(crate::models::ActionItem { description, completed, due_at })
+        }).collect()
+    }
+
+    /// Parse events array from structured field
+    fn parse_events_from_structured(&self, structured_fields: &Value) -> Vec<crate::models::Event> {
+        let array = match structured_fields.get("events")
+            .and_then(|a| a.get("arrayValue"))
+            .and_then(|a| a.get("values"))
+            .and_then(|a| a.as_array())
+        {
+            Some(arr) => arr,
+            None => return vec![],
+        };
+
+        array.iter().filter_map(|item| {
+            let map_fields = item.get("mapValue")?.get("fields")?;
+            let title = self.parse_string(map_fields, "title").unwrap_or_default();
+            let description = self.parse_string(map_fields, "description").unwrap_or_default();
+            let start = self.parse_timestamp_optional(map_fields, "start")?;
+            let duration = self.parse_int(map_fields, "duration").unwrap_or(30);
+            Some(crate::models::Event { title, description, start, duration })
+        }).collect()
+    }
+
+    /// Parse geolocation from conversation fields
+    fn parse_geolocation(&self, fields: &Value) -> Option<crate::models::Geolocation> {
+        let geo = fields.get("geolocation")?.get("mapValue")?.get("fields")?;
+
+        Some(crate::models::Geolocation {
+            google_place_id: self.parse_string(geo, "google_place_id"),
+            latitude: self.parse_float(geo, "latitude").unwrap_or(0.0),
+            longitude: self.parse_float(geo, "longitude").unwrap_or(0.0),
+            address: self.parse_string(geo, "address"),
+            location_type: self.parse_string(geo, "location_type"),
+        })
+    }
+
+    /// Parse photos array from conversation fields
+    fn parse_photos(&self, fields: &Value) -> Vec<crate::models::ConversationPhoto> {
+        let array = match fields.get("photos")
+            .and_then(|a| a.get("arrayValue"))
+            .and_then(|a| a.get("values"))
+            .and_then(|a| a.as_array())
+        {
+            Some(arr) => arr,
+            None => return vec![],
+        };
+
+        array.iter().filter_map(|item| {
+            let map_fields = item.get("mapValue")?.get("fields")?;
+            let id = self.parse_string(map_fields, "id");
+            let base64 = self.parse_string(map_fields, "base64").unwrap_or_default();
+            let description = self.parse_string(map_fields, "description");
+            let created_at = self.parse_timestamp_optional(map_fields, "created_at").unwrap_or_else(Utc::now);
+            let discarded = self.parse_bool(map_fields, "discarded").unwrap_or(false);
+            Some(crate::models::ConversationPhoto { id, base64, description, created_at, discarded })
+        }).collect()
     }
 
     /// Parse transcript segments
@@ -2837,11 +2932,48 @@ impl FirestoreService {
         fields.insert("language".to_string(), json!({"stringValue": conv.language}));
         fields.insert("status".to_string(), json!({"stringValue": format!("{:?}", conv.status).to_lowercase()}));
         fields.insert("discarded".to_string(), json!({"booleanValue": conv.discarded}));
+        fields.insert("deleted".to_string(), json!({"booleanValue": conv.deleted}));
         fields.insert("starred".to_string(), json!({"booleanValue": conv.starred}));
+        fields.insert("is_locked".to_string(), json!({"booleanValue": conv.is_locked}));
 
         // Add folder_id if present
         if let Some(folder_id) = &conv.folder_id {
             fields.insert("folder_id".to_string(), json!({"stringValue": folder_id}));
+        }
+
+        // Add geolocation if present
+        if let Some(geo) = &conv.geolocation {
+            let mut geo_fields = serde_json::Map::new();
+            if let Some(place_id) = &geo.google_place_id {
+                geo_fields.insert("google_place_id".to_string(), json!({"stringValue": place_id}));
+            }
+            geo_fields.insert("latitude".to_string(), json!({"doubleValue": geo.latitude}));
+            geo_fields.insert("longitude".to_string(), json!({"doubleValue": geo.longitude}));
+            if let Some(address) = &geo.address {
+                geo_fields.insert("address".to_string(), json!({"stringValue": address}));
+            }
+            if let Some(loc_type) = &geo.location_type {
+                geo_fields.insert("location_type".to_string(), json!({"stringValue": loc_type}));
+            }
+            fields.insert("geolocation".to_string(), json!({"mapValue": {"fields": geo_fields}}));
+        }
+
+        // Add photos array
+        if !conv.photos.is_empty() {
+            let photos_values: Vec<Value> = conv.photos.iter().map(|photo| {
+                let mut photo_fields = serde_json::Map::new();
+                if let Some(id) = &photo.id {
+                    photo_fields.insert("id".to_string(), json!({"stringValue": id}));
+                }
+                photo_fields.insert("base64".to_string(), json!({"stringValue": &photo.base64}));
+                if let Some(desc) = &photo.description {
+                    photo_fields.insert("description".to_string(), json!({"stringValue": desc}));
+                }
+                photo_fields.insert("created_at".to_string(), json!({"timestampValue": photo.created_at.to_rfc3339()}));
+                photo_fields.insert("discarded".to_string(), json!({"booleanValue": photo.discarded}));
+                json!({"mapValue": {"fields": photo_fields}})
+            }).collect();
+            fields.insert("photos".to_string(), json!({"arrayValue": {"values": photos_values}}));
         }
 
         // Build structured with action_items and events
@@ -4462,18 +4594,29 @@ impl FirestoreService {
         );
 
         let mut fields = json!({
+            // CRITICAL: id field required - Python queries .where('id', '==', message_id)
+            "id": {"stringValue": &message_id},
             "text": {"stringValue": text},
             "sender": {"stringValue": sender},
             "created_at": {"timestampValue": now.to_rfc3339()},
-            "reported": {"booleanValue": false}
+            "reported": {"booleanValue": false},
+            // CRITICAL: type field required - Python Message model requires it (no default)
+            "type": {"stringValue": "text"},
+            // Default empty arrays for memories_id
+            "memories_id": {"arrayValue": {"values": []}},
+            "from_external_integration": {"booleanValue": false}
         });
 
         if let Some(app) = app_id {
             fields["app_id"] = json!({"stringValue": app});
+            // CRITICAL: plugin_id for backward compatibility - Python filters on plugin_id
+            fields["plugin_id"] = json!({"stringValue": app});
         }
 
         if let Some(session) = session_id {
             fields["session_id"] = json!({"stringValue": session});
+            // Also set chat_session_id for Python compatibility
+            fields["chat_session_id"] = json!({"stringValue": session});
         }
 
         let doc = json!({"fields": fields});
