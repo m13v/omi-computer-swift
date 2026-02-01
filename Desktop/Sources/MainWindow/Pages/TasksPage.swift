@@ -1,5 +1,51 @@
 import SwiftUI
 
+// MARK: - Task Category (by due date)
+
+enum TaskCategory: String, CaseIterable {
+    case overdue = "Overdue"
+    case today = "Today"
+    case tomorrow = "Tomorrow"
+    case later = "Later"
+    case noDeadline = "No Deadline"
+
+    var icon: String {
+        switch self {
+        case .overdue: return "exclamationmark.circle.fill"
+        case .today: return "sun.max.fill"
+        case .tomorrow: return "sunrise.fill"
+        case .later: return "calendar"
+        case .noDeadline: return "tray.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .overdue: return .red
+        case .today: return .yellow
+        case .tomorrow: return .blue
+        case .later: return OmiColors.purplePrimary
+        case .noDeadline: return OmiColors.textTertiary
+        }
+    }
+}
+
+// MARK: - Sort Option
+
+enum TaskSortOption: String, CaseIterable {
+    case dueDate = "Due Date"
+    case createdDate = "Created Date"
+    case priority = "Priority"
+
+    var icon: String {
+        switch self {
+        case .dueDate: return "calendar"
+        case .createdDate: return "clock"
+        case .priority: return "flag"
+        }
+    }
+}
+
 // MARK: - Tasks View Model
 
 @MainActor
@@ -7,49 +53,98 @@ class TasksViewModel: ObservableObject {
     @Published var tasks: [TaskActionItem] = []
     @Published var isLoading = false
     @Published var error: String?
-    @Published var filter: TaskFilter = .all
+    @Published var showCompleted = false
+    @Published var sortOption: TaskSortOption = .dueDate
+    @Published var expandedCategories: Set<TaskCategory> = Set(TaskCategory.allCases)
 
-    enum TaskFilter: String, CaseIterable {
-        case all = "All"
-        case todo = "To Do"
-        case done = "Done"
+    // MARK: - Computed Properties
 
-        var completedFilter: Bool? {
-            switch self {
-            case .all: return nil
-            case .todo: return false
-            case .done: return true
-            }
+    var displayTasks: [TaskActionItem] {
+        let filtered = showCompleted
+            ? tasks.filter { $0.completed }
+            : tasks.filter { !$0.completed }
+        return sortTasks(filtered)
+    }
+
+    var categorizedTasks: [TaskCategory: [TaskActionItem]] {
+        var result: [TaskCategory: [TaskActionItem]] = [:]
+
+        for category in TaskCategory.allCases {
+            result[category] = []
+        }
+
+        for task in displayTasks {
+            let category = categoryFor(task: task)
+            result[category, default: []].append(task)
+        }
+
+        return result
+    }
+
+    var todoCount: Int {
+        tasks.filter { !$0.completed }.count
+    }
+
+    var doneCount: Int {
+        tasks.filter { $0.completed }.count
+    }
+
+    // MARK: - Category Helpers
+
+    private func categoryFor(task: TaskActionItem) -> TaskCategory {
+        guard let dueAt = task.dueAt else {
+            return .noDeadline
+        }
+
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
+        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
+
+        if dueAt < startOfToday {
+            return .overdue
+        } else if dueAt < startOfTomorrow {
+            return .today
+        } else if dueAt < startOfDayAfterTomorrow {
+            return .tomorrow
+        } else {
+            return .later
         }
     }
 
-    var filteredTasks: [TaskActionItem] {
-        let filtered: [TaskActionItem]
-        switch filter {
-        case .all:
-            filtered = tasks
-        case .todo:
-            filtered = tasks.filter { !$0.completed }
-        case .done:
-            filtered = tasks.filter { $0.completed }
-        }
-        // Sort by: incomplete first, then high priority, then newest
-        return filtered.sorted { a, b in
-            // Incomplete tasks first
-            if a.completed != b.completed {
-                return !a.completed
+    private func sortTasks(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+        switch sortOption {
+        case .dueDate:
+            return tasks.sorted { a, b in
+                // Tasks with due dates first
+                switch (a.dueAt, b.dueAt) {
+                case (nil, nil):
+                    return a.createdAt > b.createdAt
+                case (nil, _):
+                    return false
+                case (_, nil):
+                    return true
+                case (let aDate?, let bDate?):
+                    return aDate < bDate
+                }
             }
-            // Then by priority (high > medium > low > nil)
+        case .createdDate:
+            return tasks.sorted { $0.createdAt > $1.createdAt }
+        case .priority:
             let priorityOrder = ["high": 0, "medium": 1, "low": 2]
-            let aPriority = a.priority.flatMap { priorityOrder[$0] } ?? 3
-            let bPriority = b.priority.flatMap { priorityOrder[$0] } ?? 3
-            if aPriority != bPriority {
-                return aPriority < bPriority
+            return tasks.sorted { a, b in
+                let aPriority = a.priority.flatMap { priorityOrder[$0] } ?? 3
+                let bPriority = b.priority.flatMap { priorityOrder[$0] } ?? 3
+                if aPriority != bPriority {
+                    return aPriority < bPriority
+                }
+                return a.createdAt > b.createdAt
             }
-            // Then by date (newest first)
-            return a.createdAt > b.createdAt
         }
     }
+
+    // MARK: - Actions
 
     func loadTasks() async {
         isLoading = true
@@ -73,7 +168,6 @@ class TasksViewModel: ObservableObject {
                 completed: !task.completed
             )
             log("TasksViewModel: toggleTask succeeded")
-            // Update local state
             if let index = tasks.firstIndex(where: { $0.id == task.id }) {
                 tasks[index] = updated
             }
@@ -86,11 +180,18 @@ class TasksViewModel: ObservableObject {
     func deleteTask(_ task: TaskActionItem) async {
         do {
             try await APIClient.shared.deleteActionItem(id: task.id)
-            // Remove from local state
             tasks.removeAll { $0.id == task.id }
         } catch {
             self.error = error.localizedDescription
             logError("Failed to delete task", error: error)
+        }
+    }
+
+    func toggleCategory(_ category: TaskCategory) {
+        if expandedCategories.contains(category) {
+            expandedCategories.remove(category)
+        } else {
+            expandedCategories.insert(category)
         }
     }
 }
@@ -102,18 +203,18 @@ struct TasksPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Filter tabs
-            filterTabs
+            // Header with filter toggle and sort
+            headerView
 
             // Content
             if viewModel.isLoading && viewModel.tasks.isEmpty {
                 loadingView
             } else if let error = viewModel.error, viewModel.tasks.isEmpty {
                 errorView(error)
-            } else if viewModel.filteredTasks.isEmpty {
+            } else if viewModel.displayTasks.isEmpty {
                 emptyView
             } else {
-                tasksList
+                tasksListView
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -123,30 +224,48 @@ struct TasksPage: View {
         }
     }
 
-    // MARK: - Filter Tabs
+    // MARK: - Header View
 
-    private var filterTabs: some View {
-        HStack(spacing: 4) {
-            ForEach(TasksViewModel.TaskFilter.allCases, id: \.self) { filter in
-                filterTab(filter)
-            }
+    private var headerView: some View {
+        HStack(spacing: 12) {
+            // To Do / Done toggle
+            filterToggle
+
+            Spacer()
+
+            // Sort dropdown
+            sortDropdown
         }
         .padding(.horizontal, 16)
         .padding(.top, 16)
         .padding(.bottom, 12)
     }
 
-    private func filterTab(_ filter: TasksViewModel.TaskFilter) -> some View {
-        let isSelected = viewModel.filter == filter
-        let count = countForFilter(filter)
-
-        return Button(action: {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                viewModel.filter = filter
+    private var filterToggle: some View {
+        HStack(spacing: 2) {
+            filterButton(title: "To Do", count: viewModel.todoCount, isSelected: !viewModel.showCompleted) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.showCompleted = false
+                }
             }
-        }) {
+
+            filterButton(title: "Done", count: viewModel.doneCount, isSelected: viewModel.showCompleted) {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    viewModel.showCompleted = true
+                }
+            }
+        }
+        .padding(3)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(OmiColors.backgroundSecondary)
+        )
+    }
+
+    private func filterButton(title: String, count: Int, isSelected: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
             HStack(spacing: 6) {
-                Text(filter.rawValue)
+                Text(title)
                     .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
 
                 if count > 0 {
@@ -172,15 +291,40 @@ struct TasksPage: View {
         .buttonStyle(.plain)
     }
 
-    private func countForFilter(_ filter: TasksViewModel.TaskFilter) -> Int {
-        switch filter {
-        case .all:
-            return viewModel.tasks.count
-        case .todo:
-            return viewModel.tasks.filter { !$0.completed }.count
-        case .done:
-            return viewModel.tasks.filter { $0.completed }.count
+    private var sortDropdown: some View {
+        Menu {
+            ForEach(TaskSortOption.allCases, id: \.self) { option in
+                Button(action: {
+                    withAnimation {
+                        viewModel.sortOption = option
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: option.icon)
+                        Text(option.rawValue)
+                        if viewModel.sortOption == option {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "arrow.up.arrow.down")
+                    .font(.system(size: 12))
+                Text(viewModel.sortOption.rawValue)
+                    .font(.system(size: 13, weight: .medium))
+            }
+            .foregroundColor(OmiColors.textSecondary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(OmiColors.backgroundSecondary)
+            )
         }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
     }
 
     // MARK: - Loading View
@@ -244,10 +388,19 @@ struct TasksPage: View {
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
 
-            if viewModel.filter != .all && !viewModel.tasks.isEmpty {
-                Button("View All Tasks") {
+            if viewModel.showCompleted && viewModel.todoCount > 0 {
+                Button("View To Do") {
                     withAnimation {
-                        viewModel.filter = .all
+                        viewModel.showCompleted = false
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(OmiColors.textSecondary)
+                .padding(.top, 8)
+            } else if !viewModel.showCompleted && viewModel.doneCount > 0 {
+                Button("View Done") {
+                    withAnimation {
+                        viewModel.showCompleted = true
                     }
                 }
                 .buttonStyle(.bordered)
@@ -259,57 +412,111 @@ struct TasksPage: View {
     }
 
     private var emptyViewIcon: String {
-        switch viewModel.filter {
-        case .all:
-            return "checkmark.square.fill"
-        case .todo:
-            return "tray.fill"
-        case .done:
-            return "checkmark.circle.fill"
-        }
+        viewModel.showCompleted ? "checkmark.circle.fill" : "tray.fill"
     }
 
     private var emptyViewTitle: String {
-        switch viewModel.filter {
-        case .all:
-            return "No Tasks"
-        case .todo:
-            return "All Caught Up!"
-        case .done:
-            return "No Completed Tasks"
-        }
+        viewModel.showCompleted ? "No Completed Tasks" : "All Caught Up!"
     }
 
     private var emptyViewMessage: String {
-        switch viewModel.filter {
-        case .all:
+        if viewModel.tasks.isEmpty {
             return "Tasks from your conversations will appear here"
-        case .todo:
-            return "You have no pending tasks"
-        case .done:
-            return "Complete a task to see it here"
         }
+        return viewModel.showCompleted ? "Complete a task to see it here" : "You have no pending tasks"
     }
 
-    // MARK: - Tasks List
+    // MARK: - Tasks List View
 
-    private var tasksList: some View {
+    private var tasksListView: some View {
         ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(viewModel.filteredTasks) { task in
-                    TaskRow(task: task, viewModel: viewModel)
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .slide),
-                            removal: .opacity.combined(with: .move(edge: .trailing))
-                        ))
+            LazyVStack(spacing: 16) {
+                // Show tasks grouped by category when sorting by due date
+                if viewModel.sortOption == .dueDate && !viewModel.showCompleted {
+                    ForEach(TaskCategory.allCases, id: \.self) { category in
+                        let tasksInCategory = viewModel.categorizedTasks[category] ?? []
+                        if !tasksInCategory.isEmpty {
+                            TaskCategorySection(
+                                category: category,
+                                tasks: tasksInCategory,
+                                isExpanded: viewModel.expandedCategories.contains(category),
+                                onToggle: { viewModel.toggleCategory(category) },
+                                viewModel: viewModel
+                            )
+                        }
+                    }
+                } else {
+                    // Flat list for other sort options or completed view
+                    ForEach(viewModel.displayTasks) { task in
+                        TaskRow(task: task, viewModel: viewModel)
+                    }
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .animation(.easeInOut(duration: 0.3), value: viewModel.filteredTasks.map(\.id))
+            .animation(.easeInOut(duration: 0.3), value: viewModel.displayTasks.map(\.id))
         }
         .refreshable {
             await viewModel.loadTasks()
+        }
+    }
+}
+
+// MARK: - Task Category Section
+
+struct TaskCategorySection: View {
+    let category: TaskCategory
+    let tasks: [TaskActionItem]
+    let isExpanded: Bool
+    let onToggle: () -> Void
+    @ObservedObject var viewModel: TasksViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Category header
+            Button(action: onToggle) {
+                HStack(spacing: 8) {
+                    Image(systemName: category.icon)
+                        .font(.system(size: 14))
+                        .foregroundColor(category.color)
+
+                    Text(category.rawValue)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Text("\(tasks.count)")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(OmiColors.textTertiary.opacity(0.1))
+                        )
+
+                    Spacer()
+
+                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            // Tasks in category
+            if isExpanded {
+                VStack(spacing: 8) {
+                    ForEach(tasks) { task in
+                        TaskRow(task: task, viewModel: viewModel)
+                            .transition(.asymmetric(
+                                insertion: .opacity.combined(with: .move(edge: .top)),
+                                removal: .opacity.combined(with: .move(edge: .trailing))
+                            ))
+                    }
+                }
+            }
         }
     }
 }
@@ -334,12 +541,10 @@ struct TaskRow: View {
                 handleToggle()
             } label: {
                 ZStack {
-                    // Background circle
                     Circle()
                         .stroke(isCompletingAnimation || task.completed ? OmiColors.purplePrimary : OmiColors.textTertiary, lineWidth: 1.5)
                         .frame(width: 20, height: 20)
 
-                    // Filled circle and checkmark
                     if isCompletingAnimation || task.completed {
                         Circle()
                             .fill(OmiColors.purplePrimary)
@@ -359,7 +564,7 @@ struct TaskRow: View {
             .padding(.top, 2)
 
             // Task content
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(task.description)
                     .font(.system(size: 14))
                     .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
@@ -367,6 +572,11 @@ struct TaskRow: View {
                     .lineLimit(3)
 
                 HStack(spacing: 8) {
+                    // Due date badge (color-coded)
+                    if let dueAt = task.dueAt {
+                        DueDateBadge(dueAt: dueAt, isCompleted: task.completed)
+                    }
+
                     // Source badge
                     if let source = task.source {
                         SourceBadge(source: source, sourceLabel: task.sourceLabel, sourceIcon: task.sourceIcon)
@@ -377,20 +587,11 @@ struct TaskRow: View {
                         PriorityBadge(priority: priority)
                     }
 
-                    // Created date
-                    Text(task.createdAt.formatted(date: .abbreviated, time: .omitted))
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    // Due date if present
-                    if let dueAt = task.dueAt {
-                        HStack(spacing: 4) {
-                            Image(systemName: "calendar")
-                                .font(.system(size: 10))
-                            Text("Due \(dueAt.formatted(date: .abbreviated, time: .omitted))")
-                                .font(.system(size: 11))
-                        }
-                        .foregroundColor(dueAt < Date() && !task.completed ? .red : OmiColors.textTertiary)
+                    // Created date (if no due date)
+                    if task.dueAt == nil {
+                        Text(task.createdAt.formatted(date: .abbreviated, time: .omitted))
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
                     }
                 }
             }
@@ -419,14 +620,12 @@ struct TaskRow: View {
         .opacity(rowOpacity)
         .offset(x: rowOffset)
         .onAppear {
-            // Reset animation states when view appears (e.g., switching tabs)
             rowOpacity = 1.0
             rowOffset = 0
             isCompletingAnimation = false
             checkmarkScale = 1.0
         }
         .onChange(of: task.completed) { _, _ in
-            // Reset animation states when task state changes externally
             rowOpacity = 1.0
             rowOffset = 0
             isCompletingAnimation = false
@@ -456,7 +655,6 @@ struct TaskRow: View {
     private func handleToggle() {
         log("Task: handleToggle called, completed=\(task.completed)")
 
-        // If already completed, just toggle without animation
         if task.completed {
             log("Task: Already completed, toggling back")
             Task {
@@ -466,23 +664,18 @@ struct TaskRow: View {
         }
 
         log("Task: Starting completion animation")
-
-        // Animate the completion
         isCompletingAnimation = true
 
-        // Checkmark pop animation
         withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
             checkmarkScale = 1.2
         }
 
-        // Scale back down
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             withAnimation(.spring(response: 0.2, dampingFraction: 0.7)) {
                 self.checkmarkScale = 1.0
             }
         }
 
-        // Slide and fade out after a brief moment
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             withAnimation(.easeInOut(duration: 0.3)) {
                 self.rowOpacity = 0.0
@@ -490,13 +683,62 @@ struct TaskRow: View {
             }
         }
 
-        // Actually toggle the task after animation
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             log("Task: Animation complete, calling toggleTask")
             Task {
                 await self.viewModel.toggleTask(self.task)
             }
         }
+    }
+}
+
+// MARK: - Due Date Badge
+
+struct DueDateBadge: View {
+    let dueAt: Date
+    let isCompleted: Bool
+
+    private var badgeInfo: (text: String, color: Color) {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
+        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
+        let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfToday)!
+
+        if isCompleted {
+            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.textTertiary)
+        }
+
+        if dueAt < startOfToday {
+            return ("Overdue", .red)
+        } else if dueAt < startOfTomorrow {
+            return ("Today", .yellow)
+        } else if dueAt < startOfDayAfterTomorrow {
+            return ("Tomorrow", .blue)
+        } else if dueAt < endOfWeek {
+            let weekday = calendar.weekdaySymbols[calendar.component(.weekday, from: dueAt) - 1]
+            return (weekday, .green)
+        } else {
+            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.purplePrimary)
+        }
+    }
+
+    var body: some View {
+        let info = badgeInfo
+        HStack(spacing: 4) {
+            Image(systemName: "calendar")
+                .font(.system(size: 10))
+            Text(info.text)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundColor(info.color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(
+            Capsule()
+                .fill(info.color.opacity(0.15))
+        )
     }
 }
 
