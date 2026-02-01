@@ -14,7 +14,7 @@ use crate::auth::AuthUser;
 use crate::llm::LlmClient;
 use crate::models::{
     Conversation, ConversationSource, ConversationStatus, CreateConversationRequest,
-    CreateConversationResponse, Structured,
+    CreateConversationResponse, Structured, TranscriptSegment,
 };
 use crate::AppState;
 
@@ -218,11 +218,15 @@ async fn create_conversation_from_segments(
         language: request.language.clone(),
         status: ConversationStatus::Completed,
         discarded: false,
+        deleted: false,
         starred: false,
+        is_locked: false,
         structured: processed.structured,
         transcript_segments: request.transcript_segments.clone(),
         apps_results: vec![],
         folder_id: None,
+        geolocation: None,
+        photos: vec![],
     };
 
     // Save conversation
@@ -532,6 +536,32 @@ pub struct UpdateConversationRequest {
     title: Option<String>,
 }
 
+/// GET /v1/conversations/:id - Get a single conversation by ID
+async fn get_conversation_by_id(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<String>,
+) -> Result<Json<Conversation>, (StatusCode, String)> {
+    tracing::info!(
+        "Getting conversation {} for user {}",
+        conversation_id,
+        user.uid
+    );
+
+    match state
+        .firestore
+        .get_conversation(&user.uid, &conversation_id)
+        .await
+    {
+        Ok(Some(conversation)) => Ok(Json(conversation)),
+        Ok(None) => Err((StatusCode::NOT_FOUND, "Conversation not found".to_string())),
+        Err(e) => {
+            tracing::error!("Failed to get conversation: {}", e);
+            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get conversation: {}", e)))
+        }
+    }
+}
+
 /// DELETE /v1/conversations/:id - Delete a conversation
 async fn delete_conversation(
     State(state): State<AppState>,
@@ -590,11 +620,300 @@ async fn update_conversation(
     }))
 }
 
+// ============================================================================
+// MERGE CONVERSATIONS
+// ============================================================================
+
+#[derive(Debug, Deserialize)]
+pub struct MergeConversationsRequest {
+    /// IDs of conversations to merge (minimum 2)
+    conversation_ids: Vec<String>,
+    /// Whether to regenerate summary from merged transcript
+    #[serde(default = "default_reprocess")]
+    reprocess: bool,
+}
+
+fn default_reprocess() -> bool {
+    true
+}
+
+#[derive(Debug, Serialize)]
+pub struct MergeConversationsResponse {
+    status: String,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    warning: Option<String>,
+    conversation_ids: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    new_conversation_id: Option<String>,
+}
+
+/// POST /v1/conversations/merge - Merge multiple conversations into one
+async fn merge_conversations(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<MergeConversationsRequest>,
+) -> Result<Json<MergeConversationsResponse>, (StatusCode, String)> {
+    tracing::info!(
+        "Merging {} conversations for user {}",
+        request.conversation_ids.len(),
+        user.uid
+    );
+
+    // Validate minimum number of conversations
+    if request.conversation_ids.len() < 2 {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            "At least 2 conversations required to merge".to_string(),
+        ));
+    }
+
+    // Fetch all conversations
+    let mut conversations = Vec::new();
+    for conv_id in &request.conversation_ids {
+        match state.firestore.get_conversation(&user.uid, conv_id).await {
+            Ok(Some(conv)) => conversations.push(conv),
+            Ok(None) => {
+                return Err((
+                    StatusCode::NOT_FOUND,
+                    format!("Conversation {} not found", conv_id),
+                ));
+            }
+            Err(e) => {
+                return Err((
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    format!("Failed to fetch conversation {}: {}", conv_id, e),
+                ));
+            }
+        }
+    }
+
+    // Validate all are completed
+    for conv in &conversations {
+        if conv.status != ConversationStatus::Completed {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Conversation {} is not ready (status: {:?}). Wait for it to complete.",
+                    conv.id, conv.status
+                ),
+            ));
+        }
+    }
+
+    // Sort by started_at
+    conversations.sort_by(|a, b| a.started_at.cmp(&b.started_at));
+
+    // Check for large time gaps (warn but don't reject)
+    let mut warnings = Vec::new();
+    for i in 1..conversations.len() {
+        let prev_finished = conversations[i - 1].finished_at;
+        let curr_started = conversations[i].started_at;
+        let gap_hours = (curr_started - prev_finished).num_seconds() as f64 / 3600.0;
+        if gap_hours > 1.0 {
+            warnings.push(format!("{:.1}h gap detected", gap_hours));
+        }
+    }
+    let warning_msg = if warnings.is_empty() {
+        None
+    } else {
+        Some(warnings.join("; "))
+    };
+
+    // Merge transcript segments with adjusted timestamps
+    let merged_segments = merge_transcript_segments(&conversations);
+
+    // Generate new conversation ID
+    let new_conversation_id = uuid::Uuid::new_v4().to_string();
+
+    // Use earliest conversation's dates and properties
+    let first = &conversations[0];
+    let last = conversations.last().unwrap();
+
+    // Create merged conversation
+    let mut merged_conversation = Conversation {
+        id: new_conversation_id.clone(),
+        created_at: first.created_at,
+        started_at: first.started_at,
+        finished_at: last.finished_at,
+        source: first.source.clone(),
+        language: first.language.clone(),
+        status: ConversationStatus::Processing,
+        discarded: false,
+        deleted: false,
+        starred: false,
+        is_locked: false,
+        structured: Structured {
+            title: format!("Merged: {} conversations", conversations.len()),
+            overview: "Processing merged conversation...".to_string(),
+            emoji: "🔗".to_string(),
+            category: first.structured.category.clone(),
+            action_items: vec![],
+            events: vec![],
+        },
+        transcript_segments: merged_segments,
+        apps_results: vec![],
+        folder_id: first.folder_id.clone(),
+        geolocation: first.geolocation.clone(),
+        photos: vec![],
+    };
+
+    // If reprocessing is requested and we have an LLM client, process the merged conversation
+    if request.reprocess {
+        if let Some(api_key) = &state.config.gemini_api_key {
+            let llm = LlmClient::new(api_key.clone());
+
+            // Get existing data for deduplication
+            let existing_memories = state
+                .firestore
+                .get_memories(&user.uid, 500)
+                .await
+                .unwrap_or_default();
+
+            let started_at_str = merged_conversation.started_at.to_rfc3339();
+
+            // Process with LLM
+            match llm
+                .process_conversation(
+                    &merged_conversation.transcript_segments,
+                    &started_at_str,
+                    "UTC",
+                    &merged_conversation.language,
+                    "User",
+                    &[],
+                    &existing_memories,
+                )
+                .await
+            {
+                Ok(processed) => {
+                    merged_conversation.structured = processed.structured;
+                    merged_conversation.status = ConversationStatus::Completed;
+
+                    // Save action items if any
+                    if !processed.action_items.is_empty() {
+                        let _ = state
+                            .firestore
+                            .save_action_items(&user.uid, &new_conversation_id, &processed.action_items)
+                            .await;
+                    }
+
+                    // Save memories if any
+                    if !processed.memories.is_empty() {
+                        let _ = state
+                            .firestore
+                            .save_memories(&user.uid, &new_conversation_id, &processed.memories)
+                            .await;
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Failed to process merged conversation: {}", e);
+                    // Mark as completed anyway
+                    merged_conversation.status = ConversationStatus::Completed;
+                }
+            }
+        } else {
+            // No LLM key, just mark as completed
+            merged_conversation.status = ConversationStatus::Completed;
+        }
+    } else {
+        merged_conversation.status = ConversationStatus::Completed;
+    }
+
+    // Save the merged conversation
+    if let Err(e) = state
+        .firestore
+        .save_conversation(&user.uid, &merged_conversation)
+        .await
+    {
+        tracing::error!("Failed to save merged conversation: {}", e);
+        return Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save merged conversation: {}", e),
+        ));
+    }
+
+    // Delete source conversations
+    for conv_id in &request.conversation_ids {
+        if let Err(e) = state.firestore.delete_conversation(&user.uid, conv_id).await {
+            tracing::warn!("Failed to delete source conversation {}: {}", conv_id, e);
+            // Continue anyway - merged conversation is already saved
+        }
+    }
+
+    tracing::info!(
+        "Merge completed: {} conversations -> {}",
+        request.conversation_ids.len(),
+        new_conversation_id
+    );
+
+    Ok(Json(MergeConversationsResponse {
+        status: "completed".to_string(),
+        message: format!(
+            "Successfully merged {} conversations",
+            request.conversation_ids.len()
+        ),
+        warning: warning_msg,
+        conversation_ids: request.conversation_ids,
+        new_conversation_id: Some(new_conversation_id),
+    }))
+}
+
+/// Merge transcript segments from multiple conversations with adjusted timestamps
+fn merge_transcript_segments(conversations: &[Conversation]) -> Vec<TranscriptSegment> {
+    let mut merged = Vec::new();
+    let mut cumulative_offset = 0.0;
+
+    for (i, conv) in conversations.iter().enumerate() {
+        if i == 0 {
+            // First conversation - use segments as-is
+            merged.extend(conv.transcript_segments.iter().cloned());
+            if !conv.transcript_segments.is_empty() {
+                cumulative_offset = conv
+                    .transcript_segments
+                    .iter()
+                    .map(|s| s.end)
+                    .fold(0.0f64, |a, b| a.max(b));
+            } else {
+                cumulative_offset = (conv.finished_at - conv.started_at).num_seconds() as f64;
+            }
+        } else {
+            // Calculate gap from previous conversation
+            let prev = &conversations[i - 1];
+            let gap = (conv.started_at - prev.finished_at).num_seconds() as f64;
+            let offset = cumulative_offset + gap.max(0.0);
+
+            // Adjust timestamps for this conversation's segments
+            for seg in &conv.transcript_segments {
+                let mut seg_copy = seg.clone();
+                seg_copy.start += offset;
+                seg_copy.end += offset;
+                merged.push(seg_copy);
+            }
+
+            // Update cumulative offset
+            if !conv.transcript_segments.is_empty() {
+                cumulative_offset = offset
+                    + conv
+                        .transcript_segments
+                        .iter()
+                        .map(|s| s.end)
+                        .fold(0.0f64, |a, b| a.max(b));
+            } else {
+                let duration = (conv.finished_at - conv.started_at).num_seconds() as f64;
+                cumulative_offset = offset + duration;
+            }
+        }
+    }
+
+    merged
+}
+
 pub fn conversations_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/conversations", get(get_conversations))
         .route("/v1/conversations/count", get(get_conversations_count))
         .route("/v1/conversations/search", post(search_conversations))
+        .route("/v1/conversations/merge", post(merge_conversations))
         .route(
             "/v1/conversations/from-segments",
             post(create_conversation_from_segments),
@@ -609,6 +928,6 @@ pub fn conversations_routes() -> Router<AppState> {
         )
         .route(
             "/v1/conversations/:id",
-            patch(update_conversation).delete(delete_conversation),
+            get(get_conversation_by_id).patch(update_conversation).delete(delete_conversation),
         )
 }
