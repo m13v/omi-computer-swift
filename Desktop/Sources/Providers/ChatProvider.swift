@@ -42,7 +42,7 @@ class ChatProvider: ObservableObject {
 
     init() {
         do {
-            self.geminiClient = try GeminiClient()
+            self.geminiClient = try GeminiClient(model: "gemini-3-pro-preview")
             log("ChatProvider initialized with Gemini client")
         } catch {
             logError("Failed to initialize Gemini client", error: error)
