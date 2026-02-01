@@ -1,5 +1,6 @@
-import Foundation
 import AppKit
+import AVFoundation
+import Foundation
 
 /// File storage manager for Rewind screenshots
 actor RewindStorage {
@@ -7,23 +8,49 @@ actor RewindStorage {
 
     private let fileManager = FileManager.default
     private var screenshotsDirectory: URL?
+    private var videosDirectory: URL?
+
+    // Frame extraction cache
+    private var frameCache = NSCache<NSString, NSImage>()
+    private var imageGenerators: [String: AVAssetImageGenerator] = [:]
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        // Configure cache limits
+        frameCache.countLimit = 100 // Max 100 frames in cache
+        frameCache.totalCostLimit = 100 * 1024 * 1024 // ~100MB
+    }
 
-    /// Initialize the storage directory
+    /// Initialize the storage directories
     func initialize() async throws {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let omiDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
+
+        // Screenshots directory (legacy JPEG storage)
         screenshotsDirectory = omiDir.appendingPathComponent("Screenshots", isDirectory: true)
 
-        guard let screenshotsDirectory = screenshotsDirectory else {
-            throw RewindError.storageError("Failed to create screenshots directory path")
+        // Videos directory (new H.265 chunk storage)
+        videosDirectory = omiDir.appendingPathComponent("Videos", isDirectory: true)
+
+        guard let screenshotsDirectory = screenshotsDirectory,
+              let videosDirectory = videosDirectory
+        else {
+            throw RewindError.storageError("Failed to create storage directory paths")
         }
 
         try fileManager.createDirectory(at: screenshotsDirectory, withIntermediateDirectories: true)
-        log("RewindStorage: Initialized at \(screenshotsDirectory.path)")
+        try fileManager.createDirectory(at: videosDirectory, withIntermediateDirectories: true)
+
+        // Initialize video encoder with videos directory
+        try await VideoChunkEncoder.shared.initialize(videosDirectory: videosDirectory)
+
+        log("RewindStorage: Initialized at \(omiDir.path)")
+    }
+
+    /// Get the videos directory URL for external use
+    func getVideosDirectory() -> URL? {
+        return videosDirectory
     }
 
     // MARK: - Save Screenshot
@@ -89,13 +116,113 @@ actor RewindStorage {
         return fullPath
     }
 
-    /// Load screenshot as NSImage
+    /// Load screenshot as NSImage (legacy JPEG path)
     func loadScreenshotImage(relativePath: String) async throws -> NSImage {
         let data = try await loadScreenshot(relativePath: relativePath)
         guard let image = NSImage(data: data) else {
             throw RewindError.invalidImage
         }
         return image
+    }
+
+    // MARK: - Video Frame Loading
+
+    /// Load a frame from a video chunk
+    func loadVideoFrame(videoPath: String, frameOffset: Int) async throws -> NSImage {
+        guard let videosDirectory = videosDirectory else {
+            throw RewindError.storageError("Videos directory not initialized")
+        }
+
+        // Check cache first
+        let cacheKey = "\(videoPath):\(frameOffset)" as NSString
+        if let cached = frameCache.object(forKey: cacheKey) {
+            return cached
+        }
+
+        let fullPath = videosDirectory.appendingPathComponent(videoPath)
+
+        guard fileManager.fileExists(atPath: fullPath.path) else {
+            throw RewindError.screenshotNotFound
+        }
+
+        // Get or create image generator for this chunk
+        let generator = getOrCreateGenerator(for: fullPath)
+
+        // Calculate time for frame (1 FPS)
+        let time = CMTime(value: Int64(frameOffset), timescale: 1)
+
+        // Extract frame
+        let cgImage: CGImage
+        do {
+            cgImage = try generator.copyCGImage(at: time, actualTime: nil)
+        } catch {
+            throw RewindError.storageError("Failed to extract frame: \(error.localizedDescription)")
+        }
+
+        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+
+        // Cache for reuse (estimate ~4MB per frame for cost)
+        frameCache.setObject(nsImage, forKey: cacheKey, cost: 4 * 1024 * 1024)
+
+        return nsImage
+    }
+
+    /// Unified loading interface - loads from either JPEG or video storage
+    func loadScreenshotImage(for screenshot: Screenshot) async throws -> NSImage {
+        if screenshot.usesVideoStorage,
+           let videoPath = screenshot.videoChunkPath,
+           let offset = screenshot.frameOffset
+        {
+            return try await loadVideoFrame(videoPath: videoPath, frameOffset: offset)
+        } else if let imagePath = screenshot.imagePath {
+            return try await loadScreenshotImage(relativePath: imagePath)
+        } else {
+            throw RewindError.screenshotNotFound
+        }
+    }
+
+    /// Get raw image data for a screenshot (for OCR processing)
+    func loadScreenshotData(for screenshot: Screenshot) async throws -> Data {
+        if screenshot.usesVideoStorage,
+           let videoPath = screenshot.videoChunkPath,
+           let offset = screenshot.frameOffset
+        {
+            // Load frame and convert to JPEG data
+            let image = try await loadVideoFrame(videoPath: videoPath, frameOffset: offset)
+            guard let tiffData = image.tiffRepresentation,
+                  let bitmap = NSBitmapImageRep(data: tiffData),
+                  let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+            else {
+                throw RewindError.invalidImage
+            }
+            return jpegData
+        } else if let imagePath = screenshot.imagePath {
+            return try await loadScreenshot(relativePath: imagePath)
+        } else {
+            throw RewindError.screenshotNotFound
+        }
+    }
+
+    private func getOrCreateGenerator(for url: URL) -> AVAssetImageGenerator {
+        let key = url.path
+        if let existing = imageGenerators[key] {
+            return existing
+        }
+
+        let asset = AVAsset(url: url)
+        let generator = AVAssetImageGenerator(asset: asset)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = .zero
+        generator.requestedTimeToleranceAfter = .zero
+
+        imageGenerators[key] = generator
+        return generator
+    }
+
+    /// Clear the frame cache and image generators
+    func clearCache() {
+        frameCache.removeAllObjects()
+        imageGenerators.removeAll()
     }
 
     // MARK: - Delete Screenshot
@@ -120,16 +247,53 @@ actor RewindStorage {
         }
     }
 
-    // MARK: - Cleanup
+    // MARK: - Video Chunk Deletion
 
-    /// Delete empty day directories
-    func cleanupEmptyDirectories() async throws {
-        guard let screenshotsDirectory = screenshotsDirectory else {
-            return
+    /// Delete a video chunk file
+    func deleteVideoChunk(relativePath: String) async throws {
+        guard let videosDirectory = videosDirectory else {
+            throw RewindError.storageError("Videos directory not initialized")
         }
 
+        let fullPath = videosDirectory.appendingPathComponent(relativePath)
+
+        // Remove from image generator cache
+        imageGenerators.removeValue(forKey: fullPath.path)
+
+        // Invalidate frame cache entries for this chunk
+        // Note: NSCache doesn't support iteration, so we rely on its eviction policy
+
+        if fileManager.fileExists(atPath: fullPath.path) {
+            try fileManager.removeItem(at: fullPath)
+            log("RewindStorage: Deleted video chunk \(relativePath)")
+        }
+    }
+
+    /// Delete multiple video chunks
+    func deleteVideoChunks(relativePaths: [String]) async throws {
+        for path in relativePaths {
+            try await deleteVideoChunk(relativePath: path)
+        }
+    }
+
+    // MARK: - Cleanup
+
+    /// Delete empty day directories in both Screenshots and Videos folders
+    func cleanupEmptyDirectories() async throws {
+        // Clean up Screenshots directory
+        if let screenshotsDirectory = screenshotsDirectory {
+            try cleanupEmptySubdirectories(in: screenshotsDirectory)
+        }
+
+        // Clean up Videos directory
+        if let videosDirectory = videosDirectory {
+            try cleanupEmptySubdirectories(in: videosDirectory)
+        }
+    }
+
+    private func cleanupEmptySubdirectories(in directory: URL) throws {
         let contents = try fileManager.contentsOfDirectory(
-            at: screenshotsDirectory,
+            at: directory,
             includingPropertiesForKeys: [.isDirectoryKey],
             options: .skipsHiddenFiles
         )
@@ -184,13 +348,19 @@ actor RewindStorage {
 
     // MARK: - Storage Stats
 
-    /// Get total storage size in bytes
+    /// Get total storage size in bytes (both Screenshots and Videos)
     func getTotalStorageSize() async throws -> Int64 {
-        guard let screenshotsDirectory = screenshotsDirectory else {
-            throw RewindError.storageError("Storage not initialized")
+        var totalSize: Int64 = 0
+
+        if let screenshotsDirectory = screenshotsDirectory {
+            totalSize += try calculateDirectorySize(at: screenshotsDirectory)
         }
 
-        return try calculateDirectorySize(at: screenshotsDirectory)
+        if let videosDirectory = videosDirectory {
+            totalSize += try calculateDirectorySize(at: videosDirectory)
+        }
+
+        return totalSize
     }
 
     private func calculateDirectorySize(at url: URL) throws -> Int64 {
