@@ -26,6 +26,7 @@ enum OmiColors {
     static let warning = Color(hex: 0xF59E0B)  // Amber
     static let error = Color(hex: 0xEF4444)    // Red
     static let info = Color(hex: 0x3B82F6)     // Blue
+    static let amber = Color(hex: 0xF59E0B)    // Same as warning, for starred items
 
     // MARK: - Mac Window Button Colors
     static let windowButtonClose = Color(hex: 0xFF5F57)
