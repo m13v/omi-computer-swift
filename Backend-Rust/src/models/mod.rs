@@ -6,6 +6,7 @@ pub mod app;
 pub mod category;
 pub mod conversation;
 pub mod focus_session;
+pub mod folder;
 pub mod memory;
 pub mod message;
 pub mod request;
@@ -23,9 +24,14 @@ pub use conversation::{
     ActionItem, AppResult, Conversation, ConversationSource, ConversationStatus, Event, Structured,
     TranscriptSegment,
 };
+pub use folder::{
+    BulkMoveRequest, BulkMoveResponse, CreateFolderRequest, DeleteFolderQuery, Folder,
+    MoveToFolderRequest, ReorderFoldersRequest, UpdateFolderRequest,
+};
 pub use memory::{
-    CreateMemoryRequest, CreateMemoryResponse, EditMemoryRequest, Memory, MemoryDB,
-    MemoryStatusResponse, ReviewMemoryRequest, UpdateVisibilityRequest,
+    CreateMemoryRequest, CreateMemoryResponse, EditMemoryRequest, GetMemoriesQuery, Memory,
+    MemoryDB, MemoryStatusResponse, ReviewMemoryRequest, UpdateMemoryReadRequest,
+    UpdateVisibilityRequest,
 };
 pub use message::{
     DeleteMessagesQuery, GetMessagesQuery, MessageDB, MessageStatusResponse, SaveMessageRequest,
