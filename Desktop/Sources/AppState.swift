@@ -43,6 +43,11 @@ class AppState: ObservableObject {
     // Conversation filters
     @Published var showStarredOnly: Bool = false
     @Published var selectedDateFilter: Date? = nil
+    @Published var selectedFolderId: String? = nil
+
+    // Folders
+    @Published var folders: [Folder] = []
+    @Published var isLoadingFolders: Bool = false
 
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
@@ -580,6 +585,7 @@ class AppState: ObservableObject {
             includeDiscarded: false,
             startDate: startDate,
             endDate: endDate,
+            folderId: selectedFolderId,
             starred: showStarredOnly ? true : nil
         )
         async let countTask = APIClient.shared.getConversationsCount(includeDiscarded: false)
@@ -634,7 +640,75 @@ class AppState: ObservableObject {
     func clearFilters() async {
         showStarredOnly = false
         selectedDateFilter = nil
+        selectedFolderId = nil
         await loadConversations()
+    }
+
+    /// Set folder filter and reload conversations
+    func setFolderFilter(_ folderId: String?) async {
+        selectedFolderId = folderId
+        await loadConversations()
+    }
+
+    // MARK: - Folder Management
+
+    /// Load folders from API
+    func loadFolders() async {
+        guard !isLoadingFolders else { return }
+
+        isLoadingFolders = true
+
+        do {
+            let fetchedFolders = try await APIClient.shared.getFolders()
+            folders = fetchedFolders
+            log("Folders: Loaded \(fetchedFolders.count) folders")
+        } catch {
+            logError("Folders: Failed to load", error: error)
+        }
+
+        isLoadingFolders = false
+    }
+
+    /// Create a new folder
+    func createFolder(name: String, color: String? = nil) async -> Folder? {
+        do {
+            let folder = try await APIClient.shared.createFolder(name: name, color: color)
+            folders.append(folder)
+            log("Folders: Created folder '\(name)'")
+            return folder
+        } catch {
+            logError("Folders: Failed to create folder", error: error)
+            return nil
+        }
+    }
+
+    /// Delete a folder
+    func deleteFolder(_ folderId: String, moveToFolderId: String? = nil) async {
+        do {
+            try await APIClient.shared.deleteFolder(id: folderId, moveToFolderId: moveToFolderId)
+            folders.removeAll { $0.id == folderId }
+            if selectedFolderId == folderId {
+                selectedFolderId = nil
+            }
+            log("Folders: Deleted folder \(folderId)")
+        } catch {
+            logError("Folders: Failed to delete folder", error: error)
+        }
+    }
+
+    /// Move a conversation to a folder
+    func moveConversationToFolder(_ conversationId: String, folderId: String?) async {
+        do {
+            try await APIClient.shared.moveConversationToFolder(conversationId: conversationId, folderId: folderId)
+            // Update local state
+            if let index = conversations.firstIndex(where: { $0.id == conversationId }) {
+                // Reload to get updated conversation
+                await loadConversations()
+            }
+            log("Folders: Moved conversation \(conversationId) to folder \(folderId ?? "none")")
+        } catch {
+            logError("Folders: Failed to move conversation to folder", error: error)
+        }
     }
 
     /// Delete a conversation locally (after successful API call)
