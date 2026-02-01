@@ -28,6 +28,14 @@ pub struct GetConversationsQuery {
     pub include_discarded: bool,
     #[serde(default = "default_statuses")]
     pub statuses: String,
+    /// Filter by starred status (true = only starred, false/null = all)
+    pub starred: Option<bool>,
+    /// Filter by folder ID
+    pub folder_id: Option<String>,
+    /// Filter by start date (ISO 8601 format)
+    pub start_date: Option<String>,
+    /// Filter by end date (ISO 8601 format)
+    pub end_date: Option<String>,
 }
 
 fn default_limit() -> usize {
@@ -56,17 +64,31 @@ async fn get_conversations(
     };
 
     tracing::info!(
-        "Getting conversations for user {} with limit={}, offset={}, include_discarded={}, statuses={:?}",
+        "Getting conversations for user {} with limit={}, offset={}, include_discarded={}, statuses={:?}, starred={:?}, folder_id={:?}, start_date={:?}, end_date={:?}",
         user.uid,
         query.limit,
         query.offset,
         query.include_discarded,
-        statuses
+        statuses,
+        query.starred,
+        query.folder_id,
+        query.start_date,
+        query.end_date
     );
 
     match state
         .firestore
-        .get_conversations(&user.uid, query.limit, query.offset, query.include_discarded, &statuses)
+        .get_conversations(
+            &user.uid,
+            query.limit,
+            query.offset,
+            query.include_discarded,
+            &statuses,
+            query.starred,
+            query.folder_id.as_deref(),
+            query.start_date.as_deref(),
+            query.end_date.as_deref(),
+        )
         .await
     {
         Ok(conversations) => Ok(Json(conversations)),
