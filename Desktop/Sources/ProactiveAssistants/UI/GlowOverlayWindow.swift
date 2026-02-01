@@ -38,8 +38,8 @@ class GlowOverlayWindow: NSWindow {
 
     /// Update the window frame to match a target window's bounds
     func updateFrame(to rect: NSRect) {
-        // Add padding for the glow effect to extend beyond the window
-        let glowPadding: CGFloat = 30
+        // Minimal padding to avoid blocking hover events on other windows
+        let glowPadding: CGFloat = 2
         let expandedRect = rect.insetBy(dx: -glowPadding, dy: -glowPadding)
         self.setFrame(expandedRect, display: true)
     }
