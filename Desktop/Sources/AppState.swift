@@ -40,6 +40,10 @@ class AppState: ObservableObject {
     @Published var conversationsError: String? = nil
     @Published var totalConversationsCount: Int? = nil  // Total count (fetched separately)
 
+    // Conversation filters
+    @Published var showStarredOnly: Bool = false
+    @Published var selectedDateFilter: Date? = nil
+
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
     @Published var hasScreenRecordingPermission = false
@@ -559,19 +563,31 @@ class AppState: ObservableObject {
         isLoadingConversations = true
         conversationsError = nil
 
+        // Calculate date range if date filter is set
+        var startDate: Date? = nil
+        var endDate: Date? = nil
+        if let filterDate = selectedDateFilter {
+            let calendar = Calendar.current
+            startDate = calendar.startOfDay(for: filterDate)
+            endDate = calendar.date(byAdding: .day, value: 1, to: startDate!)
+        }
+
         // Fetch conversations and count in parallel
         async let conversationsTask = APIClient.shared.getConversations(
             limit: 50,
             offset: 0,
             statuses: [.completed, .processing],
-            includeDiscarded: false
+            includeDiscarded: false,
+            startDate: startDate,
+            endDate: endDate,
+            starred: showStarredOnly ? true : nil
         )
         async let countTask = APIClient.shared.getConversationsCount(includeDiscarded: false)
 
         do {
             let fetchedConversations = try await conversationsTask
             conversations = fetchedConversations
-            log("Conversations: Loaded \(fetchedConversations.count) conversations")
+            log("Conversations: Loaded \(fetchedConversations.count) conversations (starred=\(showStarredOnly), date=\(selectedDateFilter?.description ?? "nil"))")
         } catch {
             logError("Conversations: Failed to load", error: error)
             conversationsError = error.localizedDescription
@@ -599,6 +615,37 @@ class AppState: ObservableObject {
     func setConversationStarred(_ conversationId: String, starred: Bool) {
         if let index = conversations.firstIndex(where: { $0.id == conversationId }) {
             conversations[index].starred = starred
+        }
+    }
+
+    /// Toggle starred filter and reload conversations
+    func toggleStarredFilter() async {
+        showStarredOnly.toggle()
+        await loadConversations()
+    }
+
+    /// Set date filter and reload conversations
+    func setDateFilter(_ date: Date?) async {
+        selectedDateFilter = date
+        await loadConversations()
+    }
+
+    /// Clear all filters and reload conversations
+    func clearFilters() async {
+        showStarredOnly = false
+        selectedDateFilter = nil
+        await loadConversations()
+    }
+
+    /// Delete a conversation locally (after successful API call)
+    func deleteConversationLocally(_ conversationId: String) {
+        conversations.removeAll { $0.id == conversationId }
+    }
+
+    /// Update a conversation title locally (after successful API call)
+    func updateConversationTitle(_ conversationId: String, title: String) {
+        if let index = conversations.firstIndex(where: { $0.id == conversationId }) {
+            conversations[index].structured.title = title
         }
     }
 
@@ -803,7 +850,7 @@ class AppState: ObservableObject {
     }
 
     /// Restart the app by launching a new instance and terminating the current one
-    func restartApp() {
+    nonisolated func restartApp() {
         log("Restarting app...")
 
         guard let bundleURL = Bundle.main.bundleURL as URL? else {
@@ -832,7 +879,7 @@ class AppState: ObservableObject {
     /// Reset microphone permission using tccutil (Option 1: Direct)
     /// Returns true if the reset command was executed successfully
     /// If shouldRestart is true, the app will restart after reset
-    func resetMicrophonePermissionDirect(shouldRestart: Bool = false) -> Bool {
+    nonisolated func resetMicrophonePermissionDirect(shouldRestart: Bool = false) -> Bool {
         let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
         log("Resetting microphone permission for \(bundleId) via tccutil...")
 
