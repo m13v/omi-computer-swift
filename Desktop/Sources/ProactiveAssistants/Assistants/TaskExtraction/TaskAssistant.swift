@@ -160,7 +160,7 @@ actor TaskAssistant: ProactiveAssistant {
         )
 
         // Sync to backend
-        if let backendId = await syncTaskToBackend(task: task) {
+        if let backendId = await syncTaskToBackend(task: task, taskResult: taskResult) {
             // Update SQLite record with backend ID
             if let recordId = extractionRecord?.id {
                 do {
@@ -218,12 +218,24 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     /// Sync task to backend API, returns backend ID if successful
-    private func syncTaskToBackend(task: ExtractedTask) async -> String? {
+    private func syncTaskToBackend(task: ExtractedTask, taskResult: TaskExtractionResult) async -> String? {
         do {
-            let metadata: [String: Any] = [
+            var metadata: [String: Any] = [
                 "source_app": task.sourceApp,
-                "confidence": task.confidence
+                "confidence": task.confidence,
+                "context_summary": taskResult.contextSummary,
+                "current_activity": taskResult.currentActivity
             ]
+
+            // Add reasoning/description if available
+            if let reasoning = task.description {
+                metadata["reasoning"] = reasoning
+            }
+
+            // Add inferred deadline if available
+            if let deadline = task.inferredDeadline {
+                metadata["inferred_deadline"] = deadline
+            }
 
             let response = try await APIClient.shared.createActionItem(
                 description: task.title,

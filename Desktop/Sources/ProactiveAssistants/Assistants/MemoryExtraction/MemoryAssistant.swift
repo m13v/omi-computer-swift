@@ -163,8 +163,8 @@ actor MemoryAssistant: ProactiveAssistant {
             contextSummary: memoryResult.contextSummary
         )
 
-        // Sync to backend
-        if let backendId = await syncMemoryToBackend(memory: memory) {
+        // Sync to backend with full extraction data
+        if let backendId = await syncMemoryToBackend(memory: memory, contextSummary: memoryResult.contextSummary) {
             // Update SQLite record with backend ID
             if let recordId = extractionRecord?.id {
                 do {
@@ -221,11 +221,18 @@ actor MemoryAssistant: ProactiveAssistant {
     }
 
     /// Sync memory to backend API, returns backend ID if successful
-    private func syncMemoryToBackend(memory: ExtractedMemory) async -> String? {
+    private func syncMemoryToBackend(memory: ExtractedMemory, contextSummary: String? = nil) async -> String? {
         do {
+            // Convert ExtractedMemory category to MemoryCategory
+            let category: MemoryCategory = memory.category == .interesting ? .interesting : .system
+
             let response = try await APIClient.shared.createMemory(
                 content: memory.content,
-                visibility: "private"
+                visibility: "private",
+                category: category,
+                confidence: memory.confidence,
+                sourceApp: memory.sourceApp,
+                contextSummary: contextSummary
             )
 
             log("Memory: Synced to backend (id: \(response.id))")
