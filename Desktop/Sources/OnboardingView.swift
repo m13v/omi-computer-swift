@@ -210,12 +210,12 @@ struct OnboardingView: View {
         if index < currentStep || (index == currentStep && isGranted) {
             // Completed or granted - show checkmark
             Image(systemName: "checkmark.circle.fill")
-                .foregroundColor(.green)
+                .foregroundColor(.white)
                 .font(.system(size: 12))
         } else if index == currentStep {
             // Current step, not yet granted - filled circle
             Circle()
-                .fill(Color.accentColor)
+                .fill(OmiColors.purplePrimary)
                 .frame(width: 10, height: 10)
         } else {
             // Future step - empty circle
@@ -253,7 +253,7 @@ struct OnboardingView: View {
         case 2:
             stepView(
                 icon: appState.hasNotificationPermission ? "checkmark.circle.fill" : "bell.badge",
-                iconColor: appState.hasNotificationPermission ? .green : .accentColor,
+                iconColor: appState.hasNotificationPermission ? .white : OmiColors.purplePrimary,
                 title: "Notifications",
                 description: appState.hasNotificationPermission
                     ? "Notifications are enabled! You'll receive focus alerts from Omi."
@@ -262,7 +262,7 @@ struct OnboardingView: View {
         case 3:
             stepView(
                 icon: appState.hasAutomationPermission ? "checkmark.circle.fill" : "gearshape.2",
-                iconColor: appState.hasAutomationPermission ? .green : .accentColor,
+                iconColor: appState.hasAutomationPermission ? .white : OmiColors.purplePrimary,
                 title: "Automation",
                 description: appState.hasAutomationPermission
                     ? "Automation permission granted! Omi can now detect which app you're using."
@@ -273,7 +273,7 @@ struct OnboardingView: View {
         case 5:
             stepView(
                 icon: appState.hasMicrophonePermission ? "checkmark.circle.fill" : "mic",
-                iconColor: appState.hasMicrophonePermission ? .green : .accentColor,
+                iconColor: appState.hasMicrophonePermission ? .white : OmiColors.purplePrimary,
                 title: "Microphone",
                 description: appState.hasMicrophonePermission
                     ? "Microphone access granted! Omi can now transcribe your conversations."
@@ -298,7 +298,7 @@ struct OnboardingView: View {
         VStack(spacing: 16) {
             Image(systemName: "person.circle")
                 .font(.system(size: 48))
-                .foregroundColor(.accentColor)
+                .foregroundColor(OmiColors.purplePrimary)
 
             Text("What's your name?")
                 .font(.title2)
@@ -362,7 +362,7 @@ struct OnboardingView: View {
         return trimmed.count >= 2
     }
 
-    private func stepView(icon: String, iconColor: Color = .accentColor, title: String, description: String) -> some View {
+    private func stepView(icon: String, iconColor: Color = OmiColors.purplePrimary, title: String, description: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: icon)
                 .font(.system(size: 48))
@@ -445,7 +445,7 @@ struct OnboardingView: View {
             if appState.hasScreenRecordingPermission {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 48))
-                    .foregroundColor(.green)
+                    .foregroundColor(.white)
 
                 Text("Screen Recording")
                     .font(.title2)
@@ -496,7 +496,7 @@ struct OnboardingView: View {
             } else if appState.hasSystemAudioPermission {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 48))
-                    .foregroundColor(.green)
+                    .foregroundColor(.white)
 
                 Text("System Audio")
                     .font(.title2)
@@ -510,7 +510,7 @@ struct OnboardingView: View {
             } else {
                 Image(systemName: "speaker.wave.2")
                     .font(.system(size: 48))
-                    .foregroundColor(.accentColor)
+                    .foregroundColor(OmiColors.purplePrimary)
 
                 Text("System Audio")
                     .font(.title2)
