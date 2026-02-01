@@ -132,9 +132,8 @@ pub struct GoogleCallbackQuery {
 pub struct TokenRequest {
     grant_type: String,
     code: String,
-    /// OAuth spec field - not validated but needed for deserialization
-    #[serde(default, rename = "redirect_uri")]
-    _redirect_uri: String,
+    /// OAuth redirect_uri - validated against the original authorization request
+    redirect_uri: String,
     #[serde(default)]
     use_custom_token: bool,
 }
@@ -170,6 +169,8 @@ struct OAuthCredentials {
     id_token: String,
     access_token: Option<String>,
     provider_id: String,
+    /// Original redirect_uri from authorization request (for validation)
+    redirect_uri: String,
 }
 
 // Apple JWT claims for client secret
@@ -371,6 +372,14 @@ async fn auth_token(
             message: format!("Failed to parse credentials: {}", e),
         })?;
 
+    // Validate redirect_uri matches the one from authorization
+    if form.redirect_uri != credentials.redirect_uri {
+        return Err(ErrorResponse {
+            error: "invalid_redirect_uri".to_string(),
+            message: "redirect_uri does not match the original authorization request".to_string(),
+        });
+    }
+
     let provider_id = credentials.provider_id.clone();
     let mut response = TokenResponse {
         provider: credentials.provider.clone(),
@@ -395,7 +404,7 @@ async fn auth_token(
 async fn exchange_apple_code(
     state: &AuthState,
     code: &str,
-    _session_data: &AuthSessionData,
+    session_data: &AuthSessionData,
 ) -> Result<String, ErrorResponse> {
     let config = &state.config;
 
@@ -468,6 +477,7 @@ async fn exchange_apple_code(
         id_token: token_response.id_token,
         access_token: token_response.access_token,
         provider_id: "apple.com".to_string(),
+        redirect_uri: session_data.redirect_uri.clone(),
     };
 
     serde_json::to_string(&credentials).map_err(|e| ErrorResponse {
@@ -479,7 +489,7 @@ async fn exchange_apple_code(
 async fn exchange_google_code(
     state: &AuthState,
     code: &str,
-    _session_data: &AuthSessionData,
+    session_data: &AuthSessionData,
 ) -> Result<String, ErrorResponse> {
     let config = &state.config;
 
@@ -539,6 +549,7 @@ async fn exchange_google_code(
         id_token: token_response.id_token,
         access_token: token_response.access_token,
         provider_id: "google.com".to_string(),
+        redirect_uri: session_data.redirect_uri.clone(),
     };
 
     serde_json::to_string(&credentials).map_err(|e| ErrorResponse {
