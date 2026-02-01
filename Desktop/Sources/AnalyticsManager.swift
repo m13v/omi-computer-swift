@@ -356,6 +356,11 @@ class AnalyticsManager {
         PostHogManager.shared.track("session_title_generated", properties: [:])
     }
 
+    func chatStarredFilterToggled(enabled: Bool) {
+        MixpanelManager.shared.track("Chat Starred Filter Toggled", properties: ["enabled": enabled])
+        PostHogManager.shared.track("chat_starred_filter_toggled", properties: ["enabled": enabled])
+    }
+
     // MARK: - Conversation Events (Additional)
 
     func conversationReprocessed(conversationId: String, appId: String) {
