@@ -3,10 +3,10 @@
 use axum::{
     extract::{Path, Query, State},
     http::StatusCode,
-    routing::{delete, get, patch, post},
+    routing::{get, patch, post},
     Json, Router,
 };
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::models::{
     BulkMoveRequest, BulkMoveResponse, CreateFolderRequest, DeleteFolderQuery, Folder,
