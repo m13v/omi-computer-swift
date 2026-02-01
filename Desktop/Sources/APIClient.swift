@@ -361,6 +361,57 @@ extension APIClient {
         let response: CountResponse = try await get(endpoint)
         return response.count
     }
+
+    // MARK: - Folder API
+
+    /// Gets all folders for the user
+    func getFolders() async throws -> [Folder] {
+        return try await get("v1/folders")
+    }
+
+    /// Creates a new folder
+    func createFolder(name: String, description: String? = nil, color: String? = nil) async throws -> Folder {
+        let body = CreateFolderRequest(name: name, description: description, color: color)
+        return try await post("v1/folders", body: body)
+    }
+
+    /// Updates a folder
+    func updateFolder(id: String, name: String? = nil, description: String? = nil, color: String? = nil, order: Int? = nil) async throws -> Folder {
+        let body = UpdateFolderRequest(name: name, description: description, color: color, order: order)
+        return try await patch("v1/folders/\(id)", body: body)
+    }
+
+    /// Deletes a folder
+    func deleteFolder(id: String, moveToFolderId: String? = nil) async throws {
+        var endpoint = "v1/folders/\(id)"
+        if let moveToId = moveToFolderId {
+            endpoint += "?move_to_folder_id=\(moveToId)"
+        }
+        try await delete(endpoint)
+    }
+
+    /// Moves a conversation to a folder
+    func moveConversationToFolder(conversationId: String, folderId: String?) async throws {
+        let body = MoveToFolderRequest(folderId: folderId)
+        let url = URL(string: baseURL + "v1/conversations/\(conversationId)/folder")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+    }
+
+    /// Bulk moves conversations to a folder
+    func bulkMoveConversationsToFolder(folderId: String, conversationIds: [String]) async throws -> Int {
+        let body = BulkMoveRequest(conversationIds: conversationIds)
+        let response: BulkMoveResponse = try await post("v1/folders/\(folderId)/conversations/bulk-move", body: body)
+        return response.movedCount
+    }
 }
 
 // MARK: - Conversation Models (matching Flutter app)
@@ -685,6 +736,84 @@ struct ConversationSearchResult: Codable {
     }
 }
 
+// MARK: - Folder Models
+
+struct Folder: Codable, Identifiable {
+    let id: String
+    var name: String
+    var description: String?
+    var color: String
+    let createdAt: Date
+    let updatedAt: Date
+    var order: Int
+    let isDefault: Bool
+    let isSystem: Bool
+    let categoryMapping: String?
+    let conversationCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, description, color, order
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+        case isDefault = "is_default"
+        case isSystem = "is_system"
+        case categoryMapping = "category_mapping"
+        case conversationCount = "conversation_count"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        description = try container.decodeIfPresent(String.self, forKey: .description)
+        color = try container.decodeIfPresent(String.self, forKey: .color) ?? "#6B7280"
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        order = try container.decodeIfPresent(Int.self, forKey: .order) ?? 0
+        isDefault = try container.decodeIfPresent(Bool.self, forKey: .isDefault) ?? false
+        isSystem = try container.decodeIfPresent(Bool.self, forKey: .isSystem) ?? false
+        categoryMapping = try container.decodeIfPresent(String.self, forKey: .categoryMapping)
+        conversationCount = try container.decodeIfPresent(Int.self, forKey: .conversationCount) ?? 0
+    }
+}
+
+struct CreateFolderRequest: Encodable {
+    let name: String
+    let description: String?
+    let color: String?
+}
+
+struct UpdateFolderRequest: Encodable {
+    let name: String?
+    let description: String?
+    let color: String?
+    let order: Int?
+}
+
+struct MoveToFolderRequest: Encodable {
+    let folderId: String?
+
+    enum CodingKeys: String, CodingKey {
+        case folderId = "folder_id"
+    }
+}
+
+struct BulkMoveRequest: Encodable {
+    let conversationIds: [String]
+
+    enum CodingKeys: String, CodingKey {
+        case conversationIds = "conversation_ids"
+    }
+}
+
+struct BulkMoveResponse: Codable {
+    let movedCount: Int
+
+    enum CodingKeys: String, CodingKey {
+        case movedCount = "moved_count"
+    }
+}
+
 // MARK: - Memory Models
 
 enum MemoryCategory: String, Codable, CaseIterable {
@@ -722,14 +851,24 @@ struct ServerMemory: Codable, Identifiable {
     let manuallyAdded: Bool
     let scoring: String?
     let source: String?
+    // New fields for parity with Advice
+    let confidence: Double?
+    let sourceApp: String?
+    let contextSummary: String?
+    let isRead: Bool
+    let isDismissed: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, content, category, reviewed, visibility, scoring, source
+        case id, content, category, reviewed, visibility, scoring, source, confidence
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case conversationId = "conversation_id"
         case userReview = "user_review"
         case manuallyAdded = "manually_added"
+        case sourceApp = "source_app"
+        case contextSummary = "context_summary"
+        case isRead = "is_read"
+        case isDismissed = "is_dismissed"
     }
 
     init(from decoder: Decoder) throws {
@@ -746,10 +885,21 @@ struct ServerMemory: Codable, Identifiable {
         manuallyAdded = try container.decodeIfPresent(Bool.self, forKey: .manuallyAdded) ?? false
         scoring = try container.decodeIfPresent(String.self, forKey: .scoring)
         source = try container.decodeIfPresent(String.self, forKey: .source)
+        confidence = try container.decodeIfPresent(Double.self, forKey: .confidence)
+        sourceApp = try container.decodeIfPresent(String.self, forKey: .sourceApp)
+        contextSummary = try container.decodeIfPresent(String.self, forKey: .contextSummary)
+        isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? false
+        isDismissed = try container.decodeIfPresent(Bool.self, forKey: .isDismissed) ?? false
     }
 
     var isPublic: Bool {
         visibility == "public"
+    }
+
+    /// Confidence as percentage string
+    var confidenceString: String? {
+        guard let confidence = confidence else { return nil }
+        return "\(Int(confidence * 100))%"
     }
 
     /// Human-readable source name
@@ -867,19 +1017,54 @@ extension APIClient {
 
 extension APIClient {
 
-    /// Fetches memories from the API
-    func getMemories(limit: Int = 100, offset: Int = 0) async throws -> [ServerMemory] {
-        let endpoint = "v3/memories?limit=\(limit)&offset=\(offset)"
+    /// Fetches memories from the API with optional filtering
+    func getMemories(
+        limit: Int = 100,
+        offset: Int = 0,
+        category: String? = nil,
+        includeDismissed: Bool = false
+    ) async throws -> [ServerMemory] {
+        var endpoint = "v3/memories?limit=\(limit)&offset=\(offset)"
+        if let category = category {
+            endpoint += "&category=\(category)"
+        }
+        if includeDismissed {
+            endpoint += "&include_dismissed=true"
+        }
         return try await get(endpoint)
     }
 
-    /// Creates a new manual memory
-    func createMemory(content: String, visibility: String = "private") async throws -> CreateMemoryResponse {
+    /// Creates a new memory (manual or extracted)
+    func createMemory(
+        content: String,
+        visibility: String = "private",
+        category: MemoryCategory? = nil,
+        confidence: Double? = nil,
+        sourceApp: String? = nil,
+        contextSummary: String? = nil
+    ) async throws -> CreateMemoryResponse {
         struct CreateRequest: Encodable {
             let content: String
             let visibility: String
+            let category: String?
+            let confidence: Double?
+            let sourceApp: String?
+            let contextSummary: String?
+
+            enum CodingKeys: String, CodingKey {
+                case content, visibility, category, confidence
+                case sourceApp = "source_app"
+                case contextSummary = "context_summary"
+            }
         }
-        let body = CreateRequest(content: content, visibility: visibility)
+        let body = CreateRequest(
+            content: content,
+            visibility: visibility,
+            category: category?.rawValue,
+            confidence: confidence,
+            sourceApp: sourceApp,
+            contextSummary: contextSummary
+        )
         return try await post("v3/memories", body: body)
     }
 
@@ -913,6 +1098,26 @@ extension APIClient {
         }
         let body = ReviewRequest(value: value)
         let _: MemoryStatusResponse = try await post("v3/memories/\(id)/review", body: body)
+    }
+
+    /// Updates memory read/dismissed status
+    func updateMemoryReadStatus(id: String, isRead: Bool? = nil, isDismissed: Bool? = nil) async throws -> ServerMemory {
+        struct UpdateReadRequest: Encodable {
+            let isRead: Bool?
+            let isDismissed: Bool?
+
+            enum CodingKeys: String, CodingKey {
+                case isRead = "is_read"
+                case isDismissed = "is_dismissed"
+            }
+        }
+        let body = UpdateReadRequest(isRead: isRead, isDismissed: isDismissed)
+        return try await patch("v3/memories/\(id)/read", body: body)
+    }
+
+    /// Marks all memories as read
+    func markAllMemoriesRead() async throws {
+        let _: MemoryStatusResponse = try await post("v3/memories/mark-all-read", body: EmptyBody())
     }
 
     // MARK: - PATCH helper
