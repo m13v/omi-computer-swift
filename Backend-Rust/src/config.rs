@@ -30,6 +30,8 @@ pub struct Config {
     pub google_client_id: Option<String>,
     /// Google OAuth Client Secret
     pub google_client_secret: Option<String>,
+    /// Encryption secret for decrypting user data with enhanced protection level
+    pub encryption_secret: Option<Vec<u8>>,
 }
 
 impl Config {
@@ -52,6 +54,9 @@ impl Config {
             apple_private_key: env::var("APPLE_PRIVATE_KEY").ok(),
             google_client_id: env::var("GOOGLE_CLIENT_ID").ok(),
             google_client_secret: env::var("GOOGLE_CLIENT_SECRET").ok(),
+            encryption_secret: env::var("ENCRYPTION_SECRET")
+                .ok()
+                .map(|s| s.into_bytes()),
         }
     }
 
