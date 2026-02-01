@@ -450,6 +450,10 @@ impl LlmClient {
                         MemoryCategory::System => "system",
                         MemoryCategory::Interesting => "interesting",
                         MemoryCategory::Manual => "manual",
+                        MemoryCategory::Core => "core",
+                        MemoryCategory::Hobbies => "hobbies",
+                        MemoryCategory::Lifestyle => "lifestyle",
+                        MemoryCategory::Interests => "interests",
                     },
                     m.content
                 ))
@@ -522,7 +526,9 @@ impl LlmClient {
                     }
                     interesting_count += 1;
                 }
-                MemoryCategory::System | MemoryCategory::Manual => {
+                MemoryCategory::System | MemoryCategory::Manual |
+                MemoryCategory::Core | MemoryCategory::Hobbies |
+                MemoryCategory::Lifestyle | MemoryCategory::Interests => {
                     if system_count >= 2 {
                         continue;
                     }
