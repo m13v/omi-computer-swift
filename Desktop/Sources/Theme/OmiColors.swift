@@ -71,4 +71,17 @@ extension Color {
             opacity: alpha
         )
     }
+
+    /// Initialize from a hex string like "#6B7280" or "6B7280"
+    init?(hex hexString: String) {
+        var cleanedString = hexString.trimmingCharacters(in: .whitespacesAndNewlines)
+        cleanedString = cleanedString.replacingOccurrences(of: "#", with: "")
+
+        guard cleanedString.count == 6,
+              let hexValue = UInt(cleanedString, radix: 16) else {
+            return nil
+        }
+
+        self.init(hex: hexValue)
+    }
 }
