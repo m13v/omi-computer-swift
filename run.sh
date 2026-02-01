@@ -63,7 +63,7 @@ rm -f /tmp/omi.log 2>/dev/null || true
 
 step "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
-    "/Applications/Omi.app"
+    "/Applications/Omi Computer.app"
     "$HOME/Desktop/Omi.app"
     "$HOME/Downloads/Omi.app"
     "$(dirname "$0")/../omi/app/build/macos/Build/Products/Debug/Omi.app"
