@@ -78,21 +78,59 @@ struct PermissionsPage: View {
 struct MicrophonePermissionSection: View {
     @ObservedObject var appState: AppState
     @State private var isExpanded = true
+    @State private var isResetting = false
+    @State private var resetButtonText = "Reset & Restart"
+
+    // Check if permission was explicitly denied (not just "not determined")
+    private var isPermissionDenied: Bool {
+        return appState.isMicrophonePermissionDenied()
+    }
+
+    // Colors based on state
+    private var iconBackgroundColor: Color {
+        if appState.hasMicrophonePermission {
+            return Color.green.opacity(0.15)
+        } else if isPermissionDenied {
+            return Color.red.opacity(0.15)
+        } else {
+            return OmiColors.backgroundTertiary
+        }
+    }
+
+    private var iconColor: Color {
+        if appState.hasMicrophonePermission {
+            return .green
+        } else if isPermissionDenied {
+            return .red
+        } else {
+            return OmiColors.textSecondary
+        }
+    }
+
+    private var borderColor: Color {
+        if appState.hasMicrophonePermission {
+            return Color.green.opacity(0.3)
+        } else if isPermissionDenied {
+            return Color.red.opacity(0.5)
+        } else {
+            return OmiColors.backgroundQuaternary.opacity(0.5)
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header
             Button(action: { withAnimation { isExpanded.toggle() } }) {
                 HStack(spacing: 16) {
-                    // Icon
+                    // Icon - pulsing animation when denied
                     ZStack {
                         Circle()
-                            .fill(appState.hasMicrophonePermission ? Color.green.opacity(0.15) : OmiColors.backgroundTertiary)
+                            .fill(iconBackgroundColor)
                             .frame(width: 48, height: 48)
 
-                        Image(systemName: "mic.fill")
+                        Image(systemName: isPermissionDenied ? "mic.slash.fill" : "mic.fill")
                             .font(.system(size: 22))
-                            .foregroundColor(appState.hasMicrophonePermission ? .green : OmiColors.textSecondary)
+                            .foregroundColor(iconColor)
                     }
 
                     // Title and status
@@ -102,12 +140,14 @@ struct MicrophonePermissionSection: View {
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(OmiColors.textPrimary)
 
-                            statusBadge(isGranted: appState.hasMicrophonePermission)
+                            microphoneStatusBadge
                         }
 
-                        Text("Required for voice recording and transcription")
+                        Text(isPermissionDenied
+                            ? "Permission was denied - reset required"
+                            : "Required for voice recording and transcription")
                             .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
+                            .foregroundColor(isPermissionDenied ? .red.opacity(0.8) : OmiColors.textTertiary)
                     }
 
                     Spacer()
@@ -120,51 +160,19 @@ struct MicrophonePermissionSection: View {
             }
             .buttonStyle(.plain)
 
-            // Expanded content
+            // Expanded content - different for denied vs not determined
             if isExpanded && !appState.hasMicrophonePermission {
                 VStack(alignment: .leading, spacing: 16) {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    Text("How to grant microphone access:")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textPrimary)
-
-                    VStack(alignment: .leading, spacing: 12) {
-                        instructionStep(number: 1, text: "Click \"Grant Access\" below - a system dialog will appear")
-                        instructionStep(number: 2, text: "Click \"OK\" to allow microphone access")
-                        instructionStep(number: 3, text: "If no dialog appears, find \"Omi Computer\" in Settings and enable it")
+                    if isPermissionDenied {
+                        // DENIED STATE - Show reset options
+                        deniedStateContent
+                    } else {
+                        // NOT DETERMINED - Show normal grant flow
+                        notDeterminedStateContent
                     }
-
-                    Button(action: {
-                        // Always try to request permission - this triggers the system dialog
-                        // and makes the app appear in the list if not already there
-                        Task {
-                            let granted = await AVCaptureDevice.requestAccess(for: .audio)
-                            await MainActor.run {
-                                appState.hasMicrophonePermission = granted
-                                if !granted {
-                                    // If not granted, open System Settings so user can enable manually
-                                    openMicrophoneSettings()
-                                }
-                            }
-                        }
-                    }) {
-                        HStack(spacing: 8) {
-                            Image(systemName: "hand.tap.fill")
-                                .font(.system(size: 14))
-                            Text("Grant Access")
-                                .font(.system(size: 14, weight: .semibold))
-                        }
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(OmiColors.purplePrimary)
-                        )
-                    }
-                    .buttonStyle(.plain)
                 }
                 .padding(.horizontal, 20)
                 .padding(.bottom, 20)
@@ -172,18 +180,231 @@ struct MicrophonePermissionSection: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 16)
-                .fill(OmiColors.backgroundSecondary.opacity(0.5))
+                .fill(isPermissionDenied ? Color.red.opacity(0.05) : OmiColors.backgroundSecondary.opacity(0.5))
                 .overlay(
                     RoundedRectangle(cornerRadius: 16)
-                        .stroke(appState.hasMicrophonePermission ? Color.green.opacity(0.3) : OmiColors.backgroundQuaternary.opacity(0.5), lineWidth: 1)
+                        .stroke(borderColor, lineWidth: isPermissionDenied ? 2 : 1)
                 )
         )
     }
 
-    private func openMicrophoneSettings() {
+    // Status badge for microphone
+    private var microphoneStatusBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: appState.hasMicrophonePermission ? "checkmark.circle.fill" : (isPermissionDenied ? "xmark.circle.fill" : "exclamationmark.circle.fill"))
+                .font(.system(size: 12))
+            Text(appState.hasMicrophonePermission ? "Granted" : (isPermissionDenied ? "Denied" : "Not Granted"))
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundColor(appState.hasMicrophonePermission ? .green : (isPermissionDenied ? .red : OmiColors.warning))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(appState.hasMicrophonePermission ? Color.green.opacity(0.15) : (isPermissionDenied ? Color.red.opacity(0.15) : OmiColors.warning.opacity(0.15)))
+        )
+    }
+
+    // Content for DENIED state - shows reset options
+    // Note: Grant Access button is NOT shown here because macOS won't show the permission
+    // dialog again after the user denied it. They must reset the permission first.
+    private var deniedStateContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Microphone access was previously denied. Reset the permission to try again:")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(OmiColors.textPrimary)
+
+            // Option 1: Quick Reset
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Option 1: Quick Reset")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Button(action: tryDirectReset) {
+                    HStack(spacing: 8) {
+                        if isResetting {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14))
+                        }
+                        Text(resetButtonText)
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(isResetting ? Color.gray : OmiColors.purplePrimary)
+                    )
+                }
+                .buttonStyle(.plain)
+                .disabled(isResetting)
+            }
+
+            // Option 2: Terminal
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Option 2: Reset via Terminal")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Button(action: tryTerminalReset) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "terminal")
+                            .font(.system(size: 14))
+                        Text("Open Terminal")
+                            .font(.system(size: 14, weight: .semibold))
+                    }
+                    .foregroundColor(OmiColors.textPrimary)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .frame(maxWidth: .infinity)
+                    .background(
+                        RoundedRectangle(cornerRadius: 10)
+                            .fill(OmiColors.backgroundTertiary)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Option 3: Manual
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Option 3: Manual")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                // Step 1: Open System Settings
+                HStack(alignment: .top, spacing: 8) {
+                    Text("1.")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Open System Settings")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        Button(action: openSystemSettings) {
+                            HStack(spacing: 8) {
+                                Image(systemName: "gear")
+                                    .font(.system(size: 14))
+                                Text("Open Privacy Settings")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                            .foregroundColor(OmiColors.textPrimary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(OmiColors.backgroundTertiary)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+
+                // Step 2: Find Omi and toggle ON
+                HStack(alignment: .top, spacing: 8) {
+                    Text("2.")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Find \"Omi\" and toggle it ON")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        // Screenshot showing the toggle
+                        if let image = NSImage(contentsOfFile: Bundle.module.path(forResource: "microphone-settings", ofType: "png") ?? "") {
+                            Image(nsImage: image)
+                                .resizable()
+                                .scaledToFit()
+                                .frame(maxWidth: 300)
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(OmiColors.backgroundQuaternary, lineWidth: 1)
+                                )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Content for NOT DETERMINED state - shows normal grant flow
+    private var notDeterminedStateContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("How to grant microphone access:")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(OmiColors.textPrimary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                instructionStep(number: 1, text: "Click \"Grant Access\" below - a system dialog will appear")
+                instructionStep(number: 2, text: "Click \"OK\" to allow microphone access")
+                instructionStep(number: 3, text: "If no dialog appears, find \"Omi Computer\" in Settings and enable it")
+            }
+
+            Button(action: {
+                NSApp.activate(ignoringOtherApps: true)
+                appState.requestMicrophonePermission()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 14))
+                    Text("Grant Access")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(OmiColors.purplePrimary)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Actions
+
+    private func tryDirectReset() {
+        isResetting = true
+        resetButtonText = "Resetting & Restarting..."
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            // Reset and restart the app - macOS requires restart to show permission dialog again
+            let success = appState.resetMicrophonePermissionDirect(shouldRestart: true)
+
+            if !success {
+                DispatchQueue.main.async {
+                    resetButtonText = "Failed - Try Option 2"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        isResetting = false
+                        resetButtonText = "Reset & Restart"
+                    }
+                }
+            }
+            // If success, app will restart automatically
+        }
+    }
+
+    private func tryTerminalReset() {
+        // Reset via terminal and restart - macOS requires restart to show permission dialog again
+        appState.resetMicrophonePermissionViaTerminal(shouldRestart: true)
+    }
+
+    private func openSystemSettings() {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone") {
             NSWorkspace.shared.open(url)
         }
+        // User will manually grant permission in System Settings
+        // No automatic restart needed - they can grant it directly there
     }
 }
 
