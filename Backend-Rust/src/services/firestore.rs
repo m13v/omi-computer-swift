@@ -2490,7 +2490,7 @@ impl FirestoreService {
             manually_added: self.parse_bool(fields, "manually_added").unwrap_or(false),
             scoring: self.parse_string(fields, "scoring"),
             source: None, // Enriched later from linked conversation
-            confidence: self.parse_double(fields, "confidence").ok(),
+            confidence: self.parse_float(fields, "confidence"),
             source_app: self.parse_string(fields, "source_app"),
             context_summary: self.parse_string(fields, "context_summary"),
             is_read: self.parse_bool(fields, "is_read").unwrap_or(false),
