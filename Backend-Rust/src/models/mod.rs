@@ -4,6 +4,7 @@ pub mod action_item;
 pub mod advice;
 pub mod app;
 pub mod category;
+pub mod chat_session;
 pub mod conversation;
 pub mod focus_session;
 pub mod folder;
@@ -12,7 +13,7 @@ pub mod message;
 pub mod request;
 pub mod user_settings;
 
-pub use action_item::{ActionItemDB, ActionItemStatusResponse, CreateActionItemRequest, UpdateActionItemRequest};
+pub use action_item::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, CreateActionItemRequest, UpdateActionItemRequest};
 pub use advice::{AdviceCategory, AdviceDB, AdviceStatusResponse, CreateAdviceRequest, GetAdviceQuery, UpdateAdviceRequest};
 pub use app::{
     App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ChatTool, ExternalIntegration,
@@ -48,4 +49,8 @@ pub use user_settings::{
     UpdateDailySummaryRequest, UpdateLanguageRequest, UpdateNotificationSettingsRequest,
     UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsResponse,
     UserSettingsStatusResponse,
+};
+pub use chat_session::{
+    ChatSessionDB, ChatSessionStatusResponse, CreateChatSessionRequest, GetChatSessionsQuery,
+    UpdateChatSessionRequest,
 };
