@@ -1,388 +1,339 @@
 import SwiftUI
+import AppKit
 
-/// Interactive timeline bar with hover effects - segments grow and lift when hovered (Screenpipe-style)
+/// Compact timeline bar with frame bars and mouse scroll navigation
 struct InteractiveTimelineBar: View {
     let screenshots: [Screenshot]
     let currentIndex: Int
     let searchResultIndices: Set<Int>?
     let onSelect: (Int) -> Void
 
-    @State private var hoveredSegmentIndex: Int? = nil
-    @State private var hoveredFrameIndex: Int? = nil
-    @State private var hoverPosition: CGFloat = 0
+    @State private var hoveredIndex: Int? = nil
 
-    private let defaultHeight: CGFloat = 16
-    private let hoveredHeight: CGFloat = 32
-    private let liftAmount: CGFloat = 12  // How much segments lift on hover (like Screenpipe's y: -20)
-    private let searchMarkerHeight: CGFloat = 8
+    // Bar dimensions
+    private let frameWidth: CGFloat = 4
+    private let frameSpacing: CGFloat = 1
+    private let barHeight: CGFloat = 32
+
+    // Visible window for performance
+    private let visibleCount = 150
 
     var body: some View {
-        GeometryReader { geometry in
-            let segments = computeSegments()
-
-            ZStack(alignment: .bottom) {
-                // Background track
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Color.white.opacity(0.08))
-                    .frame(height: defaultHeight)
-
-                // App segments with hover lift effect
-                HStack(spacing: 1) {
-                    ForEach(Array(segments.enumerated()), id: \.offset) { index, segment in
-                        let isHovered = hoveredSegmentIndex == index
-                        let isCurrent = isInCurrentSegment(index, segments: segments)
-
-                        InteractiveSegment(
-                            segment: segment,
-                            isHovered: isHovered,
-                            isCurrentSegment: isCurrent,
-                            defaultHeight: defaultHeight,
-                            hoveredHeight: hoveredHeight,
-                            width: geometry.size.width * segment.widthRatio
-                        ) {
-                            let segmentStartIndex = segments[0..<index].reduce(0) { $0 + $1.count }
-                            let middleIndex = segmentStartIndex + segment.count / 2
-                            onSelect(middleIndex)
-                        }
-                        // Screenpipe-style lift effect on hover
-                        .offset(y: isHovered ? -liftAmount : 0)
-                        .scaleEffect(isHovered ? 1.15 : 1.0, anchor: .bottom)
-                        .zIndex(isHovered ? 100 : (isCurrent ? 50 : Double(index)))
-                        .onHover { hovering in
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                hoveredSegmentIndex = hovering ? index : nil
-                            }
-                        }
-                    }
-                }
-                .frame(height: hoveredHeight + liftAmount)
-                .padding(.bottom, 4)
-
-                // Hover tooltip showing app name and time
-                if let hoveredIndex = hoveredSegmentIndex, hoveredIndex < segments.count {
-                    let segment = segments[hoveredIndex]
-                    TimelineTooltip(appName: segment.appName, color: segment.color)
-                        .offset(y: -hoveredHeight - liftAmount - 40)
-                        .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                }
-
-                // Search result markers (yellow dots with glow)
-                if let searchIndices = searchResultIndices, !searchIndices.isEmpty {
-                    ForEach(Array(searchIndices.prefix(50)), id: \.self) { idx in
-                        let position = positionForIndex(idx, width: geometry.size.width)
-                        Circle()
-                            .fill(Color.yellow)
-                            .frame(width: searchMarkerHeight, height: searchMarkerHeight)
-                            .shadow(color: Color.yellow.opacity(0.6), radius: 4)
-                            .shadow(color: Color.yellow.opacity(0.3), radius: 8)
-                            .position(x: position, y: 0)
-                    }
-                }
-
-                // Current position indicator with glow (Screenpipe-style)
-                let currentPosition = positionForIndex(currentIndex, width: geometry.size.width)
-                ZStack {
-                    // Outer glow
-                    RoundedRectangle(cornerRadius: 3)
-                        .fill(OmiColors.purplePrimary.opacity(0.3))
-                        .frame(width: 10, height: hoveredHeight + 16)
-                        .blur(radius: 4)
-
-                    // Inner indicator
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(OmiColors.purplePrimary)
-                        .frame(width: 4, height: hoveredHeight + 12)
-                        .shadow(color: OmiColors.purplePrimary.opacity(0.8), radius: 6)
-                        .shadow(color: OmiColors.purplePrimary.opacity(0.4), radius: 12)
-                }
-                .position(x: currentPosition, y: (hoveredHeight + liftAmount) / 2)
-            }
-            .frame(height: hoveredHeight + liftAmount + 20)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        hoverPosition = value.location.x
-                        let index = indexForPosition(value.location.x, width: geometry.size.width)
-                        onSelect(index)
-                    }
+        VStack(spacing: 4) {
+            // Timeline using NSViewRepresentable for proper scroll handling
+            TimelineScrollView(
+                screenshots: screenshots,
+                currentIndex: currentIndex,
+                searchResultIndices: searchResultIndices,
+                hoveredIndex: $hoveredIndex,
+                frameWidth: frameWidth,
+                frameSpacing: frameSpacing,
+                barHeight: barHeight,
+                visibleCount: visibleCount,
+                onSelect: onSelect
             )
-            .onContinuousHover { phase in
-                switch phase {
-                case .active(let location):
-                    hoverPosition = location.x
-                    let index = indexForPosition(location.x, width: geometry.size.width)
-                    hoveredFrameIndex = index
-                case .ended:
-                    hoveredFrameIndex = nil
+            .frame(height: barHeight + 40) // Space for tooltip
+
+            // Compact legend
+            HStack(spacing: 16) {
+                // Current indicator
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Color.white)
+                        .frame(width: 8, height: 8)
+                    Text("current")
+                        .font(.system(size: 9))
+                        .foregroundColor(.white.opacity(0.4))
                 }
+
+                if searchResultIndices != nil && !(searchResultIndices?.isEmpty ?? true) {
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.yellow.opacity(0.8))
+                            .frame(width: 8, height: 8)
+                        Text("match")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.4))
+                    }
+                }
+
+                Spacer()
+
+                Text("scroll to navigate")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.3))
             }
+            .padding(.horizontal, 20)
         }
-        .frame(height: hoveredHeight + liftAmount + 20)
-    }
-
-    // MARK: - Segment Computation
-
-    struct Segment {
-        let appName: String
-        let color: Color
-        let count: Int
-        let widthRatio: CGFloat
-        let startIndex: Int
-    }
-
-    private func computeSegments() -> [Segment] {
-        guard !screenshots.isEmpty else { return [] }
-
-        var segments: [Segment] = []
-        var currentApp = screenshots.first!.appName
-        var currentCount = 0
-        var startIndex = 0
-
-        for (index, screenshot) in screenshots.enumerated() {
-            if screenshot.appName == currentApp {
-                currentCount += 1
-            } else {
-                segments.append(Segment(
-                    appName: currentApp,
-                    color: colorForApp(currentApp),
-                    count: currentCount,
-                    widthRatio: CGFloat(currentCount) / CGFloat(screenshots.count),
-                    startIndex: startIndex
-                ))
-                currentApp = screenshot.appName
-                startIndex = index
-                currentCount = 1
-            }
-        }
-
-        // Add final segment
-        segments.append(Segment(
-            appName: currentApp,
-            color: colorForApp(currentApp),
-            count: currentCount,
-            widthRatio: CGFloat(currentCount) / CGFloat(screenshots.count),
-            startIndex: startIndex
-        ))
-
-        return segments
-    }
-
-    private func isInCurrentSegment(_ segmentIndex: Int, segments: [Segment]) -> Bool {
-        guard segmentIndex < segments.count else { return false }
-        let segment = segments[segmentIndex]
-        return currentIndex >= segment.startIndex && currentIndex < segment.startIndex + segment.count
-    }
-
-    private func positionForIndex(_ index: Int, width: CGFloat) -> CGFloat {
-        guard screenshots.count > 1 else { return width / 2 }
-        let spacing = width / CGFloat(screenshots.count - 1)
-        return CGFloat(index) * spacing
-    }
-
-    private func indexForPosition(_ x: CGFloat, width: CGFloat) -> Int {
-        guard screenshots.count > 1 else { return 0 }
-        let spacing = width / CGFloat(screenshots.count - 1)
-        let index = Int(x / spacing)
-        return max(0, min(screenshots.count - 1, index))
-    }
-
-    private func colorForApp(_ appName: String) -> Color {
-        let hash = abs(appName.hashValue)
-        let hue = Double(hash % 360) / 360.0
-        return Color(hue: hue, saturation: 0.65, brightness: 0.85)
     }
 }
 
-// MARK: - Interactive Segment
+// MARK: - NSView-based Timeline for proper scroll handling
 
-/// Tooltip showing app name when hovering over timeline
-struct TimelineTooltip: View {
-    let appName: String
-    let color: Color
+struct TimelineScrollView: NSViewRepresentable {
+    let screenshots: [Screenshot]
+    let currentIndex: Int
+    let searchResultIndices: Set<Int>?
+    @Binding var hoveredIndex: Int?
+    let frameWidth: CGFloat
+    let frameSpacing: CGFloat
+    let barHeight: CGFloat
+    let visibleCount: Int
+    let onSelect: (Int) -> Void
+
+    func makeNSView(context: Context) -> TimelineNSView {
+        let view = TimelineNSView()
+        view.onSelect = onSelect
+        view.onHover = { index in
+            DispatchQueue.main.async {
+                hoveredIndex = index
+            }
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: TimelineNSView, context: Context) {
+        nsView.screenshots = screenshots
+        nsView.currentIndex = currentIndex
+        nsView.searchResultIndices = searchResultIndices
+        nsView.hoveredIndex = hoveredIndex
+        nsView.frameWidth = frameWidth
+        nsView.frameSpacing = frameSpacing
+        nsView.barHeight = barHeight
+        nsView.visibleCount = visibleCount
+        nsView.onSelect = onSelect
+        nsView.needsDisplay = true
+    }
+}
+
+class TimelineNSView: NSView {
+    var screenshots: [Screenshot] = []
+    var currentIndex: Int = 0
+    var searchResultIndices: Set<Int>?
+    var hoveredIndex: Int?
+    var frameWidth: CGFloat = 4
+    var frameSpacing: CGFloat = 1
+    var barHeight: CGFloat = 32
+    var visibleCount: Int = 150
+    var onSelect: ((Int) -> Void)?
+    var onHover: ((Int?) -> Void)?
+
+    private var trackingArea: NSTrackingArea?
+    private var tooltipWindow: NSWindow?
+
+    override var isFlipped: Bool { true }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupTrackingArea()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupTrackingArea()
+    }
+
+    private func setupTrackingArea() {
+        let options: NSTrackingArea.Options = [.activeInActiveApp, .mouseMoved, .mouseEnteredAndExited, .inVisibleRect]
+        trackingArea = NSTrackingArea(rect: bounds, options: options, owner: self, userInfo: nil)
+        addTrackingArea(trackingArea!)
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+        setupTrackingArea()
+    }
+
+    // Handle scroll wheel - this is the key fix
+    override func scrollWheel(with event: NSEvent) {
+        let delta = event.scrollingDeltaY + event.scrollingDeltaX
+        let framesToSkip = Int(delta * 2)
+
+        if framesToSkip != 0 {
+            let newIndex = max(0, min(screenshots.count - 1, currentIndex - framesToSkip))
+            if newIndex != currentIndex {
+                onSelect?(newIndex)
+            }
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        if let index = indexAtPoint(location) {
+            onSelect?(index)
+        }
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        let index = indexAtPoint(location)
+        onHover?(index)
+
+        if let idx = index, idx < screenshots.count {
+            showTooltip(for: screenshots[idx], at: location)
+        } else {
+            hideTooltip()
+        }
+        needsDisplay = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        onHover?(nil)
+        hideTooltip()
+        needsDisplay = true
+    }
+
+    private func indexAtPoint(_ point: CGPoint) -> Int? {
+        let centerX = bounds.width / 2
+        let totalWidth = frameWidth + frameSpacing
+
+        // Calculate visible range
+        let halfWindow = visibleCount / 2
+        let startIndex = max(0, currentIndex - halfWindow)
+        let endIndex = min(screenshots.count, currentIndex + halfWindow)
+
+        // Calculate offset from center
+        let currentBarX = centerX - frameWidth / 2
+
+        for i in startIndex..<endIndex {
+            let offset = CGFloat(i - currentIndex)
+            let barX = currentBarX + offset * totalWidth
+            if point.x >= barX && point.x < barX + frameWidth {
+                return i
+            }
+        }
+        return nil
+    }
+
+    private func showTooltip(for screenshot: Screenshot, at point: CGPoint) {
+        hideTooltip()
+
+        let tooltipView = NSHostingView(rootView: TooltipView(screenshot: screenshot))
+        tooltipView.frame.size = tooltipView.fittingSize
+
+        let windowPoint = convert(point, to: nil)
+        guard let screenPoint = window?.convertPoint(toScreen: windowPoint) else { return }
+
+        let tooltipWindow = NSWindow(
+            contentRect: NSRect(x: screenPoint.x - tooltipView.frame.width / 2,
+                              y: screenPoint.y + 20,
+                              width: tooltipView.frame.width,
+                              height: tooltipView.frame.height),
+            styleMask: .borderless,
+            backing: .buffered,
+            defer: false
+        )
+        tooltipWindow.backgroundColor = .clear
+        tooltipWindow.isOpaque = false
+        tooltipWindow.level = .floating
+        tooltipWindow.contentView = tooltipView
+        tooltipWindow.orderFront(nil)
+        self.tooltipWindow = tooltipWindow
+    }
+
+    private func hideTooltip() {
+        tooltipWindow?.orderOut(nil)
+        tooltipWindow = nil
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard !screenshots.isEmpty else { return }
+
+        let context = NSGraphicsContext.current?.cgContext
+        context?.clear(bounds)
+
+        let centerX = bounds.width / 2
+        let totalWidth = frameWidth + frameSpacing
+        let bottomY = bounds.height - 8 // Leave space at bottom
+
+        // Calculate visible range
+        let halfWindow = visibleCount / 2
+        let startIndex = max(0, currentIndex - halfWindow)
+        let endIndex = min(screenshots.count, currentIndex + halfWindow)
+
+        for i in startIndex..<endIndex {
+            let offset = CGFloat(i - currentIndex)
+            let barX = centerX - frameWidth / 2 + offset * totalWidth
+
+            let isCurrent = i == currentIndex
+            let isHovered = i == hoveredIndex
+            let isSearchResult = searchResultIndices?.contains(i) ?? false
+
+            // Bar height
+            let heightRatio: CGFloat = (isCurrent || isHovered) ? 1.0 : 0.5
+            let barHeight = self.barHeight * heightRatio
+
+            // Bar color
+            let color: NSColor
+            if isCurrent {
+                color = .white
+            } else if isSearchResult {
+                color = NSColor.yellow.withAlphaComponent(0.8)
+            } else {
+                color = NSColor(white: 0.4, alpha: 1.0)
+            }
+
+            // Draw bar
+            let barRect = NSRect(x: barX, y: bottomY - barHeight, width: frameWidth, height: barHeight)
+            let path = NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5)
+            color.setFill()
+            path.fill()
+
+            // Glow for current
+            if isCurrent {
+                let glowColor = NSColor.white.withAlphaComponent(0.3)
+                glowColor.setFill()
+                let glowRect = barRect.insetBy(dx: -2, dy: -2)
+                let glowPath = NSBezierPath(roundedRect: glowRect, xRadius: 3, yRadius: 3)
+                glowPath.fill()
+
+                // Redraw bar on top
+                color.setFill()
+                path.fill()
+            }
+        }
+    }
+}
+
+// MARK: - Tooltip View
+
+struct TooltipView: View {
+    let screenshot: Screenshot
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-
-            Text(appName)
-                .font(.system(size: 11, weight: .medium))
+            AppIconView(appName: screenshot.appName, size: 14)
+            Text(screenshot.appName)
+                .font(.system(size: 10, weight: .medium))
                 .foregroundColor(.white)
+                .lineLimit(1)
+            Text(screenshot.formattedTime)
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(.white.opacity(0.7))
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(Color.black.opacity(0.85))
-                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-        )
-    }
-}
-
-struct InteractiveSegment: View {
-    let segment: InteractiveTimelineBar.Segment
-    typealias Segment = InteractiveTimelineBar.Segment
-    let isHovered: Bool
-    let isCurrentSegment: Bool
-    let defaultHeight: CGFloat
-    let hoveredHeight: CGFloat
-    let width: CGFloat
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            RoundedRectangle(cornerRadius: isHovered ? 4 : 2)
-                .fill(
-                    isCurrentSegment ?
-                    LinearGradient(
-                        colors: [segment.color, segment.color.opacity(0.8)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ) :
-                    LinearGradient(
-                        colors: [segment.color.opacity(isHovered ? 0.95 : 0.7)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                )
-                .frame(
-                    width: max(3, width),
-                    height: isHovered ? hoveredHeight : defaultHeight
-                )
+                .fill(Color.black.opacity(0.95))
                 .overlay(
-                    // Subtle inner highlight on hover
-                    RoundedRectangle(cornerRadius: isHovered ? 4 : 2)
-                        .stroke(Color.white.opacity(isHovered ? 0.3 : 0), lineWidth: 1)
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 0.5)
                 )
-                .shadow(
-                    color: isHovered ? segment.color.opacity(0.4) : .clear,
-                    radius: isHovered ? 6 : 0
-                )
-        }
-        .buttonStyle(.plain)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isHovered)
-        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isCurrentSegment)
-    }
-}
-
-
-// MARK: - Mini Thumbnail Timeline (alternative style)
-
-/// A timeline that shows mini thumbnails instead of colored bars
-struct ThumbnailTimelineBar: View {
-    let screenshots: [Screenshot]
-    let currentIndex: Int
-    let onSelect: (Int) -> Void
-
-    @State private var hoveredIndex: Int? = nil
-    @State private var thumbnailCache: [Int64: NSImage] = [:]
-
-    private let thumbnailSize: CGFloat = 40
-    private let hoveredSize: CGFloat = 60
-    private let spacing: CGFloat = 2
-
-    var body: some View {
-        GeometryReader { geometry in
-            let visibleCount = Int(geometry.size.width / (thumbnailSize + spacing))
-            let step = max(1, screenshots.count / visibleCount)
-
-            HStack(spacing: spacing) {
-                ForEach(Array(stride(from: 0, to: screenshots.count, by: step).enumerated()), id: \.offset) { _, index in
-                    let screenshot = screenshots[index]
-                    let isHovered = hoveredIndex == index
-                    let isCurrent = abs(currentIndex - index) < step
-
-                    MiniThumbnail(
-                        screenshot: screenshot,
-                        thumbnail: screenshot.id.flatMap { thumbnailCache[$0] },
-                        isHovered: isHovered,
-                        isCurrent: isCurrent,
-                        size: isHovered ? hoveredSize : thumbnailSize
-                    ) {
-                        onSelect(index)
-                    }
-                    .onHover { hovering in
-                        withAnimation(.easeOut(duration: 0.1)) {
-                            hoveredIndex = hovering ? index : nil
-                        }
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .center)
-        }
-        .frame(height: hoveredSize + 10)
-    }
-}
-
-struct MiniThumbnail: View {
-    let screenshot: Screenshot
-    let thumbnail: NSImage?
-    let isHovered: Bool
-    let isCurrent: Bool
-    let size: CGFloat
-    let onTap: () -> Void
-
-    var body: some View {
-        Button(action: onTap) {
-            Group {
-                if let image = thumbnail {
-                    Image(nsImage: image)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Rectangle()
-                        .fill(colorForApp(screenshot.appName))
-                }
-            }
-            .frame(width: size, height: size * 0.6)
-            .clipped()
-            .cornerRadius(4)
-            .overlay(
-                RoundedRectangle(cornerRadius: 4)
-                    .stroke(
-                        isCurrent ? OmiColors.purplePrimary :
-                        (isHovered ? Color.white.opacity(0.6) : Color.clear),
-                        lineWidth: isCurrent ? 2 : 1
-                    )
-            )
-            .shadow(
-                color: isCurrent ? OmiColors.purplePrimary.opacity(0.4) : .clear,
-                radius: 4
-            )
-            .scaleEffect(isHovered ? 1.1 : 1.0)
-        }
-        .buttonStyle(.plain)
-        .animation(.easeOut(duration: 0.1), value: isHovered)
-        .animation(.easeOut(duration: 0.1), value: isCurrent)
-    }
-
-    private func colorForApp(_ appName: String) -> Color {
-        let hash = abs(appName.hashValue)
-        let hue = Double(hash % 360) / 360.0
-        return Color(hue: hue, saturation: 0.6, brightness: 0.7)
+        )
     }
 }
 
 #Preview {
-    VStack(spacing: 40) {
-        InteractiveTimelineBar(
-            screenshots: [],
-            currentIndex: 50,
-            searchResultIndices: [10, 25, 40, 60, 80],
-            onSelect: { _ in }
-        )
-        .padding()
-        .background(Color.black)
-
-        ThumbnailTimelineBar(
-            screenshots: [],
-            currentIndex: 5,
-            onSelect: { _ in }
-        )
-        .padding()
-        .background(Color.black)
-    }
-    .frame(width: 800, height: 300)
+    InteractiveTimelineBar(
+        screenshots: [],
+        currentIndex: 50,
+        searchResultIndices: [10, 25, 40, 60, 80],
+        onSelect: { _ in }
+    )
+    .frame(width: 800, height: 100)
+    .background(Color.black)
 }
