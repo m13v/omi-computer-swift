@@ -79,6 +79,7 @@ struct OMIApp: App {
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var sentryHeartbeatTimer: Timer?
     private var globalHotkeyMonitor: Any?
+    private var localHotkeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AppDelegate: applicationDidFinishLaunching started")
@@ -181,54 +182,64 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Set up global keyboard shortcuts
     private func setupGlobalHotkeys() {
-        // Cmd+Option+R -> Open Rewind
-        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        // Handler for Ctrl+Option+R -> Open Rewind
+        let hotkeyHandler: (NSEvent) -> NSEvent? = { event in
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
             let keyCode = event.keyCode
 
-            // Log all key presses with Cmd+Option to debug
-            if modifiers.contains(.command) && modifiers.contains(.option) {
-                log("AppDelegate: Cmd+Option key pressed - keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
+            // Log modifier key presses for debugging
+            if modifiers.contains(.control) || modifiers.contains(.option) {
+                log("AppDelegate: [HOTKEY] keyCode=\(keyCode), modifiers=\(modifiers.rawValue) (ctrl=\(modifiers.contains(.control)), opt=\(modifiers.contains(.option)))")
             }
 
-            // Check for Cmd+Option+R
-            let isCommandOption = modifiers == [.command, .option]
+            // Check for Ctrl+Option+R (less likely to conflict with system shortcuts)
+            let isCtrlOption = modifiers.contains(.control) && modifiers.contains(.option)
             let isR = keyCode == 15 // R key
 
-            if isCommandOption && isR {
-                log("AppDelegate: Rewind hotkey MATCHED (Cmd+Option+R)")
+            if isCtrlOption && isR {
+                log("AppDelegate: [HOTKEY] Rewind hotkey MATCHED (Ctrl+Option+R)")
                 DispatchQueue.main.async {
-                    log("AppDelegate: Activating app and posting notification")
+                    log("AppDelegate: [HOTKEY] Activating app and posting notification")
                     // Bring app to front
                     NSApp.activate(ignoringOtherApps: true)
                     // Find and show main window
                     for window in NSApp.windows {
-                        log("AppDelegate: Window title='\(window.title)'")
                         if window.title.hasPrefix("Omi") {
                             window.makeKeyAndOrderFront(nil)
-                            log("AppDelegate: Made Omi window key")
                             break
                         }
                     }
                     // Post notification to navigate to Rewind
                     NotificationCenter.default.post(name: .navigateToRewind, object: nil)
-                    log("AppDelegate: Posted navigateToRewind notification")
+                    log("AppDelegate: [HOTKEY] Posted navigateToRewind notification")
                 }
             }
+            return event
         }
 
-        if globalHotkeyMonitor != nil {
-            log("AppDelegate: Global hotkey monitor registered successfully (Cmd+Option+R -> Rewind)")
-        } else {
-            log("AppDelegate: WARNING - Global hotkey monitor failed to register! Check Accessibility permission.")
+        // Global monitor - for when OTHER apps are focused (requires Accessibility permission)
+        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
+            _ = hotkeyHandler(event)
         }
+
+        // Local monitor - for when THIS app is focused
+        localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            return hotkeyHandler(event)
+        }
+
+        log("AppDelegate: Hotkey monitors registered - global=\(globalHotkeyMonitor != nil), local=\(localHotkeyMonitor != nil)")
+        log("AppDelegate: Hotkey is Ctrl+Option+R (⌃⌥R)")
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // Remove global hotkey monitor
+        // Remove hotkey monitors
         if let monitor = globalHotkeyMonitor {
             NSEvent.removeMonitor(monitor)
             globalHotkeyMonitor = nil
+        }
+        if let monitor = localHotkeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            localHotkeyMonitor = nil
         }
 
         // Stop heartbeat timer
