@@ -214,6 +214,15 @@ echo "[3/12] Signing app with Developer ID..."
 # Remove extended attributes that block code signing
 xattr -cr "$APP_BUNDLE"
 
+# Sign ffmpeg binary in resource bundle (if present)
+FFMPEG_PATH="$APP_BUNDLE/Contents/Resources/Omi Computer_Omi Computer.bundle/ffmpeg"
+if [ -f "$FFMPEG_PATH" ]; then
+    echo "  Signing ffmpeg binary..."
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" \
+        "$FFMPEG_PATH"
+fi
+
 # Sign Sparkle framework components (innermost first)
 # XPC Services
 codesign --force --options runtime --timestamp \
