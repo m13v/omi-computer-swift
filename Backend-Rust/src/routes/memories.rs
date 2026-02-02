@@ -87,6 +87,7 @@ async fn create_memory(
             &request.tags,
             request.reasoning.as_deref(),
             request.current_activity.as_deref(),
+            request.source.as_deref(),
         )
         .await
     {
