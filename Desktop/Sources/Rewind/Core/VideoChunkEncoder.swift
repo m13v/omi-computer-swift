@@ -294,7 +294,8 @@ actor VideoChunkEncoder {
 
     private func findFFmpegPath() -> String {
         // Common locations for ffmpeg (bundled first for users without Homebrew)
-        let bundledPath = Bundle.main.path(forResource: "ffmpeg", ofType: nil)
+        // Use Bundle.resourceBundle for SPM resources (they're in a nested bundle, not main bundle)
+        let bundledPath = Bundle.resourceBundle.path(forResource: "ffmpeg", ofType: nil)
         let possiblePaths: [(path: String, source: String)] = [
             (bundledPath ?? "", "bundled"),
             ("/opt/homebrew/bin/ffmpeg", "homebrew"),
