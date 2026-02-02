@@ -1201,17 +1201,25 @@ class AppState: ObservableObject {
 
     /// Reset onboarding state and all TCC permissions, then restart the app
     /// This clears UserDefaults onboarding keys and resets permissions so the user
-    /// can go through onboarding again with fresh permission prompts
+    /// can go through onboarding again with fresh permission prompts.
+    /// Performs thorough cleanup matching reset-and-run.sh behavior.
     nonisolated func resetOnboardingAndRestart() {
-        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
-        log("Resetting onboarding for \(bundleId)...")
+        log("Resetting onboarding (full cleanup)...")
 
-        // 0. Ensure this app is the authoritative version in Launch Services
-        // This fixes issues where multiple app bundles with the same bundle ID
-        // cause macOS to grant permissions to the wrong app
+        // 1. Clean conflicting app bundles from Trash, DerivedData, DMG staging
+        // These pollute Launch Services and cause permission confusion
+        cleanConflictingAppBundles()
+
+        // 2. Eject any mounted Omi DMG volumes
+        ejectMountedDMGVolumes()
+
+        // 3. Reset Launch Services database to clear stale registrations
+        resetLaunchServicesDatabase()
+
+        // 4. Ensure this app is the authoritative version in Launch Services
         ScreenCaptureService.ensureLaunchServicesRegistration()
 
-        // 1. Clear onboarding-related UserDefaults keys
+        // 5. Clear onboarding-related UserDefaults keys for BOTH bundle IDs
         let onboardingKeys = [
             "hasCompletedOnboarding",
             "onboardingStep",
@@ -1228,22 +1236,179 @@ class AppState: ObservableObject {
         UserDefaults.standard.synchronize()
         log("Cleared onboarding UserDefaults keys")
 
-        // 2. Reset ALL TCC permissions using tccutil
-        // Using "All" is more reliable than resetting individual services
+        // Also clear UserDefaults for both bundle IDs
+        if let prodDefaults = UserDefaults(suiteName: "com.omi.computer-macos") {
+            for key in onboardingKeys {
+                prodDefaults.removeObject(forKey: key)
+            }
+        }
+        if let devDefaults = UserDefaults(suiteName: "com.omi.computer-macos.development") {
+            for key in onboardingKeys {
+                devDefaults.removeObject(forKey: key)
+            }
+        }
+
+        // 6. Reset ALL TCC permissions using tccutil for BOTH bundle IDs
+        let bundleIds = [
+            "com.omi.computer-macos",           // Production
+            "com.omi.computer-macos.development" // Development
+        ]
+
+        for id in bundleIds {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+            process.arguments = ["reset", "All", id]
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                log("tccutil reset All for \(id) completed with exit code: \(process.terminationStatus)")
+            } catch {
+                log("Failed to run tccutil for \(id): \(error)")
+            }
+        }
+
+        // 7. Also clean user TCC database directly via sqlite3
+        // (System TCC database for Screen Recording is SIP-protected, only tccutil can reset it)
+        cleanUserTCCDatabase()
+
+        // 8. Restart the app
+        restartApp()
+    }
+
+    /// Clean conflicting app bundles from Trash, DerivedData, and DMG staging directories
+    private nonisolated func cleanConflictingAppBundles() {
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser.path
+
+        // Clean Omi apps from Trash (they still pollute Launch Services!)
+        let trashPath = "\(homeDir)/.Trash"
+        if let contents = try? fileManager.contentsOfDirectory(atPath: trashPath) {
+            for item in contents where item.lowercased().contains("omi") {
+                let itemPath = "\(trashPath)/\(item)"
+                do {
+                    try fileManager.removeItem(atPath: itemPath)
+                    log("Cleaned from Trash: \(item)")
+                } catch {
+                    log("Failed to clean from Trash: \(item) - \(error.localizedDescription)")
+                }
+            }
+        }
+
+        // Clean DMG staging directories
+        let tmpDir = "/private/tmp"
+        if let contents = try? fileManager.contentsOfDirectory(atPath: tmpDir) {
+            for item in contents where item.hasPrefix("omi-dmg-staging") || item.hasPrefix("omi-dmg-test") {
+                let itemPath = "\(tmpDir)/\(item)"
+                do {
+                    try fileManager.removeItem(atPath: itemPath)
+                    log("Cleaned DMG staging: \(item)")
+                } catch {
+                    log("Failed to clean DMG staging: \(item) - \(error.localizedDescription)")
+                }
+            }
+        }
+
+        // Clean Xcode DerivedData Omi builds
+        let derivedDataPath = "\(homeDir)/Library/Developer/Xcode/DerivedData"
+        if let contents = try? fileManager.contentsOfDirectory(atPath: derivedDataPath) {
+            for item in contents where item.lowercased().contains("omi") {
+                let buildProductsPath = "\(derivedDataPath)/\(item)/Build/Products"
+                if let buildDirs = try? fileManager.contentsOfDirectory(atPath: buildProductsPath) {
+                    for buildDir in buildDirs {
+                        let appPath = "\(buildProductsPath)/\(buildDir)/Omi.app"
+                        let appPath2 = "\(buildProductsPath)/\(buildDir)/Omi Computer.app"
+                        for path in [appPath, appPath2] {
+                            if fileManager.fileExists(atPath: path) {
+                                do {
+                                    try fileManager.removeItem(atPath: path)
+                                    log("Cleaned DerivedData: \(path)")
+                                } catch {
+                                    log("Failed to clean DerivedData: \(path) - \(error.localizedDescription)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Eject any mounted Omi DMG volumes
+    private nonisolated func ejectMountedDMGVolumes() {
+        let fileManager = FileManager.default
+        let volumesPath = "/Volumes"
+
+        guard let contents = try? fileManager.contentsOfDirectory(atPath: volumesPath) else { return }
+
+        for volume in contents where volume.lowercased().contains("omi") || volume.hasPrefix("dmg.") {
+            let volumePath = "\(volumesPath)/\(volume)"
+
+            // Try diskutil eject first
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+            process.arguments = ["eject", volumePath]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+                if process.terminationStatus == 0 {
+                    log("Ejected volume: \(volume)")
+                } else {
+                    // Try hdiutil detach as fallback
+                    let detachProcess = Process()
+                    detachProcess.executableURL = URL(fileURLWithPath: "/usr/bin/hdiutil")
+                    detachProcess.arguments = ["detach", volumePath]
+                    detachProcess.standardOutput = FileHandle.nullDevice
+                    detachProcess.standardError = FileHandle.nullDevice
+                    try? detachProcess.run()
+                    detachProcess.waitUntilExit()
+                }
+            } catch {
+                log("Failed to eject volume: \(volume) - \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Reset Launch Services database to clear stale app registrations
+    private nonisolated func resetLaunchServicesDatabase() {
+        let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        process.arguments = ["reset", "All", bundleId]
+        process.executableURL = URL(fileURLWithPath: lsregisterPath)
+        process.arguments = ["-kill", "-r", "-domain", "local", "-domain", "user"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
 
         do {
             try process.run()
             process.waitUntilExit()
-            log("tccutil reset All completed with exit code: \(process.terminationStatus)")
+            log("Launch Services database reset (exit code: \(process.terminationStatus))")
         } catch {
-            log("Failed to run tccutil: \(error)")
+            log("Failed to reset Launch Services: \(error.localizedDescription)")
         }
+    }
 
-        // 3. Restart the app
-        restartApp()
+    /// Clean user TCC database entries for Omi apps
+    private nonisolated func cleanUserTCCDatabase() {
+        let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+        let tccDbPath = "\(homeDir)/Library/Application Support/com.apple.TCC/TCC.db"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [tccDbPath, "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            log("User TCC database cleaned (exit code: \(process.terminationStatus))")
+        } catch {
+            log("Failed to clean user TCC database: \(error.localizedDescription)")
+        }
     }
 
     /// Reset microphone permission using tccutil (Option 1: Direct)
