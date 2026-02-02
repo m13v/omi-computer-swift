@@ -16,6 +16,8 @@ pub struct CreateConversationRequest {
     pub language: String,
     #[serde(default = "default_timezone")]
     pub timezone: String,
+    /// Name of the input device (microphone) used for recording
+    pub input_device_name: Option<String>,
 }
 
 fn default_language() -> String {
