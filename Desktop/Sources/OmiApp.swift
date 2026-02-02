@@ -78,6 +78,7 @@ struct OMIApp: App {
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var sentryHeartbeatTimer: Timer?
+    private var globalHotkeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AppDelegate: applicationDidFinishLaunching started")
@@ -136,6 +137,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             andEventID: AEEventID(kAEGetURL)
         )
 
+        // Register global hotkey for Rewind (Cmd+Shift+Space)
+        setupGlobalHotkeys()
+
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
 
@@ -173,7 +177,42 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Set up global keyboard shortcuts
+    private func setupGlobalHotkeys() {
+        // Cmd+Shift+Space -> Open Rewind
+        globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            // Check for Cmd+Shift+Space
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            let isCommandShift = modifiers == [.command, .shift]
+            let isSpace = event.keyCode == 49 // Space key
+
+            if isCommandShift && isSpace {
+                log("AppDelegate: Rewind hotkey triggered (Cmd+Shift+Space)")
+                DispatchQueue.main.async {
+                    // Bring app to front
+                    NSApp.activate(ignoringOtherApps: true)
+                    // Find and show main window
+                    for window in NSApp.windows {
+                        if window.title.hasPrefix("Omi") {
+                            window.makeKeyAndOrderFront(nil)
+                            break
+                        }
+                    }
+                    // Post notification to navigate to Rewind
+                    NotificationCenter.default.post(name: .navigateToRewind, object: nil)
+                }
+            }
+        }
+        log("AppDelegate: Global hotkey monitor registered (Cmd+Shift+Space -> Rewind)")
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        // Remove global hotkey monitor
+        if let monitor = globalHotkeyMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalHotkeyMonitor = nil
+        }
+
         // Stop heartbeat timer
         sentryHeartbeatTimer?.invalidate()
         sentryHeartbeatTimer = nil
