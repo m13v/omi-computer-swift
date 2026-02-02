@@ -407,12 +407,18 @@ actor RewindDatabase {
 
             if batch.isEmpty { break }
 
-            let batchBlocks = try await dbQueue.write { [batch] db -> Int in
+            // Extract data from rows before entering the write closure (Row is not Sendable)
+            let batchData: [(id: Int64, json: String)] = batch.compactMap { row in
+                guard let id: Int64 = row["id"],
+                      let json: String = row["ocrDataJson"]
+                else { return nil }
+                return (id, json)
+            }
+
+            let batchBlocks = try await dbQueue.write { db -> Int in
                 var blocksInBatch = 0
-                for row in batch {
-                    let screenshotId: Int64 = row["id"]
-                    guard let jsonString: String = row["ocrDataJson"],
-                          let jsonData = jsonString.data(using: .utf8)
+                for (screenshotId, jsonString) in batchData {
+                    guard let jsonData = jsonString.data(using: .utf8)
                     else { continue }
 
                     // Parse OCR result
