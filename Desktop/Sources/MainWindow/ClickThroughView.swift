@@ -6,6 +6,7 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
     private var pendingClickLocation: NSPoint?
     private var wasWindowKey: Bool = false
     private var localMonitor: Any?
+    private var isProcessingSyntheticClick: Bool = false  // Guard against re-entry
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         return true
@@ -34,6 +35,9 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
         localMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
             guard let self = self, let window = self.window else { return event }
 
+            // Skip if we're processing a synthetic click (prevent re-entry loop)
+            guard !self.isProcessingSyntheticClick else { return event }
+
             // If clicking in our view while window is not key, save the location
             if !window.isKeyWindow {
                 let locationInView = self.convert(event.locationInWindow, from: nil)
@@ -60,32 +64,50 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 
         // Small delay to let the window fully activate
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
-            guard let self = self else { return }
+            guard let self = self, let window = self.window else { return }
 
             // Find the view at the click location and simulate a click
             let locationInView = self.convert(location, from: nil)
-            if self.bounds.contains(locationInView) {
-                // Create and post a synthetic mouse event
-                if let cgEvent = CGEvent(
-                    mouseEventSource: nil,
-                    mouseType: .leftMouseDown,
-                    mouseCursorPosition: NSEvent.mouseLocation,
-                    mouseButton: .left
-                ) {
-                    cgEvent.post(tap: .cghidEventTap)
+            guard self.bounds.contains(locationInView) else { return }
 
-                    // Also post mouse up
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
-                        if let upEvent = CGEvent(
-                            mouseEventSource: nil,
-                            mouseType: .leftMouseUp,
-                            mouseCursorPosition: NSEvent.mouseLocation,
-                            mouseButton: .left
-                        ) {
-                            upEvent.post(tap: .cghidEventTap)
-                        }
+            // Convert window coordinates to screen coordinates
+            let screenLocation = window.convertPoint(toScreen: location)
+
+            // Flip Y coordinate for CGEvent (CGEvent uses top-left origin, AppKit uses bottom-left)
+            guard let screen = window.screen ?? NSScreen.main else { return }
+            let flippedY = screen.frame.maxY - screenLocation.y
+            let cgPoint = CGPoint(x: screenLocation.x, y: flippedY)
+
+            // Set guard before posting synthetic events
+            self.isProcessingSyntheticClick = true
+
+            // Create and post a synthetic mouse event at the SAVED click location
+            if let cgEvent = CGEvent(
+                mouseEventSource: nil,
+                mouseType: .leftMouseDown,
+                mouseCursorPosition: cgPoint,
+                mouseButton: .left
+            ) {
+                cgEvent.post(tap: .cghidEventTap)
+
+                // Also post mouse up
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+                    if let upEvent = CGEvent(
+                        mouseEventSource: nil,
+                        mouseType: .leftMouseUp,
+                        mouseCursorPosition: cgPoint,
+                        mouseButton: .left
+                    ) {
+                        upEvent.post(tap: .cghidEventTap)
+                    }
+
+                    // Clear guard after mouse up completes
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                        self?.isProcessingSyntheticClick = false
                     }
                 }
+            } else {
+                self.isProcessingSyntheticClick = false
             }
         }
     }
