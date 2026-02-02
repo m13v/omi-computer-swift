@@ -23,6 +23,7 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var isInDelayPeriod = false
 
     private(set) var isMonitoring = false
+    private var isStartingMonitoring = false  // Prevents race condition with async startMonitoring
     private var _hasScreenRecordingPermission: Bool?  // Cached permission state
     private var currentApp: String?
     private var currentWindowID: CGWindowID?
@@ -105,16 +106,21 @@ public class ProactiveAssistantsPlugin: NSObject {
 
     /// Start monitoring
     public func startMonitoring(completion: @escaping (Bool, String?) -> Void) {
-        guard !isMonitoring else {
-            completion(true, nil)
+        // Guard against both active monitoring and pending startup (race condition fix)
+        guard !isMonitoring && !isStartingMonitoring else {
+            completion(isMonitoring, nil)
             return
         }
+
+        // Set flag synchronously before async call to prevent race condition
+        isStartingMonitoring = true
 
         // Check screen recording permission (and update cache)
         refreshScreenRecordingPermission()
         guard hasScreenRecordingPermission else {
             // Request both traditional TCC and ScreenCaptureKit permissions
             ScreenCaptureService.requestAllScreenCapturePermissions()
+            isStartingMonitoring = false
             completion(false, "Screen recording permission not granted")
             return
         }
@@ -190,6 +196,7 @@ public class ProactiveAssistantsPlugin: NSObject {
             }
 
         } catch {
+            isStartingMonitoring = false
             completion(false, error.localizedDescription)
             return
         }
@@ -211,7 +218,8 @@ public class ProactiveAssistantsPlugin: NSObject {
         }
         windowMonitor?.start()
 
-        // Start capture timer
+        // Start capture timer (invalidate any orphaned timer first as safety measure)
+        captureTimer?.invalidate()
         captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.captureFrame()
@@ -219,6 +227,7 @@ public class ProactiveAssistantsPlugin: NSObject {
         }
 
         isMonitoring = true
+        isStartingMonitoring = false
 
         // Report resources after initialization
         ResourceMonitor.shared.reportResourcesNow(context: "after_monitoring_start")
@@ -281,6 +290,7 @@ public class ProactiveAssistantsPlugin: NSObject {
         screenCaptureService = nil
 
         isMonitoring = false
+        isStartingMonitoring = false  // Reset in case stop was called during startup
         currentApp = nil
         currentWindowID = nil
         currentWindowTitle = nil
