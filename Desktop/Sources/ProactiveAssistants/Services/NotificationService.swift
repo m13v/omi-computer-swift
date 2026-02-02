@@ -8,6 +8,15 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     /// Category ID for notifications that track dismissal
     private static let trackableCategoryId = "omi.trackable"
 
+    /// Category ID for screen capture reset notifications with action button
+    private static let screenCaptureResetCategoryId = "omi.screen_capture_reset"
+
+    /// Action ID for the "Reset Now" button
+    private static let resetNowActionId = "RESET_SCREEN_CAPTURE_NOW"
+
+    /// Title that identifies screen capture reset notifications
+    static let screenCaptureResetTitle = "Screen Recording Needs Reset"
+
     /// Stores metadata for sent notifications so we can retrieve it in delegate callbacks
     /// Key: notification identifier, Value: (title, assistantId)
     private var notificationMetadata: [String: (title: String, assistantId: String)] = [:]
@@ -31,7 +40,22 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
             options: [.customDismissAction]  // This enables didReceive callback on dismiss
         )
 
-        UNUserNotificationCenter.current().setNotificationCategories([trackableCategory])
+        // Create "Reset Now" action for screen capture reset notifications
+        let resetNowAction = UNNotificationAction(
+            identifier: Self.resetNowActionId,
+            title: "Reset Now",
+            options: [.foreground]  // Bring app to foreground when tapped
+        )
+
+        // Create category for screen capture reset with the action button
+        let screenCaptureResetCategory = UNNotificationCategory(
+            identifier: Self.screenCaptureResetCategoryId,
+            actions: [resetNowAction],
+            intentIdentifiers: [],
+            options: [.customDismissAction]
+        )
+
+        UNUserNotificationCenter.current().setNotificationCategories([trackableCategory, screenCaptureResetCategory])
     }
 
     // MARK: - UNUserNotificationCenterDelegate
@@ -66,6 +90,11 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                     assistantId: assistantId
                 )
 
+                // If this is a screen capture reset notification, trigger the reset
+                if title == Self.screenCaptureResetTitle {
+                    self.handleScreenCaptureResetAction(source: "notification_click")
+                }
+
             case UNNotificationDismissActionIdentifier:
                 // User explicitly dismissed the notification (X button, swipe, or Clear)
                 print("[\(assistantId)] Notification dismissed: \(title)")
@@ -74,6 +103,16 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
                     title: title,
                     assistantId: assistantId
                 )
+
+            case Self.resetNowActionId:
+                // User clicked the "Reset Now" action button
+                print("[\(assistantId)] Reset Now action clicked: \(title)")
+                AnalyticsManager.shared.notificationClicked(
+                    notificationId: notificationId,
+                    title: title,
+                    assistantId: assistantId
+                )
+                self.handleScreenCaptureResetAction(source: "notification_action_button")
 
             default:
                 // Custom action (if we add action buttons in the future)
@@ -87,12 +126,25 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         completionHandler()
     }
 
+    /// Handle screen capture reset action from notification click or action button
+    private func handleScreenCaptureResetAction(source: String) {
+        log("Screen capture reset triggered from \(source)")
+        AnalyticsManager.shared.screenCaptureResetClicked(source: source)
+        ScreenCaptureService.resetScreenCapturePermissionAndRestart()
+    }
+
     func sendNotification(title: String, message: String, assistantId: String = "default") {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = message
         content.sound = .default
-        content.categoryIdentifier = Self.trackableCategoryId  // Enable dismiss tracking
+
+        // Use screen capture reset category for reset notifications (adds "Reset Now" button)
+        if title == Self.screenCaptureResetTitle {
+            content.categoryIdentifier = Self.screenCaptureResetCategoryId
+        } else {
+            content.categoryIdentifier = Self.trackableCategoryId  // Enable dismiss tracking
+        }
 
         let notificationId = UUID().uuidString
         let request = UNNotificationRequest(
