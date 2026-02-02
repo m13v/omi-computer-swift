@@ -25,6 +25,7 @@ class AppState: ObservableObject {
 
     // Transcription state
     @Published var isTranscribing = false
+    @Published var isSavingConversation = false
     @Published var currentTranscript: String = ""
     @Published var hasMicrophonePermission = false
     @Published var hasSystemAudioPermission = false
@@ -155,7 +156,8 @@ class AppState: ObservableObject {
                 if self.isTranscribing {
                     log("Computer sleeping - finalizing conversation")
                     await self.finalizeConversation()
-                    self.stopTranscriptionServices()
+                    self.stopAudioCapture()
+                    self.clearTranscriptionState()
                 }
             }
         }
@@ -474,7 +476,8 @@ class AppState: ObservableObject {
                     log("Transcription: 4-hour limit reached - finalizing conversation")
                     await self.finalizeConversation()
                     // Start a new recording session automatically
-                    self.stopTranscriptionServices()
+                    self.stopAudioCapture()
+                    self.clearTranscriptionState()
                     self.startTranscription()
                 }
             }
@@ -541,17 +544,22 @@ class AppState: ObservableObject {
 
     /// Stop real-time transcription and finalize the conversation
     func stopTranscription() {
+        // Immediately stop audio capture but show saving state
+        stopAudioCapture()
+        isSavingConversation = true
+
         Task {
             await finalizeConversation()
-            stopTranscriptionServices()
+            isSavingConversation = false
+            clearTranscriptionState()
+
+            // Refresh conversations after stopping
+            await loadConversations()
         }
     }
 
-    /// Stop transcription services without finalizing (internal use)
-    private func stopTranscriptionServices() {
-        // Calculate word count before stopping
-        let wordCount = currentTranscript.split(separator: " ").count
-
+    /// Stop audio capture services (but keep transcript data for saving)
+    private func stopAudioCapture() {
         // Cancel timers
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
@@ -583,6 +591,11 @@ class AppState: ObservableObject {
         transcriptionService = nil
 
         isTranscribing = false
+    }
+
+    /// Clear transcription state after saving
+    private func clearTranscriptionState() {
+        let wordCount = currentTranscript.split(separator: " ").count
 
         log("Transcription: Final segments count: \(speakerSegments.count)")
 
@@ -595,11 +608,6 @@ class AppState: ObservableObject {
         AnalyticsManager.shared.transcriptionStopped(wordCount: wordCount)
 
         log("Transcription: Stopped")
-
-        // Refresh conversations after stopping
-        Task {
-            await loadConversations()
-        }
     }
 
     // MARK: - Conversations
