@@ -80,8 +80,43 @@ final class ScreenCaptureService: Sendable {
         }
     }
 
+    /// Force re-register this app with Launch Services to ensure it's the authoritative version
+    /// This fixes issues where multiple app bundles with the same bundle ID confuse macOS
+    /// about which app to grant permissions to.
+    static func ensureLaunchServicesRegistration() {
+        guard let bundlePath = Bundle.main.bundlePath as String? else {
+            log("Launch Services: Failed to get bundle path")
+            return
+        }
+
+        log("Launch Services: Re-registering \(bundlePath)...")
+
+        let lsregisterPath = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: lsregisterPath)
+        // -f = force registration even if already registered
+        // This makes this specific app bundle authoritative
+        process.arguments = ["-f", bundlePath]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            log("Launch Services: Registration completed (exit code: \(process.terminationStatus))")
+        } catch {
+            logError("Launch Services: Failed to register", error: error)
+        }
+    }
+
     /// Request all screen capture permissions (both traditional TCC and ScreenCaptureKit)
     static func requestAllScreenCapturePermissions() {
+        // 0. Ensure this app is the authoritative version in Launch Services
+        // This fixes issues where stale registrations from old builds, DMGs, or Trash
+        // cause macOS to grant permissions to the wrong app
+        ensureLaunchServicesRegistration()
+
         // 1. Request traditional Screen Recording TCC permission
         CGRequestScreenCaptureAccess()
 
@@ -90,6 +125,13 @@ final class ScreenCaptureService: Sendable {
             Task {
                 _ = await requestScreenCaptureKitPermission()
             }
+        }
+
+        // 3. Also open System Settings directly as a fallback
+        // Sometimes CGRequestScreenCaptureAccess doesn't show a dialog if permission
+        // was previously denied or if there's Launch Services confusion
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            openScreenRecordingPreferences()
         }
     }
 
@@ -144,8 +186,18 @@ final class ScreenCaptureService: Sendable {
     }
 
     /// Reset screen capture permission and restart the app
+    @MainActor
     static func resetScreenCapturePermissionAndRestart() {
-        if resetScreenCapturePermission() {
+        // First ensure this app is the authoritative version in Launch Services
+        // This fixes issues where tccutil resets permission for a stale app registration
+        ensureLaunchServicesRegistration()
+
+        let success = resetScreenCapturePermission()
+
+        // Track reset completion
+        AnalyticsManager.shared.screenCaptureResetCompleted(success: success)
+
+        if success {
             log("Screen capture permission reset, restarting app...")
 
             guard let bundleURL = Bundle.main.bundleURL as URL? else {
@@ -167,6 +219,8 @@ final class ScreenCaptureService: Sendable {
             } catch {
                 logError("Failed to schedule restart", error: error)
             }
+        } else {
+            log("Screen capture permission reset failed")
         }
     }
 
