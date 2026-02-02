@@ -33,6 +33,9 @@ struct PermissionsPage: View {
 
                     // Screen Recording Permission
                     ScreenRecordingPermissionSection(appState: appState)
+
+                    // Notification Permission
+                    NotificationPermissionSection(appState: appState)
                 }
 
                 // All permissions granted message
@@ -516,6 +519,204 @@ struct ScreenRecordingPermissionSection: View {
                         .stroke(appState.hasScreenRecordingPermission ? Color.green.opacity(0.3) : OmiColors.backgroundQuaternary.opacity(0.5), lineWidth: 1)
                 )
         )
+    }
+}
+
+// MARK: - Notification Permission Section
+struct NotificationPermissionSection: View {
+    @ObservedObject var appState: AppState
+    @State private var isExpanded = true
+
+    // Check if permission was explicitly denied
+    private var isPermissionDenied: Bool {
+        return appState.isNotificationPermissionDenied()
+    }
+
+    // Colors based on state
+    private var iconBackgroundColor: Color {
+        if appState.hasNotificationPermission {
+            return Color.green.opacity(0.15)
+        } else if isPermissionDenied {
+            return Color.red.opacity(0.15)
+        } else {
+            return OmiColors.backgroundTertiary
+        }
+    }
+
+    private var iconColor: Color {
+        if appState.hasNotificationPermission {
+            return .green
+        } else if isPermissionDenied {
+            return .red
+        } else {
+            return OmiColors.textSecondary
+        }
+    }
+
+    private var borderColor: Color {
+        if appState.hasNotificationPermission {
+            return Color.green.opacity(0.3)
+        } else if isPermissionDenied {
+            return Color.red.opacity(0.5)
+        } else {
+            return OmiColors.backgroundQuaternary.opacity(0.5)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            Button(action: { withAnimation { isExpanded.toggle() } }) {
+                HStack(spacing: 16) {
+                    // Icon
+                    ZStack {
+                        Circle()
+                            .fill(iconBackgroundColor)
+                            .frame(width: 48, height: 48)
+
+                        Image(systemName: isPermissionDenied ? "bell.slash.fill" : "bell.fill")
+                            .font(.system(size: 22))
+                            .foregroundColor(iconColor)
+                    }
+
+                    // Title and status
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 8) {
+                            Text("Notifications")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            notificationStatusBadge
+                        }
+
+                        Text(isPermissionDenied
+                            ? "Permission was denied - enable in System Settings"
+                            : "Required for proactive assistant alerts")
+                            .font(.system(size: 13))
+                            .foregroundColor(isPermissionDenied ? .red.opacity(0.8) : OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .padding(20)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded content
+            if isExpanded && !appState.hasNotificationPermission {
+                VStack(alignment: .leading, spacing: 16) {
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    if isPermissionDenied {
+                        // DENIED STATE - Show settings instructions
+                        deniedStateContent
+                    } else {
+                        // NOT DETERMINED - Show normal grant flow
+                        notDeterminedStateContent
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.bottom, 20)
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(isPermissionDenied ? Color.red.opacity(0.05) : OmiColors.backgroundSecondary.opacity(0.5))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 16)
+                        .stroke(borderColor, lineWidth: isPermissionDenied ? 2 : 1)
+                )
+        )
+    }
+
+    // Status badge for notifications
+    private var notificationStatusBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: appState.hasNotificationPermission ? "checkmark.circle.fill" : (isPermissionDenied ? "xmark.circle.fill" : "exclamationmark.circle.fill"))
+                .font(.system(size: 12))
+            Text(appState.hasNotificationPermission ? "Granted" : (isPermissionDenied ? "Denied" : "Not Granted"))
+                .font(.system(size: 12, weight: .medium))
+        }
+        .foregroundColor(appState.hasNotificationPermission ? .green : (isPermissionDenied ? .red : OmiColors.warning))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(
+            Capsule()
+                .fill(appState.hasNotificationPermission ? Color.green.opacity(0.15) : (isPermissionDenied ? Color.red.opacity(0.15) : OmiColors.warning.opacity(0.15)))
+        )
+    }
+
+    // Content for DENIED state - shows settings instructions
+    private var deniedStateContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Notification access was previously denied. Enable it in System Settings:")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(OmiColors.textPrimary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                instructionStep(number: 1, text: "Click \"Open Settings\" below")
+                instructionStep(number: 2, text: "Find \"Omi\" in the notifications list")
+                instructionStep(number: 3, text: "Toggle \"Allow Notifications\" to ON")
+            }
+
+            Button(action: {
+                appState.openNotificationPreferences()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "gear")
+                        .font(.system(size: 14))
+                    Text("Open Settings")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(OmiColors.purplePrimary)
+                )
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // Content for NOT DETERMINED state - shows normal grant flow
+    private var notDeterminedStateContent: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("How to grant notification access:")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(OmiColors.textPrimary)
+
+            VStack(alignment: .leading, spacing: 12) {
+                instructionStep(number: 1, text: "Click \"Grant Access\" below - a system dialog will appear")
+                instructionStep(number: 2, text: "Click \"Allow\" to enable notifications")
+            }
+
+            Button(action: {
+                NSApp.activate(ignoringOtherApps: true)
+                appState.requestNotificationPermission()
+            }) {
+                HStack(spacing: 8) {
+                    Image(systemName: "hand.tap.fill")
+                        .font(.system(size: 14))
+                    Text("Grant Access")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 12)
+                .background(
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(OmiColors.purplePrimary)
+                )
+            }
+            .buttonStyle(.plain)
+        }
     }
 }
 
