@@ -165,6 +165,9 @@ cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || tr
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# Strip extended attributes before signing (prevents "resource fork, Finder information" errors)
+xattr -cr "$APP_BUNDLE"
+
 # Sign Sparkle framework components individually (like release.sh does)
 echo "Signing Sparkle framework components..."
 SPARKLE_FW="$APP_BUNDLE/Contents/Frameworks/Sparkle.framework"
@@ -197,6 +200,7 @@ echo "Resetting permissions for $BUNDLE_ID..."
 tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true  # Also resets system audio access
 tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
 tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true  # For click-through sidebar
 
 # Reset app data (UserDefaults, onboarding state, etc.)
 echo "Resetting app data..."
