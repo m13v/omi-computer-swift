@@ -4,10 +4,12 @@ set -e
 ###############################################################################
 # BUILD LOCAL PRODUCTION VERSION FOR TESTING
 # Builds with production bundle ID but doesn't release or notarize
+# This script mirrors reset-and-run.sh cleanup but uses production bundle ID
 ###############################################################################
 
 APP_NAME="Omi Computer"
 BUNDLE_ID="com.omi.computer-macos"
+BUNDLE_ID_DEV="com.omi.computer-macos.development"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
@@ -21,37 +23,80 @@ echo "=============================================="
 echo ""
 
 # Kill existing app
-echo "[1/6] Stopping existing app..."
+echo "[1/7] Stopping existing app..."
 pkill -f "Omi Computer" 2>/dev/null || true
+pkill -f "Omi" 2>/dev/null || true
 sleep 1
 
-# Reset TCC permissions for production bundle (while app still exists)
-echo "[2/6] Resetting TCC permissions..."
+# =============================================================================
+# STEP 2: RESET TCC PERMISSIONS (before deleting apps!)
+# =============================================================================
+echo "[2/7] Resetting TCC permissions..."
+# Reset BOTH bundle IDs to handle switching between dev and prod
 tccutil reset All "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset All "$BUNDLE_ID_DEV" 2>/dev/null || true
 
-# Clean up conflicting bundles
-echo "[3/6] Cleaning up conflicting bundles..."
+# Belt-and-suspenders: Also clean user TCC database directly via sqlite3
+# Note: System TCC database (Screen Recording) is SIP-protected - only tccutil can reset it
+sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';" 2>/dev/null || true
+
+# =============================================================================
+# STEP 3: CLEAN ALL CONFLICTING APP BUNDLES
+# =============================================================================
+echo "[3/7] Cleaning up conflicting bundles..."
+
+# Main locations
 rm -rf "$APP_PATH" 2>/dev/null || true
 rm -rf "$APP_BUNDLE" 2>/dev/null || true
+rm -rf "/Applications/Omi.app" 2>/dev/null || true
+rm -rf "$HOME/Desktop/Omi.app" 2>/dev/null || true
+rm -rf "$HOME/Downloads/Omi.app" 2>/dev/null || true
 
-# Clean DMG staging and mounted volumes
-rm -rf /private/tmp/omi-dmg-staging-* 2>/dev/null || true
-for vol in /Volumes/Omi* /Volumes/dmg.*; do
-    if [ -d "$vol" ] 2>/dev/null; then
-        diskutil eject "$vol" 2>/dev/null || hdiutil detach "$vol" 2>/dev/null || true
+# Xcode DerivedData (old builds with same bundle ID)
+echo "  Cleaning Xcode DerivedData..."
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi.app" -type d 2>/dev/null | while read app; do
+    echo "    Removing: $app"
+    rm -rf "$app"
+done
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Computer.app" -type d 2>/dev/null | while read app; do
+    echo "    Removing: $app"
+    rm -rf "$app"
+done
+
+# DMG staging directories
+echo "  Cleaning DMG staging directories..."
+rm -rf /private/tmp/omi-dmg-staging-* /private/tmp/omi-dmg-test-* 2>/dev/null || true
+
+# Apps in Trash (STILL registered in Launch Services!)
+echo "  Cleaning Omi apps from Trash..."
+find "$HOME/.Trash" -maxdepth 1 -name "*OMI*" -o -name "*Omi*" 2>/dev/null | while read item; do
+    if [ -e "$item" ]; then
+        echo "    Removing: $item"
+        rm -rf "$item"
     fi
 done
 
-# Reset Launch Services
+# Eject mounted DMG volumes
+echo "  Ejecting mounted Omi DMG volumes..."
+for vol in /Volumes/Omi* /Volumes/OMI* /Volumes/dmg.*; do
+    if [ -d "$vol" ] 2>/dev/null; then
+        echo "    Ejecting: $vol"
+        diskutil eject "$vol" 2>/dev/null || hdiutil detach "$vol" 2>/dev/null || true
+    fi
+done 2>/dev/null || true
+
+# =============================================================================
+# STEP 4: RESET LAUNCH SERVICES DATABASE
+# =============================================================================
+echo "[4/7] Resetting Launch Services database..."
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user 2>/dev/null || true
 
 # Build release
-echo "[4/6] Building release binary..."
+echo "[5/7] Building release binary..."
 swift build -c release --package-path Desktop
 
 # Create app bundle
-echo "[5/6] Creating app bundle..."
+echo "[6/7] Creating app bundle..."
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
@@ -96,7 +141,7 @@ fi
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 # Strip extended attributes and sign
-echo "[6/6] Signing app..."
+echo "[7/7] Signing app..."
 xattr -cr "$APP_BUNDLE"
 
 # Sign Sparkle components
@@ -125,8 +170,9 @@ ditto "$APP_BUNDLE" "$APP_PATH"
 # Re-register with Launch Services
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "$APP_PATH"
 
-# Reset UserDefaults for fresh onboarding
+# Reset UserDefaults for fresh onboarding (both bundle IDs)
 defaults delete "$BUNDLE_ID" 2>/dev/null || true
+defaults delete "$BUNDLE_ID_DEV" 2>/dev/null || true
 
 # Remove quarantine and launch
 xattr -cr "$APP_PATH"
