@@ -225,6 +225,7 @@ class AdviceStorage: ObservableObject {
             let tags = ["tips", categoryTag]
 
             // Create as memory with tags instead of separate advice
+            // source = "screenshot" since tips come from screen capture
             let response = try await APIClient.shared.createMemory(
                 content: advice.advice.advice,
                 visibility: "private",
@@ -234,10 +235,11 @@ class AdviceStorage: ObservableObject {
                 contextSummary: advice.contextSummary,
                 tags: tags,
                 reasoning: advice.advice.reasoning,
-                currentActivity: advice.currentActivity
+                currentActivity: advice.currentActivity,
+                source: "screenshot"
             )
 
-            log("Advice: Created as memory with tags \(tags), ID: \(response.id)")
+            log("Advice: Created as memory with tags \(tags), source=screenshot, ID: \(response.id)")
         } catch {
             logError("Advice: Failed to create on backend", error: error)
         }
