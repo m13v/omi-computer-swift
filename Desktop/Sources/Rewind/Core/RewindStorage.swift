@@ -12,7 +12,6 @@ actor RewindStorage {
 
     // Frame extraction cache
     private var frameCache = NSCache<NSString, NSImage>()
-    private var imageGenerators: [String: AVAssetImageGenerator] = [:]
 
     // MARK: - Initialization
 
@@ -127,7 +126,7 @@ actor RewindStorage {
 
     // MARK: - Video Frame Loading
 
-    /// Load a frame from a video chunk
+    /// Load a frame from a video chunk using ffmpeg (works with fragmented MP4)
     func loadVideoFrame(videoPath: String, frameOffset: Int) async throws -> NSImage {
         guard let videosDirectory = videosDirectory else {
             throw RewindError.storageError("Videos directory not initialized")
@@ -145,26 +144,87 @@ actor RewindStorage {
             throw RewindError.screenshotNotFound
         }
 
-        // Get or create image generator for this chunk
-        let generator = getOrCreateGenerator(for: fullPath)
-
-        // Calculate time for frame (1 FPS)
-        let time = CMTime(value: Int64(frameOffset), timescale: 1)
-
-        // Extract frame
-        let cgImage: CGImage
-        do {
-            cgImage = try generator.copyCGImage(at: time, actualTime: nil)
-        } catch {
-            throw RewindError.storageError("Failed to extract frame: \(error.localizedDescription)")
-        }
-
-        let nsImage = NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+        // Use ffmpeg to extract frame (works with fragmented MP4)
+        let image = try await extractFrameWithFFmpeg(from: fullPath.path, frameOffset: frameOffset)
 
         // Cache for reuse (estimate ~4MB per frame for cost)
-        frameCache.setObject(nsImage, forKey: cacheKey, cost: 4 * 1024 * 1024)
+        frameCache.setObject(image, forKey: cacheKey, cost: 4 * 1024 * 1024)
 
-        return nsImage
+        return image
+    }
+
+    /// Extract a frame from video using ffmpeg
+    private func extractFrameWithFFmpeg(from videoPath: String, frameOffset: Int) async throws -> NSImage {
+        let ffmpegPath = findFFmpegPath()
+
+        // Calculate time offset (1 FPS, so frame N is at N seconds)
+        let timeOffset = Double(frameOffset)
+
+        // Create a temporary file for the output
+        let tempDir = FileManager.default.temporaryDirectory
+        let outputPath = tempDir.appendingPathComponent("frame_\(UUID().uuidString).jpg")
+
+        // Build ffmpeg command to extract single frame
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ffmpegPath)
+        process.arguments = [
+            "-ss", String(format: "%.3f", timeOffset),
+            "-i", videoPath,
+            "-vframes", "1",
+            "-f", "image2",
+            "-c:v", "mjpeg",
+            "-q:v", "2", // High quality JPEG
+            "-y", // Overwrite
+            outputPath.path
+        ]
+
+        // Capture stderr for error handling
+        let stderrPipe = Pipe()
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = stderrPipe
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            throw RewindError.storageError("Failed to run ffmpeg: \(error.localizedDescription)")
+        }
+
+        if process.terminationStatus != 0 {
+            let stderrData = stderrPipe.fileHandleForReading.readDataToEndOfFile()
+            let stderrString = String(data: stderrData, encoding: .utf8) ?? "unknown error"
+            throw RewindError.storageError("FFmpeg failed: \(stderrString)")
+        }
+
+        // Load the extracted frame
+        guard let imageData = try? Data(contentsOf: outputPath),
+              let image = NSImage(data: imageData)
+        else {
+            throw RewindError.storageError("Failed to load extracted frame")
+        }
+
+        // Clean up temp file
+        try? FileManager.default.removeItem(at: outputPath)
+
+        return image
+    }
+
+    /// Find ffmpeg executable path
+    private func findFFmpegPath() -> String {
+        let possiblePaths = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "/usr/bin/ffmpeg",
+            Bundle.main.path(forResource: "ffmpeg", ofType: nil),
+        ].compactMap { $0 }
+
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+
+        return "ffmpeg"
     }
 
     /// Unified loading interface - loads from either JPEG or video storage
@@ -203,26 +263,9 @@ actor RewindStorage {
         }
     }
 
-    private func getOrCreateGenerator(for url: URL) -> AVAssetImageGenerator {
-        let key = url.path
-        if let existing = imageGenerators[key] {
-            return existing
-        }
-
-        let asset = AVAsset(url: url)
-        let generator = AVAssetImageGenerator(asset: asset)
-        generator.appliesPreferredTrackTransform = true
-        generator.requestedTimeToleranceBefore = .zero
-        generator.requestedTimeToleranceAfter = .zero
-
-        imageGenerators[key] = generator
-        return generator
-    }
-
-    /// Clear the frame cache and image generators
+    /// Clear the frame cache
     func clearCache() {
         frameCache.removeAllObjects()
-        imageGenerators.removeAll()
     }
 
     // MARK: - Delete Screenshot
@@ -257,11 +300,8 @@ actor RewindStorage {
 
         let fullPath = videosDirectory.appendingPathComponent(relativePath)
 
-        // Remove from image generator cache
-        imageGenerators.removeValue(forKey: fullPath.path)
-
-        // Invalidate frame cache entries for this chunk
-        // Note: NSCache doesn't support iteration, so we rely on its eviction policy
+        // Invalidate cache entries for this chunk (we can't iterate NSCache, so just clear relevant entries by rebuilding)
+        // The cache will naturally evict old entries
 
         if fileManager.fileExists(atPath: fullPath.path) {
             try fileManager.removeItem(at: fullPath)
