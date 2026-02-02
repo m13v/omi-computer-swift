@@ -27,7 +27,10 @@ pub struct FirebaseAuth {
 }
 
 /// JWT Claims from Firebase ID token
+/// Note: aud, iss, exp, iat are validated by jsonwebtoken library internally.
+/// email, email_verified, name are kept for potential future use.
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct FirebaseClaims {
     /// Subject (user ID)
     pub sub: String,
