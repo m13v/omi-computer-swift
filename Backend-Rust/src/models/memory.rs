@@ -78,7 +78,7 @@ pub struct GetMemoriesQuery {
 }
 
 fn default_limit() -> usize {
-    100
+    5000  // Match Python backend behavior for first page
 }
 
 // =========================================================================
