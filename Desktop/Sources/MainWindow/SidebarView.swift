@@ -45,7 +45,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.conversations, .chat, .memories, .tasks, .advice, .rewind, .apps]
+        [.conversations, .chat, .memories, .tasks, .rewind, .apps]
     }
 }
 
@@ -440,46 +440,21 @@ struct SidebarView: View {
         appState.isMicrophonePermissionDenied() || appState.isScreenRecordingPermissionDenied()
     }
 
-    // Color based on denied (red) vs missing (orange)
-    private var permissionColor: Color {
-        hasPermissionDenied ? .red : OmiColors.warning
-    }
-
     @State private var permissionPulse = false
 
     private var permissionWarningButton: some View {
-        Button(action: {
-            selectedIndex = SidebarNavItem.permissions.rawValue
-        }) {
-            HStack(spacing: 12) {
-                Image(systemName: hasPermissionDenied ? "xmark.circle.fill" : "exclamationmark.triangle.fill")
-                    .font(.system(size: 17))
-                    .foregroundColor(permissionColor)
-                    .frame(width: iconWidth)
-                    .scaleEffect(permissionPulse && hasPermissionDenied ? 1.1 : 1.0)
-
-                if !isCollapsed {
-                    Text(hasPermissionDenied ? "Permission Denied" : "Permissions")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(permissionColor)
-
-                    Spacer()
-                }
+        VStack(spacing: 6) {
+            // Screen Recording permission (primary for Rewind)
+            if !appState.hasScreenRecordingPermission {
+                screenRecordingPermissionRow
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(permissionColor.opacity(permissionPulse && hasPermissionDenied ? 0.25 : 0.15))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10)
-                            .stroke(permissionColor.opacity(0.3), lineWidth: hasPermissionDenied ? 2 : 1)
-                    )
-            )
+
+            // Microphone permission
+            if !appState.hasMicrophonePermission {
+                microphonePermissionRow
+            }
         }
-        .buttonStyle(.plain)
         .padding(.bottom, 8)
-        .help(isCollapsed ? (hasPermissionDenied ? "Permission denied - action required" : "Permissions missing") : "")
         .onAppear {
             // Start pulsing animation when denied
             if hasPermissionDenied {
@@ -499,6 +474,111 @@ struct SidebarView: View {
         }
     }
 
+    private var screenRecordingPermissionRow: some View {
+        let isDenied = appState.isScreenRecordingPermissionDenied()
+        let color: Color = isDenied ? .red : OmiColors.warning
+
+        return HStack(spacing: 8) {
+            Image(systemName: isDenied ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle")
+                .font(.system(size: 15))
+                .foregroundColor(color)
+                .frame(width: iconWidth)
+                .scaleEffect(permissionPulse && isDenied ? 1.1 : 1.0)
+
+            if !isCollapsed {
+                Text("Screen Recording")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(color)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button(action: {
+                    // Trigger the permission request dialog
+                    CGRequestScreenCaptureAccess()
+                    // Also open settings for manual grant if needed
+                    ScreenCaptureService.openScreenRecordingPreferences()
+                }) {
+                    Text("Grant")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(color)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(color.opacity(permissionPulse && isDenied ? 0.25 : 0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(color.opacity(0.3), lineWidth: isDenied ? 2 : 1)
+                )
+        )
+        .help(isCollapsed ? "Screen Recording permission required" : "")
+    }
+
+    private var microphonePermissionRow: some View {
+        let isDenied = appState.isMicrophonePermissionDenied()
+        let color: Color = isDenied ? .red : OmiColors.warning
+
+        return HStack(spacing: 8) {
+            Image(systemName: isDenied ? "mic.slash.fill" : "mic.fill")
+                .font(.system(size: 15))
+                .foregroundColor(color)
+                .frame(width: iconWidth)
+                .scaleEffect(permissionPulse && isDenied ? 1.1 : 1.0)
+
+            if !isCollapsed {
+                Text("Microphone")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(color)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button(action: {
+                    if isDenied {
+                        // Go to permissions page for reset options
+                        selectedIndex = SidebarNavItem.permissions.rawValue
+                    } else {
+                        // Request permission directly
+                        appState.requestMicrophonePermission()
+                    }
+                }) {
+                    Text(isDenied ? "Fix" : "Grant")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(color)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(color.opacity(permissionPulse && isDenied ? 0.25 : 0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(color.opacity(0.3), lineWidth: isDenied ? 2 : 1)
+                )
+        )
+        .help(isCollapsed ? "Microphone permission required" : "")
+    }
+
     // MARK: - Toggle Handlers
 
     private func toggleTranscription(enabled: Bool) {
@@ -507,10 +587,14 @@ struct SidebarView: View {
             return
         }
 
+        // Show loading immediately
         isTogglingTranscription = true
 
         // Track setting change
         AnalyticsManager.shared.settingToggled(setting: "transcription", enabled: enabled)
+
+        // Persist the setting first for immediate feedback
+        AssistantSettings.shared.transcriptionEnabled = enabled
 
         if enabled {
             appState.startTranscription()
@@ -518,44 +602,49 @@ struct SidebarView: View {
             appState.stopTranscription()
         }
 
-        isTogglingTranscription = false
-
-        // Persist the setting
-        AssistantSettings.shared.transcriptionEnabled = enabled
+        // Small delay to show the loading state visually
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            isTogglingTranscription = false
+        }
     }
 
     private func toggleMonitoring(enabled: Bool) {
         if enabled && !ProactiveAssistantsPlugin.shared.hasScreenRecordingPermission {
             isMonitoring = false
+            // Trigger the permission request dialog, then open settings
+            CGRequestScreenCaptureAccess()
             ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
             return
         }
 
+        // Show loading immediately and update state optimistically
         isTogglingMonitoring = true
+        isMonitoring = enabled
 
         // Track setting change
         AnalyticsManager.shared.settingToggled(setting: "monitoring", enabled: enabled)
+
+        // Persist the setting
+        screenAnalysisEnabled = enabled
+        AssistantSettings.shared.screenAnalysisEnabled = enabled
 
         if enabled {
             ProactiveAssistantsPlugin.shared.startMonitoring { success, _ in
                 DispatchQueue.main.async {
                     isTogglingMonitoring = false
-                    if success {
-                        isMonitoring = true
-                    } else {
+                    if !success {
+                        // Revert on failure
                         isMonitoring = false
                     }
                 }
             }
         } else {
             ProactiveAssistantsPlugin.shared.stopMonitoring()
-            isTogglingMonitoring = false
-            isMonitoring = false
+            // Small delay to show the loading state visually
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isTogglingMonitoring = false
+            }
         }
-
-        // Persist the setting
-        screenAnalysisEnabled = enabled
-        AssistantSettings.shared.screenAnalysisEnabled = enabled
     }
 
     private func syncMonitoringState() {
@@ -577,67 +666,68 @@ struct NavItemView: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                ZStack(alignment: .topTrailing) {
-                    Image(systemName: icon)
-                        .font(.system(size: 17))
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                        .frame(width: iconWidth)
+        HStack(spacing: 12) {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: icon)
+                    .font(.system(size: 17))
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                    .frame(width: iconWidth)
 
-                    // Badge on icon when collapsed
-                    if isCollapsed && badge > 0 {
-                        Circle()
-                            .fill(OmiColors.purplePrimary)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 4, y: -4)
-                    }
-
-                    // Status indicator when collapsed (for Focus)
-                    if isCollapsed, let color = statusColor {
-                        Circle()
-                            .fill(color)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 4, y: -4)
-                    }
+                // Badge on icon when collapsed
+                if isCollapsed && badge > 0 {
+                    Circle()
+                        .fill(OmiColors.purplePrimary)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 4, y: -4)
                 }
 
-                if !isCollapsed {
-                    Text(label)
-                        .font(.system(size: 14, weight: isSelected ? .medium : .regular))
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
-
-                    Spacer()
-
-                    // Status indicator when expanded (for Focus)
-                    if let color = statusColor {
-                        Circle()
-                            .fill(color)
-                            .frame(width: 8, height: 8)
-                    }
-
-                    // Badge count when expanded
-                    if badge > 0 {
-                        Text("\(badge)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(OmiColors.purplePrimary)
-                            .clipShape(Capsule())
-                    }
+                // Status indicator when collapsed (for Focus)
+                if isCollapsed, let color = statusColor {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 4, y: -4)
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected
-                          ? OmiColors.backgroundTertiary.opacity(0.8)
-                          : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
-            )
+
+            if !isCollapsed {
+                Text(label)
+                    .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+
+                Spacer()
+
+                // Status indicator when expanded (for Focus)
+                if let color = statusColor {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 8, height: 8)
+                }
+
+                // Badge count when expanded
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(OmiColors.purplePrimary)
+                        .clipShape(Capsule())
+                }
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected
+                      ? OmiColors.backgroundTertiary.opacity(0.8)
+                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
+        )
+        .onTapGesture {
+            onTap()
+        }
         .onHover { hovering in
             isHovered = hovering
         }
@@ -662,52 +752,52 @@ struct NavItemWithToggleView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            // Main nav item button
-            Button(action: onTap) {
-                HStack(spacing: 12) {
-                    ZStack(alignment: .topTrailing) {
-                        Image(systemName: icon)
-                            .font(.system(size: 17))
-                            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                            .frame(width: iconWidth)
+            // Main nav item - tappable area
+            HStack(spacing: 12) {
+                ZStack(alignment: .topTrailing) {
+                    Image(systemName: icon)
+                        .font(.system(size: 17))
+                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                        .frame(width: iconWidth)
 
-                        // Status indicator when collapsed
-                        if isCollapsed {
-                            Circle()
-                                .fill(isToggleOn ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
-                                .frame(width: 8, height: 8)
-                                .offset(x: 4, y: -4)
-                        }
-                    }
-
-                    if !isCollapsed {
-                        Text(label)
-                            .font(.system(size: 14, weight: isSelected ? .medium : .regular))
-                            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
-
-                        Spacer()
+                    // Status indicator when collapsed
+                    if isCollapsed {
+                        Circle()
+                            .fill(isToggleOn ? OmiColors.purplePrimary : OmiColors.textTertiary.opacity(0.3))
+                            .frame(width: 8, height: 8)
+                            .offset(x: 4, y: -4)
                     }
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 11)
+
+                if !isCollapsed {
+                    Text(label)
+                        .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+
+                    Spacer(minLength: 4)
+                }
             }
-            .buttonStyle(.plain)
+            .padding(.leading, 12)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onTap()
+            }
 
             // Toggle (only when expanded)
             if !isCollapsed {
                 if isToggling {
                     ProgressView()
-                        .scaleEffect(0.6)
-                        .frame(width: 32)
+                        .scaleEffect(0.5)
+                        .frame(width: 40, height: 20)
                         .padding(.trailing, 8)
                 } else {
-                    Toggle("", isOn: Binding(
+                    SidebarToggle(isOn: Binding(
                         get: { isToggleOn },
                         set: { onToggle($0) }
                     ))
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .scaleEffect(0.7)
                     .padding(.trailing, 8)
                 }
             }
@@ -726,6 +816,36 @@ struct NavItemWithToggleView: View {
     }
 }
 
+// MARK: - Custom Sidebar Toggle
+struct SidebarToggle: View {
+    @Binding var isOn: Bool
+
+    private let width: CGFloat = 36
+    private let height: CGFloat = 20
+    private let circleSize: CGFloat = 16
+    private let padding: CGFloat = 2
+
+    var body: some View {
+        ZStack(alignment: isOn ? .trailing : .leading) {
+            // Track
+            Capsule()
+                .fill(isOn ? OmiColors.purplePrimary : Color.black.opacity(0.3))
+                .frame(width: width, height: height)
+
+            // Thumb
+            Circle()
+                .fill(Color.white)
+                .frame(width: circleSize, height: circleSize)
+                .padding(padding)
+                .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
+        }
+        .animation(.easeInOut(duration: 0.15), value: isOn)
+        .onTapGesture {
+            isOn.toggle()
+        }
+    }
+}
+
 // MARK: - Bottom Nav Item View
 struct BottomNavItemView: View {
     let icon: String
@@ -737,29 +857,30 @@ struct BottomNavItemView: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .foregroundColor(OmiColors.textTertiary)
-                    .frame(width: iconWidth)
+        HStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 17))
+                .foregroundColor(OmiColors.textTertiary)
+                .frame(width: iconWidth)
 
-                if !isCollapsed {
-                    Text(label)
-                        .font(.system(size: 14, weight: .regular))
-                        .foregroundColor(OmiColors.textSecondary)
+            if !isCollapsed {
+                Text(label)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundColor(OmiColors.textSecondary)
 
-                    Spacer()
-                }
+                Spacer()
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
-            )
         }
-        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+        )
+        .onTapGesture {
+            onTap()
+        }
         .onHover { hovering in
             isHovered = hovering
         }
