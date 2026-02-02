@@ -61,6 +61,12 @@ class AppState: ObservableObject {
     @Published var hasNotificationPermission = false
     @Published var notificationAlertStyle: UNAlertStyle = .none  // .none, .banner, or .alert
     @Published var hasScreenRecordingPermission = false
+
+    // Track last notification settings for change detection (avoid duplicate analytics)
+    private var lastNotificationAuthStatus: String?
+    private var lastNotificationAlertStyle: String?
+    private var lastNotificationSoundEnabled: Bool?
+    private var lastNotificationBadgeEnabled: Bool?
     @Published var isScreenCaptureKitBroken = false  // TCC says yes but ScreenCaptureKit says no
     @Published var hasAutomationPermission = false
     @Published var hasAccessibilityPermission = false
@@ -326,23 +332,33 @@ class AppState: ObservableObject {
     }
 
     func requestNotificationPermission() {
-        // Activate app to ensure permission dialog appears
-        NSApp.activate(ignoringOtherApps: true)
+        // First check current authorization status
+        UNUserNotificationCenter.current().getNotificationSettings { [weak self] settings in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
 
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
-            if let error = error {
-                print("Notification permission error: \(error)")
-                return
-            }
-
-            if granted {
-                // Send a test notification to confirm it works
-                DispatchQueue.main.async {
-                    NotificationService.shared.sendNotification(
-                        title: "Notifications Enabled",
-                        message: "You'll receive focus alerts from Omi."
-                    )
+                if settings.authorizationStatus == .notDetermined {
+                    // First time - show the system prompt
+                    NSApp.activate(ignoringOtherApps: true)
+                    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, error in
+                        if let error = error {
+                            print("Notification permission error: \(error)")
+                            return
+                        }
+                        if granted {
+                            DispatchQueue.main.async {
+                                NotificationService.shared.sendNotification(
+                                    title: "Notifications Enabled",
+                                    message: "You'll receive focus alerts from Omi."
+                                )
+                            }
+                        }
+                    }
+                } else if settings.authorizationStatus == .denied {
+                    // Previously denied - open System Settings so user can enable manually
+                    self.openNotificationPreferences()
                 }
+                // If already authorized, checkNotificationPermission() will handle it
             }
         }
     }
@@ -412,14 +428,29 @@ class AppState: ObservableObject {
                 }
                 log("Notification settings: auth=\(authStatus), alertStyle=\(alertStyleName), sound=\(settings.soundSetting.rawValue), badge=\(settings.badgeSetting.rawValue)")
 
-                // Track notification settings in analytics
-                AnalyticsManager.shared.notificationSettingsChecked(
-                    authStatus: authStatus,
-                    alertStyle: alertStyleName,
-                    soundEnabled: settings.soundSetting == .enabled,
-                    badgeEnabled: settings.badgeSetting == .enabled,
-                    bannersDisabled: settings.alertStyle == .none
-                )
+                // Track notification settings in analytics only when they change
+                let soundEnabled = settings.soundSetting == .enabled
+                let badgeEnabled = settings.badgeSetting == .enabled
+                let settingsChanged = authStatus != self.lastNotificationAuthStatus ||
+                                      alertStyleName != self.lastNotificationAlertStyle ||
+                                      soundEnabled != self.lastNotificationSoundEnabled ||
+                                      badgeEnabled != self.lastNotificationBadgeEnabled
+
+                if settingsChanged {
+                    AnalyticsManager.shared.notificationSettingsChecked(
+                        authStatus: authStatus,
+                        alertStyle: alertStyleName,
+                        soundEnabled: soundEnabled,
+                        badgeEnabled: badgeEnabled,
+                        bannersDisabled: settings.alertStyle == .none
+                    )
+
+                    // Update last known state
+                    self.lastNotificationAuthStatus = authStatus
+                    self.lastNotificationAlertStyle = alertStyleName
+                    self.lastNotificationSoundEnabled = soundEnabled
+                    self.lastNotificationBadgeEnabled = badgeEnabled
+                }
 
                 // Send confirmation notification when permission is newly granted
                 if !wasGranted && isNowGranted {
@@ -1174,6 +1205,11 @@ class AppState: ObservableObject {
     nonisolated func resetOnboardingAndRestart() {
         let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
         log("Resetting onboarding for \(bundleId)...")
+
+        // 0. Ensure this app is the authoritative version in Launch Services
+        // This fixes issues where multiple app bundles with the same bundle ID
+        // cause macOS to grant permissions to the wrong app
+        ScreenCaptureService.ensureLaunchServicesRegistration()
 
         // 1. Clear onboarding-related UserDefaults keys
         let onboardingKeys = [
