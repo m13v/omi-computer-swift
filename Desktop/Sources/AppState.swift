@@ -1153,4 +1153,6 @@ extension Notification.Name {
     static let screenDidUnlock = Notification.Name("screenDidUnlock")
     /// Posted when screen capture permission is detected as lost
     static let screenCapturePermissionLost = Notification.Name("screenCapturePermissionLost")
+    /// Posted to navigate to Rewind settings
+    static let navigateToRewindSettings = Notification.Name("navigateToRewindSettings")
 }
