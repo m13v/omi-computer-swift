@@ -424,10 +424,10 @@ RELEASE_NOTES=$(cat <<EOF
 ## Omi Desktop v${VERSION}
 
 ### What's New
-- Improved screen capture reliability with "Reset Now" action button
-- Better ffmpeg handling - works without Homebrew installed
-- Simplified search UI with editable header
-- Fixed action item completion state bug
+- Fixed window screenshot aspect ratio
+- Added no-results state to search UI
+- Fixed bundled ffmpeg path
+- Enhanced reset onboarding cleanup
 
 ### Downloads
 - **DMG Installer**: For fresh installs, download the DMG below
@@ -470,7 +470,7 @@ if [ -n "$RELEASE_SECRET" ]; then
     "build_number": $BUILD_NUMBER,
     "download_url": "$DOWNLOAD_URL",
     "ed_signature": "$ED_SIGNATURE",
-    "changelog": ["Improved screen capture reliability with Reset Now button", "Better ffmpeg handling - works without Homebrew", "Simplified search UI", "Fixed action item completion bug"],
+    "changelog": ["Fixed window screenshot aspect ratio", "Added no-results state to search", "Fixed bundled ffmpeg path", "Enhanced reset onboarding"],
     "is_live": true,
     "is_critical": false
 }
