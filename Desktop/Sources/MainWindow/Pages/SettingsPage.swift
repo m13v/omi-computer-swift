@@ -39,6 +39,9 @@ struct SettingsContentView: View {
     // AppState for transcription control
     @ObservedObject var appState: AppState
 
+    // Pending section to navigate to (set by external navigation requests)
+    static var pendingSection: SettingsSection?
+
     // Updater view model
     @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
 
@@ -213,15 +216,16 @@ struct SettingsContentView: View {
             loadBackendSettings()
             // Sync transcription state with appState
             isTranscribing = appState.isTranscribing
+
+            // Check for pending section navigation
+            if let pending = Self.pendingSection {
+                selectedSection = pending
+                Self.pendingSection = nil
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             if let userInfo = notification.userInfo, let state = userInfo["isMonitoring"] as? Bool {
                 isMonitoring = state
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .navigateToRewindSettings)) { _ in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                selectedSection = .rewind
             }
         }
         .onChange(of: appState.isTranscribing) { _, newValue in
