@@ -6,11 +6,22 @@ import Foundation
 class AnalyticsManager {
     static let shared = AnalyticsManager()
 
+    /// Returns true if this is a development build (bundle ID contains ".development")
+    /// Development builds don't send analytics to avoid polluting production data
+    nonisolated static var isDevBuild: Bool {
+        Bundle.main.bundleIdentifier?.contains(".development") == true
+    }
+
     private init() {}
 
     // MARK: - Initialization
 
     func initialize() {
+        // Skip analytics in development builds
+        guard !Self.isDevBuild else {
+            log("Analytics: Skipping initialization (development build)")
+            return
+        }
         MixpanelManager.shared.initialize()
         PostHogManager.shared.initialize()
     }
@@ -129,6 +140,30 @@ class AnalyticsManager {
         PostHogManager.shared.permissionDenied(permission: permission)
     }
 
+    /// Track notification settings status (auth, alertStyle, sound, badge)
+    func notificationSettingsChecked(
+        authStatus: String,
+        alertStyle: String,
+        soundEnabled: Bool,
+        badgeEnabled: Bool,
+        bannersDisabled: Bool
+    ) {
+        MixpanelManager.shared.notificationSettingsChecked(
+            authStatus: authStatus,
+            alertStyle: alertStyle,
+            soundEnabled: soundEnabled,
+            badgeEnabled: badgeEnabled,
+            bannersDisabled: bannersDisabled
+        )
+        PostHogManager.shared.notificationSettingsChecked(
+            authStatus: authStatus,
+            alertStyle: alertStyle,
+            soundEnabled: soundEnabled,
+            badgeEnabled: badgeEnabled,
+            bannersDisabled: bannersDisabled
+        )
+    }
+
     // MARK: - App Lifecycle Events
 
     func appLaunched() {
@@ -139,6 +174,9 @@ class AnalyticsManager {
     /// Track first launch with comprehensive system diagnostics
     /// This only fires once per installation
     func trackFirstLaunchIfNeeded() {
+        // Skip in dev builds
+        guard !Self.isDevBuild else { return }
+
         let defaults = UserDefaults.standard
         let hasLaunchedKey = "hasLaunchedBefore"
 
