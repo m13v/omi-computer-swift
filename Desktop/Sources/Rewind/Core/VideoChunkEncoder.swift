@@ -1,9 +1,9 @@
-import AVFoundation
+import AppKit
 import CoreGraphics
 import Foundation
-import VideoToolbox
 
-/// Encodes screenshot frames into H.265 video chunks for efficient storage
+/// Encodes screenshot frames into H.265 video chunks using ffmpeg for efficient storage.
+/// Uses fragmented MP4 format so frames can be read while the file is still being written.
 actor VideoChunkEncoder {
     static let shared = VideoChunkEncoder()
 
@@ -20,9 +20,10 @@ actor VideoChunkEncoder {
     private var currentChunkPath: String?
     private var frameOffsetInChunk: Int = 0
 
-    private var assetWriter: AVAssetWriter?
-    private var videoInput: AVAssetWriterInput?
-    private var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+    // FFmpeg process state
+    private var ffmpegProcess: Process?
+    private var ffmpegStdin: FileHandle?
+    private var currentOutputSize: CGSize?
 
     private var videosDirectory: URL?
     private var isInitialized = false
@@ -67,8 +68,8 @@ actor VideoChunkEncoder {
             currentChunkPath = generateChunkPath(for: timestamp)
             frameOffsetInChunk = 0
 
-            // Create the asset writer for this chunk
-            try await setupAssetWriter(
+            // Start ffmpeg process for this chunk
+            try await startFFmpegProcess(
                 for: currentChunkPath!,
                 videosDir: videosDir,
                 imageSize: CGSize(width: image.width, height: image.height)
@@ -86,8 +87,8 @@ actor VideoChunkEncoder {
 
         frameOffsetInChunk += 1
 
-        // Write frame to video
-        try await writeFrame(image: image, frameIndex: frameOffsetInChunk - 1)
+        // Write frame to ffmpeg
+        try await writeFrame(image: image)
 
         // Check if chunk duration exceeded
         if let startTime = currentChunkStartTime,
@@ -121,9 +122,9 @@ actor VideoChunkEncoder {
         return ChunkFlushResult(videoChunkPath: chunkPath, frames: frames)
     }
 
-    // MARK: - Asset Writer Setup
+    // MARK: - FFmpeg Process Management
 
-    private func setupAssetWriter(for relativePath: String, videosDir: URL, imageSize: CGSize) async throws {
+    private func startFFmpegProcess(for relativePath: String, videosDir: URL, imageSize: CGSize) async throws {
         // Create day subdirectory if needed
         let components = relativePath.components(separatedBy: "/")
         if components.count > 1 {
@@ -135,107 +136,93 @@ actor VideoChunkEncoder {
 
         // Calculate output size (maintain aspect ratio, max 1024)
         let outputSize = calculateOutputSize(for: imageSize)
+        currentOutputSize = outputSize
 
-        // Create asset writer
-        let writer = try AVAssetWriter(outputURL: fullPath, fileType: .mp4)
+        // Find ffmpeg path
+        let ffmpegPath = findFFmpegPath()
 
-        // Configure video settings for H.265
-        let videoSettings: [String: Any] = [
-            AVVideoCodecKey: AVVideoCodecType.hevc,
-            AVVideoWidthKey: Int(outputSize.width),
-            AVVideoHeightKey: Int(outputSize.height),
-            AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 500_000, // 500 kbps for 1 FPS screenshots
-                AVVideoProfileLevelKey: kVTProfileLevel_HEVC_Main_AutoLevel,
-                AVVideoExpectedSourceFrameRateKey: frameRate,
-                AVVideoMaxKeyFrameIntervalKey: 1, // All keyframes for random access
-            ],
+        // Build ffmpeg command
+        // Uses fragmented MP4 so the file can be read while still being written
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: ffmpegPath)
+        process.arguments = [
+            "-f", "image2pipe",
+            "-vcodec", "png",
+            "-r", String(frameRate),
+            "-i", "-",
+            "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", // Ensure even dimensions
+            "-vcodec", "libx265",
+            "-tag:v", "hvc1",
+            "-preset", "ultrafast",
+            "-crf", "23",
+            // Fragmented MP4 - allows reading while writing
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "-pix_fmt", "yuv420p",
+            "-y", // Overwrite output
+            fullPath.path
         ]
 
-        let input = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
-        input.expectsMediaDataInRealTime = true
+        // Set up pipes
+        let stdinPipe = Pipe()
+        process.standardInput = stdinPipe
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
 
-        // Create pixel buffer adaptor
-        let sourcePixelBufferAttributes: [String: Any] = [
-            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
-            kCVPixelBufferWidthKey as String: Int(outputSize.width),
-            kCVPixelBufferHeightKey as String: Int(outputSize.height),
-        ]
+        try process.run()
 
-        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
-            assetWriterInput: input,
-            sourcePixelBufferAttributes: sourcePixelBufferAttributes
-        )
+        ffmpegProcess = process
+        ffmpegStdin = stdinPipe.fileHandleForWriting
 
-        writer.add(input)
-
-        guard writer.startWriting() else {
-            throw RewindError.storageError("Failed to start video writer: \(writer.error?.localizedDescription ?? "unknown error")")
-        }
-
-        writer.startSession(atSourceTime: .zero)
-
-        assetWriter = writer
-        videoInput = input
-        pixelBufferAdaptor = adaptor
-
-        log("VideoChunkEncoder: Started new chunk at \(relativePath)")
+        log("VideoChunkEncoder: Started ffmpeg for chunk at \(relativePath)")
     }
 
-    private func writeFrame(image: CGImage, frameIndex: Int) async throws {
-        guard let adaptor = pixelBufferAdaptor,
-              let input = videoInput
+    private func writeFrame(image: CGImage) async throws {
+        guard let stdin = ffmpegStdin,
+              let outputSize = currentOutputSize
         else {
-            throw RewindError.storageError("Video encoder not ready")
+            throw RewindError.storageError("FFmpeg not ready")
         }
 
-        // Wait for input to be ready
-        while !input.isReadyForMoreMediaData {
-            try await Task.sleep(nanoseconds: 10_000_000) // 10ms
+        // Scale image if needed and convert to PNG data
+        let scaledImage = scaleImage(image, to: outputSize)
+        guard let pngData = createPNGData(from: scaledImage) else {
+            throw RewindError.storageError("Failed to create PNG data")
         }
 
-        // Create pixel buffer from CGImage
-        guard let pixelBuffer = createPixelBuffer(from: image, adaptor: adaptor) else {
-            throw RewindError.storageError("Failed to create pixel buffer")
-        }
-
-        // Calculate presentation time (1 FPS)
-        let presentationTime = CMTime(value: Int64(frameIndex), timescale: CMTimeScale(frameRate))
-
-        guard adaptor.append(pixelBuffer, withPresentationTime: presentationTime) else {
-            throw RewindError.storageError("Failed to append frame to video")
+        // Write to ffmpeg stdin
+        do {
+            try stdin.write(contentsOf: pngData)
+        } catch {
+            throw RewindError.storageError("Failed to write frame to ffmpeg: \(error.localizedDescription)")
         }
     }
 
     private func finalizeCurrentChunk() async throws {
-        guard let writer = assetWriter,
-              let input = videoInput
-        else {
-            return
+        // Close stdin to signal end of input to ffmpeg
+        if let stdin = ffmpegStdin {
+            try? stdin.close()
+            ffmpegStdin = nil
         }
 
-        input.markAsFinished()
+        // Wait for ffmpeg to finish
+        if let process = ffmpegProcess {
+            process.waitUntilExit()
 
-        await withCheckedContinuation { continuation in
-            writer.finishWriting {
-                continuation.resume()
+            if process.terminationStatus != 0 {
+                logError("VideoChunkEncoder: FFmpeg exited with status \(process.terminationStatus)")
+            } else {
+                log("VideoChunkEncoder: Finalized chunk with \(frameBuffer.count) frames")
             }
-        }
 
-        if writer.status == .failed {
-            logError("VideoChunkEncoder: Failed to finalize chunk: \(writer.error?.localizedDescription ?? "unknown")")
-        } else {
-            log("VideoChunkEncoder: Finalized chunk with \(frameBuffer.count) frames")
+            ffmpegProcess = nil
         }
 
         // Reset state
-        assetWriter = nil
-        videoInput = nil
-        pixelBufferAdaptor = nil
         frameBuffer.removeAll()
         currentChunkStartTime = nil
         currentChunkPath = nil
         frameOffsetInChunk = 0
+        currentOutputSize = nil
     }
 
     // MARK: - Helpers
@@ -270,55 +257,77 @@ actor VideoChunkEncoder {
         return CGSize(width: CGFloat(newWidth), height: CGFloat(newHeight))
     }
 
-    private func createPixelBuffer(from image: CGImage, adaptor: AVAssetWriterInputPixelBufferAdaptor) -> CVPixelBuffer? {
-        guard let pool = adaptor.pixelBufferPool else {
-            return nil
+    private func scaleImage(_ image: CGImage, to targetSize: CGSize) -> CGImage {
+        let currentSize = CGSize(width: image.width, height: image.height)
+
+        // If already the right size, return as-is
+        if currentSize.width == targetSize.width && currentSize.height == targetSize.height {
+            return image
         }
 
-        var pixelBuffer: CVPixelBuffer?
-        let status = CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
-
-        guard status == kCVReturnSuccess, let buffer = pixelBuffer else {
-            return nil
-        }
-
-        CVPixelBufferLockBaseAddress(buffer, [])
-        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
-
+        // Create a context at the target size
         guard let context = CGContext(
-            data: CVPixelBufferGetBaseAddress(buffer),
-            width: CVPixelBufferGetWidth(buffer),
-            height: CVPixelBufferGetHeight(buffer),
+            data: nil,
+            width: Int(targetSize.width),
+            height: Int(targetSize.height),
             bitsPerComponent: 8,
-            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+            bytesPerRow: 0,
             space: CGColorSpaceCreateDeviceRGB(),
-            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
         ) else {
-            return nil
+            return image
         }
 
-        // Draw the image, scaling to fit
-        let targetSize = CGSize(
-            width: CVPixelBufferGetWidth(buffer),
-            height: CVPixelBufferGetHeight(buffer)
-        )
-
+        context.interpolationQuality = .high
         context.draw(image, in: CGRect(origin: .zero, size: targetSize))
 
-        return buffer
+        return context.makeImage() ?? image
+    }
+
+    private func createPNGData(from image: CGImage) -> Data? {
+        let bitmapRep = NSBitmapImageRep(cgImage: image)
+        return bitmapRep.representation(using: .png, properties: [:])
+    }
+
+    private func findFFmpegPath() -> String {
+        // Common locations for ffmpeg
+        let possiblePaths = [
+            "/opt/homebrew/bin/ffmpeg",
+            "/usr/local/bin/ffmpeg",
+            "/usr/bin/ffmpeg",
+            Bundle.main.path(forResource: "ffmpeg", ofType: nil),
+        ].compactMap { $0 }
+
+        for path in possiblePaths {
+            if FileManager.default.fileExists(atPath: path) {
+                return path
+            }
+        }
+
+        // Fall back to PATH lookup
+        return "ffmpeg"
     }
 
     // MARK: - Cleanup
 
     /// Cancel any in-progress encoding and clean up
     func cancel() async {
-        assetWriter?.cancelWriting()
-        assetWriter = nil
-        videoInput = nil
-        pixelBufferAdaptor = nil
+        // Close stdin first
+        if let stdin = ffmpegStdin {
+            try? stdin.close()
+            ffmpegStdin = nil
+        }
+
+        // Terminate ffmpeg process
+        if let process = ffmpegProcess {
+            process.terminate()
+            ffmpegProcess = nil
+        }
+
         frameBuffer.removeAll()
         currentChunkStartTime = nil
         currentChunkPath = nil
         frameOffsetInChunk = 0
+        currentOutputSize = nil
     }
 }
