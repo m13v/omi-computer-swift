@@ -217,4 +217,7 @@ pub struct Conversation {
     /// Photos attached to conversation (from Python backend)
     #[serde(default)]
     pub photos: Vec<ConversationPhoto>,
+    /// Name of input device (microphone) used for recording
+    #[serde(default)]
+    pub input_device_name: Option<String>,
 }
