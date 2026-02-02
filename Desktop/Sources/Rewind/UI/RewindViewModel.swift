@@ -56,17 +56,19 @@ class RewindViewModel: ObservableObject {
             // Load available apps for filtering
             availableApps = try await RewindDatabase.shared.getUniqueAppNames()
 
-            // Load stats
-            if let indexerStats = await RewindIndexer.shared.getStats() {
-                stats = indexerStats
-            }
-
         } catch {
             errorMessage = error.localizedDescription
             logError("RewindViewModel: Failed to load initial data: \(error)")
         }
 
         isLoading = false
+
+        // Load stats asynchronously (includes storage size calculation which can be slow)
+        Task {
+            if let indexerStats = await RewindIndexer.shared.getStats() {
+                stats = indexerStats
+            }
+        }
     }
 
     func refresh() async {
