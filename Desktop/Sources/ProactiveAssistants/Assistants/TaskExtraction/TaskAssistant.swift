@@ -26,6 +26,12 @@ actor TaskAssistant: ProactiveAssistant {
     private var pendingFrame: CapturedFrame?
     private var processingTask: Task<Void, Never>?
 
+    // Cache for validation context (refreshed periodically)
+    private var cachedExistingTasks: [String] = []
+    private var cachedMemories: [String] = []
+    private var lastContextRefresh: Date = .distantPast
+    private let contextRefreshInterval: TimeInterval = 300 // Refresh every 5 minutes
+
     /// Get the current system prompt from settings (accessed on MainActor for thread safety)
     private var systemPrompt: String {
         get async {
@@ -308,6 +314,16 @@ actor TaskAssistant: ProactiveAssistant {
 
             log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
 
+            // Stage 1: Log draft task
+            if result.hasNewTask, let task = result.task {
+                let confidencePercent = Int(task.confidence * 100)
+                log("Task: [DRAFT] [\(confidencePercent)%] \"\(task.title)\"")
+
+                // Stage 2: Validate the draft task against existing context
+                let validationResult = await validateDraftTask(task: task, contextSummary: result.contextSummary)
+                log("Task: [FINAL] \(validationResult.isValid ? "APPROVED" : "REJECTED") - \"\(task.title)\" - \(validationResult.reason)")
+            }
+
             // Handle the result with screenshot ID for SQLite storage
             await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
                 Task { @MainActor in
@@ -379,5 +395,185 @@ actor TaskAssistant: ProactiveAssistant {
             logError("Task analysis error", error: error)
             return nil
         }
+    }
+
+    // MARK: - Two-Stage Validation
+
+    /// Result of task validation against existing context
+    private struct ValidationResult {
+        let isValid: Bool
+        let reason: String
+        let adjustedConfidence: Double?
+    }
+
+    /// Validate a draft task against existing tasks and memories
+    private func validateDraftTask(task: ExtractedTask, contextSummary: String) async -> ValidationResult {
+        // Refresh context if needed
+        await refreshValidationContext()
+
+        // Build validation prompt
+        let validationPrompt = buildValidationPrompt(task: task, contextSummary: contextSummary)
+
+        // For now, use text-only validation (no image needed)
+        do {
+            let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+                type: "object",
+                properties: [
+                    "is_valid": .init(type: "boolean", description: "True if the task should be kept, false if it should be filtered out"),
+                    "reason": .init(type: "string", description: "Brief explanation of why the task is valid or invalid"),
+                    "adjusted_confidence": .init(type: "number", description: "Adjusted confidence score 0.0-1.0 based on context validation")
+                ],
+                required: ["is_valid", "reason"]
+            )
+
+            let responseText = try await geminiClient.sendRequest(
+                prompt: validationPrompt,
+                systemPrompt: validationSystemPrompt,
+                responseSchema: responseSchema
+            )
+
+            // Parse response
+            struct ValidationResponse: Codable {
+                let isValid: Bool
+                let reason: String
+                let adjustedConfidence: Double?
+
+                enum CodingKeys: String, CodingKey {
+                    case isValid = "is_valid"
+                    case reason
+                    case adjustedConfidence = "adjusted_confidence"
+                }
+            }
+
+            let response = try JSONDecoder().decode(ValidationResponse.self, from: Data(responseText.utf8))
+            return ValidationResult(
+                isValid: response.isValid,
+                reason: response.reason,
+                adjustedConfidence: response.adjustedConfidence
+            )
+        } catch {
+            logError("Task validation error", error: error)
+            // On error, default to valid to not block tasks
+            return ValidationResult(isValid: true, reason: "Validation skipped (error)", adjustedConfidence: nil)
+        }
+    }
+
+    /// Refresh cached validation context (existing tasks and memories)
+    private func refreshValidationContext() async {
+        let timeSinceLastRefresh = Date().timeIntervalSince(lastContextRefresh)
+        guard timeSinceLastRefresh >= contextRefreshInterval else {
+            return
+        }
+
+        log("Task: Refreshing validation context...")
+        lastContextRefresh = Date()
+
+        // Fetch existing tasks from local SQLite
+        do {
+            let localTasks = try await ProactiveStorage.shared.getExtractions(type: .task, limit: 50, includeDismissed: false)
+            cachedExistingTasks = localTasks.map { $0.content }
+            log("Task: Loaded \(localTasks.count) local tasks for validation")
+        } catch {
+            logError("Task: Failed to load local tasks", error: error)
+        }
+
+        // Fetch existing tasks from backend
+        do {
+            let backendTasks = try await APIClient.shared.getActionItems(limit: 50, completed: false)
+            let backendTaskTitles = backendTasks.items.map { $0.description }
+            // Merge with local, avoiding duplicates
+            for title in backendTaskTitles {
+                if !cachedExistingTasks.contains(where: { $0.lowercased() == title.lowercased() }) {
+                    cachedExistingTasks.append(title)
+                }
+            }
+            log("Task: Loaded \(backendTasks.items.count) backend tasks for validation")
+        } catch {
+            logError("Task: Failed to load backend tasks", error: error)
+        }
+
+        // Fetch recent memories from backend
+        do {
+            let memories = try await APIClient.shared.getMemories(limit: 30)
+            cachedMemories = memories.map { $0.content }
+            log("Task: Loaded \(memories.count) memories for validation")
+        } catch {
+            logError("Task: Failed to load memories", error: error)
+        }
+    }
+
+    /// Build the validation prompt with context
+    private func buildValidationPrompt(task: ExtractedTask, contextSummary: String) -> String {
+        var prompt = """
+        DRAFT TASK TO VALIDATE:
+        Title: \(task.title)
+        Priority: \(task.priority.rawValue)
+        Confidence: \(Int(task.confidence * 100))%
+        Source App: \(task.sourceApp)
+        Context: \(contextSummary)
+        """
+
+        if let description = task.description {
+            prompt += "\nDescription: \(description)"
+        }
+        if let deadline = task.inferredDeadline {
+            prompt += "\nInferred Deadline: \(deadline)"
+        }
+
+        prompt += "\n\n"
+
+        // Add existing tasks
+        if !cachedExistingTasks.isEmpty {
+            prompt += "EXISTING TASKS THE USER IS ALREADY TRACKING:\n"
+            for (index, existingTask) in cachedExistingTasks.prefix(30).enumerated() {
+                prompt += "\(index + 1). \(existingTask)\n"
+            }
+            prompt += "\n"
+        }
+
+        // Add memories for context about user's priorities
+        if !cachedMemories.isEmpty {
+            prompt += "USER'S MEMORIES (for understanding priorities and context):\n"
+            for (index, memory) in cachedMemories.prefix(20).enumerated() {
+                prompt += "\(index + 1). \(memory)\n"
+            }
+            prompt += "\n"
+        }
+
+        prompt += """
+
+        Based on the above context, determine if this draft task should be kept or filtered out.
+        """
+
+        return prompt
+    }
+
+    /// System prompt for task validation
+    private var validationSystemPrompt: String {
+        """
+        You are a task validation assistant. Your job is to determine if a newly extracted task is valuable and worth tracking.
+
+        A task should be REJECTED (is_valid = false) if:
+        1. It's semantically similar to an existing task the user is already tracking
+        2. It's too vague or generic (e.g., "Do work", "Check things")
+        3. It's something trivial that doesn't need tracking (e.g., "Close browser tab")
+        4. It contradicts the user's known priorities from their memories
+        5. It's already been completed based on context
+        6. It's a duplicate of something they're clearly already aware of
+
+        A task should be APPROVED (is_valid = true) if:
+        1. It's a specific, actionable item the user might forget
+        2. It aligns with the user's goals and priorities from their memories
+        3. It's genuinely new and not already being tracked
+        4. It has real importance (deadline, commitment to others, financial impact)
+        5. It's something the user explicitly mentioned needing to do
+
+        Adjust the confidence score based on how well the task fits the user's context:
+        - Increase if it strongly aligns with user's known priorities
+        - Decrease if it seems tangential to their main focus
+        - Keep similar if neutral
+
+        Be concise in your reason - one short sentence explaining your decision.
+        """
     }
 }
