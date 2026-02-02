@@ -331,20 +331,8 @@ class AppState: ObservableObject {
 
     /// Trigger screen recording permission prompt
     func triggerScreenRecordingPermission() {
-        // Reset verification flag so we re-verify after user grants permission
-        hasVerifiedScreenCaptureKit = false
-        isScreenCaptureKitBroken = false
-
         // Request both traditional TCC and ScreenCaptureKit permissions
         ScreenCaptureService.requestAllScreenCapturePermissions()
-
-        // Re-verify after a short delay to catch the permission grant
-        Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
-            await MainActor.run {
-                verifyScreenCaptureKitOnce()
-            }
-        }
     }
 
     /// Trigger automation permission by attempting to use Apple Events
@@ -374,7 +362,6 @@ class AppState: ObservableObject {
     func checkAllPermissions() {
         checkNotificationPermission()
         checkScreenRecordingPermission()
-        verifyScreenCaptureKitOnce()  // One-time verification (won't repeat due to guard)
         checkAutomationPermission()
         checkMicrophonePermission()
         checkSystemAudioPermission()
@@ -405,47 +392,9 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Track if we've already verified ScreenCaptureKit (to avoid repeated dialogs)
-    private var hasVerifiedScreenCaptureKit = false
-
     /// Check screen recording permission status
-    /// Uses CGPreflight for repeated timer checks (doesn't trigger dialog).
-    /// SCShareableContent check is done once at startup via verifyScreenCaptureKitOnce().
     func checkScreenRecordingPermission() {
-        // Use CGPreflight for repeated checks - doesn't trigger any dialog
-        let tccGranted = CGPreflightScreenCaptureAccess()
-
-        if #available(macOS 14.0, *) {
-            // On macOS 14+, also consider isScreenCaptureKitBroken
-            // (set by one-time verification at startup)
-            hasScreenRecordingPermission = tccGranted && !isScreenCaptureKitBroken
-        } else {
-            hasScreenRecordingPermission = tccGranted
-        }
-    }
-
-    /// Verify ScreenCaptureKit works - call ONCE at startup, not repeatedly
-    /// SCShareableContent triggers a consent dialog, so only call this once
-    func verifyScreenCaptureKitOnce() {
-        guard #available(macOS 14.0, *) else { return }
-        guard !hasVerifiedScreenCaptureKit else { return }
-        hasVerifiedScreenCaptureKit = true
-
-        Task {
-            let sckWorks = await ScreenCaptureService.testScreenCaptureKitPermission()
-            await MainActor.run {
-                let tccGranted = CGPreflightScreenCaptureAccess()
-                if tccGranted && !sckWorks {
-                    // TCC says yes but ScreenCaptureKit says no - stale/broken
-                    log("Screen recording: CGPreflight stale - ScreenCaptureKit denied")
-                    self.isScreenCaptureKitBroken = true
-                    self.hasScreenRecordingPermission = false
-                } else {
-                    self.isScreenCaptureKitBroken = false
-                    self.hasScreenRecordingPermission = tccGranted && sckWorks
-                }
-            }
-        }
+        hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
     }
 
     /// Check automation permission by attempting to use Apple Events
