@@ -356,7 +356,67 @@ class TimelinePlayerViewModel: ObservableObject {
         self.currentIndex = min(initialIndex, screenshots.count - 1)
 
         Task {
-            await loadCurrentFrame()
+            await loadCurrentFrameOrFindValid()
+        }
+    }
+
+    /// Load the current frame, or if it fails, find the first valid frame
+    func loadCurrentFrameOrFindValid() async {
+        guard !screenshots.isEmpty else { return }
+
+        isLoading = true
+
+        // Try to load current frame
+        if let image = await tryLoadFrame(at: currentIndex) {
+            currentImage = image
+            isLoading = false
+            return
+        }
+
+        // Current frame failed - search for first valid frame
+        // Search forward first, then backward
+        for offset in 1..<screenshots.count {
+            // Try forward
+            let forwardIndex = currentIndex + offset
+            if forwardIndex < screenshots.count {
+                if let image = await tryLoadFrame(at: forwardIndex) {
+                    currentIndex = forwardIndex
+                    currentImage = image
+                    isLoading = false
+                    log("TimelinePlayer: Skipped to valid frame at index \(forwardIndex)")
+                    return
+                }
+            }
+
+            // Try backward
+            let backwardIndex = currentIndex - offset
+            if backwardIndex >= 0 {
+                if let image = await tryLoadFrame(at: backwardIndex) {
+                    currentIndex = backwardIndex
+                    currentImage = image
+                    isLoading = false
+                    log("TimelinePlayer: Skipped to valid frame at index \(backwardIndex)")
+                    return
+                }
+            }
+        }
+
+        // No valid frames found
+        currentImage = nil
+        isLoading = false
+        logError("TimelinePlayer: No valid frames found in timeline")
+    }
+
+    /// Try to load a frame at a specific index, returns nil if failed
+    private func tryLoadFrame(at index: Int) async -> NSImage? {
+        guard index >= 0 && index < screenshots.count else { return nil }
+        let screenshot = screenshots[index]
+
+        do {
+            return try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+        } catch {
+            // Don't log errors during search - only log when we find a valid frame or give up
+            return nil
         }
     }
 
