@@ -18,7 +18,6 @@ struct RewindPage: View {
 
     enum SearchResultsTab {
         case list
-        case timeline
     }
 
     var body: some View {
@@ -262,60 +261,19 @@ struct RewindPage: View {
 
     private var searchResultsPanel: some View {
         VStack(spacing: 0) {
-            // Results header with match count and tabs
-            HStack(spacing: 16) {
-                if let query = viewModel.activeSearchQuery {
-                    Text("\(viewModel.screenshots.count) matches for \"\(query)\"")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.9))
+            // Filmstrip view of search results (primary view)
+            SearchResultsFilmstrip(
+                screenshots: viewModel.screenshots,
+                searchQuery: viewModel.activeSearchQuery,
+                selectedIndex: $currentIndex,
+                onSelect: { index in
+                    seekToIndex(index)
                 }
+            )
 
-                Spacer()
-
-                // Tab buttons
-                HStack(spacing: 8) {
-                    // Search Results tab
-                    Button {
-                        selectedSearchTab = selectedSearchTab == .list ? nil : .list
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "list.bullet")
-                                .font(.system(size: 11))
-                            Text("Search Results")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(selectedSearchTab == .list ? .white : .white.opacity(0.6))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(selectedSearchTab == .list ? OmiColors.purplePrimary : Color.white.opacity(0.1))
-                        )
-                    }
-                    .buttonStyle(.plain)
-
-                    // Timeline tab
-                    Button {
-                        selectedSearchTab = selectedSearchTab == .timeline ? nil : .timeline
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "timeline.selection")
-                                .font(.system(size: 11))
-                            Text("Timeline")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .foregroundColor(selectedSearchTab == .timeline ? .white : .white.opacity(0.6))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                        .background(
-                            RoundedRectangle(cornerRadius: 6)
-                                .fill(selectedSearchTab == .timeline ? OmiColors.purplePrimary : Color.white.opacity(0.1))
-                        )
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // App filter in results
+            // App filter and close button
+            HStack {
+                // App filter
                 if !viewModel.availableApps.isEmpty {
                     Menu {
                         Button {
@@ -356,6 +314,40 @@ struct RewindPage: View {
                     .buttonStyle(.plain)
                 }
 
+                Spacer()
+
+                // View mode toggle (filmstrip vs list)
+                HStack(spacing: 4) {
+                    Button {
+                        selectedSearchTab = nil // Filmstrip (default)
+                    } label: {
+                        Image(systemName: "rectangle.split.3x1")
+                            .font(.system(size: 12))
+                            .foregroundColor(selectedSearchTab == nil ? OmiColors.purplePrimary : .white.opacity(0.5))
+                            .frame(width: 28, height: 24)
+                            .background(selectedSearchTab == nil ? OmiColors.purplePrimary.opacity(0.2) : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Filmstrip view")
+
+                    Button {
+                        selectedSearchTab = .list
+                    } label: {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 12))
+                            .foregroundColor(selectedSearchTab == .list ? OmiColors.purplePrimary : .white.opacity(0.5))
+                            .frame(width: 28, height: 24)
+                            .background(selectedSearchTab == .list ? OmiColors.purplePrimary.opacity(0.2) : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .help("List view")
+                }
+                .padding(2)
+                .background(Color.white.opacity(0.05))
+                .cornerRadius(6)
+
                 Button {
                     showSearchResults = false
                     selectedSearchTab = nil
@@ -363,23 +355,23 @@ struct RewindPage: View {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundColor(.white.opacity(0.6))
-                        .frame(width: 20, height: 20)
+                        .frame(width: 24, height: 24)
                         .background(Color.white.opacity(0.1))
                         .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .padding(.leading, 8)
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 10)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.6))
 
-            // Tab content
+            // List view (optional, when tab selected)
             if selectedSearchTab == .list {
                 searchResultsListView
-            } else if selectedSearchTab == .timeline {
-                searchResultsTimelineView
             }
         }
-        .background(Color.black.opacity(0.8))
+        .background(Color.black.opacity(0.95))
     }
 
     // MARK: - Search Results List View
@@ -404,43 +396,7 @@ struct RewindPage: View {
             .padding(.horizontal, 20)
             .padding(.vertical, 12)
         }
-        .frame(maxHeight: 300)
-    }
-
-    // MARK: - Search Results Timeline View
-
-    private var searchResultsTimelineView: some View {
-        VStack(spacing: 12) {
-            // Mini timeline showing all results as dots
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    // Background track
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.1))
-
-                    // Result markers
-                    ForEach(Array(viewModel.screenshots.enumerated()), id: \.element.id) { index, _ in
-                        let position = geometry.size.width * CGFloat(index) / CGFloat(max(1, viewModel.screenshots.count - 1))
-                        Circle()
-                            .fill(index == currentIndex ? OmiColors.purplePrimary : Color.yellow)
-                            .frame(width: index == currentIndex ? 10 : 6, height: index == currentIndex ? 10 : 6)
-                            .position(x: position, y: geometry.size.height / 2)
-                            .onTapGesture {
-                                seekToIndex(index)
-                            }
-                    }
-                }
-            }
-            .frame(height: 20)
-            .padding(.horizontal, 20)
-
-            // Navigation hint
-            Text("Click on a marker to jump to that result • Use arrow keys to navigate")
-                .font(.system(size: 11))
-                .foregroundColor(.white.opacity(0.5))
-                .padding(.bottom, 8)
-        }
-        .padding(.top, 8)
+        .frame(maxHeight: 250)
     }
 
     // MARK: - Frame Display
@@ -492,36 +448,15 @@ struct RewindPage: View {
 
     private var bottomControls: some View {
         VStack(spacing: 12) {
-            // App activity visualization with search markers
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    // Background
-                    RoundedRectangle(cornerRadius: 4)
-                        .fill(Color.white.opacity(0.1))
-
-                    // App segments
-                    HStack(spacing: 1) {
-                        ForEach(Array(appSegments.enumerated()), id: \.offset) { index, segment in
-                            Rectangle()
-                                .fill(segment.color)
-                                .frame(width: max(2, geometry.size.width * segment.widthRatio))
-                                .opacity(isInCurrentSegment(index) ? 1.0 : 0.5)
-                        }
-                    }
-
-                    // Search result markers (yellow dots)
-                    if viewModel.activeSearchQuery != nil {
-                        ForEach(Array(searchResultIndices.enumerated()), id: \.offset) { _, idx in
-                            let position = positionForIndex(idx, width: geometry.size.width)
-                            Circle()
-                                .fill(Color.yellow)
-                                .frame(width: 6, height: 6)
-                                .position(x: position, y: 4)
-                        }
-                    }
+            // Interactive timeline bar with hover effects
+            InteractiveTimelineBar(
+                screenshots: viewModel.screenshots,
+                currentIndex: currentIndex,
+                searchResultIndices: viewModel.activeSearchQuery != nil ? Set(searchResultIndices) : nil,
+                onSelect: { index in
+                    seekToIndex(index)
                 }
-            }
-            .frame(height: 8)
+            )
             .padding(.horizontal, 24)
 
             // Timeline slider
@@ -639,75 +574,12 @@ struct RewindPage: View {
         }
     }
 
-    // MARK: - App Segments
-
-    private struct AppSegment {
-        let appName: String
-        let color: Color
-        let count: Int
-        let widthRatio: CGFloat
-    }
-
-    private var appSegments: [AppSegment] {
-        guard !viewModel.screenshots.isEmpty else { return [] }
-
-        var segments: [AppSegment] = []
-        var currentApp = viewModel.screenshots.first!.appName
-        var currentCount = 0
-
-        for screenshot in viewModel.screenshots {
-            if screenshot.appName == currentApp {
-                currentCount += 1
-            } else {
-                segments.append(AppSegment(
-                    appName: currentApp,
-                    color: colorForApp(currentApp),
-                    count: currentCount,
-                    widthRatio: CGFloat(currentCount) / CGFloat(viewModel.screenshots.count)
-                ))
-                currentApp = screenshot.appName
-                currentCount = 1
-            }
-        }
-
-        segments.append(AppSegment(
-            appName: currentApp,
-            color: colorForApp(currentApp),
-            count: currentCount,
-            widthRatio: CGFloat(currentCount) / CGFloat(viewModel.screenshots.count)
-        ))
-
-        return segments
-    }
-
-    private func isInCurrentSegment(_ segmentIndex: Int) -> Bool {
-        var startIndex = 0
-        for (index, segment) in appSegments.enumerated() {
-            let endIndex = startIndex + segment.count - 1
-            if index == segmentIndex {
-                return currentIndex >= startIndex && currentIndex <= endIndex
-            }
-            startIndex = endIndex + 1
-        }
-        return false
-    }
+    // MARK: - Search Result Indices
 
     private var searchResultIndices: [Int] {
         guard viewModel.activeSearchQuery != nil else { return [] }
-        // All current screenshots are search results
+        // All current screenshots are search results when searching
         return Array(0..<min(viewModel.screenshots.count, 100))
-    }
-
-    private func positionForIndex(_ index: Int, width: CGFloat) -> CGFloat {
-        guard viewModel.screenshots.count > 1 else { return width / 2 }
-        let spacing = width / CGFloat(viewModel.screenshots.count - 1)
-        return CGFloat(index) * spacing
-    }
-
-    private func colorForApp(_ appName: String) -> Color {
-        let hash = abs(appName.hashValue)
-        let hue = Double(hash % 360) / 360.0
-        return Color(hue: hue, saturation: 0.6, brightness: 0.8)
     }
 
     // MARK: - Playback
