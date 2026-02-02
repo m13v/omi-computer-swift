@@ -1,5 +1,17 @@
 import Foundation
 import GRDB
+import CryptoKit
+
+// MARK: - String SHA256 Extension
+
+extension String {
+    /// Compute SHA256 hash of the string (for OCR text deduplication)
+    var sha256Hash: String {
+        let data = Data(self.utf8)
+        let hash = SHA256.hash(data: data)
+        return hash.compactMap { String(format: "%02x", $0) }.joined()
+    }
+}
 
 /// Actor-based database manager for Rewind screenshots
 actor RewindDatabase {
@@ -40,6 +52,15 @@ actor RewindDatabase {
 
         try migrate(queue)
         log("RewindDatabase: Initialized successfully")
+
+        // Run data migrations in background (non-blocking)
+        Task {
+            do {
+                try await self.performOCRDataMigrationIfNeeded()
+            } catch {
+                log("RewindDatabase: OCR data migration failed: \(error)")
+            }
+        }
     }
 
     // MARK: - Migrations
@@ -266,7 +287,208 @@ actor RewindDatabase {
                 """)
         }
 
+        // Migration 9: Create normalized OCR storage tables
+        migrator.registerMigration("createNormalizedOCR") { db in
+            // Table 1: Unique OCR text content (deduplicated)
+            try db.create(table: "ocr_texts") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("text", .text).notNull().unique()
+                t.column("textHash", .text).notNull()  // SHA256 for fast lookup
+                t.column("createdAt", .datetime).notNull()
+            }
+            try db.create(index: "idx_ocr_texts_hash", on: "ocr_texts", columns: ["textHash"])
+
+            // Table 2: Where each text block appeared (bounding boxes + metadata)
+            try db.create(table: "ocr_occurrences") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("ocrTextId", .integer).notNull()
+                    .references("ocr_texts", onDelete: .cascade)
+                t.column("screenshotId", .integer).notNull()
+                    .references("screenshots", onDelete: .cascade)
+                // Bounding box (normalized 0-1 coordinates)
+                t.column("x", .double).notNull()
+                t.column("y", .double).notNull()
+                t.column("width", .double).notNull()
+                t.column("height", .double).notNull()
+                // Metadata
+                t.column("confidence", .double)
+                t.column("blockOrder", .integer).notNull()  // For reconstructing full text in order
+            }
+            try db.create(index: "idx_ocr_occurrences_screenshot",
+                          on: "ocr_occurrences", columns: ["screenshotId"])
+            try db.create(index: "idx_ocr_occurrences_text",
+                          on: "ocr_occurrences", columns: ["ocrTextId"])
+            // Unique constraint: same text can't appear twice at same position in same screenshot
+            try db.create(
+                index: "idx_ocr_occurrences_unique",
+                on: "ocr_occurrences",
+                columns: ["ocrTextId", "screenshotId", "blockOrder"],
+                unique: true
+            )
+
+            // FTS5 on unique texts only (much smaller index than full ocrText!)
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE ocr_texts_fts USING fts5(
+                    text,
+                    content='ocr_texts',
+                    content_rowid='id',
+                    tokenize='unicode61'
+                )
+            """)
+
+            // FTS sync triggers for ocr_texts
+            try db.execute(sql: """
+                CREATE TRIGGER ocr_texts_ai AFTER INSERT ON ocr_texts BEGIN
+                    INSERT INTO ocr_texts_fts(rowid, text) VALUES (new.id, new.text);
+                END
+            """)
+            try db.execute(sql: """
+                CREATE TRIGGER ocr_texts_ad AFTER DELETE ON ocr_texts BEGIN
+                    INSERT INTO ocr_texts_fts(ocr_texts_fts, rowid, text)
+                    VALUES ('delete', old.id, old.text);
+                END
+            """)
+
+            // Migration status tracking table
+            try db.execute(sql: """
+                CREATE TABLE IF NOT EXISTS migration_status (
+                    name TEXT PRIMARY KEY,
+                    completed INTEGER DEFAULT 0,
+                    processedCount INTEGER DEFAULT 0,
+                    startedAt DATETIME,
+                    completedAt DATETIME
+                )
+            """)
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO migration_status (name, completed, startedAt)
+                VALUES ('ocr_normalization', 0, datetime('now'))
+            """)
+        }
+
         try migrator.migrate(queue)
+    }
+
+    // MARK: - OCR Data Migration
+
+    /// Migrate existing OCR data to normalized tables (runs once after schema migration)
+    func performOCRDataMigrationIfNeeded() async throws {
+        guard let dbQueue = dbQueue else { return }
+
+        // Check if already migrated
+        let isComplete = try await dbQueue.read { db in
+            try Int.fetchOne(db, sql: """
+                SELECT completed FROM migration_status
+                WHERE name = 'ocr_normalization'
+            """) ?? 1
+        }
+        guard isComplete == 0 else {
+            log("RewindDatabase: OCR normalization already complete, skipping")
+            return
+        }
+
+        log("RewindDatabase: Starting OCR normalization migration...")
+
+        // Process in batches to avoid memory issues
+        let batchSize = 500
+        var offset = 0
+        var totalProcessed = 0
+        var totalBlocks = 0
+
+        while true {
+            let currentOffset = offset
+            let batch = try await dbQueue.read { db in
+                try Row.fetchAll(db, sql: """
+                    SELECT id, ocrDataJson FROM screenshots
+                    WHERE ocrDataJson IS NOT NULL AND ocrDataJson != ''
+                    ORDER BY id
+                    LIMIT ? OFFSET ?
+                """, arguments: [batchSize, currentOffset])
+            }
+
+            if batch.isEmpty { break }
+
+            let batchBlocks = try await dbQueue.write { [batch] db -> Int in
+                var blocksInBatch = 0
+                for row in batch {
+                    let screenshotId: Int64 = row["id"]
+                    guard let jsonString: String = row["ocrDataJson"],
+                          let jsonData = jsonString.data(using: .utf8)
+                    else { continue }
+
+                    // Parse OCR result
+                    let ocrResult: OCRResult
+                    do {
+                        ocrResult = try JSONDecoder().decode(OCRResult.self, from: jsonData)
+                    } catch {
+                        continue  // Skip malformed JSON
+                    }
+
+                    for (index, block) in ocrResult.blocks.enumerated() {
+                        // Skip empty/garbage text (< 3 chars)
+                        guard block.text.count >= 3 else { continue }
+
+                        let textHash = block.text.sha256Hash
+
+                        // Insert or get existing text ID
+                        try db.execute(sql: """
+                            INSERT OR IGNORE INTO ocr_texts (text, textHash, createdAt)
+                            VALUES (?, ?, datetime('now'))
+                        """, arguments: [block.text, textHash])
+
+                        guard let textId = try Int64.fetchOne(db, sql: """
+                            SELECT id FROM ocr_texts WHERE textHash = ?
+                        """, arguments: [textHash]) else { continue }
+
+                        // Insert occurrence (link text to screenshot with bounding box)
+                        try db.execute(sql: """
+                            INSERT INTO ocr_occurrences
+                            (ocrTextId, screenshotId, x, y, width, height, confidence, blockOrder)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                        """, arguments: [
+                            textId, screenshotId,
+                            block.x, block.y, block.width, block.height,
+                            block.confidence, index
+                        ])
+
+                        blocksInBatch += 1
+                    }
+                }
+                return blocksInBatch
+            }
+
+            offset += batchSize
+            totalProcessed += batch.count
+            totalBlocks += batchBlocks
+
+            if totalProcessed % 5000 == 0 {
+                log("RewindDatabase: Migrated \(totalProcessed) screenshots, \(totalBlocks) text blocks...")
+            }
+        }
+
+        // Rebuild FTS index and mark complete
+        let finalProcessed = totalProcessed
+        try await dbQueue.write { db in
+            try db.execute(sql: """
+                INSERT INTO ocr_texts_fts(ocr_texts_fts) VALUES('rebuild')
+            """)
+            try db.execute(sql: """
+                UPDATE migration_status
+                SET completed = 1, processedCount = ?, completedAt = datetime('now')
+                WHERE name = 'ocr_normalization'
+            """, arguments: [finalProcessed])
+        }
+
+        // Log final stats
+        let stats = try await dbQueue.read { db -> (uniqueTexts: Int, occurrences: Int) in
+            let texts = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM ocr_texts") ?? 0
+            let occurrences = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM ocr_occurrences") ?? 0
+            return (texts, occurrences)
+        }
+
+        log("RewindDatabase: OCR normalization complete!")
+        log("  - Processed \(totalProcessed) screenshots")
+        log("  - Created \(stats.uniqueTexts) unique text entries")
+        log("  - Created \(stats.occurrences) occurrence records")
     }
 
     // MARK: - CRUD Operations
@@ -300,6 +522,7 @@ actor RewindDatabase {
     }
 
     /// Update OCR result with bounding boxes for a screenshot
+    /// Also writes to normalized ocr_texts/ocr_occurrences tables for deduplication
     func updateOCRResult(id: Int64, ocrResult: OCRResult) throws {
         guard let dbQueue = dbQueue else {
             throw RewindError.databaseNotInitialized
@@ -314,10 +537,48 @@ actor RewindDatabase {
         }
 
         try dbQueue.write { db in
+            // Legacy: Update screenshots table (for backwards compatibility)
             try db.execute(
                 sql: "UPDATE screenshots SET ocrText = ?, ocrDataJson = ?, isIndexed = 1 WHERE id = ?",
                 arguments: [ocrResult.fullText, ocrDataJson, id]
             )
+
+            // New: Write to normalized tables for deduplication
+            // Check if normalized tables exist (migration may not have run yet)
+            let tableExists = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM sqlite_master
+                WHERE type='table' AND name='ocr_texts'
+            """) ?? 0 > 0
+
+            guard tableExists else { return }
+
+            for (index, block) in ocrResult.blocks.enumerated() {
+                // Skip empty/garbage text (< 3 chars)
+                guard block.text.count >= 3 else { continue }
+
+                let textHash = block.text.sha256Hash
+
+                // Insert or get existing text ID
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO ocr_texts (text, textHash, createdAt)
+                    VALUES (?, ?, datetime('now'))
+                """, arguments: [block.text, textHash])
+
+                guard let textId = try Int64.fetchOne(db, sql: """
+                    SELECT id FROM ocr_texts WHERE textHash = ?
+                """, arguments: [textHash]) else { continue }
+
+                // Insert occurrence (ignore if duplicate)
+                try db.execute(sql: """
+                    INSERT OR IGNORE INTO ocr_occurrences
+                    (ocrTextId, screenshotId, x, y, width, height, confidence, blockOrder)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, arguments: [
+                    textId, id,
+                    block.x, block.y, block.width, block.height,
+                    block.confidence, index
+                ])
+            }
         }
     }
 
@@ -525,6 +786,134 @@ actor RewindDatabase {
             arguments.append(limit)
 
             return try Screenshot.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+        }
+    }
+
+    /// Full-text search using normalized OCR tables (more efficient, deduplicated)
+    /// Falls back to legacy search if normalized tables not yet populated
+    func searchNormalized(
+        query: String,
+        appFilter: String? = nil,
+        startDate: Date? = nil,
+        endDate: Date? = nil,
+        limit: Int = 100
+    ) throws -> [Screenshot] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        // Check if normalized tables are populated
+        let isNormalized = try dbQueue.read { db in
+            let migrationComplete = try Int.fetchOne(db, sql: """
+                SELECT completed FROM migration_status
+                WHERE name = 'ocr_normalization'
+            """) ?? 0
+            return migrationComplete == 1
+        }
+
+        // Fall back to legacy search if not yet migrated
+        guard isNormalized else {
+            return try search(query: query, appFilter: appFilter, startDate: startDate, endDate: endDate, limit: limit)
+        }
+
+        let expandedQuery = expandSearchQuery(query)
+        guard !expandedQuery.isEmpty else {
+            return []
+        }
+
+        return try dbQueue.read { db in
+            var sql = """
+                SELECT DISTINCT s.*
+                FROM screenshots s
+                JOIN ocr_occurrences o ON o.screenshotId = s.id
+                JOIN ocr_texts t ON t.id = o.ocrTextId
+                JOIN ocr_texts_fts fts ON fts.rowid = t.id
+                WHERE ocr_texts_fts MATCH ?
+                """
+            var arguments: [DatabaseValueConvertible] = [expandedQuery]
+
+            if let app = appFilter {
+                sql += " AND s.appName = ?"
+                arguments.append(app)
+            }
+
+            if let start = startDate {
+                sql += " AND s.timestamp >= ?"
+                arguments.append(start)
+            }
+
+            if let end = endDate {
+                sql += " AND s.timestamp <= ?"
+                arguments.append(end)
+            }
+
+            sql += " ORDER BY bm25(ocr_texts_fts) ASC, s.timestamp DESC LIMIT ?"
+            arguments.append(limit)
+
+            return try Screenshot.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+        }
+    }
+
+    /// Get all OCR text blocks for a screenshot (from normalized tables)
+    func getOCRBlocks(for screenshotId: Int64) throws -> [(text: String, x: Double, y: Double, width: Double, height: Double)] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT t.text, o.x, o.y, o.width, o.height
+                FROM ocr_occurrences o
+                JOIN ocr_texts t ON t.id = o.ocrTextId
+                WHERE o.screenshotId = ?
+                ORDER BY o.blockOrder
+            """, arguments: [screenshotId]).map { row in
+                (
+                    text: row["text"] as String,
+                    x: row["x"] as Double,
+                    y: row["y"] as Double,
+                    width: row["width"] as Double,
+                    height: row["height"] as Double
+                )
+            }
+        }
+    }
+
+    /// Get screenshots where specific text appeared (reverse lookup)
+    func getScreenshotsContainingText(_ text: String, limit: Int = 50) throws -> [Screenshot] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        let textHash = text.sha256Hash
+
+        return try dbQueue.read { db in
+            try Screenshot.fetchAll(db, sql: """
+                SELECT s.*
+                FROM screenshots s
+                JOIN ocr_occurrences o ON o.screenshotId = s.id
+                JOIN ocr_texts t ON t.id = o.ocrTextId
+                WHERE t.textHash = ?
+                ORDER BY s.timestamp DESC
+                LIMIT ?
+            """, arguments: [textHash, limit])
+        }
+    }
+
+    /// Get normalized OCR storage statistics
+    func getNormalizedOCRStats() throws -> (uniqueTexts: Int, totalOccurrences: Int, compressionRatio: Double) {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            let uniqueTexts = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM ocr_texts") ?? 0
+            let totalOccurrences = try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM ocr_occurrences") ?? 0
+
+            // Compression ratio: how many occurrences per unique text
+            let ratio = uniqueTexts > 0 ? Double(totalOccurrences) / Double(uniqueTexts) : 1.0
+
+            return (uniqueTexts, totalOccurrences, ratio)
         }
     }
 
