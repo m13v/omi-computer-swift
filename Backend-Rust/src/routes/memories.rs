@@ -22,12 +22,21 @@ async fn get_memories(
     user: AuthUser,
     Query(query): Query<GetMemoriesQuery>,
 ) -> Json<Vec<MemoryDB>> {
+    // Parse tags from comma-separated string
+    let tags: Option<Vec<String>> = query.tags.as_ref().map(|t| {
+        t.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    });
+
     tracing::info!(
-        "Getting memories for user {} with limit={}, offset={}, category={:?}, include_dismissed={}",
+        "Getting memories for user {} with limit={}, offset={}, category={:?}, tags={:?}, include_dismissed={}",
         user.uid,
         query.limit,
         query.offset,
         query.category,
+        tags,
         query.include_dismissed
     );
 
@@ -38,6 +47,7 @@ async fn get_memories(
             query.limit,
             query.offset,
             query.category.as_deref(),
+            tags.as_deref(),
             query.include_dismissed,
         )
         .await
@@ -57,9 +67,10 @@ async fn create_memory(
     Json(request): Json<CreateMemoryRequest>,
 ) -> Result<Json<CreateMemoryResponse>, StatusCode> {
     tracing::info!(
-        "Creating memory for user {} with category={:?}, source_app={:?}",
+        "Creating memory for user {} with category={:?}, tags={:?}, source_app={:?}",
         user.uid,
         request.category,
+        request.tags,
         request.source_app
     );
 
@@ -73,6 +84,9 @@ async fn create_memory(
             request.confidence,
             request.source_app.as_deref(),
             request.context_summary.as_deref(),
+            &request.tags,
+            request.reasoning.as_deref(),
+            request.current_activity.as_deref(),
         )
         .await
     {
