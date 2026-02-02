@@ -61,6 +61,7 @@ class AppState: ObservableObject {
     @Published var hasNotificationPermission = false
     @Published var hasScreenRecordingPermission = false
     @Published var hasAutomationPermission = false
+    @Published var hasAccessibilityPermission = false
 
 
     /// Returns list of missing permissions that are required for full functionality
@@ -69,6 +70,7 @@ class AppState: ObservableObject {
         if !hasMicrophonePermission { missing.append("Microphone") }
         if !hasScreenRecordingPermission { missing.append("Screen Recording") }
         if !hasNotificationPermission { missing.append("Notifications") }
+        if !hasAccessibilityPermission { missing.append("Accessibility") }
         return missing
     }
 
@@ -79,9 +81,10 @@ class AppState: ObservableObject {
         return hasCompletedOnboarding && !hasNotificationPermission
     }
 
-    /// Open notification preferences in System Settings
+    /// Open notification preferences in System Settings (directly to Omi's settings)
     func openNotificationPreferences() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications?id=\(bundleId)") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -156,7 +159,7 @@ class AppState: ObservableObject {
             Task { @MainActor in
                 if self.isTranscribing {
                     log("App terminating - finalizing conversation")
-                    await self.finalizeConversation()
+                    _ = await self.finalizeConversation()
                 }
             }
         }
@@ -171,7 +174,7 @@ class AppState: ObservableObject {
             Task { @MainActor in
                 if self.isTranscribing {
                     log("Computer sleeping - finalizing conversation")
-                    await self.finalizeConversation()
+                    _ = await self.finalizeConversation()
                     self.stopAudioCapture()
                     self.clearTranscriptionState()
                 }
@@ -194,13 +197,15 @@ class AppState: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            let now = Date()
-            if let lastTime = self?.lastScreenLockTime, now.timeIntervalSince(lastTime) < 1.0 {
-                return // Ignore duplicate within 1 second
+            Task { @MainActor in
+                let now = Date()
+                if let lastTime = self?.lastScreenLockTime, now.timeIntervalSince(lastTime) < 1.0 {
+                    return // Ignore duplicate within 1 second
+                }
+                self?.lastScreenLockTime = now
+                log("Screen locked")
+                NotificationCenter.default.post(name: .screenDidLock, object: nil)
             }
-            self?.lastScreenLockTime = now
-            log("Screen locked")
-            NotificationCenter.default.post(name: .screenDidLock, object: nil)
         }
 
         // Screen unlocked (debounced - macOS sometimes fires multiple times)
@@ -209,13 +214,15 @@ class AppState: ObservableObject {
             object: nil,
             queue: .main
         ) { [weak self] _ in
-            let now = Date()
-            if let lastTime = self?.lastScreenUnlockTime, now.timeIntervalSince(lastTime) < 1.0 {
-                return // Ignore duplicate within 1 second
+            Task { @MainActor in
+                let now = Date()
+                if let lastTime = self?.lastScreenUnlockTime, now.timeIntervalSince(lastTime) < 1.0 {
+                    return // Ignore duplicate within 1 second
+                }
+                self?.lastScreenUnlockTime = now
+                log("Screen unlocked")
+                NotificationCenter.default.post(name: .screenDidUnlock, object: nil)
             }
-            self?.lastScreenUnlockTime = now
-            log("Screen unlocked")
-            NotificationCenter.default.post(name: .screenDidUnlock, object: nil)
         }
     }
 
@@ -350,13 +357,24 @@ class AppState: ObservableObject {
         checkAutomationPermission()
         checkMicrophonePermission()
         checkSystemAudioPermission()
+        checkAccessibilityPermission()
     }
 
     /// Check notification permission status
     func checkNotificationPermission() {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
-                self.hasNotificationPermission = settings.authorizationStatus == .authorized
+                let wasGranted = self.hasNotificationPermission
+                let isNowGranted = settings.authorizationStatus == .authorized
+                self.hasNotificationPermission = isNowGranted
+
+                // Send confirmation notification when permission is newly granted
+                if !wasGranted && isNowGranted {
+                    NotificationService.shared.sendNotification(
+                        title: "Notifications Enabled",
+                        message: "You'll receive proactive alerts from Omi."
+                    )
+                }
             }
         }
     }
@@ -381,6 +399,62 @@ class AppState: ObservableObject {
             await MainActor.run {
                 self.hasAutomationPermission = hasPermission
             }
+        }
+    }
+
+    /// Check accessibility permission status
+    func checkAccessibilityPermission() {
+        hasAccessibilityPermission = AXIsProcessTrusted()
+    }
+
+    /// Check if accessibility permission was explicitly denied
+    func isAccessibilityPermissionDenied() -> Bool {
+        return hasCompletedOnboarding && !AXIsProcessTrusted()
+    }
+
+    /// Trigger accessibility permission prompt
+    func triggerAccessibilityPermission() {
+        // This will prompt the user if not already trusted
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        let trusted = AXIsProcessTrustedWithOptions(options)
+        hasAccessibilityPermission = trusted
+
+        // Also open the settings pane for manual grant
+        if !trusted {
+            openAccessibilityPreferences()
+        }
+    }
+
+    /// Open Accessibility preferences in System Settings
+    func openAccessibilityPreferences() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    /// Reset accessibility permission (requires terminal command)
+    nonisolated func resetAccessibilityPermissionDirect(shouldRestart: Bool = false) -> Bool {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
+        log("Resetting accessibility permission for \(bundleId) via tccutil...")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "Accessibility", bundleId]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let success = process.terminationStatus == 0
+            log("tccutil reset completed with exit code: \(process.terminationStatus)")
+
+            if success && shouldRestart {
+                restartApp()
+            }
+
+            return success
+        } catch {
+            log("Failed to run tccutil: \(error)")
+            return false
         }
     }
 
@@ -492,7 +566,7 @@ class AppState: ObservableObject {
                 Task { @MainActor in
                     guard let self = self, self.isTranscribing else { return }
                     log("Transcription: 4-hour limit reached - finalizing conversation")
-                    await self.finalizeConversation()
+                    _ = await self.finalizeConversation()
                     // Start a new recording session automatically
                     self.stopAudioCapture()
                     self.clearTranscriptionState()
@@ -567,7 +641,7 @@ class AppState: ObservableObject {
         isSavingConversation = true
 
         Task {
-            await finalizeConversation()
+            _ = await finalizeConversation()
             isSavingConversation = false
             clearTranscriptionState()
 
