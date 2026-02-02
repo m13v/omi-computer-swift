@@ -30,6 +30,8 @@ pub struct CreateMemoryRequest {
     pub reasoning: Option<String>,
     /// Description of user's activity when memory was generated
     pub current_activity: Option<String>,
+    /// Source type (e.g., "screenshot", "desktop", "omi")
+    pub source: Option<String>,
 }
 
 /// Request to edit a memory's content
@@ -135,6 +137,9 @@ pub struct MemoryDB {
     /// Source device (enriched from linked conversation, not stored in Firestore)
     #[serde(skip_deserializing)]
     pub source: Option<String>,
+    /// Input device name (microphone) - enriched from linked conversation for desktop source
+    #[serde(skip_deserializing)]
+    pub input_device_name: Option<String>,
     /// AI confidence score (0.0 - 1.0) - for extracted memories
     #[serde(default)]
     pub confidence: Option<f64>,
