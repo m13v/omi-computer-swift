@@ -293,6 +293,25 @@ extension MixpanelManager {
         ])
     }
 
+    /// Track when ScreenCaptureKit broken state is detected
+    func screenCaptureBrokenDetected() {
+        track("Screen Capture Broken Detected", properties: [:])
+    }
+
+    /// Track when user clicks reset button or notification
+    func screenCaptureResetClicked(source: String) {
+        track("Screen Capture Reset Clicked", properties: [
+            "source": source
+        ])
+    }
+
+    /// Track when screen capture reset completes
+    func screenCaptureResetCompleted(success: Bool) {
+        track("Screen Capture Reset Completed", properties: [
+            "success": success
+        ])
+    }
+
     func notificationSettingsChecked(
         authStatus: String,
         alertStyle: String,
