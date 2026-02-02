@@ -113,25 +113,25 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Check screen recording permission (and update cache)
         refreshScreenRecordingPermission()
         guard hasScreenRecordingPermission else {
-            // Trigger the permission request dialog
-            CGRequestScreenCaptureAccess()
+            // Request both traditional TCC and ScreenCaptureKit permissions
+            ScreenCaptureService.requestAllScreenCapturePermissions()
             completion(false, "Screen recording permission not granted")
             return
         }
 
-        // Request notification permission before starting
+        // Request notification permission but don't block on it
+        // Screen analysis can work without notifications - users just won't get alerts
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { [weak self] granted, error in
             DispatchQueue.main.async {
                 if let error = error {
-                    completion(false, error.localizedDescription)
-                    return
+                    log("Notification permission request error: \(error.localizedDescription)")
                 }
 
-                guard granted else {
-                    completion(false, "Notification permission is required")
-                    return
+                if !granted {
+                    log("Notification permission not granted - screen analysis will work but notifications will be disabled")
                 }
 
+                // Continue with monitoring regardless of notification permission
                 self?.continueStartMonitoring(completion: completion)
             }
         }
