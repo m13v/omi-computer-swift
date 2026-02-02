@@ -267,6 +267,54 @@ actor GeminiClient {
         return text
     }
 
+    /// Send a text-only request with structured JSON output
+    /// - Parameters:
+    ///   - prompt: Text prompt to send
+    ///   - systemPrompt: System instructions for the model
+    ///   - responseSchema: JSON schema for structured output
+    /// - Returns: The text response from the model (JSON)
+    func sendRequest(
+        prompt: String,
+        systemPrompt: String,
+        responseSchema: GeminiRequest.GenerationConfig.ResponseSchema
+    ) async throws -> String {
+        let request = GeminiRequest(
+            contents: [
+                GeminiRequest.Content(parts: [
+                    GeminiRequest.Part(text: prompt)
+                ])
+            ],
+            systemInstruction: GeminiRequest.SystemInstruction(
+                parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
+            ),
+            generationConfig: GeminiRequest.GenerationConfig(
+                responseMimeType: "application/json",
+                responseSchema: responseSchema
+            )
+        )
+
+        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+        var urlRequest = URLRequest(url: url)
+        urlRequest.httpMethod = "POST"
+        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        urlRequest.timeoutInterval = 300
+        urlRequest.httpBody = try JSONEncoder().encode(request)
+
+        let (data, _) = try await URLSession.shared.data(for: urlRequest)
+
+        let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+
+        if let error = response.error {
+            throw GeminiClientError.apiError(error.message)
+        }
+
+        guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+            throw GeminiClientError.invalidResponse
+        }
+
+        return text
+    }
+
     /// Send a multi-turn chat request with streaming response
     /// - Parameters:
     ///   - messages: Array of chat messages (role: user/model, text)
