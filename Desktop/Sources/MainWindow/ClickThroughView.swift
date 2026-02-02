@@ -1,50 +1,133 @@
 import SwiftUI
 import AppKit
 
-/// A view wrapper that enables click-through behavior on macOS.
-/// When the window is not focused, clicks on this view will both
-/// activate the window AND trigger the click action (no double-click needed).
-struct ClickThroughView<Content: View>: NSViewRepresentable {
-    let content: Content
+/// Custom NSHostingView that accepts first mouse events for click-through behavior.
+class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
+    private var pendingClickLocation: NSPoint?
+    private var wasWindowKey: Bool = false
+    private var localMonitor: Any?
 
-    init(@ViewBuilder content: () -> Content) {
-        self.content = content()
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
     }
 
-    func makeNSView(context: Context) -> ClickThroughNSView<Content> {
-        let view = ClickThroughNSView<Content>()
-        let hostingView = NSHostingView(rootView: content)
-        hostingView.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(hostingView)
-        NSLayoutConstraint.activate([
-            hostingView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            hostingView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            hostingView.topAnchor.constraint(equalTo: view.topAnchor),
-            hostingView.bottomAnchor.constraint(equalTo: view.bottomAnchor)
-        ])
-        return view
-    }
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
 
-    func updateNSView(_ nsView: ClickThroughNSView<Content>, context: Context) {
-        if let hostingView = nsView.subviews.first as? NSHostingView<Content> {
-            hostingView.rootView = content
+        // Remove existing monitor if any
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+            localMonitor = nil
         }
+
+        guard let window = self.window else { return }
+
+        // Track window key status changes to detect activation clicks
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(windowDidBecomeKey),
+            name: NSWindow.didBecomeKeyNotification,
+            object: window
+        )
+
+        // Monitor left mouse down events
+        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
+            guard let self = self, let window = self.window else { return event }
+
+            // If clicking in our view while window is not key, save the location
+            if !window.isKeyWindow {
+                let locationInView = self.convert(event.locationInWindow, from: nil)
+                if self.bounds.contains(locationInView) {
+                    self.pendingClickLocation = event.locationInWindow
+                    self.wasWindowKey = false
+                }
+            }
+            return event
+        }
+    }
+
+    @objc private func windowDidBecomeKey(_ notification: Notification) {
+        // If we have a pending click from when the window wasn't key, re-send it
+        guard let location = pendingClickLocation,
+              !wasWindowKey,
+              self.window != nil else {
+            pendingClickLocation = nil
+            return
+        }
+
+        wasWindowKey = true
+        pendingClickLocation = nil
+
+        // Small delay to let the window fully activate
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
+            guard let self = self else { return }
+
+            // Find the view at the click location and simulate a click
+            let locationInView = self.convert(location, from: nil)
+            if self.bounds.contains(locationInView) {
+                // Create and post a synthetic mouse event
+                if let cgEvent = CGEvent(
+                    mouseEventSource: nil,
+                    mouseType: .leftMouseDown,
+                    mouseCursorPosition: NSEvent.mouseLocation,
+                    mouseButton: .left
+                ) {
+                    cgEvent.post(tap: .cghidEventTap)
+
+                    // Also post mouse up
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) {
+                        if let upEvent = CGEvent(
+                            mouseEventSource: nil,
+                            mouseType: .leftMouseUp,
+                            mouseCursorPosition: NSEvent.mouseLocation,
+                            mouseButton: .left
+                        ) {
+                            upEvent.post(tap: .cghidEventTap)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    deinit {
+        if let monitor = localMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
+        NotificationCenter.default.removeObserver(self)
     }
 }
 
-/// Custom NSView that accepts the first mouse event, enabling click-through behavior.
-class ClickThroughNSView<Content: View>: NSView {
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        return true
+/// A view wrapper that enables click-through behavior on macOS.
+/// Uses a fixed width to preserve sidebar sizing.
+struct ClickThroughView<Content: View>: NSViewRepresentable {
+    let content: Content
+    let width: CGFloat?
+
+    init(width: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+        self.width = width
+        self.content = content()
+    }
+
+    func makeNSView(context: Context) -> ClickThroughHostingView<Content> {
+        let hostingView = ClickThroughHostingView(rootView: content)
+        // Don't constrain the hosting view size - let it use intrinsic size
+        hostingView.setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        hostingView.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        return hostingView
+    }
+
+    func updateNSView(_ nsView: ClickThroughHostingView<Content>, context: Context) {
+        nsView.rootView = content
     }
 }
 
 // MARK: - View Extension for convenience
 extension View {
     /// Wraps this view to enable click-through behavior.
-    /// When the window is inactive, clicks will both activate the window
-    /// and trigger the click action simultaneously.
+    /// The view will maintain its intrinsic size.
     func clickThrough() -> some View {
         ClickThroughView { self }
+            .fixedSize(horizontal: true, vertical: false)
     }
 }
