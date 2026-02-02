@@ -171,6 +171,20 @@ class RewindSettings: ObservableObject {
 
     private let defaults = UserDefaults.standard
 
+    /// Default apps that should be excluded from screen capture for privacy
+    static let defaultExcludedApps: Set<String> = [
+        "Passwords",           // macOS Passwords app
+        "1Password",           // 1Password (various versions)
+        "1Password 7",
+        "Bitwarden",           // Bitwarden
+        "LastPass",            // LastPass
+        "Dashlane",            // Dashlane
+        "Keeper",              // Keeper Password Manager
+        "Enpass",              // Enpass
+        "KeePassXC",           // KeePassXC
+        "Keychain Access",     // macOS Keychain Access
+    ]
+
     @Published var isEnabled: Bool {
         didSet {
             defaults.set(isEnabled, forKey: "rewindEnabled")
@@ -189,11 +203,45 @@ class RewindSettings: ObservableObject {
         }
     }
 
+    @Published var excludedApps: Set<String> {
+        didSet {
+            let array = Array(excludedApps)
+            defaults.set(array, forKey: "rewindExcludedApps")
+        }
+    }
+
     private init() {
         // Load settings with defaults
         self.isEnabled = defaults.object(forKey: "rewindEnabled") as? Bool ?? true
         self.retentionDays = defaults.object(forKey: "rewindRetentionDays") as? Int ?? 7
         self.captureInterval = defaults.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
+
+        // Load excluded apps, defaulting to the default list if not set
+        if let savedApps = defaults.array(forKey: "rewindExcludedApps") as? [String] {
+            self.excludedApps = Set(savedApps)
+        } else {
+            self.excludedApps = Self.defaultExcludedApps
+        }
+    }
+
+    /// Check if an app is excluded from screen capture
+    func isAppExcluded(_ appName: String) -> Bool {
+        excludedApps.contains(appName)
+    }
+
+    /// Add an app to the exclusion list
+    func excludeApp(_ appName: String) {
+        excludedApps.insert(appName)
+    }
+
+    /// Remove an app from the exclusion list
+    func includeApp(_ appName: String) {
+        excludedApps.remove(appName)
+    }
+
+    /// Reset excluded apps to defaults
+    func resetToDefaults() {
+        excludedApps = Self.defaultExcludedApps
     }
 }
 
