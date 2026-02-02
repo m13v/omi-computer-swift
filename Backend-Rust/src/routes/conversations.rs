@@ -239,6 +239,7 @@ async fn create_conversation_from_segments(
         folder_id: None,
         geolocation: None,
         photos: vec![],
+        input_device_name: request.input_device_name.clone(),
     };
 
     // Save conversation
@@ -768,6 +769,7 @@ async fn merge_conversations(
         folder_id: first.folder_id.clone(),
         geolocation: first.geolocation.clone(),
         photos: vec![],
+        input_device_name: first.input_device_name.clone(),
     };
 
     // If reprocessing is requested and we have an LLM client, process the merged conversation
