@@ -7,6 +7,9 @@ import Foundation
 actor VideoChunkEncoder {
     static let shared = VideoChunkEncoder()
 
+    // Track if we've reported ffmpeg source this session (once per app launch)
+    private static var hasReportedFFmpegSource = false
+
     // MARK: - Configuration
 
     private let chunkDuration: TimeInterval = 60.0 // 60-second chunks
@@ -290,22 +293,35 @@ actor VideoChunkEncoder {
     }
 
     private func findFFmpegPath() -> String {
-        // Common locations for ffmpeg
-        let possiblePaths = [
-            "/opt/homebrew/bin/ffmpeg",
-            "/usr/local/bin/ffmpeg",
-            "/usr/bin/ffmpeg",
-            Bundle.main.path(forResource: "ffmpeg", ofType: nil),
-        ].compactMap { $0 }
+        // Common locations for ffmpeg (bundled first for users without Homebrew)
+        let bundledPath = Bundle.main.path(forResource: "ffmpeg", ofType: nil)
+        let possiblePaths: [(path: String, source: String)] = [
+            (bundledPath ?? "", "bundled"),
+            ("/opt/homebrew/bin/ffmpeg", "homebrew"),
+            ("/usr/local/bin/ffmpeg", "usr_local"),
+            ("/usr/bin/ffmpeg", "system"),
+        ].filter { !$0.path.isEmpty }
 
-        for path in possiblePaths {
+        for (path, source) in possiblePaths {
             if FileManager.default.fileExists(atPath: path) {
+                reportFFmpegSource(source: source, path: path)
                 return path
             }
         }
 
         // Fall back to PATH lookup
+        reportFFmpegSource(source: "path_fallback", path: "ffmpeg")
         return "ffmpeg"
+    }
+
+    private func reportFFmpegSource(source: String, path: String) {
+        // Only report once per app launch
+        guard !Self.hasReportedFFmpegSource else { return }
+        Self.hasReportedFFmpegSource = true
+
+        Task { @MainActor in
+            PostHogManager.shared.ffmpegResolved(source: source, path: path)
+        }
     }
 
     // MARK: - Cleanup
