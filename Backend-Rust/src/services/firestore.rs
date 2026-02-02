@@ -821,6 +821,7 @@ impl FirestoreService {
         limit: usize,
         offset: usize,
         category: Option<&str>,
+        tags: Option<&[String]>,
         include_dismissed: bool,
     ) -> Result<Vec<MemoryDB>, Box<dyn std::error::Error + Send + Sync>> {
         let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
@@ -901,6 +902,16 @@ impl FirestoreService {
             // Filter out dismissed memories in-memory (not in Firestore query, since existing
             // memories don't have is_dismissed field - Firestore requires field to exist for filters)
             .filter(|m| include_dismissed || !m.is_dismissed)
+            // Filter by tags in-memory (Firestore doesn't support multiple array-contains)
+            .filter(|m| {
+                match tags {
+                    Some(filter_tags) if !filter_tags.is_empty() => {
+                        // Memory must contain ALL specified tags
+                        filter_tags.iter().all(|tag| m.tags.contains(tag))
+                    }
+                    _ => true, // No tag filter, include all
+                }
+            })
             .collect();
 
         // Enrich memories with source from linked conversations
@@ -917,7 +928,7 @@ impl FirestoreService {
         uid: &str,
         limit: usize,
     ) -> Result<Vec<MemoryDB>, Box<dyn std::error::Error + Send + Sync>> {
-        self.get_memories_filtered(uid, limit, 0, None, false).await
+        self.get_memories_filtered(uid, limit, 0, None, None, false).await
     }
 
     /// Batch fetch conversations and populate source field on memories
@@ -1159,6 +1170,9 @@ impl FirestoreService {
         confidence: Option<f64>,
         source_app: Option<&str>,
         context_summary: Option<&str>,
+        tags: &[String],
+        reasoning: Option<&str>,
+        current_activity: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let memory_id = document_id_from_seed(content);
         let now = Utc::now();
@@ -1188,6 +1202,12 @@ impl FirestoreService {
             memory_id
         );
 
+        // Build tags array for Firestore
+        let tags_values: Vec<Value> = tags
+            .iter()
+            .map(|t| json!({"stringValue": t}))
+            .collect();
+
         // Build fields - always include base fields
         // CRITICAL: Include all fields that Python expects (matching save_memories)
         let mut fields = json!({
@@ -1210,7 +1230,7 @@ impl FirestoreService {
             "edited": {"booleanValue": false},
             "is_locked": {"booleanValue": false},
             "kg_extracted": {"booleanValue": false},
-            "tags": {"arrayValue": {"values": []}}
+            "tags": {"arrayValue": {"values": tags_values}}
         });
 
         // Add optional fields if present
@@ -1222,6 +1242,12 @@ impl FirestoreService {
         }
         if let Some(summary) = context_summary {
             fields["context_summary"] = json!({"stringValue": summary});
+        }
+        if let Some(reason) = reasoning {
+            fields["reasoning"] = json!({"stringValue": reason});
+        }
+        if let Some(activity) = current_activity {
+            fields["current_activity"] = json!({"stringValue": activity});
         }
 
         let doc = json!({ "fields": fields });
@@ -1249,7 +1275,7 @@ impl FirestoreService {
         content: &str,
         visibility: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        self.create_memory(uid, content, visibility, None, None, None, None).await
+        self.create_memory(uid, content, visibility, None, None, None, None, &[], None, None).await
     }
 
     /// Update memory read/dismissed status
@@ -2670,6 +2696,9 @@ impl FirestoreService {
             context_summary: self.parse_string(fields, "context_summary"),
             is_read: self.parse_bool(fields, "is_read").unwrap_or(false),
             is_dismissed: self.parse_bool(fields, "is_dismissed").unwrap_or(false),
+            tags: self.parse_string_array(fields, "tags"),
+            reasoning: self.parse_string(fields, "reasoning"),
+            current_activity: self.parse_string(fields, "current_activity"),
         })
     }
 
