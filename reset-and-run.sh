@@ -1,6 +1,99 @@
 #!/bin/bash
 set -e
 
+###############################################################################
+# RESET AND RUN SCRIPT FOR OMI DESKTOP DEVELOPMENT
+###############################################################################
+#
+# This script builds and runs the Omi Desktop app with a clean slate for testing.
+# It handles permission resets, app cleanup, and backend services.
+#
+# CRITICAL: ORDER OF OPERATIONS MATTERS!
+# =============================================================================
+# The sequence below was determined through extensive debugging. DO NOT change
+# the order without understanding why it matters.
+#
+# CORRECT ORDER:
+#   1. Kill app processes
+#   2. Reset TCC permissions (while app STILL EXISTS in /Applications)
+#   3. Delete app bundles
+#   4. Reset Launch Services
+#   5. Build new app
+#   6. Install to /Applications
+#   7. Reset UserDefaults
+#   8. Launch app
+#
+# WHY THIS ORDER MATTERS:
+# -----------------------
+# - tccutil reset requires the app to exist to properly resolve the bundle ID.
+#   If you delete the app first, tccutil silently fails to reset permissions.
+#   This was discovered after hours of debugging where permissions appeared
+#   "stuck" even after running tccutil.
+#
+# - The app must be killed BEFORE resetting TCC, otherwise the running app
+#   may re-acquire permissions immediately.
+#
+# MACOS TCC (TRANSPARENCY, CONSENT, CONTROL) NOTES:
+# =============================================================================
+# - User TCC database: ~/Library/Application Support/com.apple.TCC/TCC.db
+#   Contains: Microphone, AudioCapture, AppleEvents, Accessibility
+#   Can be modified with: tccutil reset, sqlite3 DELETE
+#
+# - System TCC database: /Library/Application Support/com.apple.TCC/TCC.db
+#   Contains: ScreenCapture (Screen Recording)
+#   PROTECTED BY SIP - cannot be modified directly, even with sudo
+#   Can only be reset via: tccutil reset ScreenCapture <bundle-id>
+#   Or manually removed in: System Settings > Privacy & Security > Screen Recording
+#
+# - CGPreflightScreenCaptureAccess() can return STALE data after app rebuilds.
+#   It may say "true" when the permission is actually invalid for the new binary.
+#
+# - ScreenCaptureKit (macOS 14+) has its OWN consent separate from TCC.
+#   SCShareableContent.excludingDesktopWindows() triggers this consent dialog.
+#   Don't call it repeatedly - it will show the dialog each time if not granted.
+#
+# LAUNCH SERVICES POLLUTION:
+# =============================================================================
+# Launch Services caches app metadata (bundle ID, name, icon) from ALL apps it
+# sees, including:
+#   - DMG staging directories in /private/tmp
+#   - Mounted DMG volumes (/Volumes/Omi Computer, /Volumes/dmg.*)
+#   - Apps in Trash
+#   - Xcode DerivedData builds
+#
+# If multiple apps with the same bundle ID exist (even in Trash!), macOS gets
+# confused and may:
+#   - Show wrong app name in System Settings (e.g., "Omi Computer.app" with .app)
+#   - Show generic icon instead of actual app icon
+#   - Grant permissions to the wrong app
+#
+# SOLUTION: Clean up ALL these locations before building:
+#   - /private/tmp/omi-dmg-staging-*
+#   - ~/.Trash/Omi*, ~/.Trash/OMI*
+#   - Mounted volumes: /Volumes/Omi*, /Volumes/dmg.*
+#   - Xcode DerivedData Omi builds
+#
+# The lsregister -kill command is supposed to rebuild the database but is
+# disabled on modern macOS. A reboot may be needed for complete cleanup.
+#
+# DEBUGGING TIPS:
+# =============================================================================
+# Check TCC entries:
+#   sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+#     "SELECT service, client, auth_value FROM access WHERE client LIKE '%omi%';"
+#
+# Check Launch Services registrations:
+#   lsregister=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+#   $lsregister -dump | grep -A20 "com.omi.computer-macos"
+#
+# Check screen recording permission:
+#   swift -e 'import CoreGraphics; print(CGPreflightScreenCaptureAccess())'
+#
+# Manually reset all TCC for a bundle:
+#   tccutil reset All com.omi.computer-macos.development
+#
+###############################################################################
+
 # Clear system OPENAI_API_KEY so .env takes precedence
 unset OPENAI_API_KEY
 
@@ -41,7 +134,41 @@ lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 # Clear log file for fresh run (must be before backend starts)
 rm -f /tmp/omi.log 2>/dev/null || true
 
-# Clean up conflicting app bundles with same bundle ID
+# =============================================================================
+# STEP 2: RESET TCC PERMISSIONS
+# =============================================================================
+# CRITICAL: This MUST happen BEFORE deleting the app from /Applications!
+# tccutil needs the app to exist to resolve the bundle ID and find the correct
+# TCC entries to reset. If the app doesn't exist, tccutil silently succeeds
+# but doesn't actually reset anything.
+#
+# We reset BOTH bundle IDs:
+# - Development: com.omi.computer-macos.development (this script's builds)
+# - Production: com.omi.computer-macos (release DMG builds)
+#
+# Using "reset All" instead of individual services (ScreenCapture, Microphone, etc.)
+# because it's more reliable and catches any permissions we might have missed.
+BUNDLE_ID_PROD="com.omi.computer-macos"
+echo "Resetting TCC permissions (before deleting apps)..."
+tccutil reset All "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset All "$BUNDLE_ID_PROD" 2>/dev/null || true
+
+# Belt-and-suspenders: Also clean user TCC database directly via sqlite3
+# This catches any entries that tccutil might have missed
+# Note: System TCC database (Screen Recording) is SIP-protected and cannot be
+# modified this way - only tccutil can reset it
+sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';" 2>/dev/null || true
+
+# =============================================================================
+# STEP 3: DELETE ALL CONFLICTING APP BUNDLES
+# =============================================================================
+# Multiple apps with the same bundle ID confuse macOS. When granting permissions,
+# the system may pick the wrong app, resulting in:
+# - Permissions granted to old/deleted app instead of new build
+# - Wrong app name/icon shown in System Settings
+# - "Quit and reopen" prompt not appearing after enabling permissions
+#
+# We clean up apps from ALL possible locations where they might exist.
 echo "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi.app"
@@ -57,7 +184,8 @@ CONFLICTING_APPS=(
     "$(dirname "$0")/../omi-computer/build/macos/Build/Products/Debug/Omi.app"
     "$(dirname "$0")/../omi-computer/build/macos/Build/Products/Release/Omi.app"
 )
-# Also clean Xcode DerivedData for Omi builds
+# Xcode DerivedData can contain old builds with production bundle ID
+# These get registered in Launch Services and cause permission confusion
 echo "Cleaning Xcode DerivedData..."
 find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi.app" -type d 2>/dev/null | while read app; do
     echo "  Removing: $app"
@@ -68,15 +196,19 @@ find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Computer.app" -type 
     rm -rf "$app"
 done
 
-# Clean DMG staging directories (leftover from release builds)
+# DMG staging directories from release.sh builds contain production bundle ID apps
+# Launch Services sees these and caches them, causing permission confusion
 echo "Cleaning DMG staging directories..."
 rm -rf /private/tmp/omi-dmg-staging-* /private/tmp/omi-dmg-test-* 2>/dev/null || true
 
-# Clean Omi apps from Trash (they pollute Launch Services)
+# IMPORTANT: Apps in Trash are STILL registered in Launch Services!
+# This was a major source of bugs - deleted apps in Trash were being picked up
+# by macOS when granting permissions, resulting in wrong app names/icons
 echo "Cleaning Omi apps from Trash..."
 rm -rf "$HOME/.Trash/OMI"* "$HOME/.Trash/Omi"* 2>/dev/null || true
 
-# Eject any mounted Omi DMG volumes (they also pollute Launch Services)
+# Mounted DMG volumes also register their apps in Launch Services
+# If you opened a release DMG to test, the mounted app pollutes the database
 echo "Ejecting mounted Omi DMG volumes..."
 for vol in /Volumes/Omi* /Volumes/OMI* /Volumes/dmg.*; do
     if [ -d "$vol" ]; then
@@ -92,26 +224,22 @@ for app in "${CONFLICTING_APPS[@]}"; do
     fi
 done
 
-# Reset Launch Services database to clear cached bundle ID mappings
+# =============================================================================
+# STEP 4: RESET LAUNCH SERVICES DATABASE
+# =============================================================================
+# Launch Services caches app metadata (bundle ID → app path, name, icon).
+# After cleaning up old apps, we need to tell Launch Services to rebuild.
+#
+# NOTE: The -kill flag is deprecated/disabled on modern macOS. This command
+# may not fully clear the cache. If you still see wrong app names/icons in
+# System Settings after running this script, a REBOOT may be required to
+# fully rebuild the Launch Services database.
+#
+# The lsregister tool reads from an in-memory daemon, not disk. Deleting the
+# database file (~/.../com.apple.LaunchServices.lsdb) only takes effect after
+# the daemon restarts (i.e., after reboot).
 echo "Resetting Launch Services database..."
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user 2>/dev/null || true
-
-# Reset TCC permissions BEFORE building new app (while no app exists with this bundle ID)
-# This ensures clean slate for the new app
-BUNDLE_ID_PROD="com.omi.computer-macos"
-echo "Resetting TCC permissions (before build)..."
-tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset ScreenCapture "$BUNDLE_ID_PROD" 2>/dev/null || true
-tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset Microphone "$BUNDLE_ID_PROD" 2>/dev/null || true
-tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset AppleEvents "$BUNDLE_ID_PROD" 2>/dev/null || true
-tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset Accessibility "$BUNDLE_ID_PROD" 2>/dev/null || true
-
-# Clean user TCC database directly
-echo "Cleaning user TCC database..."
-sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';" 2>/dev/null || true
 
 # Start Cloudflare tunnel
 echo "Starting Cloudflare tunnel..."
