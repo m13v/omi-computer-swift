@@ -84,19 +84,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate: applicationDidFinishLaunching started")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
-        // Initialize Sentry for crash reporting and error tracking
-        SentrySDK.start { options in
-            options.dsn = "https://8f700584deda57b26041ff015539c8c1@o4507617161314304.ingest.us.sentry.io/4510790686277632"
-            options.debug = false
-            options.enableAutoSessionTracking = true
-            // Set environment based on build configuration
-            #if DEBUG
-            options.environment = "development"
-            #else
-            options.environment = "production"
-            #endif
+        // Initialize Sentry for crash reporting and error tracking (skip in dev builds)
+        if !AnalyticsManager.isDevBuild {
+            SentrySDK.start { options in
+                options.dsn = "https://8f700584deda57b26041ff015539c8c1@o4507617161314304.ingest.us.sentry.io/4510790686277632"
+                options.debug = false
+                options.enableAutoSessionTracking = true
+                options.environment = "production"
+            }
+            log("Sentry initialized")
+        } else {
+            log("Sentry: Skipping initialization (development build)")
         }
-        log("Sentry initialized")
 
         // Initialize Firebase
         let plistPath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist")
@@ -118,8 +117,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
             AnalyticsManager.shared.identify()
-            // Set Sentry user context
-            if let email = AuthState.shared.userEmail {
+            // Set Sentry user context (skip in dev builds)
+            if !AnalyticsManager.isDevBuild, let email = AuthState.shared.userEmail {
                 let sentryUser = Sentry.User()
                 sentryUser.email = email
                 sentryUser.username = AuthService.shared.displayName.isEmpty ? nil : AuthService.shared.displayName
@@ -167,6 +166,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Start a timer that sends Sentry session snapshots every 5 minutes
     /// This ensures we have breadcrumbs captured even without errors
     private func startSentryHeartbeat() {
+        // Skip heartbeat in dev builds (Sentry not initialized)
+        guard !AnalyticsManager.isDevBuild else { return }
+
         sentryHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
             // Capture a session heartbeat event with current breadcrumbs
             SentrySDK.capture(message: "Session Heartbeat") { scope in
@@ -179,31 +181,47 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Set up global keyboard shortcuts
     private func setupGlobalHotkeys() {
-        // Cmd+Shift+Space -> Open Rewind
+        // Cmd+Option+R -> Open Rewind
         globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            // Check for Cmd+Shift+Space
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-            let isCommandShift = modifiers == [.command, .shift]
-            let isSpace = event.keyCode == 49 // Space key
+            let keyCode = event.keyCode
 
-            if isCommandShift && isSpace {
-                log("AppDelegate: Rewind hotkey triggered (Cmd+Shift+Space)")
+            // Log all key presses with Cmd+Option to debug
+            if modifiers.contains(.command) && modifiers.contains(.option) {
+                log("AppDelegate: Cmd+Option key pressed - keyCode=\(keyCode), modifiers=\(modifiers.rawValue)")
+            }
+
+            // Check for Cmd+Option+R
+            let isCommandOption = modifiers == [.command, .option]
+            let isR = keyCode == 15 // R key
+
+            if isCommandOption && isR {
+                log("AppDelegate: Rewind hotkey MATCHED (Cmd+Option+R)")
                 DispatchQueue.main.async {
+                    log("AppDelegate: Activating app and posting notification")
                     // Bring app to front
                     NSApp.activate(ignoringOtherApps: true)
                     // Find and show main window
                     for window in NSApp.windows {
+                        log("AppDelegate: Window title='\(window.title)'")
                         if window.title.hasPrefix("Omi") {
                             window.makeKeyAndOrderFront(nil)
+                            log("AppDelegate: Made Omi window key")
                             break
                         }
                     }
                     // Post notification to navigate to Rewind
                     NotificationCenter.default.post(name: .navigateToRewind, object: nil)
+                    log("AppDelegate: Posted navigateToRewind notification")
                 }
             }
         }
-        log("AppDelegate: Global hotkey monitor registered (Cmd+Shift+Space -> Rewind)")
+
+        if globalHotkeyMonitor != nil {
+            log("AppDelegate: Global hotkey monitor registered successfully (Cmd+Option+R -> Rewind)")
+        } else {
+            log("AppDelegate: WARNING - Global hotkey monitor failed to register! Check Accessibility permission.")
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -221,10 +239,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ResourceMonitor.shared.reportResourcesNow(context: "app_terminating")
         ResourceMonitor.shared.stop()
 
-        // Capture final session snapshot before termination
-        SentrySDK.capture(message: "App Terminating") { scope in
-            scope.setLevel(.info)
-            scope.setTag(value: "lifecycle", key: "event_type")
+        // Capture final session snapshot before termination (skip in dev builds)
+        if !AnalyticsManager.isDevBuild {
+            SentrySDK.capture(message: "App Terminating") { scope in
+                scope.setLevel(.info)
+                scope.setTag(value: "lifecycle", key: "event_type")
+            }
         }
     }
 
@@ -289,8 +309,8 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Grant Screen Permission") {
-                ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
+            Button("Reset Onboarding...") {
+                appState.resetOnboardingAndRestart()
             }
 
             Divider()
