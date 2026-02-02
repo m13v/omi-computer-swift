@@ -44,6 +44,35 @@ GITHUB_REPO="BasedHardware/omi"
 DESKTOP_BACKEND_URL="${DESKTOP_BACKEND_URL:-https://desktop-backend-hhibjajaja-uc.a.run.app}"
 RELEASE_SECRET="${RELEASE_SECRET:-}"
 
+# Read changelog from CHANGELOG.json
+CHANGELOG_FILE="CHANGELOG.json"
+if [ -f "$CHANGELOG_FILE" ]; then
+    # Get the latest release entry (first in array)
+    CHANGELOG_ITEMS=$(cat "$CHANGELOG_FILE" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if data.get('releases') and len(data['releases']) > 0:
+    changes = data['releases'][0].get('changes', [])
+    for c in changes:
+        print(c)
+")
+    # Create markdown bullet list for GitHub notes
+    CHANGELOG_MD=$(echo "$CHANGELOG_ITEMS" | sed 's/^/- /')
+    # Create JSON array for Firestore
+    CHANGELOG_JSON=$(cat "$CHANGELOG_FILE" | python3 -c "
+import sys, json
+data = json.load(sys.stdin)
+if data.get('releases') and len(data['releases']) > 0:
+    print(json.dumps(data['releases'][0].get('changes', [])))
+else:
+    print('[]')
+")
+else
+    echo "Warning: $CHANGELOG_FILE not found. Using empty changelog."
+    CHANGELOG_MD="- No changelog available"
+    CHANGELOG_JSON='[]'
+fi
+
 # Google Cloud (Backend deployment)
 GCP_PROJECT="based-hardware"
 GCP_REGION="us-central1"
@@ -424,10 +453,7 @@ RELEASE_NOTES=$(cat <<EOF
 ## Omi Desktop v${VERSION}
 
 ### What's New
-- Fixed window screenshot aspect ratio
-- Added no-results state to search UI
-- Fixed bundled ffmpeg path
-- Enhanced reset onboarding cleanup
+$CHANGELOG_MD
 
 ### Downloads
 - **DMG Installer**: For fresh installs, download the DMG below
@@ -470,7 +496,7 @@ if [ -n "$RELEASE_SECRET" ]; then
     "build_number": $BUILD_NUMBER,
     "download_url": "$DOWNLOAD_URL",
     "ed_signature": "$ED_SIGNATURE",
-    "changelog": ["Fixed window screenshot aspect ratio", "Added no-results state to search", "Fixed bundled ffmpeg path", "Enhanced reset onboarding"],
+    "changelog": $CHANGELOG_JSON,
     "is_live": true,
     "is_critical": false
 }
