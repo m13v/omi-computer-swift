@@ -514,6 +514,8 @@ struct SidebarView: View {
 
                 Button(action: {
                     if needsReset {
+                        // Track reset button click
+                        AnalyticsManager.shared.screenCaptureResetClicked(source: "sidebar_button")
                         // Reset and restart to fix broken ScreenCaptureKit state
                         ScreenCaptureService.resetScreenCapturePermissionAndRestart()
                     } else {
