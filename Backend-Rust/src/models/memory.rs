@@ -23,6 +23,13 @@ pub struct CreateMemoryRequest {
     pub source_app: Option<String>,
     /// Summary of the context when memory was generated
     pub context_summary: Option<String>,
+    /// Tags for filtering (e.g., ["tips", "productivity"])
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Reasoning behind the memory/tip (from advice system)
+    pub reasoning: Option<String>,
+    /// Description of user's activity when memory was generated
+    pub current_activity: Option<String>,
 }
 
 /// Request to edit a memory's content
@@ -61,6 +68,8 @@ pub struct GetMemoriesQuery {
     pub offset: usize,
     /// Filter by category
     pub category: Option<String>,
+    /// Filter by tags (comma-separated list, e.g., "tips,productivity")
+    pub tags: Option<String>,
     /// Include dismissed memories (default: false)
     #[serde(default)]
     pub include_dismissed: bool,
@@ -97,6 +106,10 @@ pub struct Memory {
     /// The category of the memory
     #[serde(default)]
     pub category: MemoryCategory,
+
+    /// Tags for filtering (e.g., ["tips", "productivity"])
+    #[serde(default)]
+    pub tags: Vec<String>,
 }
 
 /// Memory as stored in Firestore
@@ -135,6 +148,13 @@ pub struct MemoryDB {
     /// Whether the memory has been dismissed/archived
     #[serde(default)]
     pub is_dismissed: bool,
+    /// Tags for filtering (e.g., ["tips", "productivity"])
+    #[serde(default)]
+    pub tags: Vec<String>,
+    /// Reasoning behind the memory/tip (from advice system)
+    pub reasoning: Option<String>,
+    /// Description of user's activity when memory was generated
+    pub current_activity: Option<String>,
 }
 
 fn default_visibility() -> String {
