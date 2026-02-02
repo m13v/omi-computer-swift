@@ -32,9 +32,6 @@ struct ConversationsPage: View {
     // Transcript visibility state - hidden by default
     @State private var isTranscriptCollapsed: Bool = true
 
-    // Success state after finishing conversation
-    @State private var showSavedSuccess: Bool = false
-
     // Search state
     @State private var searchQuery: String = ""
     @State private var searchResults: [ServerConversation] = []
@@ -115,33 +112,7 @@ struct ConversationsPage: View {
                 }
             }
 
-            // Toast banner for discarded/error feedback
-            if showDiscarded || showError {
-                toastBanner
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 60)
-            }
         }
-    }
-
-    private var toastBanner: some View {
-        HStack(spacing: 8) {
-            Image(systemName: showDiscarded ? "info.circle.fill" : "exclamationmark.triangle.fill")
-                .font(.system(size: 14))
-
-            Text(showDiscarded ? "Conversation was too short and was discarded" : "Failed to save: \(errorMessage)")
-                .font(.system(size: 13))
-
-            Spacer()
-        }
-        .foregroundColor(.white)
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(showDiscarded ? OmiColors.warning : OmiColors.error)
-        )
-        .padding(.horizontal, 16)
     }
 
     // MARK: - Transcript Views
@@ -815,8 +786,8 @@ struct ConversationsPage: View {
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .foregroundColor(OmiColors.textSecondary)
 
-                // Finish button
-                finishButton
+                // Stop recording button
+                stopRecordingButton
             } else {
                 // Not recording - show start button
                 Text("Conversations")
@@ -926,71 +897,14 @@ struct ConversationsPage: View {
 
     // MARK: - Buttons
 
-    @State private var isFinishing = false
-    @State private var showDiscarded = false
-    @State private var showError = false
-    @State private var errorMessage = ""
-
-    private var finishButton: some View {
+    private var stopRecordingButton: some View {
         Button(action: {
-            guard !isFinishing && !showSavedSuccess && !showDiscarded else { return }
-            isFinishing = true
-            Task {
-                let result = await appState.finishConversation()
-                isFinishing = false
-
-                switch result {
-                case .saved:
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showSavedSuccess = true
-                    }
-                    try? await Task.sleep(for: .seconds(2.5))
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showSavedSuccess = false
-                        isTranscriptCollapsed = true
-                    }
-
-                case .discarded:
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showDiscarded = true
-                    }
-                    try? await Task.sleep(for: .seconds(2.5))
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showDiscarded = false
-                        isTranscriptCollapsed = true
-                    }
-
-                case .error(let message):
-                    errorMessage = message
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showError = true
-                    }
-                    try? await Task.sleep(for: .seconds(3.0))
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        showError = false
-                    }
-                }
-            }
+            appState.stopTranscription()
         }) {
             HStack(spacing: 6) {
-                if isFinishing {
-                    ProgressView()
-                        .scaleEffect(0.5)
-                        .frame(width: 12, height: 12)
-                } else if showSavedSuccess {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 12, weight: .bold))
-                } else if showDiscarded {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .bold))
-                } else if showError {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 12))
-                } else {
-                    Image(systemName: "checkmark.circle.fill")
-                        .font(.system(size: 12))
-                }
-                Text(finishButtonText)
+                Image(systemName: "stop.circle.fill")
+                    .font(.system(size: 12))
+                Text("Stop Recording")
                     .font(.system(size: 13, weight: .medium))
             }
             .foregroundColor(.white)
@@ -998,27 +912,10 @@ struct ConversationsPage: View {
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(finishButtonColor)
+                    .fill(OmiColors.purplePrimary)
             )
         }
         .buttonStyle(.plain)
-        .disabled(isFinishing || showSavedSuccess || showDiscarded || showError || appState.liveSpeakerSegments.isEmpty)
-    }
-
-    private var finishButtonText: String {
-        if isFinishing { return "Saving..." }
-        if showSavedSuccess { return "Saved!" }
-        if showDiscarded { return "Too Short" }
-        if showError { return "Failed" }
-        return "Finish"
-    }
-
-    private var finishButtonColor: Color {
-        if isFinishing { return OmiColors.textTertiary }
-        if showSavedSuccess { return OmiColors.success }
-        if showDiscarded { return OmiColors.warning }
-        if showError { return OmiColors.error }
-        return OmiColors.purplePrimary
     }
 
     private var startRecordingButton: some View {
