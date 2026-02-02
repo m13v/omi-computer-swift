@@ -12,12 +12,12 @@ struct RewindPage: View {
     @State private var playbackSpeed: Double = 1.0
     @State private var playbackTimer: Timer?
 
-    @State private var showSearchResults = false
-    @State private var selectedSearchTab: SearchResultsTab? = nil
+    @State private var searchViewMode: SearchViewMode? = nil
     @FocusState private var isSearchFocused: Bool
 
-    enum SearchResultsTab {
-        case list
+    enum SearchViewMode {
+        case results  // Full-screen search results
+        case timeline // Timeline with search highlights
     }
 
     var body: some View {
@@ -31,8 +31,11 @@ struct RewindPage: View {
                 errorView(error)
             } else if viewModel.screenshots.isEmpty {
                 emptyState
+            } else if viewModel.activeSearchQuery != nil {
+                // Search is active - show mode picker or selected mode
+                searchContent
             } else {
-                // Main timeline view
+                // Normal timeline view
                 timelineContent
             }
         }
@@ -47,14 +50,20 @@ struct RewindPage: View {
             // Load frame for current position
             Task { await loadCurrentFrame() }
         }
+        .onChange(of: viewModel.activeSearchQuery) { oldQuery, newQuery in
+            // Reset view mode when search changes
+            if oldQuery != newQuery {
+                searchViewMode = nil
+            }
+        }
         // Global keyboard handlers
         .onKeyPress(.escape) {
-            if selectedSearchTab != nil {
-                selectedSearchTab = nil
+            if searchViewMode != nil {
+                searchViewMode = nil
                 return .handled
             }
-            if showSearchResults {
-                showSearchResults = false
+            if viewModel.activeSearchQuery != nil {
+                viewModel.searchQuery = ""
                 return .handled
             }
             if isSearchFocused {
@@ -64,39 +73,259 @@ struct RewindPage: View {
             return .ignored
         }
         .onKeyPress(.leftArrow) {
-            previousFrame()
-            return .handled
+            // Arrow keys only work in timeline mode
+            if searchViewMode != .results {
+                previousFrame()
+                return .handled
+            }
+            return .ignored
         }
         .onKeyPress(.rightArrow) {
-            nextFrame()
-            return .handled
+            if searchViewMode != .results {
+                nextFrame()
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.upArrow) {
+            // Up/down navigate search results
+            if searchViewMode == .results && currentIndex < viewModel.screenshots.count - 1 {
+                currentIndex += 1
+                return .handled
+            }
+            return .ignored
+        }
+        .onKeyPress(.downArrow) {
+            if searchViewMode == .results && currentIndex > 0 {
+                currentIndex -= 1
+                return .handled
+            }
+            return .ignored
         }
         .onKeyPress(.space) {
             togglePlayback()
             return .handled
         }
-        .onKeyPress(.return) {
-            if isSearchFocused && !viewModel.searchQuery.isEmpty {
-                showSearchResults = true
-                isSearchFocused = false
-                return .handled
+    }
+
+    // MARK: - Search Content (mode picker or full view)
+
+    private var searchContent: some View {
+        VStack(spacing: 0) {
+            // Compact search header
+            searchHeader
+
+            if searchViewMode == nil {
+                // Show mode picker - user chooses how to view results
+                searchModePicker
+            } else if searchViewMode == .results {
+                // Full-screen search results view
+                fullScreenResultsView
+            } else {
+                // Timeline view with search highlights
+                timelineWithSearch
             }
-            return .ignored
         }
     }
 
-    // MARK: - Timeline Content
+    // MARK: - Search Header
+
+    private var searchHeader: some View {
+        HStack(spacing: 12) {
+            // Back button
+            Button {
+                viewModel.searchQuery = ""
+                searchViewMode = nil
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 28, height: 28)
+                    .background(Color.white.opacity(0.1))
+                    .clipShape(Circle())
+            }
+            .buttonStyle(.plain)
+
+            // Search info
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.purplePrimary)
+                Text("\"\(viewModel.activeSearchQuery ?? "")\"")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                Text("•")
+                    .foregroundColor(.white.opacity(0.3))
+                Text("\(viewModel.screenshots.count) results")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+
+            Spacer()
+
+            // View mode toggle (only show when a mode is selected)
+            if searchViewMode != nil {
+                HStack(spacing: 2) {
+                    Button {
+                        searchViewMode = .results
+                    } label: {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 11))
+                            .foregroundColor(searchViewMode == .results ? .white : .white.opacity(0.5))
+                            .frame(width: 28, height: 24)
+                            .background(searchViewMode == .results ? OmiColors.purplePrimary : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button {
+                        searchViewMode = .timeline
+                    } label: {
+                        Image(systemName: "timeline.selection")
+                            .font(.system(size: 11))
+                            .foregroundColor(searchViewMode == .timeline ? .white : .white.opacity(0.5))
+                            .frame(width: 28, height: 24)
+                            .background(searchViewMode == .timeline ? OmiColors.purplePrimary : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(2)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(6)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.black.opacity(0.8))
+    }
+
+    // MARK: - Search Mode Picker
+
+    private var searchModePicker: some View {
+        VStack(spacing: 24) {
+            Spacer()
+
+            Text("How would you like to view results?")
+                .font(.system(size: 16, weight: .medium))
+                .foregroundColor(.white.opacity(0.8))
+
+            HStack(spacing: 20) {
+                // Results View button
+                Button {
+                    searchViewMode = .results
+                    if !viewModel.screenshots.isEmpty {
+                        currentIndex = 0
+                        Task { await loadCurrentFrame() }
+                    }
+                } label: {
+                    VStack(spacing: 12) {
+                        Image(systemName: "square.grid.2x2")
+                            .font(.system(size: 32))
+                            .foregroundColor(OmiColors.purplePrimary)
+                        Text("Results View")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                        Text("Browse all matches")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    .frame(width: 160, height: 140)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+
+                // Timeline View button
+                Button {
+                    searchViewMode = .timeline
+                    if !viewModel.screenshots.isEmpty {
+                        currentIndex = 0
+                        Task { await loadCurrentFrame() }
+                    }
+                } label: {
+                    VStack(spacing: 12) {
+                        Image(systemName: "timeline.selection")
+                            .font(.system(size: 32))
+                            .foregroundColor(OmiColors.purplePrimary)
+                        Text("Timeline View")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(.white)
+                        Text("See matches in context")
+                            .font(.system(size: 11))
+                            .foregroundColor(.white.opacity(0.5))
+                    }
+                    .frame(width: 160, height: 140)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Full Screen Results View (Google-style vertical list)
+
+    private var fullScreenResultsView: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 1) {
+                    ForEach(Array(viewModel.screenshots.enumerated()), id: \.element.id) { index, screenshot in
+                        SearchResultListItem(
+                            screenshot: screenshot,
+                            index: index,
+                            totalCount: viewModel.screenshots.count,
+                            searchQuery: viewModel.activeSearchQuery ?? "",
+                            isSelected: index == currentIndex,
+                            onTap: {
+                                currentIndex = index
+                                searchViewMode = .timeline
+                                Task { await loadCurrentFrame() }
+                            }
+                        )
+                        .id(index)
+                    }
+                }
+                .padding(.vertical, 8)
+            }
+            .onChange(of: currentIndex) { _, newIndex in
+                withAnimation {
+                    proxy.scrollTo(newIndex, anchor: .center)
+                }
+            }
+        }
+    }
+
+    // MARK: - Timeline with Search
+
+    private var timelineWithSearch: some View {
+        VStack(spacing: 0) {
+            // Frame display
+            Spacer()
+            frameDisplay
+            Spacer()
+
+            // Timeline and controls
+            bottomControls
+        }
+    }
+
+    // MARK: - Timeline Content (normal mode)
 
     private var timelineContent: some View {
         VStack(spacing: 0) {
             // Top bar with search
             topBar
-
-            // Search results panel (slides down when searching)
-            if showSearchResults && !viewModel.screenshots.isEmpty {
-                searchResultsPanel
-                    .transition(.move(edge: .top).combined(with: .opacity))
-            }
 
             // Main frame display
             Spacer()
@@ -106,7 +335,6 @@ struct RewindPage: View {
             // Timeline and controls at bottom
             bottomControls
         }
-        .animation(.easeInOut(duration: 0.2), value: showSearchResults)
     }
 
     // MARK: - Top Bar
@@ -232,11 +460,6 @@ struct RewindPage: View {
                 .font(.system(size: 13))
                 .foregroundColor(.white)
                 .focused($isSearchFocused)
-                .onSubmit {
-                    if !viewModel.searchQuery.isEmpty {
-                        showSearchResults = true
-                    }
-                }
 
             if viewModel.isSearching {
                 ProgressView()
@@ -248,8 +471,7 @@ struct RewindPage: View {
             if !viewModel.searchQuery.isEmpty {
                 Button {
                     viewModel.searchQuery = ""
-                    showSearchResults = false
-                    selectedSearchTab = nil
+                    searchViewMode = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
@@ -269,148 +491,6 @@ struct RewindPage: View {
                         .stroke(isSearchFocused ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 1)
                 )
         )
-    }
-
-    // MARK: - Search Results Panel
-
-    private var searchResultsPanel: some View {
-        VStack(spacing: 0) {
-            // Filmstrip view of search results (primary view)
-            SearchResultsFilmstrip(
-                screenshots: viewModel.screenshots,
-                searchQuery: viewModel.activeSearchQuery,
-                selectedIndex: $currentIndex,
-                onSelect: { index in
-                    seekToIndex(index)
-                }
-            )
-
-            // App filter and close button
-            HStack {
-                // App filter
-                if !viewModel.availableApps.isEmpty {
-                    Menu {
-                        Button {
-                            Task { await viewModel.filterByApp(nil) }
-                        } label: {
-                            HStack {
-                                Text("All Apps")
-                                if viewModel.selectedApp == nil {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                        Divider()
-                        ForEach(viewModel.availableApps, id: \.self) { app in
-                            Button {
-                                Task { await viewModel.filterByApp(app) }
-                            } label: {
-                                HStack {
-                                    Text(app)
-                                    if viewModel.selectedApp == app {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "line.3.horizontal.decrease.circle")
-                            Text(viewModel.selectedApp ?? "All Apps")
-                        }
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.7))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Spacer()
-
-                // View mode toggle (filmstrip vs list)
-                HStack(spacing: 4) {
-                    Button {
-                        selectedSearchTab = nil // Filmstrip (default)
-                    } label: {
-                        Image(systemName: "rectangle.split.3x1")
-                            .font(.system(size: 12))
-                            .foregroundColor(selectedSearchTab == nil ? OmiColors.purplePrimary : .white.opacity(0.5))
-                            .frame(width: 28, height: 24)
-                            .background(selectedSearchTab == nil ? OmiColors.purplePrimary.opacity(0.2) : Color.clear)
-                            .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-                    .help("Filmstrip view")
-
-                    Button {
-                        selectedSearchTab = .list
-                    } label: {
-                        Image(systemName: "list.bullet")
-                            .font(.system(size: 12))
-                            .foregroundColor(selectedSearchTab == .list ? OmiColors.purplePrimary : .white.opacity(0.5))
-                            .frame(width: 28, height: 24)
-                            .background(selectedSearchTab == .list ? OmiColors.purplePrimary.opacity(0.2) : Color.clear)
-                            .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-                    .help("List view")
-                }
-                .padding(2)
-                .background(Color.white.opacity(0.05))
-                .cornerRadius(6)
-
-                Button {
-                    showSearchResults = false
-                    selectedSearchTab = nil
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.6))
-                        .frame(width: 24, height: 24)
-                        .background(Color.white.opacity(0.1))
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .padding(.leading, 8)
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 8)
-            .background(Color.black.opacity(0.6))
-
-            // List view (optional, when tab selected)
-            if selectedSearchTab == .list {
-                searchResultsListView
-            }
-        }
-        .background(Color.black.opacity(0.95))
-    }
-
-    // MARK: - Search Results List View
-
-    private var searchResultsListView: some View {
-        ScrollView {
-            LazyVStack(spacing: 8) {
-                ForEach(viewModel.screenshots, id: \.id) { screenshot in
-                    SearchResultRow(
-                        screenshot: screenshot,
-                        searchQuery: viewModel.activeSearchQuery,
-                        isSelected: currentIndex < viewModel.screenshots.count &&
-                                   viewModel.screenshots[currentIndex].id == screenshot.id
-                    ) {
-                        // Navigate to this result
-                        if let idx = viewModel.screenshots.firstIndex(where: { $0.id == screenshot.id }) {
-                            seekToIndex(idx)
-                        }
-                    }
-                }
-            }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 12)
-        }
-        .frame(maxHeight: 250)
     }
 
     // MARK: - Frame Display
@@ -449,7 +529,7 @@ struct RewindPage: View {
                         .cornerRadius(4)
                         .shadow(color: .black.opacity(0.3), radius: 8)
 
-                    // Search highlight overlays
+                    // Search highlight overlays with explicit frame
                     if let query = viewModel.activeSearchQuery,
                        currentIndex < viewModel.screenshots.count {
                         SearchHighlightOverlay(
@@ -458,6 +538,7 @@ struct RewindPage: View {
                             imageSize: image.size,
                             containerSize: displaySize
                         )
+                        .frame(width: displaySize.width, height: displaySize.height)
                     }
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
@@ -788,7 +869,142 @@ struct RewindPage: View {
     }
 }
 
-// MARK: - Search Result Row
+// MARK: - Search Result List Item (Google-style)
+
+struct SearchResultListItem: View {
+    let screenshot: Screenshot
+    let index: Int
+    let totalCount: Int
+    let searchQuery: String
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .top, spacing: 16) {
+                // Left side: Text content
+                VStack(alignment: .leading, spacing: 6) {
+                    // App name and window title (like URL in Google)
+                    HStack(spacing: 6) {
+                        AppIconView(appName: screenshot.appName, size: 16)
+                        Text(screenshot.appName)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(OmiColors.purplePrimary)
+                        if let windowTitle = screenshot.windowTitle, !windowTitle.isEmpty {
+                            Text("›")
+                                .foregroundColor(.white.opacity(0.3))
+                            Text(windowTitle)
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                                .lineLimit(1)
+                        }
+                    }
+
+                    // Timestamp (like page title in Google)
+                    Text(screenshot.formattedDate)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+
+                    // Context snippet with highlighted search term
+                    if let snippet = screenshot.contextSnippet(for: searchQuery) {
+                        highlightedSnippet(snippet)
+                    }
+
+                    // Result number
+                    Text("Result \(index + 1) of \(totalCount)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.white.opacity(0.3))
+                        .padding(.top, 2)
+                }
+
+                Spacer()
+
+                // Right side: Small thumbnail
+                Group {
+                    if let thumb = thumbnail {
+                        Image(nsImage: thumb)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 120, height: 80)
+                            .cornerRadius(6)
+                            .clipped()
+                    } else {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 120, height: 80)
+                            .cornerRadius(6)
+                            .overlay(
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .scaleEffect(0.6)
+                                    .tint(.white.opacity(0.5))
+                            )
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? OmiColors.purplePrimary.opacity(0.15) :
+                          (isHovered ? Color.white.opacity(0.05) : Color.clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .task {
+            await loadThumbnail()
+        }
+    }
+
+    @ViewBuilder
+    private func highlightedSnippet(_ snippet: String) -> some View {
+        let lowercasedQuery = searchQuery.lowercased()
+        let lowercasedSnippet = snippet.lowercased()
+
+        if let range = lowercasedSnippet.range(of: lowercasedQuery) {
+            let beforeIndex = snippet.distance(from: snippet.startIndex, to: range.lowerBound)
+            let afterIndex = snippet.distance(from: snippet.startIndex, to: range.upperBound)
+
+            let before = String(snippet.prefix(beforeIndex))
+            let match = String(snippet[snippet.index(snippet.startIndex, offsetBy: beforeIndex)..<snippet.index(snippet.startIndex, offsetBy: afterIndex)])
+            let after = String(snippet.suffix(from: snippet.index(snippet.startIndex, offsetBy: afterIndex)))
+
+            (Text(before).foregroundColor(.white.opacity(0.6)) +
+             Text(match).foregroundColor(.white).bold() +
+             Text(after).foregroundColor(.white.opacity(0.6)))
+                .font(.system(size: 12))
+                .lineLimit(3)
+        } else {
+            Text(snippet)
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.6))
+                .lineLimit(3)
+        }
+    }
+
+    private func loadThumbnail() async {
+        do {
+            let image = try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+            await MainActor.run {
+                thumbnail = image
+            }
+        } catch {
+            // Thumbnail load failed, keep placeholder
+        }
+    }
+}
+
+// MARK: - Search Result Row (Legacy)
 
 struct SearchResultRow: View {
     let screenshot: Screenshot
