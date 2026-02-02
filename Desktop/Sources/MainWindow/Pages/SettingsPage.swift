@@ -216,6 +216,8 @@ struct SettingsContentView: View {
             loadBackendSettings()
             // Sync transcription state with appState
             isTranscribing = appState.isTranscribing
+            // Refresh notification permission state
+            appState.checkNotificationPermission()
 
             // Check for pending section navigation
             if let pending = Self.pendingSection {
@@ -230,6 +232,10 @@ struct SettingsContentView: View {
         }
         .onChange(of: appState.isTranscribing) { _, newValue in
             isTranscribing = newValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Refresh notification permission when app becomes active (user may have changed it in System Settings)
+            appState.checkNotificationPermission()
         }
     }
 
@@ -301,6 +307,61 @@ struct SettingsContentView: View {
                             .onChange(of: isTranscribing) { _, newValue in
                                 toggleTranscription(enabled: newValue)
                             }
+                    }
+                }
+            }
+
+            // Notifications toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Circle()
+                        .fill(appState.hasNotificationPermission ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
+                        .frame(width: 12, height: 12)
+                        .shadow(color: appState.hasNotificationPermission ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Notifications")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(appState.hasNotificationPermission ? "Proactive alerts enabled" : "Notifications are disabled")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    if appState.hasNotificationPermission {
+                        // Show enabled badge
+                        Text("Enabled")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background(
+                                Capsule()
+                                    .fill(Color.green.opacity(0.15))
+                            )
+                    } else {
+                        // Show button to enable
+                        Button(action: {
+                            if appState.isNotificationPermissionDenied() {
+                                appState.openNotificationPreferences()
+                            } else {
+                                appState.requestNotificationPermission()
+                            }
+                        }) {
+                            Text("Enable")
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(OmiColors.purplePrimary)
+                                )
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
