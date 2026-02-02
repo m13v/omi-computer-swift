@@ -79,15 +79,6 @@ struct RewindPage: View {
                 searchViewMode = nil
             }
         }
-        .onChange(of: viewModel.searchQuery) { _, newQuery in
-            // Restore focus when typing (view may have switched between timelineContent and searchContent)
-            if !newQuery.isEmpty && !isSearchFocused {
-                Task { @MainActor in
-                    try? await Task.sleep(for: .milliseconds(50))
-                    isSearchFocused = true
-                }
-            }
-        }
         // Global keyboard handlers
         .onKeyPress(.escape) {
             // Timeline mode → go back to results list
@@ -143,26 +134,6 @@ struct RewindPage: View {
         }
     }
 
-    // MARK: - Search Content (mode picker or full view)
-
-    private var searchContent: some View {
-        VStack(spacing: 0) {
-            // Search header with editable field and view toggles
-            searchHeader
-
-            if viewModel.screenshots.isEmpty {
-                // No results found
-                noSearchResultsView
-            } else if searchViewMode == .timeline {
-                // Timeline view with search highlights
-                timelineWithSearch
-            } else {
-                // Default to results list view
-                fullScreenResultsView
-            }
-        }
-    }
-
     // MARK: - No Search Results
 
     private var noSearchResultsView: some View {
@@ -191,12 +162,12 @@ struct RewindPage: View {
         }
     }
 
-    // MARK: - Search Header
+    // MARK: - Unified Top Bar (persistent search field)
 
-    private var searchHeader: some View {
+    private var unifiedTopBar: some View {
         HStack(spacing: 12) {
-            // Back button - returns to results view or mode picker
-            if searchViewMode == .timeline {
+            // Left side: Back button (search timeline mode) or Rewind logo (other modes)
+            if isInSearchMode && searchViewMode == .timeline {
                 Button {
                     searchViewMode = .results
                 } label: {
@@ -209,56 +180,162 @@ struct RewindPage: View {
                 }
                 .buttonStyle(.plain)
                 .help("Back to results")
+            } else {
+                // Rewind title/logo
+                HStack(spacing: 8) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.purplePrimary)
+
+                    Text("Rewind")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(.white)
+
+                    // Global hotkey hint
+                    HStack(spacing: 2) {
+                        Text("⌘")
+                        Text("⌥")
+                        Text("R")
+                    }
+                    .font(.system(size: 10, weight: .medium, design: .rounded))
+                    .foregroundColor(.white.opacity(0.4))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(4)
+                    .help("Press ⌘⌥R from anywhere to open Rewind")
+                }
             }
 
-            // Unified search field with results count
-            searchField(showResultsCount: true)
+            // Search field - always present, shows results count in search mode
+            searchField(showResultsCount: isInSearchMode)
 
-            Spacer()
+            // Right side controls depend on mode
+            if isInSearchMode {
+                // View mode toggle for search
+                HStack(spacing: 2) {
+                    Button {
+                        searchViewMode = .results
+                        if !viewModel.screenshots.isEmpty {
+                            currentIndex = 0
+                            Task { await loadCurrentFrame() }
+                        }
+                    } label: {
+                        Image(systemName: "list.bullet")
+                            .font(.system(size: 11))
+                            .foregroundColor(searchViewMode == .results ? .white : .white.opacity(0.5))
+                            .frame(width: 28, height: 24)
+                            .background(searchViewMode == .results ? OmiColors.purplePrimary : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .help("List view")
 
-            // View mode toggle - always show when search is active
-            HStack(spacing: 2) {
-                Button {
-                    searchViewMode = .results
-                    if searchViewMode != .results && !viewModel.screenshots.isEmpty {
-                        currentIndex = 0
-                        Task { await loadCurrentFrame() }
+                    Button {
+                        if searchViewMode != .timeline && !viewModel.screenshots.isEmpty {
+                            currentIndex = 0
+                            Task { await loadCurrentFrame() }
+                        }
+                        searchViewMode = .timeline
+                    } label: {
+                        Image(systemName: "timeline.selection")
+                            .font(.system(size: 11))
+                            .foregroundColor(searchViewMode == .timeline ? .white : .white.opacity(0.5))
+                            .frame(width: 28, height: 24)
+                            .background(searchViewMode == .timeline ? OmiColors.purplePrimary : Color.clear)
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Timeline view")
+                }
+                .padding(2)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(6)
+            } else {
+                // Timeline mode controls
+                // Stats
+                if let stats = viewModel.stats {
+                    Text("\(stats.total) frames • \(RewindStorage.formatBytes(stats.storageSize))")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
+
+                // Playback speed
+                Menu {
+                    ForEach([0.5, 1.0, 2.0, 4.0, 8.0], id: \.self) { speed in
+                        Button {
+                            playbackSpeed = speed
+                            if isPlaying {
+                                restartPlayback()
+                            }
+                        } label: {
+                            HStack {
+                                Text("\(speed, specifier: "%.1f")x")
+                                if playbackSpeed == speed {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
                     }
                 } label: {
-                    Image(systemName: "list.bullet")
-                        .font(.system(size: 11))
-                        .foregroundColor(searchViewMode == .results ? .white : .white.opacity(0.5))
-                        .frame(width: 28, height: 24)
-                        .background(searchViewMode == .results ? OmiColors.purplePrimary : Color.clear)
-                        .cornerRadius(4)
-                }
-                .buttonStyle(.plain)
-                .help("List view")
-
-                Button {
-                    if searchViewMode != .timeline && !viewModel.screenshots.isEmpty {
-                        currentIndex = 0
-                        Task { await loadCurrentFrame() }
+                    HStack(spacing: 4) {
+                        Image(systemName: "speedometer")
+                        Text("\(playbackSpeed, specifier: "%.1f")x")
                     }
-                    searchViewMode = .timeline
-                } label: {
-                    Image(systemName: "timeline.selection")
-                        .font(.system(size: 11))
-                        .foregroundColor(searchViewMode == .timeline ? .white : .white.opacity(0.5))
-                        .frame(width: 28, height: 24)
-                        .background(searchViewMode == .timeline ? OmiColors.purplePrimary : Color.clear)
-                        .cornerRadius(4)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(6)
                 }
                 .buttonStyle(.plain)
-                .help("Timeline view")
+
+                // Refresh
+                Button {
+                    Task { await viewModel.refresh() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.6))
+                        .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+                        .animation(viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isLoading)
+
+                // Settings
+                Button {
+                    NotificationCenter.default.post(
+                        name: .navigateToRewindSettings,
+                        object: nil
+                    )
+                } label: {
+                    Image(systemName: "gearshape")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.6))
+                }
+                .buttonStyle(.plain)
+                .help("Rewind Settings")
             }
-            .padding(2)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(6)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.black.opacity(0.8))
+    }
+
+    // MARK: - Timeline Content Body (without top bar)
+
+    private var timelineContentBody: some View {
+        VStack(spacing: 0) {
+            // Main frame display
+            Spacer()
+            frameDisplay
+            Spacer()
+
+            // Timeline and controls at bottom
+            bottomControls
+        }
     }
 
     // MARK: - Full Screen Results View (Google-style vertical list)
@@ -305,133 +382,6 @@ struct RewindPage: View {
             // Timeline and controls
             bottomControls
         }
-    }
-
-    // MARK: - Timeline Content (normal mode)
-
-    private var timelineContent: some View {
-        VStack(spacing: 0) {
-            // Top bar with search
-            topBar
-
-            // Main frame display
-            Spacer()
-            frameDisplay
-            Spacer()
-
-            // Timeline and controls at bottom
-            bottomControls
-        }
-    }
-
-    // MARK: - Top Bar
-
-    private var topBar: some View {
-        HStack(spacing: 16) {
-            // Rewind title/logo
-            HStack(spacing: 8) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 16))
-                    .foregroundColor(OmiColors.purplePrimary)
-
-                Text("Rewind")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.white)
-
-                // Global hotkey hint
-                HStack(spacing: 2) {
-                    Text("⌘")
-                    Text("⌥")
-                    Text("R")
-                }
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundColor(.white.opacity(0.4))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(4)
-                .help("Press ⌘⌥R from anywhere to open Rewind")
-            }
-
-            // Search bar
-            searchField()
-
-            // Stats
-            if let stats = viewModel.stats {
-                Text("\(stats.total) frames • \(RewindStorage.formatBytes(stats.storageSize))")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.5))
-            }
-
-            // Playback speed
-            Menu {
-                ForEach([0.5, 1.0, 2.0, 4.0, 8.0], id: \.self) { speed in
-                    Button {
-                        playbackSpeed = speed
-                        if isPlaying {
-                            restartPlayback()
-                        }
-                    } label: {
-                        HStack {
-                            Text("\(speed, specifier: "%.1f")x")
-                            if playbackSpeed == speed {
-                                Image(systemName: "checkmark")
-                            }
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: "speedometer")
-                    Text("\(playbackSpeed, specifier: "%.1f")x")
-                }
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.white.opacity(0.7))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 5)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(6)
-            }
-            .buttonStyle(.plain)
-
-            // Refresh
-            Button {
-                Task { await viewModel.refresh() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
-                    .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
-                    .animation(viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
-            }
-            .buttonStyle(.plain)
-            .disabled(viewModel.isLoading)
-
-            // Settings
-            Button {
-                NotificationCenter.default.post(
-                    name: .navigateToRewindSettings,
-                    object: nil
-                )
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
-            }
-            .buttonStyle(.plain)
-            .help("Rewind Settings")
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 12)
-        .background(
-            LinearGradient(
-                colors: [.black.opacity(0.9), .black.opacity(0.6), .clear],
-                startPoint: .top,
-                endPoint: .bottom
-            )
-            .frame(height: 100)
-            .offset(y: 20)
-        )
     }
 
     // MARK: - Unified Search Field
