@@ -890,9 +890,15 @@ struct ServerMemory: Codable, Identifiable {
     let contextSummary: String?
     let isRead: Bool
     let isDismissed: Bool
+    // Tags for filtering (e.g., ["tips", "productivity"])
+    let tags: [String]
+    // Reasoning behind the memory/tip (from advice system)
+    let reasoning: String?
+    // Description of user's activity when memory was generated
+    let currentActivity: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, content, category, reviewed, visibility, scoring, source, confidence
+        case id, content, category, reviewed, visibility, scoring, source, confidence, tags, reasoning
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case conversationId = "conversation_id"
@@ -902,6 +908,7 @@ struct ServerMemory: Codable, Identifiable {
         case contextSummary = "context_summary"
         case isRead = "is_read"
         case isDismissed = "is_dismissed"
+        case currentActivity = "current_activity"
     }
 
     init(from decoder: Decoder) throws {
@@ -923,6 +930,9 @@ struct ServerMemory: Codable, Identifiable {
         contextSummary = try container.decodeIfPresent(String.self, forKey: .contextSummary)
         isRead = try container.decodeIfPresent(Bool.self, forKey: .isRead) ?? false
         isDismissed = try container.decodeIfPresent(Bool.self, forKey: .isDismissed) ?? false
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
+        currentActivity = try container.decodeIfPresent(String.self, forKey: .currentActivity)
     }
 
     var isPublic: Bool {
@@ -972,6 +982,30 @@ struct ServerMemory: Codable, Identifiable {
         case "workflow": return "arrow.triangle.branch"
         case "openglass": return "eyeglasses"
         default: return "circle"
+        }
+    }
+
+    /// Whether this memory is a tip (from advice system)
+    var isTip: Bool {
+        tags.contains("tips")
+    }
+
+    /// Get the tip subcategory (productivity, health, etc.) if this is a tip
+    var tipCategory: String? {
+        guard isTip else { return nil }
+        let subcategories = ["productivity", "health", "communication", "learning", "other"]
+        return tags.first { subcategories.contains($0) }
+    }
+
+    /// Icon for tip subcategory
+    var tipCategoryIcon: String {
+        switch tipCategory {
+        case "productivity": return "chart.line.uptrend.xyaxis"
+        case "health": return "heart.fill"
+        case "communication": return "bubble.left.and.bubble.right.fill"
+        case "learning": return "book.fill"
+        case "other": return "lightbulb.fill"
+        default: return "lightbulb.fill"
         }
     }
 }
@@ -1055,11 +1089,15 @@ extension APIClient {
         limit: Int = 100,
         offset: Int = 0,
         category: String? = nil,
+        tags: [String]? = nil,
         includeDismissed: Bool = false
     ) async throws -> [ServerMemory] {
         var endpoint = "v3/memories?limit=\(limit)&offset=\(offset)"
         if let category = category {
             endpoint += "&category=\(category)"
+        }
+        if let tags = tags, !tags.isEmpty {
+            endpoint += "&tags=\(tags.joined(separator: ","))"
         }
         if includeDismissed {
             endpoint += "&include_dismissed=true"
@@ -1074,7 +1112,10 @@ extension APIClient {
         category: MemoryCategory? = nil,
         confidence: Double? = nil,
         sourceApp: String? = nil,
-        contextSummary: String? = nil
+        contextSummary: String? = nil,
+        tags: [String] = [],
+        reasoning: String? = nil,
+        currentActivity: String? = nil
     ) async throws -> CreateMemoryResponse {
         struct CreateRequest: Encodable {
             let content: String
@@ -1083,11 +1124,15 @@ extension APIClient {
             let confidence: Double?
             let sourceApp: String?
             let contextSummary: String?
+            let tags: [String]
+            let reasoning: String?
+            let currentActivity: String?
 
             enum CodingKeys: String, CodingKey {
-                case content, visibility, category, confidence
+                case content, visibility, category, confidence, tags, reasoning
                 case sourceApp = "source_app"
                 case contextSummary = "context_summary"
+                case currentActivity = "current_activity"
             }
         }
         let body = CreateRequest(
@@ -1096,7 +1141,10 @@ extension APIClient {
             category: category?.rawValue,
             confidence: confidence,
             sourceApp: sourceApp,
-            contextSummary: contextSummary
+            contextSummary: contextSummary,
+            tags: tags,
+            reasoning: reasoning,
+            currentActivity: currentActivity
         )
         return try await post("v3/memories", body: body)
     }
