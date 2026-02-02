@@ -45,13 +45,46 @@ rm -f /tmp/omi.log 2>/dev/null || true
 echo "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi.app"
+    "/Applications/Omi Computer.app"
+    "$APP_BUNDLE"  # Local build folder
     "$HOME/Desktop/Omi.app"
     "$HOME/Downloads/Omi.app"
+    # Flutter app builds (with and without -prod suffix)
     "$(dirname "$0")/../omi/app/build/macos/Build/Products/Debug/Omi.app"
     "$(dirname "$0")/../omi/app/build/macos/Build/Products/Release/Omi.app"
+    "$(dirname "$0")/../omi/app/build/macos/Build/Products/Debug-prod/Omi.app"
+    "$(dirname "$0")/../omi/app/build/macos/Build/Products/Release-prod/Omi.app"
     "$(dirname "$0")/../omi-computer/build/macos/Build/Products/Debug/Omi.app"
     "$(dirname "$0")/../omi-computer/build/macos/Build/Products/Release/Omi.app"
 )
+# Also clean Xcode DerivedData for Omi builds
+echo "Cleaning Xcode DerivedData..."
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi.app" -type d 2>/dev/null | while read app; do
+    echo "  Removing: $app"
+    rm -rf "$app"
+done
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Computer.app" -type d 2>/dev/null | while read app; do
+    echo "  Removing: $app"
+    rm -rf "$app"
+done
+
+# Clean DMG staging directories (leftover from release builds)
+echo "Cleaning DMG staging directories..."
+rm -rf /private/tmp/omi-dmg-staging-* /private/tmp/omi-dmg-test-* 2>/dev/null || true
+
+# Clean Omi apps from Trash (they pollute Launch Services)
+echo "Cleaning Omi apps from Trash..."
+rm -rf "$HOME/.Trash/OMI"* "$HOME/.Trash/Omi"* 2>/dev/null || true
+
+# Eject any mounted Omi DMG volumes (they also pollute Launch Services)
+echo "Ejecting mounted Omi DMG volumes..."
+for vol in /Volumes/Omi* /Volumes/OMI* /Volumes/dmg.*; do
+    if [ -d "$vol" ]; then
+        echo "  Ejecting: $vol"
+        diskutil eject "$vol" 2>/dev/null || hdiutil detach "$vol" 2>/dev/null || true
+    fi
+done
+
 for app in "${CONFLICTING_APPS[@]}"; do
     if [ -d "$app" ]; then
         echo "  Removing: $app"
@@ -62,6 +95,23 @@ done
 # Reset Launch Services database to clear cached bundle ID mappings
 echo "Resetting Launch Services database..."
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain user 2>/dev/null || true
+
+# Reset TCC permissions BEFORE building new app (while no app exists with this bundle ID)
+# This ensures clean slate for the new app
+BUNDLE_ID_PROD="com.omi.computer-macos"
+echo "Resetting TCC permissions (before build)..."
+tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset ScreenCapture "$BUNDLE_ID_PROD" 2>/dev/null || true
+tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset Microphone "$BUNDLE_ID_PROD" 2>/dev/null || true
+tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset AppleEvents "$BUNDLE_ID_PROD" 2>/dev/null || true
+tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true
+tccutil reset Accessibility "$BUNDLE_ID_PROD" 2>/dev/null || true
+
+# Clean user TCC database directly
+echo "Cleaning user TCC database..."
+sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';" 2>/dev/null || true
 
 # Start Cloudflare tunnel
 echo "Starting Cloudflare tunnel..."
@@ -194,17 +244,11 @@ echo "Installing to /Applications..."
 rm -rf "$APP_PATH"
 ditto "$APP_BUNDLE" "$APP_PATH"
 
-# Reset permissions for the bundle ID
-# Note: System audio capture (Core Audio Taps) uses the same ScreenCapture permission
-echo "Resetting permissions for $BUNDLE_ID..."
-tccutil reset ScreenCapture "$BUNDLE_ID" 2>/dev/null || true  # Also resets system audio access
-tccutil reset Microphone "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset AppleEvents "$BUNDLE_ID" 2>/dev/null || true
-tccutil reset Accessibility "$BUNDLE_ID" 2>/dev/null || true  # For click-through sidebar
-
-# Reset app data (UserDefaults, onboarding state, etc.)
+# Reset app data (UserDefaults, onboarding state, etc.) for BOTH bundle IDs
+# (TCC permissions were already reset before building)
 echo "Resetting app data..."
 defaults delete "$BUNDLE_ID" 2>/dev/null || true
+defaults delete "$BUNDLE_ID_PROD" 2>/dev/null || true
 
 # Clear delivered notifications
 echo "Clearing notifications..."
