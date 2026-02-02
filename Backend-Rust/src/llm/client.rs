@@ -229,6 +229,57 @@ impl LlmClient {
         Ok(result.discard)
     }
 
+    /// Extract brief structure from a short transcript
+    /// Used for transcripts below BRIEF_TRANSCRIPT_THRESHOLD words
+    /// Returns a simple summary without action items, events, or memories
+    pub async fn extract_brief_structure(
+        &self,
+        transcript: &str,
+        language: &str,
+    ) -> Result<Structured, Box<dyn std::error::Error + Send + Sync>> {
+        let prompt = BRIEF_SUMMARY_PROMPT
+            .replace("{transcript_text}", transcript)
+            .replace("{language}", language)
+            .replace("{categories}", &Category::all_as_string());
+
+        // Define schema for structured output
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "title": {"type": "string"},
+                "overview": {"type": "string"},
+                "emoji": {"type": "string"},
+                "category": {"type": "string"}
+            },
+            "required": ["title", "overview", "emoji", "category"]
+        });
+
+        let response = self.call_with_schema(&prompt, Some(0.5), Some(500), Some(schema)).await?;
+
+        #[derive(Deserialize)]
+        struct BriefResponse {
+            title: String,
+            overview: String,
+            emoji: String,
+            category: String,
+        }
+
+        let result: BriefResponse = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse brief structure response: {} - {}", e, response))?;
+
+        let category = serde_json::from_str(&format!("\"{}\"", result.category))
+            .unwrap_or(Category::Other);
+
+        Ok(Structured {
+            title: result.title,
+            overview: result.overview,
+            emoji: result.emoji,
+            category,
+            action_items: vec![],
+            events: vec![],
+        })
+    }
+
     /// Extract structure from transcript (title, overview, emoji, category, events)
     /// Copied from Python extract_transcript_structure
     pub async fn extract_structure(
@@ -534,6 +585,7 @@ impl LlmClient {
             valid_memories.push(Memory {
                 content,
                 category,
+                tags: Vec::new(),
             });
         }
 
@@ -577,23 +629,27 @@ impl LlmClient {
         calendar_context: Option<&CalendarMeetingContext>,
     ) -> Result<ProcessedConversation, Box<dyn std::error::Error + Send + Sync>> {
         let transcript = TranscriptSegment::to_transcript_text(segments);
+        let word_count = transcript.split_whitespace().count();
 
-        // Step 1: Check if should discard
-        let should_discard = self.should_discard(&transcript).await?;
-        if should_discard {
-            tracing::info!("Conversation discarded by LLM");
+        // Brief transcripts: use simplified processing (no action items/memories extraction)
+        if word_count < BRIEF_TRANSCRIPT_THRESHOLD {
+            tracing::info!("Brief transcript ({} words < {}), using simplified processing", word_count, BRIEF_TRANSCRIPT_THRESHOLD);
+            let structured = self.extract_brief_structure(&transcript, language).await?;
             return Ok(ProcessedConversation {
-                discarded: true,
-                structured: Structured::default(),
+                discarded: false,
+                structured,
                 action_items: vec![],
                 memories: vec![],
             });
         }
 
-        // Step 2: Extract structure (title, overview, emoji, category, events)
+        // Full processing for normal transcripts
+        tracing::info!("Full transcript processing ({} words)", word_count);
+
+        // Step 1: Extract structure (title, overview, emoji, category, events)
         let structured = self.extract_structure(&transcript, started_at, timezone, language, calendar_context).await?;
 
-        // Step 3: Extract action items
+        // Step 2: Extract action items
         let action_items = self.extract_action_items(
             &transcript,
             started_at,
@@ -603,7 +659,7 @@ impl LlmClient {
             calendar_context,
         ).await?;
 
-        // Step 4: Extract memories
+        // Step 3: Extract memories
         let memories = self.extract_memories(&transcript, user_name, existing_memories).await?;
 
         Ok(ProcessedConversation {
