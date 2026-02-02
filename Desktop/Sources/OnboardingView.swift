@@ -14,11 +14,12 @@ struct OnboardingView: View {
     @AppStorage("hasTriggeredScreenRecording") private var hasTriggeredScreenRecording = false
     @AppStorage("hasTriggeredMicrophone") private var hasTriggeredMicrophone = false
     @AppStorage("hasTriggeredSystemAudio") private var hasTriggeredSystemAudio = false
+    @AppStorage("hasTriggeredAccessibility") private var hasTriggeredAccessibility = false
 
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Welcome", "Name", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Done"]
+    let steps = ["Welcome", "Name", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -73,6 +74,9 @@ struct OnboardingView: View {
             }
             if hasTriggeredSystemAudio {
                 appState.checkSystemAudioPermission()
+            }
+            if hasTriggeredAccessibility {
+                appState.checkAccessibilityPermission()
             }
         }
         // Bring app to front when the CURRENT step's permission is granted
