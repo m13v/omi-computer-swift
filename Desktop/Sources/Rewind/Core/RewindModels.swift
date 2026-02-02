@@ -185,12 +185,6 @@ class RewindSettings: ObservableObject {
         "Keychain Access",     // macOS Keychain Access
     ]
 
-    @Published var isEnabled: Bool {
-        didSet {
-            defaults.set(isEnabled, forKey: "rewindEnabled")
-        }
-    }
-
     @Published var retentionDays: Int {
         didSet {
             defaults.set(retentionDays, forKey: "rewindRetentionDays")
@@ -212,7 +206,6 @@ class RewindSettings: ObservableObject {
 
     private init() {
         // Load settings with defaults
-        self.isEnabled = defaults.object(forKey: "rewindEnabled") as? Bool ?? true
         self.retentionDays = defaults.object(forKey: "rewindRetentionDays") as? Int ?? 7
         self.captureInterval = defaults.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
 
