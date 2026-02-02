@@ -437,7 +437,7 @@ struct SidebarView: View {
 
     // Check if any permission is specifically denied (not just missing)
     private var hasPermissionDenied: Bool {
-        appState.isMicrophonePermissionDenied() || appState.isScreenRecordingPermissionDenied()
+        appState.isMicrophonePermissionDenied() || appState.isScreenRecordingPermissionDenied() || appState.isNotificationPermissionDenied()
     }
 
     @State private var permissionPulse = false
@@ -452,6 +452,11 @@ struct SidebarView: View {
             // Microphone permission
             if !appState.hasMicrophonePermission {
                 microphonePermissionRow
+            }
+
+            // Notification permission
+            if !appState.hasNotificationPermission {
+                notificationPermissionRow
             }
         }
         .padding(.bottom, 8)
@@ -494,8 +499,8 @@ struct SidebarView: View {
                 Spacer()
 
                 Button(action: {
-                    // Trigger the permission request dialog
-                    CGRequestScreenCaptureAccess()
+                    // Request both traditional TCC and ScreenCaptureKit permissions
+                    ScreenCaptureService.requestAllScreenCapturePermissions()
                     // Also open settings for manual grant if needed
                     ScreenCaptureService.openScreenRecordingPreferences()
                 }) {
@@ -579,6 +584,60 @@ struct SidebarView: View {
         .help(isCollapsed ? "Microphone permission required" : "")
     }
 
+    private var notificationPermissionRow: some View {
+        let isDenied = appState.isNotificationPermissionDenied()
+        let color: Color = isDenied ? .red : OmiColors.warning
+
+        return HStack(spacing: 8) {
+            Image(systemName: isDenied ? "bell.slash.fill" : "bell.fill")
+                .font(.system(size: 15))
+                .foregroundColor(color)
+                .frame(width: iconWidth)
+                .scaleEffect(permissionPulse && isDenied ? 1.1 : 1.0)
+
+            if !isCollapsed {
+                Text("Notifications")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(color)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button(action: {
+                    if isDenied {
+                        // Open notification settings
+                        appState.openNotificationPreferences()
+                    } else {
+                        // Request permission directly
+                        appState.requestNotificationPermission()
+                    }
+                }) {
+                    Text(isDenied ? "Fix" : "Grant")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(color)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(color.opacity(permissionPulse && isDenied ? 0.25 : 0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(color.opacity(0.3), lineWidth: isDenied ? 2 : 1)
+                )
+        )
+        .help(isCollapsed ? "Notification permission required" : "")
+    }
+
     // MARK: - Toggle Handlers
 
     private func toggleTranscription(enabled: Bool) {
@@ -611,8 +670,8 @@ struct SidebarView: View {
     private func toggleMonitoring(enabled: Bool) {
         if enabled && !ProactiveAssistantsPlugin.shared.hasScreenRecordingPermission {
             isMonitoring = false
-            // Trigger the permission request dialog, then open settings
-            CGRequestScreenCaptureAccess()
+            // Request both traditional TCC and ScreenCaptureKit permissions
+            ScreenCaptureService.requestAllScreenCapturePermissions()
             ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
             return
         }
@@ -750,6 +809,15 @@ struct NavItemWithToggleView: View {
 
     @State private var isHovered = false
 
+    /// Icon color based on toggle state
+    private var iconColor: Color {
+        if isToggleOn {
+            return isSelected ? OmiColors.textPrimary : OmiColors.textTertiary
+        } else {
+            return OmiColors.error
+        }
+    }
+
     var body: some View {
         HStack(spacing: 0) {
             // Main nav item - tappable area
@@ -757,13 +825,13 @@ struct NavItemWithToggleView: View {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: icon)
                         .font(.system(size: 17))
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                        .foregroundColor(iconColor)
                         .frame(width: iconWidth)
 
                     // Status indicator when collapsed
                     if isCollapsed {
                         Circle()
-                            .fill(isToggleOn ? OmiColors.purplePrimary : OmiColors.textTertiary.opacity(0.3))
+                            .fill(isToggleOn ? OmiColors.purplePrimary : OmiColors.error)
                             .frame(width: 8, height: 8)
                             .offset(x: 4, y: -4)
                     }
@@ -827,9 +895,9 @@ struct SidebarToggle: View {
 
     var body: some View {
         ZStack(alignment: isOn ? .trailing : .leading) {
-            // Track
+            // Track - purple when on, red when off
             Capsule()
-                .fill(isOn ? OmiColors.purplePrimary : Color.black.opacity(0.3))
+                .fill(isOn ? OmiColors.purplePrimary : OmiColors.error)
                 .frame(width: width, height: height)
 
             // Thumb
