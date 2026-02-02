@@ -113,6 +113,8 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Check screen recording permission (and update cache)
         refreshScreenRecordingPermission()
         guard hasScreenRecordingPermission else {
+            // Trigger the permission request dialog
+            CGRequestScreenCaptureAccess()
             completion(false, "Screen recording permission not granted")
             return
         }
