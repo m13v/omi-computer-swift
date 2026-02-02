@@ -788,6 +788,11 @@ struct ConversationsPage: View {
 
                 // Stop recording button
                 stopRecordingButton
+            } else if appState.isSavingConversation {
+                // Saving state with animation
+                savingIndicator
+
+                Spacer()
             } else {
                 // Not recording - show start button
                 Text("Conversations")
@@ -893,6 +898,42 @@ struct ConversationsPage: View {
         guard !appState.liveSpeakerSegments.isEmpty else { return nil }
         // Get the last segment's text
         return appState.liveSpeakerSegments.last?.text
+    }
+
+    // MARK: - Saving Indicator
+
+    @State private var isSavingPulsing = false
+
+    private var savingIndicator: some View {
+        HStack(spacing: 12) {
+            // Pulsing save icon
+            ZStack {
+                Circle()
+                    .fill(OmiColors.purplePrimary.opacity(0.3))
+                    .frame(width: 24, height: 24)
+                    .scaleEffect(isSavingPulsing ? 1.5 : 1.0)
+                    .opacity(isSavingPulsing ? 0.0 : 0.6)
+
+                Image(systemName: "arrow.up.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(OmiColors.purplePrimary)
+                    .scaleEffect(isSavingPulsing ? 1.1 : 1.0)
+            }
+            .animation(
+                .easeInOut(duration: 0.8)
+                .repeatForever(autoreverses: true),
+                value: isSavingPulsing
+            )
+            .onAppear { isSavingPulsing = true }
+            .onDisappear { isSavingPulsing = false }
+
+            Text("Saving conversation...")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(OmiColors.textPrimary)
+
+            ProgressView()
+                .scaleEffect(0.7)
+        }
     }
 
     // MARK: - Buttons
