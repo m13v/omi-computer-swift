@@ -1,22 +1,101 @@
 import SwiftUI
 
+/// All available tags for filtering memories
+enum MemoryTag: String, CaseIterable, Identifiable {
+    // Tips tag (from advice system) - shown first
+    case tips
+    // Memory categories
+    case system
+    case interesting
+    case manual
+    // Tip subcategories (from advice system)
+    case productivity
+    case health
+    case communication
+    case learning
+    case other
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .tips: return "Tips"
+        case .system: return "System"
+        case .interesting: return "Interesting"
+        case .manual: return "Manual"
+        case .productivity: return "Productivity"
+        case .health: return "Health"
+        case .communication: return "Communication"
+        case .learning: return "Learning"
+        case .other: return "Other"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .tips: return "lightbulb.fill"
+        case .system: return "gearshape"
+        case .interesting: return "sparkles"
+        case .manual: return "square.and.pencil"
+        case .productivity: return "chart.line.uptrend.xyaxis"
+        case .health: return "heart.fill"
+        case .communication: return "bubble.left.and.bubble.right.fill"
+        case .learning: return "book.fill"
+        case .other: return "ellipsis.circle"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .tips: return OmiColors.warning
+        case .system: return OmiColors.info
+        case .interesting: return OmiColors.warning
+        case .manual: return OmiColors.purplePrimary
+        case .productivity: return OmiColors.info
+        case .health: return OmiColors.error
+        case .communication: return OmiColors.success
+        case .learning: return OmiColors.purplePrimary
+        case .other: return OmiColors.textTertiary
+        }
+    }
+
+    /// Check if a memory matches this tag
+    func matches(_ memory: ServerMemory) -> Bool {
+        switch self {
+        case .tips:
+            return memory.tags.contains("tips")
+        case .system:
+            return memory.category == .system && !memory.tags.contains("tips")
+        case .interesting:
+            return memory.category == .interesting && !memory.tags.contains("tips")
+        case .manual:
+            return memory.category == .manual && !memory.tags.contains("tips")
+        case .productivity, .health, .communication, .learning, .other:
+            return memory.tags.contains(rawValue)
+        }
+    }
+}
+
 struct MemoriesPage: View {
     @State private var memories: [ServerMemory] = []
     @State private var isLoading = false
     @State private var errorMessage: String?
     @State private var searchText = ""
-    @State private var selectedCategory: MemoryCategory? = nil
+    @State private var selectedTags: Set<MemoryTag> = []
     @State private var showingAddMemory = false
     @State private var newMemoryText = ""
     @State private var editingMemory: ServerMemory? = nil
     @State private var editText = ""
+    @State private var selectedMemory: ServerMemory? = nil
 
     private var filteredMemories: [ServerMemory] {
         var result = memories
 
-        // Filter by category
-        if let category = selectedCategory {
-            result = result.filter { $0.category == category }
+        // Filter by selected tags (OR logic - match any selected tag)
+        if !selectedTags.isEmpty {
+            result = result.filter { memory in
+                selectedTags.contains { tag in tag.matches(memory) }
+            }
         }
 
         // Filter by search text
@@ -24,7 +103,20 @@ struct MemoriesPage: View {
             result = result.filter { $0.content.localizedCaseInsensitiveContains(searchText) }
         }
 
+        // Sort by date (newest first)
+        result.sort { $0.createdAt > $1.createdAt }
+
         return result
+    }
+
+    /// Count memories for a specific tag
+    private func tagCount(_ tag: MemoryTag) -> Int {
+        memories.filter { tag.matches($0) }.count
+    }
+
+    /// Total unread tips count
+    private var unreadTipsCount: Int {
+        memories.filter { $0.isTip && !$0.isRead }.count
     }
 
     var body: some View {
@@ -55,6 +147,9 @@ struct MemoriesPage: View {
         .sheet(item: $editingMemory) { memory in
             editMemorySheet(memory)
         }
+        .sheet(item: $selectedMemory) { memory in
+            memoryDetailSheet(memory)
+        }
         .task {
             await loadMemories()
         }
@@ -69,9 +164,21 @@ struct MemoriesPage: View {
                     .font(.system(size: 24, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
-                Text("\(memories.count) memories")
-                    .font(.system(size: 13))
-                    .foregroundColor(OmiColors.textTertiary)
+                HStack(spacing: 8) {
+                    Text("\(memories.count) memories")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if unreadTipsCount > 0 {
+                        Text("\(unreadTipsCount) new tips")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(OmiColors.warning)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 2)
+                            .background(OmiColors.warning.opacity(0.15))
+                            .cornerRadius(4)
+                    }
+                }
             }
 
             Spacer()
@@ -125,47 +232,87 @@ struct MemoriesPage: View {
             .background(OmiColors.backgroundTertiary)
             .cornerRadius(8)
 
-            // Category tabs
-            HStack(spacing: 8) {
-                categoryTab(nil, "All")
+            // Tag filters (multi-select)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    // All button
+                    tagFilterButton(nil, "All", "tray.full", memories.count)
 
-                ForEach(MemoryCategory.allCases, id: \.self) { category in
-                    categoryTab(category, category.displayName)
+                    // Divider
+                    Rectangle()
+                        .fill(OmiColors.textQuaternary)
+                        .frame(width: 1, height: 20)
+                        .padding(.horizontal, 4)
+
+                    // Tags in order: tips first, then categories, then tip subcategories
+                    ForEach(MemoryTag.allCases) { tag in
+                        tagFilterButton(tag, tag.displayName, tag.icon, tagCount(tag))
+                    }
+
+                    Spacer()
+
+                    // Refresh button
+                    Button {
+                        Task { await loadMemories() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .rotationEffect(.degrees(isLoading ? 360 : 0))
+                            .animation(isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isLoading)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isLoading)
                 }
-
-                Spacer()
-
-                // Refresh button
-                Button {
-                    Task { await loadMemories() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .rotationEffect(.degrees(isLoading ? 360 : 0))
-                        .animation(isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isLoading)
-                }
-                .buttonStyle(.plain)
-                .disabled(isLoading)
             }
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
     }
 
-    private func categoryTab(_ category: MemoryCategory?, _ title: String) -> some View {
-        let isSelected = selectedCategory == category
+    private func tagFilterButton(_ tag: MemoryTag?, _ title: String, _ icon: String, _ count: Int) -> some View {
+        let isSelected = tag == nil ? selectedTags.isEmpty : selectedTags.contains(tag!)
 
         return Button {
-            selectedCategory = category
+            if tag == nil {
+                // "All" clears selection
+                selectedTags.removeAll()
+            } else {
+                // Toggle tag selection
+                if selectedTags.contains(tag!) {
+                    selectedTags.remove(tag!)
+                } else {
+                    selectedTags.insert(tag!)
+                }
+            }
         } label: {
-            Text(title)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .regular))
-                .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textSecondary)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(isSelected ? OmiColors.purplePrimary.opacity(0.15) : Color.clear)
-                .cornerRadius(6)
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 11))
+                    .foregroundColor(isSelected ? (tag?.color ?? OmiColors.purplePrimary) : OmiColors.textTertiary)
+
+                Text(title)
+                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                    .foregroundColor(isSelected ? (tag?.color ?? OmiColors.purplePrimary) : OmiColors.textSecondary)
+
+                if count > 0 {
+                    Text("\(count)")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(isSelected ? (tag?.color ?? OmiColors.purplePrimary) : OmiColors.textTertiary)
+                        .padding(.horizontal, 5)
+                        .padding(.vertical, 2)
+                        .background(isSelected ? (tag?.color ?? OmiColors.purplePrimary).opacity(0.15) : OmiColors.backgroundTertiary)
+                        .cornerRadius(4)
+                }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isSelected ? (tag?.color ?? OmiColors.purplePrimary).opacity(0.1) : Color.clear)
+            .cornerRadius(6)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6)
+                    .stroke(isSelected ? (tag?.color ?? OmiColors.purplePrimary).opacity(0.3) : Color.clear, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -177,6 +324,9 @@ struct MemoriesPage: View {
             LazyVStack(spacing: 12) {
                 ForEach(filteredMemories) { memory in
                     memoryCard(memory)
+                        .onTapGesture {
+                            selectedMemory = memory
+                        }
                 }
             }
             .padding(.horizontal, 24)
@@ -186,30 +336,95 @@ struct MemoriesPage: View {
 
     private func memoryCard(_ memory: ServerMemory) -> some View {
         VStack(alignment: .leading, spacing: 12) {
+            // Tags row
+            HStack(spacing: 6) {
+                // Unread indicator for tips
+                if memory.isTip && !memory.isRead {
+                    Circle()
+                        .fill(OmiColors.warning)
+                        .frame(width: 8, height: 8)
+                }
+
+                // Show tags
+                if memory.isTip {
+                    tagBadge("Tips", "lightbulb.fill", OmiColors.warning)
+
+                    if let tipCat = memory.tipCategory {
+                        tagBadge(tipCat.capitalized, memory.tipCategoryIcon, tagColorFor(tipCat))
+                    }
+                } else {
+                    tagBadge(memory.category.displayName, categoryIcon(memory.category), categoryColor(memory.category))
+                }
+
+                Spacer()
+
+                // Confidence score
+                if let confidence = memory.confidenceString {
+                    Text(confidence)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(4)
+                }
+            }
+
             // Content
             Text(memory.content)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
-                .lineLimit(nil)
+                .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Footer
-            HStack(spacing: 12) {
-                // Category badge
-                HStack(spacing: 4) {
-                    Image(systemName: memory.category.icon)
+            // Reasoning (for tips)
+            if let reasoning = memory.reasoning, !reasoning.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "quote.opening")
                         .font(.system(size: 10))
-                    Text(memory.category.displayName)
-                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(OmiColors.textQuaternary)
+                    Text(reasoning)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .lineLimit(2)
                 }
-                .foregroundColor(categoryColor(memory.category))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(categoryColor(memory.category).opacity(0.15))
-                .cornerRadius(4)
+                .padding(8)
+                .background(OmiColors.backgroundSecondary)
+                .cornerRadius(6)
+            }
 
-                // Visibility badge
+            // Footer
+            HStack(spacing: 6) {
+                // Source app
+                if let sourceApp = memory.sourceApp {
+                    HStack(spacing: 4) {
+                        Image(systemName: "app")
+                            .font(.system(size: 10))
+                        Text(sourceApp)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // Source device
+                if let sourceName = memory.sourceName {
+                    if memory.sourceApp != nil {
+                        Text("·")
+                            .foregroundColor(OmiColors.textQuaternary)
+                    }
+                    HStack(spacing: 4) {
+                        Image(systemName: memory.sourceIcon)
+                            .font(.system(size: 10))
+                        Text(sourceName)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // Visibility
                 if memory.isPublic {
+                    Text("·")
+                        .foregroundColor(OmiColors.textQuaternary)
                     HStack(spacing: 4) {
                         Image(systemName: "globe")
                             .font(.system(size: 10))
@@ -219,21 +434,6 @@ struct MemoriesPage: View {
                     .foregroundColor(OmiColors.info)
                 }
 
-                // Source badge
-                if let sourceName = memory.sourceName {
-                    HStack(spacing: 4) {
-                        Image(systemName: memory.sourceIcon)
-                            .font(.system(size: 10))
-                        Text(sourceName)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(OmiColors.backgroundQuaternary)
-                    .cornerRadius(4)
-                }
-
                 Spacer()
 
                 // Date
@@ -241,7 +441,7 @@ struct MemoriesPage: View {
                     .font(.system(size: 11))
                     .foregroundColor(OmiColors.textTertiary)
 
-                // Actions
+                // Actions menu
                 Menu {
                     Button {
                         editingMemory = memory
@@ -255,6 +455,14 @@ struct MemoriesPage: View {
                     } label: {
                         Label(memory.isPublic ? "Make Private" : "Make Public",
                               systemImage: memory.isPublic ? "lock" : "globe")
+                    }
+
+                    if memory.isTip && !memory.isRead {
+                        Button {
+                            Task { await markAsRead(memory) }
+                        } label: {
+                            Label("Mark as Read", systemImage: "checkmark.circle")
+                        }
                     }
 
                     Divider()
@@ -276,6 +484,32 @@ struct MemoriesPage: View {
         .padding(16)
         .background(OmiColors.backgroundTertiary)
         .cornerRadius(12)
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+    }
+
+    private func tagBadge(_ title: String, _ icon: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.15))
+        .cornerRadius(4)
+    }
+
+    private func categoryIcon(_ category: MemoryCategory) -> String {
+        switch category {
+        case .system: return "gearshape"
+        case .interesting: return "sparkles"
+        case .manual: return "square.and.pencil"
+        }
     }
 
     private func categoryColor(_ category: MemoryCategory) -> Color {
@@ -286,10 +520,162 @@ struct MemoriesPage: View {
         }
     }
 
+    private func tagColorFor(_ tag: String) -> Color {
+        switch tag {
+        case "productivity": return OmiColors.info
+        case "health": return OmiColors.error
+        case "communication": return OmiColors.success
+        case "learning": return OmiColors.purplePrimary
+        case "other": return OmiColors.textTertiary
+        default: return OmiColors.textTertiary
+        }
+    }
+
     private func formatDate(_ date: Date) -> String {
-        let formatter = RelativeDateTimeFormatter()
-        formatter.unitsStyle = .abbreviated
-        return formatter.localizedString(for: date, relativeTo: Date())
+        let relativeFormatter = RelativeDateTimeFormatter()
+        relativeFormatter.unitsStyle = .abbreviated
+        let relativeTime = relativeFormatter.localizedString(for: date, relativeTo: Date())
+
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM d, h:mm a"
+        let absoluteTime = dateFormatter.string(from: date)
+
+        return "\(relativeTime) · \(absoluteTime)"
+    }
+
+    // MARK: - Detail Sheet
+
+    private func memoryDetailSheet(_ memory: ServerMemory) -> some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                // Header with tags
+                HStack(spacing: 8) {
+                    if memory.isTip {
+                        tagBadge("Tips", "lightbulb.fill", OmiColors.warning)
+                        if let tipCat = memory.tipCategory {
+                            tagBadge(tipCat.capitalized, memory.tipCategoryIcon, tagColorFor(tipCat))
+                        }
+                    } else {
+                        tagBadge(memory.category.displayName, categoryIcon(memory.category), categoryColor(memory.category))
+                    }
+
+                    Spacer()
+
+                    Button {
+                        selectedMemory = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 20))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                // Content
+                Text(memory.content)
+                    .font(.system(size: 15))
+                    .foregroundColor(OmiColors.textPrimary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // Reasoning
+                if let reasoning = memory.reasoning, !reasoning.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Why this tip?")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        Text(reasoning)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textPrimary)
+                    }
+                    .padding(12)
+                    .background(OmiColors.backgroundTertiary)
+                    .cornerRadius(8)
+                }
+
+                // Context
+                if memory.currentActivity != nil || memory.contextSummary != nil {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Context")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        if let activity = memory.currentActivity {
+                            HStack(spacing: 6) {
+                                Image(systemName: "figure.walk")
+                                    .font(.system(size: 12))
+                                Text(activity)
+                                    .font(.system(size: 13))
+                            }
+                            .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        if let context = memory.contextSummary {
+                            Text(context)
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                    }
+                    .padding(12)
+                    .background(OmiColors.backgroundTertiary)
+                    .cornerRadius(8)
+                }
+
+                // Metadata
+                VStack(alignment: .leading, spacing: 8) {
+                    if let confidence = memory.confidenceString {
+                        HStack {
+                            Text("Confidence")
+                                .foregroundColor(OmiColors.textSecondary)
+                            Spacer()
+                            Text(confidence)
+                                .foregroundColor(OmiColors.textPrimary)
+                        }
+                        .font(.system(size: 13))
+                    }
+
+                    if let sourceApp = memory.sourceApp {
+                        HStack {
+                            Text("Source App")
+                                .foregroundColor(OmiColors.textSecondary)
+                            Spacer()
+                            Text(sourceApp)
+                                .foregroundColor(OmiColors.textPrimary)
+                        }
+                        .font(.system(size: 13))
+                    }
+
+                    if let sourceName = memory.sourceName {
+                        HStack {
+                            Text("Device")
+                                .foregroundColor(OmiColors.textSecondary)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Image(systemName: memory.sourceIcon)
+                                Text(sourceName)
+                            }
+                            .foregroundColor(OmiColors.textPrimary)
+                        }
+                        .font(.system(size: 13))
+                    }
+
+                    HStack {
+                        Text("Created")
+                            .foregroundColor(OmiColors.textSecondary)
+                        Spacer()
+                        Text(formatDate(memory.createdAt))
+                            .foregroundColor(OmiColors.textPrimary)
+                    }
+                    .font(.system(size: 13))
+                }
+                .padding(12)
+                .background(OmiColors.backgroundTertiary)
+                .cornerRadius(8)
+            }
+            .padding(24)
+        }
+        .frame(width: 450, height: 500)
+        .background(OmiColors.backgroundSecondary)
     }
 
     // MARK: - Empty States
@@ -304,7 +690,7 @@ struct MemoriesPage: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
 
-            Text("Your memories from conversations will appear here.\nYou can also add memories manually.")
+            Text("Your memories and tips will appear here.\nMemories are extracted from your conversations.")
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
@@ -342,6 +728,17 @@ struct MemoriesPage: View {
             Text("Try a different search or filter")
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textTertiary)
+
+            if !selectedTags.isEmpty {
+                Button {
+                    selectedTags.removeAll()
+                } label: {
+                    Text("Clear Filters")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
+                .buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
@@ -543,6 +940,15 @@ struct MemoriesPage: View {
             await loadMemories()
         } catch {
             logError("Failed to update memory visibility", error: error)
+        }
+    }
+
+    private func markAsRead(_ memory: ServerMemory) async {
+        do {
+            _ = try await APIClient.shared.updateMemoryReadStatus(id: memory.id, isRead: true, isDismissed: nil)
+            await loadMemories()
+        } catch {
+            logError("Failed to mark memory as read", error: error)
         }
     }
 }
