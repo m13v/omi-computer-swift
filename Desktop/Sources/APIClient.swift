@@ -487,6 +487,7 @@ struct ServerConversation: Codable, Identifiable {
     let isLocked: Bool
     var starred: Bool
     let folderId: String?
+    let inputDeviceName: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -506,6 +507,7 @@ struct ServerConversation: Codable, Identifiable {
         case isLocked = "is_locked"
         case starred
         case folderId = "folder_id"
+        case inputDeviceName = "input_device_name"
     }
 
     init(from decoder: Decoder) throws {
@@ -528,6 +530,7 @@ struct ServerConversation: Codable, Identifiable {
         isLocked = try container.decodeIfPresent(Bool.self, forKey: .isLocked) ?? false
         starred = try container.decodeIfPresent(Bool.self, forKey: .starred) ?? false
         folderId = try container.decodeIfPresent(String.self, forKey: .folderId)
+        inputDeviceName = try container.decodeIfPresent(String.self, forKey: .inputDeviceName)
     }
 
     /// Returns the title from structured data, or a fallback
@@ -896,6 +899,8 @@ struct ServerMemory: Codable, Identifiable {
     let reasoning: String?
     // Description of user's activity when memory was generated
     let currentActivity: String?
+    // Input device name (microphone) for desktop transcriptions
+    let inputDeviceName: String?
 
     enum CodingKeys: String, CodingKey {
         case id, content, category, reviewed, visibility, scoring, source, confidence, tags, reasoning
@@ -909,6 +914,7 @@ struct ServerMemory: Codable, Identifiable {
         case isRead = "is_read"
         case isDismissed = "is_dismissed"
         case currentActivity = "current_activity"
+        case inputDeviceName = "input_device_name"
     }
 
     init(from decoder: Decoder) throws {
@@ -933,6 +939,7 @@ struct ServerMemory: Codable, Identifiable {
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
         reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
         currentActivity = try container.decodeIfPresent(String.self, forKey: .currentActivity)
+        inputDeviceName = try container.decodeIfPresent(String.self, forKey: .inputDeviceName)
     }
 
     var isPublic: Bool {
@@ -949,6 +956,7 @@ struct ServerMemory: Codable, Identifiable {
     var sourceName: String? {
         guard let source = source else { return nil }
         switch source {
+        case "screenshot": return "Screenshot"
         case "omi": return "OMI"
         case "desktop": return "Desktop"
         case "phone": return "Phone"
@@ -969,6 +977,7 @@ struct ServerMemory: Codable, Identifiable {
     var sourceIcon: String {
         guard let source = source else { return "questionmark.circle" }
         switch source {
+        case "screenshot": return "camera.viewfinder"
         case "omi": return "wave.3.right.circle"
         case "desktop": return "desktopcomputer"
         case "phone": return "iphone"
@@ -1022,6 +1031,7 @@ extension APIClient {
         let finishedAt: String
         let language: String
         let timezone: String
+        let inputDeviceName: String?
 
         enum CodingKeys: String, CodingKey {
             case transcriptSegments = "transcript_segments"
@@ -1030,6 +1040,7 @@ extension APIClient {
             case finishedAt = "finished_at"
             case language
             case timezone
+            case inputDeviceName = "input_device_name"
         }
     }
 
@@ -1062,7 +1073,8 @@ extension APIClient {
         startedAt: Date,
         finishedAt: Date,
         language: String = "en",
-        timezone: String = "UTC"
+        timezone: String = "UTC",
+        inputDeviceName: String? = nil
     ) async throws -> CreateConversationResponse {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -1073,7 +1085,8 @@ extension APIClient {
             startedAt: formatter.string(from: startedAt),
             finishedAt: formatter.string(from: finishedAt),
             language: language,
-            timezone: timezone
+            timezone: timezone,
+            inputDeviceName: inputDeviceName
         )
 
         return try await post("v1/conversations/from-segments", body: request)
@@ -1115,7 +1128,8 @@ extension APIClient {
         contextSummary: String? = nil,
         tags: [String] = [],
         reasoning: String? = nil,
-        currentActivity: String? = nil
+        currentActivity: String? = nil,
+        source: String? = nil
     ) async throws -> CreateMemoryResponse {
         struct CreateRequest: Encodable {
             let content: String
@@ -1127,9 +1141,10 @@ extension APIClient {
             let tags: [String]
             let reasoning: String?
             let currentActivity: String?
+            let source: String?
 
             enum CodingKeys: String, CodingKey {
-                case content, visibility, category, confidence, tags, reasoning
+                case content, visibility, category, confidence, tags, reasoning, source
                 case sourceApp = "source_app"
                 case contextSummary = "context_summary"
                 case currentActivity = "current_activity"
@@ -1144,7 +1159,8 @@ extension APIClient {
             contextSummary: contextSummary,
             tags: tags,
             reasoning: reasoning,
-            currentActivity: currentActivity
+            currentActivity: currentActivity,
+            source: source
         )
         return try await post("v3/memories", body: body)
     }
