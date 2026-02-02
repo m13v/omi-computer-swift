@@ -68,7 +68,22 @@ class AppState: ObservableObject {
         var missing: [String] = []
         if !hasMicrophonePermission { missing.append("Microphone") }
         if !hasScreenRecordingPermission { missing.append("Screen Recording") }
+        if !hasNotificationPermission { missing.append("Notifications") }
         return missing
+    }
+
+    /// Check if notification permission was explicitly denied
+    func isNotificationPermissionDenied() -> Bool {
+        // We need to check synchronously, so use a semaphore pattern
+        // This is cached from checkNotificationPermission() calls
+        return hasCompletedOnboarding && !hasNotificationPermission
+    }
+
+    /// Open notification preferences in System Settings
+    func openNotificationPreferences() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.notifications") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     /// True if any required permissions are missing
@@ -87,6 +102,7 @@ class AppState: ObservableObject {
 
     // Conversation tracking for auto-save
     private var recordingStartTime: Date?
+    private var recordingInputDeviceName: String?  // Microphone name used for this recording
     private var maxRecordingTimer: Timer?
     private let maxRecordingDuration: TimeInterval = 4 * 60 * 60  // 4 hours
 
@@ -300,9 +316,8 @@ class AppState: ObservableObject {
 
     /// Trigger screen recording permission prompt
     func triggerScreenRecordingPermission() {
-        // Use the official API to request screen capture access
-        // This shows a system dialog with "Open System Settings" button
-        CGRequestScreenCaptureAccess()
+        // Request both traditional TCC and ScreenCaptureKit permissions
+        ScreenCaptureService.requestAllScreenCapturePermissions()
     }
 
     /// Trigger automation permission by attempting to use Apple Events
@@ -457,9 +472,12 @@ class AppState: ObservableObject {
             speakerSegments = []
             liveSpeakerSegments = []
             recordingStartTime = Date()
+            recordingInputDeviceName = AudioCaptureService.getCurrentMicrophoneName()
             recordingDuration = 0
             microphoneAudioLevel = 0.0
             systemAudioLevel = 0.0
+
+            log("Transcription: Using microphone: \(recordingInputDeviceName ?? "Unknown")")
 
             // Start display timer for recording duration
             recordingDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -808,9 +826,10 @@ class AppState: ObservableObject {
             let response = try await APIClient.shared.createConversationFromSegments(
                 segments: apiSegments,
                 startedAt: startTime,
-                finishedAt: endTime
+                finishedAt: endTime,
+                inputDeviceName: recordingInputDeviceName
             )
-            log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded)")
+            log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded), mic=\(recordingInputDeviceName ?? "Unknown")")
 
             if response.discarded {
                 return .discarded
