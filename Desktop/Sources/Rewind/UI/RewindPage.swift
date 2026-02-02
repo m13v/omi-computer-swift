@@ -51,19 +51,26 @@ struct RewindPage: View {
             Task { await loadCurrentFrame() }
         }
         .onChange(of: viewModel.activeSearchQuery) { oldQuery, newQuery in
-            // Reset view mode when search changes
-            if oldQuery != newQuery {
+            // When search becomes active, default to results view
+            if oldQuery == nil && newQuery != nil {
+                searchViewMode = .results
+            }
+            // When search is cleared, reset view mode
+            if newQuery == nil {
                 searchViewMode = nil
             }
         }
         // Global keyboard handlers
         .onKeyPress(.escape) {
-            if searchViewMode != nil {
-                searchViewMode = nil
+            // Timeline mode → go back to results list
+            if searchViewMode == .timeline {
+                searchViewMode = .results
                 return .handled
             }
+            // In search mode → clear search
             if viewModel.activeSearchQuery != nil {
                 viewModel.searchQuery = ""
+                searchViewMode = nil
                 return .handled
             }
             if isSearchFocused {
@@ -112,18 +119,15 @@ struct RewindPage: View {
 
     private var searchContent: some View {
         VStack(spacing: 0) {
-            // Compact search header
+            // Search header with editable field and view toggles
             searchHeader
 
-            if searchViewMode == nil {
-                // Show mode picker - user chooses how to view results
-                searchModePicker
-            } else if searchViewMode == .results {
-                // Full-screen search results view
-                fullScreenResultsView
-            } else {
+            if searchViewMode == .timeline {
                 // Timeline view with search highlights
                 timelineWithSearch
+            } else {
+                // Default to results list view
+                fullScreenResultsView
             }
         }
     }
@@ -132,146 +136,115 @@ struct RewindPage: View {
 
     private var searchHeader: some View {
         HStack(spacing: 12) {
-            // Back button
-            Button {
-                viewModel.searchQuery = ""
-                searchViewMode = nil
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                    .frame(width: 28, height: 28)
-                    .background(Color.white.opacity(0.1))
-                    .clipShape(Circle())
+            // Back button - returns to results view or mode picker
+            if searchViewMode == .timeline {
+                Button {
+                    searchViewMode = .results
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(.white.opacity(0.7))
+                        .frame(width: 28, height: 28)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Back to results")
             }
-            .buttonStyle(.plain)
 
-            // Search info
-            HStack(spacing: 6) {
+            // Editable search field with results count
+            HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 12))
-                    .foregroundColor(OmiColors.purplePrimary)
-                Text("\"\(viewModel.activeSearchQuery ?? "")\"")
-                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(isSearchFocused ? OmiColors.purplePrimary : .white.opacity(0.5))
+
+                TextField("Search your screen history...", text: $viewModel.searchQuery)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
                     .foregroundColor(.white)
-                Text("•")
-                    .foregroundColor(.white.opacity(0.3))
-                Text("\(viewModel.screenshots.count) results")
-                    .font(.system(size: 12))
-                    .foregroundColor(.white.opacity(0.6))
-            }
+                    .focused($isSearchFocused)
 
-            Spacer()
+                if viewModel.isSearching {
+                    ProgressView()
+                        .progressViewStyle(.circular)
+                        .scaleEffect(0.6)
+                        .tint(.white)
+                } else {
+                    // Results count
+                    Text("\(viewModel.screenshots.count) results")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
 
-            // View mode toggle (only show when a mode is selected)
-            if searchViewMode != nil {
-                HStack(spacing: 2) {
+                if !viewModel.searchQuery.isEmpty {
                     Button {
-                        searchViewMode = .results
+                        viewModel.searchQuery = ""
+                        searchViewMode = nil
                     } label: {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 11))
-                            .foregroundColor(searchViewMode == .results ? .white : .white.opacity(0.5))
-                            .frame(width: 28, height: 24)
-                            .background(searchViewMode == .results ? OmiColors.purplePrimary : Color.clear)
-                            .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button {
-                        searchViewMode = .timeline
-                    } label: {
-                        Image(systemName: "timeline.selection")
-                            .font(.system(size: 11))
-                            .foregroundColor(searchViewMode == .timeline ? .white : .white.opacity(0.5))
-                            .frame(width: 28, height: 24)
-                            .background(searchViewMode == .timeline ? OmiColors.purplePrimary : Color.clear)
-                            .cornerRadius(4)
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.5))
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(2)
-                .background(Color.white.opacity(0.1))
-                .cornerRadius(6)
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .frame(maxWidth: 400)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.white.opacity(0.1))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(isSearchFocused ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 1)
+                    )
+            )
+
+            Spacer()
+
+            // View mode toggle - always show when search is active
+            HStack(spacing: 2) {
+                Button {
+                    searchViewMode = .results
+                    if searchViewMode != .results && !viewModel.screenshots.isEmpty {
+                        currentIndex = 0
+                        Task { await loadCurrentFrame() }
+                    }
+                } label: {
+                    Image(systemName: "list.bullet")
+                        .font(.system(size: 11))
+                        .foregroundColor(searchViewMode == .results ? .white : .white.opacity(0.5))
+                        .frame(width: 28, height: 24)
+                        .background(searchViewMode == .results ? OmiColors.purplePrimary : Color.clear)
+                        .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .help("List view")
+
+                Button {
+                    if searchViewMode != .timeline && !viewModel.screenshots.isEmpty {
+                        currentIndex = 0
+                        Task { await loadCurrentFrame() }
+                    }
+                    searchViewMode = .timeline
+                } label: {
+                    Image(systemName: "timeline.selection")
+                        .font(.system(size: 11))
+                        .foregroundColor(searchViewMode == .timeline ? .white : .white.opacity(0.5))
+                        .frame(width: 28, height: 24)
+                        .background(searchViewMode == .timeline ? OmiColors.purplePrimary : Color.clear)
+                        .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .help("Timeline view")
+            }
+            .padding(2)
+            .background(Color.white.opacity(0.1))
+            .cornerRadius(6)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
         .background(Color.black.opacity(0.8))
-    }
-
-    // MARK: - Search Mode Picker
-
-    private var searchModePicker: some View {
-        VStack(spacing: 24) {
-            Spacer()
-
-            Text("How would you like to view results?")
-                .font(.system(size: 16, weight: .medium))
-                .foregroundColor(.white.opacity(0.8))
-
-            HStack(spacing: 20) {
-                // Results View button
-                Button {
-                    searchViewMode = .results
-                    if !viewModel.screenshots.isEmpty {
-                        currentIndex = 0
-                        Task { await loadCurrentFrame() }
-                    }
-                } label: {
-                    VStack(spacing: 12) {
-                        Image(systemName: "square.grid.2x2")
-                            .font(.system(size: 32))
-                            .foregroundColor(OmiColors.purplePrimary)
-                        Text("Results View")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.white)
-                        Text("Browse all matches")
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                    .frame(width: 160, height: 140)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-
-                // Timeline View button
-                Button {
-                    searchViewMode = .timeline
-                    if !viewModel.screenshots.isEmpty {
-                        currentIndex = 0
-                        Task { await loadCurrentFrame() }
-                    }
-                } label: {
-                    VStack(spacing: 12) {
-                        Image(systemName: "timeline.selection")
-                            .font(.system(size: 32))
-                            .foregroundColor(OmiColors.purplePrimary)
-                        Text("Timeline View")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(.white)
-                        Text("See matches in context")
-                            .font(.system(size: 11))
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                    .frame(width: 160, height: 140)
-                    .background(Color.white.opacity(0.05))
-                    .cornerRadius(12)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-
-            Spacer()
-        }
     }
 
     // MARK: - Full Screen Results View (Google-style vertical list)
