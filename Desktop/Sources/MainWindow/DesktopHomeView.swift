@@ -72,12 +72,13 @@ struct DesktopHomeView: View {
 
     private var mainContent: some View {
         HStack(spacing: 0) {
-            // Sidebar
+            // Sidebar (with click-through so first click activates items even when window is inactive)
             SidebarView(
                 selectedIndex: $selectedIndex,
                 isCollapsed: $isSidebarCollapsed,
                 appState: appState
             )
+            .clickThrough()
 
             // Main content area with rounded container
             ZStack {
