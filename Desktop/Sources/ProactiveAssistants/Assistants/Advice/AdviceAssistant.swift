@@ -155,24 +155,9 @@ actor AdviceAssistant: ProactiveAssistant {
             currentActivity: adviceResult.currentActivity
         )
 
-        // Also save to old storage for UI compatibility (dual-write during transition)
+        // Save to AdviceStorage which syncs to backend as a memory with tags
         await MainActor.run {
             AdviceStorage.shared.addAdvice(adviceResult)
-        }
-
-        // Sync to backend
-        if let backendId = await syncAdviceToBackend(advice: advice, adviceResult: adviceResult) {
-            // Update SQLite record with backend ID
-            if let recordId = extractionRecord?.id {
-                do {
-                    try await ProactiveStorage.shared.updateExtraction(
-                        id: recordId,
-                        updates: ExtractionUpdate(backendId: backendId, backendSynced: true)
-                    )
-                } catch {
-                    logError("Advice: Failed to update sync status", error: error)
-                }
-            }
         }
 
         // Track advice generated
@@ -215,28 +200,6 @@ actor AdviceAssistant: ProactiveAssistant {
             return inserted
         } catch {
             logError("Advice: Failed to save to SQLite", error: error)
-            return nil
-        }
-    }
-
-    /// Sync advice to backend, returns backend ID if successful
-    private func syncAdviceToBackend(advice: ExtractedAdvice, adviceResult: AdviceExtractionResult) async -> String? {
-        do {
-            let request = CreateAdviceRequest(
-                content: advice.advice,
-                category: advice.category,
-                reasoning: advice.reasoning,
-                sourceApp: advice.sourceApp,
-                confidence: advice.confidence,
-                contextSummary: adviceResult.contextSummary,
-                currentActivity: adviceResult.currentActivity
-            )
-
-            let serverAdvice = try await APIClient.shared.createAdvice(request)
-            log("Advice: Synced to backend (id: \(serverAdvice.id))")
-            return serverAdvice.id
-        } catch {
-            logError("Advice: Failed to sync to backend", error: error)
             return nil
         }
     }
