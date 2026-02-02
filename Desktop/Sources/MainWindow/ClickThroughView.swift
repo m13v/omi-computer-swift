@@ -135,7 +135,7 @@ struct ClickThroughView<Content: View>: NSViewRepresentable {
         let hostingView = ClickThroughHostingView(rootView: content)
         // Don't constrain the hosting view size - let it use intrinsic size
         hostingView.setContentHuggingPriority(.defaultHigh, for: .horizontal)
-        hostingView.setContentHuggingPriority(.defaultHigh, for: .vertical)
+        hostingView.setContentHuggingPriority(.defaultLow, for: .vertical)
         return hostingView
     }
 
