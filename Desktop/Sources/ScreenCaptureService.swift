@@ -93,6 +93,83 @@ final class ScreenCaptureService: Sendable {
         }
     }
 
+    /// Test if ScreenCaptureKit specifically works (macOS 14+)
+    /// Returns true if ScreenCaptureKit consent is granted, false if declined
+    @available(macOS 14.0, *)
+    static func testScreenCaptureKitPermission() async -> Bool {
+        do {
+            _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            return true
+        } catch {
+            log("ScreenCaptureKit test failed: \(error.localizedDescription)")
+            return false
+        }
+    }
+
+    /// Check if ScreenCaptureKit is in a broken state (TCC says yes, but SCK says no)
+    /// This happens when the user declines the ScreenCaptureKit dialog or after rebuilds
+    @available(macOS 14.0, *)
+    static func isScreenCaptureKitBroken() async -> Bool {
+        // If traditional TCC is granted but ScreenCaptureKit fails, it's broken
+        let tccGranted = CGPreflightScreenCaptureAccess()
+        if !tccGranted {
+            return false // Not broken, just not granted
+        }
+
+        let sckGranted = await testScreenCaptureKitPermission()
+        return !sckGranted // Broken if TCC yes but SCK no
+    }
+
+    /// Reset screen capture permission using tccutil
+    /// This resets BOTH the traditional TCC and ScreenCaptureKit consent
+    /// Returns true if reset succeeded
+    static func resetScreenCapturePermission() -> Bool {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
+        log("Resetting screen capture permission for \(bundleId) via tccutil...")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "ScreenCapture", bundleId]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let success = process.terminationStatus == 0
+            log("tccutil reset ScreenCapture completed with exit code: \(process.terminationStatus)")
+            return success
+        } catch {
+            logError("Failed to run tccutil", error: error)
+            return false
+        }
+    }
+
+    /// Reset screen capture permission and restart the app
+    static func resetScreenCapturePermissionAndRestart() {
+        if resetScreenCapturePermission() {
+            log("Screen capture permission reset, restarting app...")
+
+            guard let bundleURL = Bundle.main.bundleURL as URL? else {
+                log("Failed to get bundle URL for restart")
+                return
+            }
+
+            // Use a shell script to wait briefly, then relaunch the app
+            let task = Process()
+            task.executableURL = URL(fileURLWithPath: "/bin/sh")
+            task.arguments = ["-c", "sleep 0.5 && open \"\(bundleURL.path)\""]
+
+            do {
+                try task.run()
+                log("Restart scheduled, terminating current instance...")
+                DispatchQueue.main.async {
+                    NSApplication.shared.terminate(nil)
+                }
+            } catch {
+                logError("Failed to schedule restart", error: error)
+            }
+        }
+    }
+
     /// Get the window ID of the frontmost application's main window
     private static func getActiveWindowID() -> CGWindowID? {
         let (_, _, windowID) = getActiveWindowInfo()
