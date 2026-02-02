@@ -212,8 +212,9 @@ actor RewindStorage {
     /// Find ffmpeg executable path
     private func findFFmpegPath() -> String {
         // Bundled ffmpeg first for users without Homebrew
+        // Use Bundle.resourceBundle for SPM resources (they're in a nested bundle, not main bundle)
         let possiblePaths = [
-            Bundle.main.path(forResource: "ffmpeg", ofType: nil),
+            Bundle.resourceBundle.path(forResource: "ffmpeg", ofType: nil),
             "/opt/homebrew/bin/ffmpeg",
             "/usr/local/bin/ffmpeg",
             "/usr/bin/ffmpeg",
