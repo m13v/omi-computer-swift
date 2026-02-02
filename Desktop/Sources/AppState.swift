@@ -124,6 +124,7 @@ class AppState: ObservableObject {
     private var screenLockedObserver: NSObjectProtocol?
     private var screenUnlockedObserver: NSObjectProtocol?
     private var screenCapturePermissionLostObserver: NSObjectProtocol?
+    private var screenCaptureKitBrokenObserver: NSObjectProtocol?
 
     // Debounce timestamps to prevent duplicate system notifications
     private var lastScreenLockTime: Date?
@@ -144,7 +145,21 @@ class AppState: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor in
                 self?.hasScreenRecordingPermission = false
+                self?.isScreenCaptureKitBroken = false  // Not broken, just lost
                 log("AppState: Screen recording permission lost")
+            }
+        }
+
+        // Listen for ScreenCaptureKit broken notifications (TCC granted but SCK declined)
+        screenCaptureKitBrokenObserver = NotificationCenter.default.addObserver(
+            forName: .screenCaptureKitBroken,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.hasScreenRecordingPermission = false
+                self?.isScreenCaptureKitBroken = true  // Needs reset
+                log("AppState: ScreenCaptureKit broken - needs reset")
             }
         }
 
@@ -251,6 +266,9 @@ class AppState: ObservableObject {
             DistributedNotificationCenter.default().removeObserver(observer)
         }
         if let observer = screenCapturePermissionLostObserver {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        if let observer = screenCaptureKitBrokenObserver {
             NotificationCenter.default.removeObserver(observer)
         }
     }
@@ -377,6 +395,23 @@ class AppState: ObservableObject {
                 self.hasNotificationPermission = isNowGranted
                 self.notificationAlertStyle = settings.alertStyle
 
+                // Log the current notification settings
+                let authStatus = switch settings.authorizationStatus {
+                    case .notDetermined: "notDetermined"
+                    case .denied: "denied"
+                    case .authorized: "authorized"
+                    case .provisional: "provisional"
+                    case .ephemeral: "ephemeral"
+                    @unknown default: "unknown"
+                }
+                let alertStyleName = switch settings.alertStyle {
+                    case .none: "NONE (no banners)"
+                    case .banner: "BANNER"
+                    case .alert: "ALERT"
+                    @unknown default: "unknown"
+                }
+                log("Notification settings: auth=\(authStatus), alertStyle=\(alertStyleName), sound=\(settings.soundSetting.rawValue), badge=\(settings.badgeSetting.rawValue)")
+
                 // Send confirmation notification when permission is newly granted
                 if !wasGranted && isNowGranted {
                     // Customize message based on alert style
@@ -394,7 +429,15 @@ class AppState: ObservableObject {
 
     /// Check screen recording permission status
     func checkScreenRecordingPermission() {
-        hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
+        let tccGranted = CGPreflightScreenCaptureAccess()
+        hasScreenRecordingPermission = tccGranted
+
+        // If TCC is not granted, clear the "broken" flag
+        // (broken = TCC granted but SCK failing, not applicable if TCC not granted)
+        if !tccGranted {
+            isScreenCaptureKitBroken = false
+        }
+        // If TCC is granted AND broken flag is set, leave it set until reset/restart
     }
 
     /// Check automation permission by attempting to use Apple Events
@@ -1238,6 +1281,10 @@ extension Notification.Name {
     static let screenDidUnlock = Notification.Name("screenDidUnlock")
     /// Posted when screen capture permission is detected as lost
     static let screenCapturePermissionLost = Notification.Name("screenCapturePermissionLost")
+    /// Posted when ScreenCaptureKit is broken (TCC granted but SCK declined)
+    static let screenCaptureKitBroken = Notification.Name("screenCaptureKitBroken")
     /// Posted to navigate to Rewind settings
     static let navigateToRewindSettings = Notification.Name("navigateToRewindSettings")
+    /// Posted to navigate to Rewind page (global hotkey: Cmd+Shift+Space)
+    static let navigateToRewind = Notification.Name("navigateToRewind")
 }
