@@ -181,6 +181,20 @@ struct RewindPage: View {
             }
             .buttonStyle(.plain)
             .disabled(viewModel.isLoading)
+
+            // Settings
+            Button {
+                NotificationCenter.default.post(
+                    name: .navigateToRewindSettings,
+                    object: nil
+                )
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("Rewind Settings")
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 12)
