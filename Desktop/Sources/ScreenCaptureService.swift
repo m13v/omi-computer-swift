@@ -301,8 +301,18 @@ final class ScreenCaptureService: Sendable {
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = SCStreamConfiguration()
             config.scalesToFit = true
-            config.width = Int(min(window.frame.width, maxSize))
-            config.height = Int(min(window.frame.height, maxSize))
+            // Calculate dimensions maintaining aspect ratio (don't create square canvas)
+            let windowWidth = window.frame.width
+            let windowHeight = window.frame.height
+            let aspectRatio = windowWidth / windowHeight
+            var configWidth = min(windowWidth, maxSize)
+            var configHeight = configWidth / aspectRatio
+            if configHeight > maxSize {
+                configHeight = maxSize
+                configWidth = configHeight * aspectRatio
+            }
+            config.width = Int(configWidth)
+            config.height = Int(configHeight)
 
             let image = try await SCScreenshotManager.captureImage(
                 contentFilter: filter,
