@@ -665,11 +665,21 @@ public class ProactiveAssistantsPlugin: NSObject {
                 message: "Omi needs screen recording permission to continue monitoring. Please re-enable it in System Settings."
             )
         } else {
-            // Permission is still granted but capture is failing
-            // Try reinitializing the capture service
-            log("ProactiveAssistantsPlugin: Permission still granted, reinitializing capture service")
-            screenCaptureService = ScreenCaptureService()
-            consecutiveFailures = 0
+            // Permission appears granted (CGPreflight says yes) but capture is failing
+            // This is the "broken ScreenCaptureKit" state - TCC granted but SCK declined
+            log("ProactiveAssistantsPlugin: ScreenCaptureKit broken - TCC granted but capture failing")
+
+            // Post notification for AppState to show "Reset" button
+            NotificationCenter.default.post(name: .screenCaptureKitBroken, object: nil)
+
+            // Stop monitoring since we can't capture
+            stopMonitoring()
+
+            // Send user notification
+            NotificationService.shared.sendNotification(
+                title: "Screen Recording Needs Reset",
+                message: "Permission appears granted but capture is failing. Please click Reset in the app to fix this."
+            )
         }
     }
 }
