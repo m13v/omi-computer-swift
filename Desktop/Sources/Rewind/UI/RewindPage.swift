@@ -20,6 +20,11 @@ struct RewindPage: View {
         case timeline // Timeline with search highlights
     }
 
+    /// Whether we're in search mode (has query or active search)
+    private var isInSearchMode: Bool {
+        viewModel.activeSearchQuery != nil || !viewModel.searchQuery.isEmpty
+    }
+
     var body: some View {
         ZStack {
             // Background
@@ -29,14 +34,28 @@ struct RewindPage: View {
                 loadingView
             } else if let error = viewModel.errorMessage {
                 errorView(error)
-            } else if viewModel.activeSearchQuery != nil || !viewModel.searchQuery.isEmpty {
-                // Search is active - always show search UI even with 0 results
-                searchContent
-            } else if viewModel.screenshots.isEmpty {
-                emptyState
             } else {
-                // Normal timeline view
-                timelineContent
+                // Main content with persistent search field
+                VStack(spacing: 0) {
+                    // Unified top bar - search field is always here
+                    unifiedTopBar
+
+                    // Content area changes based on mode
+                    if isInSearchMode {
+                        if viewModel.screenshots.isEmpty {
+                            noSearchResultsView
+                        } else if searchViewMode == .timeline {
+                            timelineWithSearch
+                        } else {
+                            fullScreenResultsView
+                        }
+                    } else if viewModel.screenshots.isEmpty {
+                        emptyState
+                    } else {
+                        // Normal timeline view (without top bar, since we have unified one)
+                        timelineContentBody
+                    }
+                }
             }
         }
         .task {
@@ -192,53 +211,8 @@ struct RewindPage: View {
                 .help("Back to results")
             }
 
-            // Editable search field with results count
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 12))
-                    .foregroundColor(isSearchFocused ? OmiColors.purplePrimary : .white.opacity(0.5))
-
-                TextField("Search your screen history...", text: $viewModel.searchQuery)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13))
-                    .foregroundColor(.white)
-                    .focused($isSearchFocused)
-
-                if viewModel.isSearching {
-                    ProgressView()
-                        .progressViewStyle(.circular)
-                        .scaleEffect(0.6)
-                        .tint(.white)
-                } else {
-                    // Results count
-                    Text("\(viewModel.screenshots.count) results")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white.opacity(0.5))
-                }
-
-                if !viewModel.searchQuery.isEmpty {
-                    Button {
-                        viewModel.searchQuery = ""
-                        searchViewMode = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .frame(maxWidth: 400)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(Color.white.opacity(0.1))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSearchFocused ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 1)
-                    )
-            )
+            // Unified search field with results count
+            searchField(showResultsCount: true)
 
             Spacer()
 
@@ -380,7 +354,7 @@ struct RewindPage: View {
             }
 
             // Search bar
-            searchBar
+            searchField()
 
             // Stats
             if let stats = viewModel.stats {
@@ -460,9 +434,9 @@ struct RewindPage: View {
         )
     }
 
-    // MARK: - Search Bar
+    // MARK: - Unified Search Field
 
-    private var searchBar: some View {
+    private func searchField(showResultsCount: Bool = false) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 12))
@@ -479,6 +453,10 @@ struct RewindPage: View {
                     .progressViewStyle(.circular)
                     .scaleEffect(0.6)
                     .tint(.white)
+            } else if showResultsCount && !viewModel.searchQuery.isEmpty {
+                Text("\(viewModel.screenshots.count) results")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.5))
             }
 
             if !viewModel.searchQuery.isEmpty {
