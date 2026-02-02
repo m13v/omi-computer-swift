@@ -12,6 +12,13 @@ struct SpeakerSegment {
     var end: Double
 }
 
+/// Result of finalizing a conversation
+enum FinishConversationResult {
+    case saved
+    case discarded
+    case error(String)
+}
+
 @MainActor
 class AppState: ObservableObject {
     @AppStorage("hasCompletedOnboarding") var hasCompletedOnboarding = false
@@ -538,42 +545,6 @@ class AppState: ObservableObject {
             await finalizeConversation()
             stopTranscriptionServices()
         }
-    }
-
-    /// Result of finishing a conversation
-    enum FinishConversationResult {
-        case saved
-        case discarded
-        case error(String)
-    }
-
-    /// Finish the current conversation but keep recording for the next one
-    @MainActor
-    func finishConversation() async -> FinishConversationResult {
-        guard !speakerSegments.isEmpty else {
-            log("Transcription: No segments to finish")
-            return .discarded
-        }
-
-        log("Transcription: Finishing conversation, keeping recording active")
-
-        // Process the current conversation
-        let result = await finalizeConversation()
-
-        // Clear segments for the next conversation but keep recording
-        speakerSegments = []
-        liveSpeakerSegments = []
-
-        // Reset the recording start time for the next conversation
-        recordingStartTime = Date()
-        recordingDuration = 0
-
-        // Refresh the conversations list to show the new conversation
-        await refreshConversations()
-
-        log("Transcription: Ready for next conversation")
-
-        return result
     }
 
     /// Stop transcription services without finalizing (internal use)
