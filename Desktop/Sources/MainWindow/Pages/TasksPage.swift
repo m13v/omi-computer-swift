@@ -950,12 +950,10 @@ struct TaskRow: View {
                             PriorityBadge(priority: priority)
                         }
 
-                        // Created date (if no due date)
-                        if task.dueAt == nil {
-                            Text(task.createdAt.formatted(date: .abbreviated, time: .omitted))
-                                .font(.system(size: 11))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
+                        // Created date with full timestamp
+                        Text("created: \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1096,7 +1094,7 @@ struct DueDateBadge: View {
         HStack(spacing: 4) {
             Image(systemName: "calendar")
                 .font(.system(size: 10))
-            Text(info.text)
+            Text("due: \(info.text)")
                 .font(.system(size: 11, weight: .medium))
         }
         .foregroundColor(info.color)
