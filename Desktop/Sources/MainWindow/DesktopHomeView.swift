@@ -122,6 +122,8 @@ struct DesktopHomeView: View {
             .padding(12)
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToRewindSettings)) { _ in
+            // Set pending section before navigating
+            SettingsContentView.pendingSection = .rewind
             // Navigate to Settings page (index 8)
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedIndex = SidebarNavItem.settings.rawValue
