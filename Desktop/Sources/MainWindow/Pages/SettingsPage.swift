@@ -162,6 +162,17 @@ struct SettingsContentView: View {
         _memoryNotificationsEnabled = State(initialValue: MemoryAssistantSettings.shared.notificationsEnabled)
     }
 
+    /// Computed status text for notifications
+    private var notificationStatusText: String {
+        if !appState.hasNotificationPermission {
+            return "Notifications are disabled"
+        } else if appState.isNotificationBannerDisabled {
+            return "Enabled but banners are off"
+        } else {
+            return "Proactive alerts enabled"
+        }
+    }
+
     var body: some View {
         VStack(spacing: 24) {
             // Section tabs (hidden when showing developer settings)
@@ -313,55 +324,76 @@ struct SettingsContentView: View {
 
             // Notifications toggle
             settingsCard {
-                HStack(spacing: 16) {
-                    Circle()
-                        .fill(appState.hasNotificationPermission ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
-                        .frame(width: 12, height: 12)
-                        .shadow(color: appState.hasNotificationPermission ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
+                VStack(spacing: 12) {
+                    HStack(spacing: 16) {
+                        Circle()
+                            .fill(appState.hasNotificationPermission && !appState.isNotificationBannerDisabled
+                                  ? OmiColors.success
+                                  : (appState.isNotificationBannerDisabled ? OmiColors.warning : OmiColors.textTertiary.opacity(0.3)))
+                            .frame(width: 12, height: 12)
+                            .shadow(color: appState.hasNotificationPermission && !appState.isNotificationBannerDisabled
+                                    ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Notifications")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Notifications")
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
 
-                        Text(appState.hasNotificationPermission ? "Proactive alerts enabled" : "Notifications are disabled")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
+                            Text(notificationStatusText)
+                                .font(.system(size: 13))
+                                .foregroundColor(appState.isNotificationBannerDisabled ? OmiColors.warning : OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        if appState.hasNotificationPermission && !appState.isNotificationBannerDisabled {
+                            // Show enabled badge
+                            Text("Enabled")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.green)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(Color.green.opacity(0.15))
+                                )
+                        } else {
+                            // Show button to enable or fix
+                            Button(action: {
+                                appState.openNotificationPreferences()
+                            }) {
+                                Text(appState.isNotificationBannerDisabled ? "Fix" : "Enable")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .fill(appState.isNotificationBannerDisabled ? OmiColors.warning : OmiColors.purplePrimary)
+                                    )
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
 
-                    Spacer()
+                    // Warning when banners are disabled
+                    if appState.isNotificationBannerDisabled {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.warning)
 
-                    if appState.hasNotificationPermission {
-                        // Show enabled badge
-                        Text("Enabled")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.green)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(Color.green.opacity(0.15))
-                            )
-                    } else {
-                        // Show button to enable
-                        Button(action: {
-                            if appState.isNotificationPermissionDenied() {
-                                appState.openNotificationPreferences()
-                            } else {
-                                appState.requestNotificationPermission()
-                            }
-                        }) {
-                            Text("Enable")
-                                .font(.system(size: 12, weight: .semibold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(OmiColors.purplePrimary)
-                                )
+                            Text("Banners disabled - you won't see visual alerts. Set style to \"Banners\" in System Settings.")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.warning)
+
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
+                        .padding(10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(OmiColors.warning.opacity(0.1))
+                        )
                     }
                 }
             }

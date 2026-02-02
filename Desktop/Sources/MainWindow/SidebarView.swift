@@ -460,8 +460,8 @@ struct SidebarView: View {
                 microphonePermissionRow
             }
 
-            // Notification permission
-            if !appState.hasNotificationPermission {
+            // Notification permission (show if disabled OR if banners are off)
+            if !appState.hasNotificationPermission || appState.isNotificationBannerDisabled {
                 notificationPermissionRow
             }
 
@@ -604,17 +604,19 @@ struct SidebarView: View {
 
     private var notificationPermissionRow: some View {
         let isDenied = appState.isNotificationPermissionDenied()
-        let color: Color = isDenied ? .red : OmiColors.warning
+        let isBannerDisabled = appState.isNotificationBannerDisabled
+        let needsAttention = isDenied || isBannerDisabled
+        let color: Color = needsAttention ? OmiColors.warning : OmiColors.warning
 
         return HStack(spacing: 8) {
-            Image(systemName: isDenied ? "bell.slash.fill" : "bell.fill")
+            Image(systemName: isDenied ? "bell.slash.fill" : (isBannerDisabled ? "bell.badge.slash.fill" : "bell.fill"))
                 .font(.system(size: 15))
                 .foregroundColor(color)
                 .frame(width: iconWidth)
-                .scaleEffect(permissionPulse && isDenied ? 1.1 : 1.0)
+                .scaleEffect(permissionPulse && needsAttention ? 1.1 : 1.0)
 
             if !isCollapsed {
-                Text("Notifications")
+                Text(isBannerDisabled ? "Banners Off" : "Notifications")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(color)
                     .lineLimit(1)
@@ -622,15 +624,10 @@ struct SidebarView: View {
                 Spacer()
 
                 Button(action: {
-                    if isDenied {
-                        // Open notification settings
-                        appState.openNotificationPreferences()
-                    } else {
-                        // Request permission directly
-                        appState.requestNotificationPermission()
-                    }
+                    // Always open settings - user needs to configure notification style
+                    appState.openNotificationPreferences()
                 }) {
-                    Text(isDenied ? "Fix" : "Grant")
+                    Text("Fix")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 10)
