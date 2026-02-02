@@ -261,9 +261,14 @@ struct SidebarView: View {
         .frame(width: currentWidth)
         .onAppear {
             syncMonitoringState()
+            appState.checkAllPermissions()
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
             syncMonitoringState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            // Refresh permissions when app becomes active (user may have changed them in System Settings)
+            appState.checkAllPermissions()
         }
     }
 
