@@ -669,16 +669,20 @@ public class ProactiveAssistantsPlugin: NSObject {
             // This is the "broken ScreenCaptureKit" state - TCC granted but SCK declined
             log("ProactiveAssistantsPlugin: ScreenCaptureKit broken - TCC granted but capture failing")
 
+            // Track broken state detection
+            AnalyticsManager.shared.screenCaptureBrokenDetected()
+
             // Post notification for AppState to show "Reset" button
             NotificationCenter.default.post(name: .screenCaptureKitBroken, object: nil)
 
             // Stop monitoring since we can't capture
             stopMonitoring()
 
-            // Send user notification
+            // Send user notification with "Reset Now" action button
+            // Clicking the notification or the action button will trigger reset
             NotificationService.shared.sendNotification(
-                title: "Screen Recording Needs Reset",
-                message: "Permission appears granted but capture is failing. Please click Reset in the app to fix this."
+                title: NotificationService.screenCaptureResetTitle,
+                message: "Permission appears granted but capture is failing. Click to reset and fix this issue."
             )
         }
     }
