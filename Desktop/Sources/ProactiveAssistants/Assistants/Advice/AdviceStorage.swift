@@ -220,27 +220,24 @@ class AdviceStorage: ObservableObject {
 
     private func createAdviceOnBackend(_ advice: StoredAdvice) async {
         do {
-            let request = CreateAdviceRequest(
+            // Build tags: ["tips", "<category>"]
+            let categoryTag = advice.advice.category.rawValue.lowercased()
+            let tags = ["tips", categoryTag]
+
+            // Create as memory with tags instead of separate advice
+            let response = try await APIClient.shared.createMemory(
                 content: advice.advice.advice,
-                category: advice.advice.category,
-                reasoning: advice.advice.reasoning,
-                sourceApp: advice.advice.sourceApp,
+                visibility: "private",
+                category: .system, // Tips are stored as system category with tags
                 confidence: advice.advice.confidence,
+                sourceApp: advice.advice.sourceApp,
                 contextSummary: advice.contextSummary,
+                tags: tags,
+                reasoning: advice.advice.reasoning,
                 currentActivity: advice.currentActivity
             )
 
-            let serverAdvice = try await APIClient.shared.createAdvice(request)
-
-            // Update local ID to match server ID
-            await MainActor.run {
-                if let index = self.adviceHistory.firstIndex(where: { $0.id == advice.id }) {
-                    self.adviceHistory[index] = StoredAdvice(from: serverAdvice)
-                    self.saveToLocalCache()
-                }
-            }
-
-            log("Advice: Created on backend with ID \(serverAdvice.id)")
+            log("Advice: Created as memory with tags \(tags), ID: \(response.id)")
         } catch {
             logError("Advice: Failed to create on backend", error: error)
         }
