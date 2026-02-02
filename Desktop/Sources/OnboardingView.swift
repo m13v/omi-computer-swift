@@ -121,6 +121,14 @@ struct OnboardingView: View {
                 log("System audio permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
+        .onChange(of: appState.hasAccessibilityPermission) { _, granted in
+            if granted && currentStep == 7 {
+                log("Accessibility permission granted (current step), bringing to front")
+                bringToFront()
+            } else if granted {
+                log("Accessibility permission granted (not current step \(currentStep), skipping bringToFront)")
+            }
+        }
     }
 
     private func bringToFront() {
@@ -162,6 +170,7 @@ struct OnboardingView: View {
         case 4: return appState.hasScreenRecordingPermission
         case 5: return appState.hasMicrophonePermission
         case 6: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
+        case 7: return appState.hasAccessibilityPermission
         default: return true
         }
     }
@@ -239,7 +248,8 @@ struct OnboardingView: View {
         case 4: return appState.hasScreenRecordingPermission
         case 5: return appState.hasMicrophonePermission
         case 6: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
-        case 7: return true // Done - always "granted"
+        case 7: return appState.hasAccessibilityPermission // Accessibility
+        case 8: return true // Done - always "granted"
         default: return false
         }
     }
@@ -280,6 +290,8 @@ struct OnboardingView: View {
         case 6:
             systemAudioStepView
         case 7:
+            accessibilityStepView
+        case 8:
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
@@ -423,6 +435,8 @@ struct OnboardingView: View {
         case 6:
             return systemAudioButtonTitle
         case 7:
+            return appState.hasAccessibilityPermission ? "Continue" : "Grant Accessibility"
+        case 8:
             return "Start Using Omi"
         default:
             return "Continue"
@@ -730,6 +744,140 @@ struct OnboardingView: View {
         }
     }
 
+    // MARK: - Accessibility Step View
+
+    @State private var accessibilityResetInProgress = false
+    @State private var accessibilityResetButtonText = "Reset & Restart"
+
+    private var isAccessibilityPermissionDenied: Bool {
+        appState.isAccessibilityPermissionDenied()
+    }
+
+    private var accessibilityStepView: some View {
+        VStack(spacing: 16) {
+            if appState.hasAccessibilityPermission {
+                // Granted state
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.white)
+
+                Text("Accessibility")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Accessibility permission granted! Omi can now provide click-through sidebar functionality.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+            } else if isAccessibilityPermissionDenied {
+                // Denied state - show reset options
+                Image(systemName: "hand.raised.slash.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.red)
+
+                Text("Accessibility Permission Denied")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Permission was previously denied. Reset it to try again:")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                VStack(spacing: 8) {
+                    // Option 1: Quick Reset
+                    Button(action: accessibilityTryDirectReset) {
+                        HStack(spacing: 8) {
+                            if accessibilityResetInProgress {
+                                ProgressView()
+                                    .scaleEffect(0.7)
+                                    .frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 14))
+                            }
+                            Text(accessibilityResetButtonText)
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(width: 260)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(accessibilityResetInProgress)
+
+                    // Option 2: Manual
+                    Button(action: accessibilityOpenSystemSettings) {
+                        HStack(spacing: 8) {
+                            Image(systemName: "gear")
+                                .font(.system(size: 14))
+                            Text("Open System Settings")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.primary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .frame(width: 260)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+
+            } else {
+                // Not determined state - normal flow
+                Image(systemName: "hand.raised")
+                    .font(.system(size: 48))
+                    .foregroundColor(OmiColors.purplePrimary)
+
+                Text("Accessibility")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Omi needs Accessibility permission to provide seamless click-through behavior on the sidebar.\n\nThis allows you to interact with the sidebar without needing to click twice when switching apps.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func accessibilityTryDirectReset() {
+        accessibilityResetInProgress = true
+        accessibilityResetButtonText = "Resetting & Restarting..."
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let success = appState.resetAccessibilityPermissionDirect(shouldRestart: true)
+
+            if !success {
+                DispatchQueue.main.async {
+                    accessibilityResetButtonText = "Failed - Try Settings"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+                        accessibilityResetInProgress = false
+                        accessibilityResetButtonText = "Reset & Restart"
+                    }
+                }
+            }
+            // If success, app will restart automatically
+        }
+    }
+
+    private func accessibilityOpenSystemSettings() {
+        appState.openAccessibilityPreferences()
+    }
+
     private func handleMainAction() {
         switch currentStep {
         case 0:
@@ -814,8 +962,19 @@ struct OnboardingView: View {
                 appState.triggerSystemAudioPermission()
             }
         case 7:
-            log("OnboardingView: Step 7 - Completing onboarding")
-            AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "Done")
+            // Accessibility step
+            if appState.hasAccessibilityPermission {
+                AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "Accessibility")
+                AnalyticsManager.shared.permissionGranted(permission: "accessibility")
+                currentStep += 1
+            } else {
+                AnalyticsManager.shared.permissionRequested(permission: "accessibility")
+                hasTriggeredAccessibility = true
+                appState.triggerAccessibilityPermission()
+            }
+        case 8:
+            log("OnboardingView: Step 8 - Completing onboarding")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 8, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
