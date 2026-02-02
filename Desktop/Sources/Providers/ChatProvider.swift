@@ -100,9 +100,20 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Filtered Sessions
     var filteredSessions: [ChatSession] {
-        guard !searchQuery.isEmpty else { return sessions }
+        // Filter out "empty" sessions (only AI greeting, no user messages)
+        // These have messageCount <= 1 and default "New Chat" title
+        // Always keep the currently selected session visible
+        let nonEmptySessions = sessions.filter { session in
+            // Always show the current session (so user can continue working)
+            if session.id == currentSession?.id { return true }
+            // Keep sessions that have user messages (more than just AI greeting)
+            // or have been renamed (user intentionally kept them)
+            return session.messageCount > 1 || session.title != "New Chat"
+        }
+
+        guard !searchQuery.isEmpty else { return nonEmptySessions }
         let query = searchQuery.lowercased()
-        return sessions.filter { session in
+        return nonEmptySessions.filter { session in
             session.title.lowercased().contains(query) ||
             (session.preview?.lowercased().contains(query) ?? false)
         }
