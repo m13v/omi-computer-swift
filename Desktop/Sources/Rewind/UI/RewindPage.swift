@@ -122,6 +122,20 @@ struct RewindPage: View {
                 Text("Rewind")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.white)
+
+                // Global hotkey hint
+                HStack(spacing: 2) {
+                    Text("⌘")
+                    Text("⌥")
+                    Text("R")
+                }
+                .font(.system(size: 10, weight: .medium, design: .rounded))
+                .foregroundColor(.white.opacity(0.4))
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(Color.white.opacity(0.1))
+                .cornerRadius(4)
+                .help("Press ⌘⌥R from anywhere to open Rewind")
             }
 
             // Search bar
@@ -402,53 +416,71 @@ struct RewindPage: View {
     // MARK: - Frame Display
 
     private var frameDisplay: some View {
-        Group {
+        GeometryReader { geometry in
             if isLoadingFrame && currentImage == nil {
                 ProgressView()
                     .progressViewStyle(.circular)
-                    .scaleEffect(1.5)
+                    .scaleEffect(1.2)
                     .tint(.white)
+                    .frame(width: geometry.size.width, height: geometry.size.height)
             } else if let image = currentImage {
+                // Calculate size to fill container while maintaining aspect ratio
+                let imageAspect = image.size.width / image.size.height
+                let containerAspect = geometry.size.width / geometry.size.height
+
+                let displaySize: CGSize = {
+                    if imageAspect > containerAspect {
+                        // Wide image - fill width
+                        let width = geometry.size.width
+                        let height = width / imageAspect
+                        return CGSize(width: width, height: height)
+                    } else {
+                        // Tall image - fill height
+                        let height = geometry.size.height
+                        let width = height * imageAspect
+                        return CGSize(width: width, height: height)
+                    }
+                }()
+
                 ZStack {
                     Image(nsImage: image)
                         .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .cornerRadius(8)
-                        .shadow(color: .black.opacity(0.5), radius: 20)
+                        .frame(width: displaySize.width, height: displaySize.height)
+                        .cornerRadius(4)
+                        .shadow(color: .black.opacity(0.3), radius: 8)
 
                     // Search highlight overlays
                     if let query = viewModel.activeSearchQuery,
                        currentIndex < viewModel.screenshots.count {
-                        GeometryReader { geometry in
-                            SearchHighlightOverlay(
-                                screenshot: viewModel.screenshots[currentIndex],
-                                query: query,
-                                imageSize: image.size,
-                                containerSize: geometry.size
-                            )
-                        }
+                        SearchHighlightOverlay(
+                            screenshot: viewModel.screenshots[currentIndex],
+                            query: query,
+                            imageSize: image.size,
+                            containerSize: displaySize
+                        )
                     }
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height)
             } else {
-                VStack(spacing: 12) {
+                VStack(spacing: 6) {
                     Image(systemName: "photo")
-                        .font(.system(size: 48))
+                        .font(.system(size: 24))
                         .foregroundColor(.white.opacity(0.3))
-                    Text("No frame loaded")
-                        .font(.system(size: 14))
-                        .foregroundColor(.white.opacity(0.5))
+                    Text("No frame")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.4))
                 }
+                .frame(width: geometry.size.width, height: geometry.size.height)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding(.horizontal, 40)
+        .padding(.horizontal, 12)
     }
 
-    // MARK: - Bottom Controls
+    // MARK: - Bottom Controls (Compact - all on one line)
 
     private var bottomControls: some View {
-        VStack(spacing: 12) {
-            // Interactive timeline bar with hover effects
+        VStack(spacing: 8) {
+            // Timeline bar
             InteractiveTimelineBar(
                 screenshots: viewModel.screenshots,
                 currentIndex: currentIndex,
@@ -457,121 +489,92 @@ struct RewindPage: View {
                     seekToIndex(index)
                 }
             )
-            .padding(.horizontal, 24)
 
-            // Timeline slider
-            Slider(
-                value: Binding(
-                    get: { Double(currentIndex) },
-                    set: { seekToIndex(Int($0)) }
-                ),
-                in: 0...Double(max(0, viewModel.screenshots.count - 1)),
-                step: 1
-            )
-            .tint(OmiColors.purplePrimary)
-            .padding(.horizontal, 24)
-
-            // Playback controls
-            HStack(spacing: 24) {
-                // Skip to start
-                Button { seekToIndex(viewModel.screenshots.count - 1) } label: {
-                    Image(systemName: "backward.end.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.white)
+            // Single compact control bar: app info | playback | position/time
+            HStack(spacing: 16) {
+                // Left: App icon and name
+                if currentIndex < viewModel.screenshots.count {
+                    let screenshot = viewModel.screenshots[currentIndex]
+                    HStack(spacing: 6) {
+                        AppIconView(appName: screenshot.appName, size: 16)
+                        Text(screenshot.appName)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                    }
+                    .frame(width: 120, alignment: .leading)
                 }
-                .buttonStyle(.plain)
-                .disabled(viewModel.screenshots.isEmpty)
-                .opacity(viewModel.screenshots.isEmpty ? 0.3 : 1)
 
-                // Previous frame
-                Button { previousFrame() } label: {
-                    Image(systemName: "backward.frame.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                }
-                .buttonStyle(.plain)
-                .disabled(currentIndex >= viewModel.screenshots.count - 1)
-                .opacity(currentIndex >= viewModel.screenshots.count - 1 ? 0.3 : 1)
+                Spacer()
 
-                // Play/Pause
-                Button { togglePlayback() } label: {
-                    Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 24))
-                        .foregroundColor(.white)
-                        .frame(width: 56, height: 56)
-                        .background(OmiColors.purplePrimary)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.screenshots.isEmpty)
+                // Center: Compact playback controls
+                HStack(spacing: 12) {
+                    Button { seekToIndex(viewModel.screenshots.count - 1) } label: {
+                        Image(systemName: "backward.end.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
 
-                // Next frame
-                Button { nextFrame() } label: {
-                    Image(systemName: "forward.frame.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(.white)
-                }
-                .buttonStyle(.plain)
-                .disabled(currentIndex == 0)
-                .opacity(currentIndex == 0 ? 0.3 : 1)
+                    Button { previousFrame() } label: {
+                        Image(systemName: "backward.frame.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
 
-                // Skip to end
-                Button { seekToIndex(0) } label: {
-                    Image(systemName: "forward.end.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.white)
+                    Button { togglePlayback() } label: {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.white)
+                            .frame(width: 32, height: 32)
+                            .background(OmiColors.purplePrimary)
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { nextFrame() } label: {
+                        Image(systemName: "forward.frame.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.white)
+                    }
+                    .buttonStyle(.plain)
+
+                    Button { seekToIndex(0) } label: {
+                        Image(systemName: "forward.end.fill")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
-                .disabled(viewModel.screenshots.isEmpty)
-                .opacity(viewModel.screenshots.isEmpty ? 0.3 : 1)
+
+                Spacer()
+
+                // Right: Position and timestamp
+                if currentIndex < viewModel.screenshots.count {
+                    let screenshot = viewModel.screenshots[currentIndex]
+                    HStack(spacing: 8) {
+                        Text("\(currentIndex + 1)/\(viewModel.screenshots.count)")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.5))
+                        Text(screenshot.formattedDate)
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.7))
+                    }
+                    .frame(width: 160, alignment: .trailing)
+                }
             }
-
-            // Frame info
-            frameInfo
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
         }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 24)
+        .padding(.bottom, 12)
         .background(
             LinearGradient(
-                colors: [.clear, .black.opacity(0.6), .black.opacity(0.9)],
+                colors: [.clear, .black.opacity(0.7)],
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 200)
-            .offset(y: -50)
         )
-    }
-
-    // MARK: - Frame Info
-
-    private var frameInfo: some View {
-        HStack {
-            if currentIndex < viewModel.screenshots.count {
-                let screenshot = viewModel.screenshots[currentIndex]
-
-                // App icon and name
-                HStack(spacing: 8) {
-                    AppIconView(appName: screenshot.appName, size: 20)
-                    Text(screenshot.appName)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white)
-                }
-
-                Spacer()
-
-                // Position counter
-                Text("\(currentIndex + 1) / \(viewModel.screenshots.count)")
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.6))
-
-                Spacer()
-
-                // Timestamp
-                Text(screenshot.formattedDate)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundColor(.white.opacity(0.8))
-            }
-        }
     }
 
     // MARK: - Search Result Indices
