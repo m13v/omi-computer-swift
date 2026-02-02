@@ -4,7 +4,6 @@ import SwiftUI
 /// The timeline is the primary interface, with search results highlighted inline
 struct RewindPage: View {
     @StateObject private var viewModel = RewindViewModel()
-    @ObservedObject private var settings = RewindSettings.shared
 
     @State private var currentIndex: Int = 0
     @State private var currentImage: NSImage?
@@ -21,9 +20,7 @@ struct RewindPage: View {
             // Background
             Color.black.ignoresSafeArea()
 
-            if !settings.isEnabled {
-                disabledState
-            } else if viewModel.isLoading && viewModel.screenshots.isEmpty {
+            if viewModel.isLoading && viewModel.screenshots.isEmpty {
                 loadingView
             } else if let error = viewModel.errorMessage {
                 errorView(error)
@@ -158,16 +155,6 @@ struct RewindPage: View {
                 .cornerRadius(6)
             }
             .buttonStyle(.plain)
-
-            // Toggle
-            Toggle(isOn: $settings.isEnabled) {
-                Text(settings.isEnabled ? "On" : "Off")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(settings.isEnabled ? OmiColors.success : .white.opacity(0.5))
-            }
-            .toggleStyle(.switch)
-            .controlSize(.mini)
-            .tint(OmiColors.purplePrimary)
 
             // Refresh
             Button {
@@ -745,46 +732,6 @@ struct RewindPage: View {
             .padding(.vertical, 10)
             .background(Color.white.opacity(0.1))
             .cornerRadius(8)
-            .padding(.top, 8)
-        }
-    }
-
-    private var disabledState: some View {
-        VStack(spacing: 16) {
-            ZStack {
-                Circle()
-                    .fill(Color.white.opacity(0.1))
-                    .frame(width: 80, height: 80)
-
-                Image(systemName: "pause.circle")
-                    .font(.system(size: 36))
-                    .foregroundColor(.white.opacity(0.5))
-            }
-
-            Text("Rewind is Disabled")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(.white)
-
-            Text("Enable Rewind to start capturing screenshots\nand building your searchable screen history.")
-                .font(.system(size: 14))
-                .foregroundColor(.white.opacity(0.6))
-                .multilineTextAlignment(.center)
-
-            Button {
-                settings.isEnabled = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "play.fill")
-                    Text("Enable Rewind")
-                }
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(OmiColors.purplePrimary)
-                .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
             .padding(.top, 8)
         }
     }
