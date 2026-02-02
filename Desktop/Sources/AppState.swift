@@ -412,6 +412,15 @@ class AppState: ObservableObject {
                 }
                 log("Notification settings: auth=\(authStatus), alertStyle=\(alertStyleName), sound=\(settings.soundSetting.rawValue), badge=\(settings.badgeSetting.rawValue)")
 
+                // Track notification settings in analytics
+                AnalyticsManager.shared.notificationSettingsChecked(
+                    authStatus: authStatus,
+                    alertStyle: alertStyleName,
+                    soundEnabled: settings.soundSetting == .enabled,
+                    badgeEnabled: settings.badgeSetting == .enabled,
+                    bannersDisabled: settings.alertStyle == .none
+                )
+
                 // Send confirmation notification when permission is newly granted
                 if !wasGranted && isNowGranted {
                     // Customize message based on alert style
