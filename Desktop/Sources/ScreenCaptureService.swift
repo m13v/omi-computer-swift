@@ -64,6 +64,35 @@ final class ScreenCaptureService: Sendable {
         }
     }
 
+    /// Trigger ScreenCaptureKit consent dialog (macOS 14+)
+    /// This is SEPARATE from CGRequestScreenCaptureAccess() - it triggers the
+    /// ScreenCaptureKit-specific permission for capturing windows/displays.
+    @available(macOS 14.0, *)
+    static func requestScreenCaptureKitPermission() async -> Bool {
+        do {
+            // This call triggers the ScreenCaptureKit consent dialog if not already granted
+            _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+            log("ScreenCaptureKit: Permission granted or already available")
+            return true
+        } catch {
+            logError("ScreenCaptureKit: Permission request failed", error: error)
+            return false
+        }
+    }
+
+    /// Request all screen capture permissions (both traditional TCC and ScreenCaptureKit)
+    static func requestAllScreenCapturePermissions() {
+        // 1. Request traditional Screen Recording TCC permission
+        CGRequestScreenCaptureAccess()
+
+        // 2. Request ScreenCaptureKit permission (macOS 14+)
+        if #available(macOS 14.0, *) {
+            Task {
+                _ = await requestScreenCaptureKitPermission()
+            }
+        }
+    }
+
     /// Get the window ID of the frontmost application's main window
     private static func getActiveWindowID() -> CGWindowID? {
         let (_, _, windowID) = getActiveWindowInfo()
