@@ -660,8 +660,8 @@ struct NotificationPermissionSection: View {
 
             VStack(alignment: .leading, spacing: 12) {
                 instructionStep(number: 1, text: "Click \"Open Settings\" below")
-                instructionStep(number: 2, text: "Find \"Omi\" in the notifications list")
-                instructionStep(number: 3, text: "Toggle \"Allow Notifications\" to ON")
+                instructionStep(number: 2, text: "Toggle \"Allow Notifications\" to ON")
+                instructionStep(number: 3, text: "Set notification style to \"Banners\" or \"Alerts\" (not \"None\")")
             }
 
             Button(action: {
@@ -695,6 +695,7 @@ struct NotificationPermissionSection: View {
             VStack(alignment: .leading, spacing: 12) {
                 instructionStep(number: 1, text: "Click \"Grant Access\" below - a system dialog will appear")
                 instructionStep(number: 2, text: "Click \"Allow\" to enable notifications")
+                instructionStep(number: 3, text: "Tip: In System Settings > Notifications > Omi, set style to \"Banners\" to see visual alerts")
             }
 
             Button(action: {
