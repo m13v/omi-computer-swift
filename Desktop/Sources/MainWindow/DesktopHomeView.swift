@@ -130,6 +130,12 @@ struct DesktopHomeView: View {
                 selectedIndex = SidebarNavItem.settings.rawValue
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToRewind)) { _ in
+            // Navigate to Rewind page (index 6) - triggered by global hotkey Cmd+Shift+Space
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedIndex = SidebarNavItem.rewind.rawValue
+            }
+        }
     }
 }
 
