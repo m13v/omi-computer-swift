@@ -1,0 +1,28 @@
+{
+  "releases": [
+    {
+      "version": "0.1.8",
+      "date": "2025-02-02",
+      "changes": [
+        "Unified search field into persistent top bar",
+        "Backward compatibility for Flutter chat sessions"
+      ]
+    },
+    {
+      "version": "0.1.7",
+      "date": "2025-02-01",
+      "changes": [
+        "Compact RewindPage controls and improve frame display sizing",
+        "Rewrite InteractiveTimelineBar with NSView for proper scroll handling"
+      ]
+    },
+    {
+      "version": "0.1.6",
+      "date": "2025-02-01",
+      "changes": [
+        "Skip Sentry in dev builds for resource monitoring",
+        "Change Rewind hotkey to Cmd+Option+R"
+      ]
+    }
+  ]
+}
