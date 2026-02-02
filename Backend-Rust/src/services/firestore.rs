@@ -3833,8 +3833,15 @@ impl FirestoreService {
             "starred": {"booleanValue": false}
         });
 
+        // CRITICAL: Always set app_id and plugin_id fields for backward compatibility
+        // Python backend queries chat_sessions.where(plugin_id == null) for main chat
         if let Some(app) = app_id {
             fields["app_id"] = json!({"stringValue": app});
+            fields["plugin_id"] = json!({"stringValue": app});
+        } else {
+            // For main chat (no app), explicitly set null values
+            fields["app_id"] = json!({"nullValue": null});
+            fields["plugin_id"] = json!({"nullValue": null});
         }
 
         let doc = json!({"fields": fields});
@@ -3922,9 +3929,11 @@ impl FirestoreService {
         };
 
         // Build structured query
+        // NOTE: Use created_at for ordering (not updated_at) for backward compatibility
+        // Old sessions from Flutter app don't have updated_at field
         let mut structured_query = json!({
             "from": [{"collectionId": CHAT_SESSIONS_SUBCOLLECTION}],
-            "orderBy": [{"field": {"fieldPath": "updated_at"}, "direction": "DESCENDING"}],
+            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
             "limit": limit,
             "offset": offset
         });
@@ -4238,6 +4247,7 @@ impl FirestoreService {
     }
 
     /// Parse a chat session from Firestore document
+    /// Supports both old (Flutter) and new (Desktop) session formats for backward compatibility
     fn parse_chat_session(
         &self,
         doc: &Value,
@@ -4251,18 +4261,35 @@ impl FirestoreService {
 
         let fields = doc.get("fields").ok_or("Missing fields")?;
 
+        let created_at = self
+            .parse_timestamp_optional(fields, "created_at")
+            .unwrap_or_else(Utc::now);
+
+        // For message_count: prefer explicit field, fallback to message_ids array length (old format)
+        let message_count = self.parse_int(fields, "message_count").unwrap_or_else(|| {
+            // Old Flutter sessions store message IDs in an array
+            fields
+                .get("message_ids")
+                .and_then(|v| v.get("arrayValue"))
+                .and_then(|a| a.get("values"))
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.len() as i32)
+                .unwrap_or(0)
+        });
+
         Ok(ChatSessionDB {
             id,
             title: self.parse_string(fields, "title").unwrap_or_else(|| "New Chat".to_string()),
             preview: self.parse_string(fields, "preview"),
-            created_at: self
-                .parse_timestamp_optional(fields, "created_at")
-                .unwrap_or_else(Utc::now),
+            created_at,
+            // For updated_at: fallback to created_at (old sessions don't have updated_at)
             updated_at: self
                 .parse_timestamp_optional(fields, "updated_at")
-                .unwrap_or_else(Utc::now),
-            app_id: self.parse_string(fields, "app_id"),
-            message_count: self.parse_int(fields, "message_count").unwrap_or(0),
+                .unwrap_or(created_at),
+            // For app_id: fallback to plugin_id (old Flutter format)
+            app_id: self.parse_string(fields, "app_id")
+                .or_else(|| self.parse_string(fields, "plugin_id")),
+            message_count,
             starred: self.parse_bool(fields, "starred").unwrap_or(false),
         })
     }
@@ -4743,10 +4770,16 @@ impl FirestoreService {
             "from_external_integration": {"booleanValue": false}
         });
 
+        // CRITICAL: Always set app_id and plugin_id fields (even as null) for backward compatibility
+        // Python backend queries .where(plugin_id == null) for main chat
+        // Firestore won't match documents that don't have the field at all
         if let Some(app) = app_id {
             fields["app_id"] = json!({"stringValue": app});
-            // CRITICAL: plugin_id for backward compatibility - Python filters on plugin_id
             fields["plugin_id"] = json!({"stringValue": app});
+        } else {
+            // For main chat (no app), explicitly set null values
+            fields["app_id"] = json!({"nullValue": null});
+            fields["plugin_id"] = json!({"nullValue": null});
         }
 
         if let Some(session) = session_id {
@@ -4815,9 +4848,12 @@ impl FirestoreService {
         }
 
         if let Some(session) = session_id {
+            // NOTE: Use chat_session_id for backward compatibility
+            // Old messages from Flutter app only have chat_session_id field
+            // New messages have both session_id and chat_session_id
             filters.push(json!({
                 "fieldFilter": {
-                    "field": {"fieldPath": "session_id"},
+                    "field": {"fieldPath": "chat_session_id"},
                     "op": "EQUAL",
                     "value": {"stringValue": session}
                 }
