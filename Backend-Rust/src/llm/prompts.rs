@@ -1,39 +1,29 @@
 // LLM Prompts - Copied from Python backend (llm.py)
 // These are the exact prompts used for conversation processing
-// DO NOT MODIFY THE PROMPT STRINGS - they are copied verbatim from Python
 
-/// Minimum word count to process (below this = discard)
-pub const MIN_WORD_COUNT: usize = 5;
+/// Word count threshold for brief vs full processing
+/// Transcripts below this threshold use simplified processing (no action items/memories extraction)
+pub const BRIEF_TRANSCRIPT_THRESHOLD: usize = 20;
 
-/// Prompt to determine if a conversation should be discarded
-/// Placeholders: {transcript_text}
-pub const DISCARD_CHECK_PROMPT: &str = r#"You will receive a transcript. Your task is to decide if this content is meaningful enough to be saved as a memory. Length is never a reason to discard.
+/// Prompt for very short transcripts - generates a simple summary without action items/memories
+/// Placeholders: {language}, {categories}, {transcript_text}
+pub const BRIEF_SUMMARY_PROMPT: &str = r#"You will receive a very short transcript. Generate a brief summary.
+Do not try to extract action items, events, or complex insights - the content is too brief for that.
 
-Task: Decide if the content should be saved as conversation summary.
+The content language is {language}. Use the same language for your response.
 
-KEEP (output: discard = false) if the content contains any of the following:
-• A task, request, or action item.
-• A decision, commitment, or plan.
-• A question that requires follow-up.
-• Personal facts, preferences, or details likely useful later (e.g., remembering a person, place, or object).
-• An important event, social interaction, or significant moment with meaningful context or consequences.
-• An insight, summary, or key takeaway that provides value.
-• A visually significant scene (e.g., a whiteboard with notes, a document, a memorable view, a person's face).
-
-DISCARD (output: discard = true) if the content is:
-• Trivial conversation snippets (e.g., brief apologies, casual remarks, single-sentence comments without context).
-• Very brief interactions (5-10 seconds) that lack actionable content or meaningful context.
-• Casual acknowledgments, greetings, or passing comments that don't contain useful information.
-• Blurry photos, uninteresting scenery with no context, or content that doesn't meet the KEEP criteria above.
-• Feels like asking Siri or other AI assistant something in 1-2 sentences or using voice to type something in a chat for 5-10 seconds.
-
-Return exactly one line:
-discard = <True|False>
-
-Content:
+Transcript:
 ```{transcript_text}```
 
-Respond with JSON: {"discard": true} or {"discard": false}"#;
+Generate a summary that captures what was said, even if brief or incomplete.
+
+Respond with JSON:
+{
+  "title": "Brief descriptive title (≤5 words, use Title Case)",
+  "overview": "One or two sentences describing what was said or discussed",
+  "emoji": "single emoji that reflects the content or mood",
+  "category": "one of: {categories}"
+}"#;
 
 /// Prompt for extracting action items from conversation
 /// Placeholders: {language}, {calendar_prompt_section}, {existing_items_context}, {started_at}, {tz}, {transcript_text}
