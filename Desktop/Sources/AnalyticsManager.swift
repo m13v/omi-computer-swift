@@ -140,6 +140,24 @@ class AnalyticsManager {
         PostHogManager.shared.permissionDenied(permission: permission)
     }
 
+    /// Track when ScreenCaptureKit broken state is detected (TCC granted but capture failing)
+    func screenCaptureBrokenDetected() {
+        MixpanelManager.shared.screenCaptureBrokenDetected()
+        PostHogManager.shared.screenCaptureBrokenDetected()
+    }
+
+    /// Track when user clicks reset button or notification to reset screen capture
+    func screenCaptureResetClicked(source: String) {
+        MixpanelManager.shared.screenCaptureResetClicked(source: source)
+        PostHogManager.shared.screenCaptureResetClicked(source: source)
+    }
+
+    /// Track when screen capture reset completes (success or failure)
+    func screenCaptureResetCompleted(success: Bool) {
+        MixpanelManager.shared.screenCaptureResetCompleted(success: success)
+        PostHogManager.shared.screenCaptureResetCompleted(success: success)
+    }
+
     /// Track notification settings status (auth, alertStyle, sound, badge)
     func notificationSettingsChecked(
         authStatus: String,
