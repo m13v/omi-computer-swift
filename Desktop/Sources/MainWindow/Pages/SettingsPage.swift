@@ -128,6 +128,7 @@ struct SettingsContentView: View {
     enum SettingsSection: String, CaseIterable {
         case general = "General"
         case focus = "Focus"
+        case rewind = "Rewind"
         case notifications = "Notifications"
         case privacy = "Privacy"
         case account = "Account"
@@ -195,6 +196,8 @@ struct SettingsContentView: View {
                     generalSection
                 case .focus:
                     FocusPage()
+                case .rewind:
+                    rewindSection
                 case .notifications:
                     notificationsSection
                 case .privacy:
@@ -214,6 +217,11 @@ struct SettingsContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             if let userInfo = notification.userInfo, let state = userInfo["isMonitoring"] as? Bool {
                 isMonitoring = state
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToRewindSettings)) { _ in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                selectedSection = .rewind
             }
         }
         .onChange(of: appState.isTranscribing) { _, newValue in
@@ -293,6 +301,117 @@ struct SettingsContentView: View {
                 }
             }
 
+        }
+    }
+
+    // MARK: - Rewind Section
+
+    @ObservedObject private var rewindSettings = RewindSettings.shared
+
+    private var rewindSection: some View {
+        VStack(spacing: 20) {
+            // Excluded Apps
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "eye.slash.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Excluded Apps")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Screen capture is paused when these apps are active")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Button("Reset to Defaults") {
+                            rewindSettings.resetToDefaults()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // List of excluded apps
+                    if rewindSettings.excludedApps.isEmpty {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 8) {
+                                Image(systemName: "checkmark.shield")
+                                    .font(.system(size: 24))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Text("No apps excluded")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            .padding(.vertical, 16)
+                            Spacer()
+                        }
+                    } else {
+                        LazyVStack(spacing: 8) {
+                            ForEach(Array(rewindSettings.excludedApps).sorted(), id: \.self) { appName in
+                                ExcludedAppRow(
+                                    appName: appName,
+                                    onRemove: {
+                                        rewindSettings.includeApp(appName)
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Add app section
+                    AddExcludedAppView(
+                        onAdd: { appName in
+                            rewindSettings.excludeApp(appName)
+                        },
+                        excludedApps: rewindSettings.excludedApps
+                    )
+                }
+            }
+
+            // Retention Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Data Retention")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("How long to keep screen recordings")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Picker("", selection: $rewindSettings.retentionDays) {
+                            Text("3 days").tag(3)
+                            Text("7 days").tag(7)
+                            Text("14 days").tag(14)
+                            Text("30 days").tag(30)
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 110)
+                    }
+                }
+            }
         }
     }
 
@@ -1183,33 +1302,33 @@ struct SettingsContentView: View {
                 }
             }
 
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "bolt.fill")
-                        .font(.system(size: 16))
-                        .foregroundColor(.yellow)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Upgrade to Pro")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Unlock all features and unlimited usage")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Button("Upgrade") {
-                        if let url = URL(string: "https://omi.me/pricing") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(OmiColors.purplePrimary)
-                }
-            }
+//            settingsCard {
+//                HStack(spacing: 16) {
+//                    Image(systemName: "bolt.fill")
+//                        .font(.system(size: 16))
+//                        .foregroundColor(.yellow)
+//
+//                    VStack(alignment: .leading, spacing: 4) {
+//                        Text("Upgrade to Pro")
+//                            .font(.system(size: 15, weight: .medium))
+//                            .foregroundColor(OmiColors.textPrimary)
+//
+//                        Text("Unlock all features and unlimited usage")
+//                            .font(.system(size: 13))
+//                            .foregroundColor(OmiColors.textTertiary)
+//                    }
+//
+//                    Spacer()
+//
+//                    Button("Upgrade") {
+//                        if let url = URL(string: "https://omi.me/pricing") {
+//                            NSWorkspace.shared.open(url)
+//                        }
+//                    }
+//                    .buttonStyle(.borderedProminent)
+//                    .tint(OmiColors.purplePrimary)
+//                }
+//            }
         }
     }
 
@@ -1637,6 +1756,163 @@ struct SettingsContentView: View {
             } catch {
                 logError("Failed to update transcription preferences", error: error)
             }
+        }
+    }
+}
+
+// MARK: - Excluded App Row
+
+struct ExcludedAppRow: View {
+    let appName: String
+    let onRemove: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            AppIconView(appName: appName, size: 24)
+
+            Text(appName)
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textPrimary)
+
+            Spacer()
+
+            Button(action: onRemove) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(isHovered ? OmiColors.error : OmiColors.textTertiary)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isHovered ? OmiColors.backgroundQuaternary.opacity(0.5) : Color.clear)
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+// MARK: - Add Excluded App View
+
+struct AddExcludedAppView: View {
+    let onAdd: (String) -> Void
+    let excludedApps: Set<String>
+
+    @State private var newAppName: String = ""
+    @State private var showingSuggestions = false
+    @State private var runningApps: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add App to Exclusion List")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(OmiColors.textSecondary)
+
+            HStack(spacing: 8) {
+                TextField("App name (e.g., Passwords)", text: $newAppName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        addApp()
+                    }
+
+                Button("Add") {
+                    addApp()
+                }
+                .buttonStyle(.bordered)
+                .disabled(newAppName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            // Running apps suggestions
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Currently Running Apps")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    Spacer()
+
+                    Button {
+                        refreshRunningApps()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(runningApps.filter { !excludedApps.contains($0) }, id: \.self) { appName in
+                            RunningAppChip(appName: appName) {
+                                onAdd(appName)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.top, 4)
+        }
+        .onAppear {
+            refreshRunningApps()
+        }
+    }
+
+    private func addApp() {
+        let trimmed = newAppName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        onAdd(trimmed)
+        newAppName = ""
+    }
+
+    private func refreshRunningApps() {
+        let apps = NSWorkspace.shared.runningApplications
+            .compactMap { $0.localizedName }
+            .filter { !$0.isEmpty }
+            .sorted()
+
+        // Remove duplicates while preserving order
+        var seen = Set<String>()
+        runningApps = apps.filter { seen.insert($0).inserted }
+    }
+}
+
+// MARK: - Running App Chip
+
+struct RunningAppChip: View {
+    let appName: String
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 6) {
+                AppIconView(appName: appName, size: 16)
+
+                Text(appName)
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                Image(systemName: "plus.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(isHovered ? OmiColors.purplePrimary : OmiColors.textTertiary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(isHovered ? OmiColors.backgroundQuaternary : OmiColors.backgroundTertiary.opacity(0.5))
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
 }
