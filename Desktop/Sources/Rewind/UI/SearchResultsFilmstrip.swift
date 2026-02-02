@@ -162,7 +162,7 @@ struct SearchResultsFilmstrip: View {
                 }
             } catch {
                 await MainActor.run {
-                    loadingIds.remove(screenshotId)
+                    _ = loadingIds.remove(screenshotId)
                 }
             }
         }
