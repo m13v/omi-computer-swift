@@ -60,6 +60,12 @@ struct SidebarView: View {
     // State for Get Omi Widget
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
 
+    // Toggle states for quick controls
+    @AppStorage("screenAnalysisEnabled") private var screenAnalysisEnabled = true
+    @State private var isMonitoring = false
+    @State private var isTogglingMonitoring = false
+    @State private var isTogglingTranscription = false
+
     // Drag state
     @State private var dragOffset: CGFloat = 0
     @GestureState private var isDragging = false
@@ -96,25 +102,63 @@ struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Main navigation items
                     ForEach(SidebarNavItem.mainItems, id: \.rawValue) { item in
-                        NavItemView(
-                            icon: item.icon,
-                            label: item.title,
-                            isSelected: selectedIndex == item.rawValue,
-                            isCollapsed: isCollapsed,
-                            iconWidth: iconWidth,
-                            badge: item == .advice ? adviceStorage.unreadCount : 0,
-                            statusColor: item == .focus ? focusStatusColor : nil,
-                            onTap: {
-                                selectedIndex = item.rawValue
-                                AnalyticsManager.shared.tabChanged(tabName: item.title)
-                            }
-                        )
+                        if item == .conversations {
+                            // Conversations with transcription toggle
+                            NavItemWithToggleView(
+                                icon: item.icon,
+                                label: item.title,
+                                isSelected: selectedIndex == item.rawValue,
+                                isCollapsed: isCollapsed,
+                                iconWidth: iconWidth,
+                                isToggleOn: appState.isTranscribing,
+                                isToggling: isTogglingTranscription,
+                                onTap: {
+                                    selectedIndex = item.rawValue
+                                    AnalyticsManager.shared.tabChanged(tabName: item.title)
+                                },
+                                onToggle: { enabled in
+                                    toggleTranscription(enabled: enabled)
+                                }
+                            )
+                        } else if item == .rewind {
+                            // Rewind with screen capture toggle
+                            NavItemWithToggleView(
+                                icon: item.icon,
+                                label: item.title,
+                                isSelected: selectedIndex == item.rawValue,
+                                isCollapsed: isCollapsed,
+                                iconWidth: iconWidth,
+                                isToggleOn: isMonitoring,
+                                isToggling: isTogglingMonitoring,
+                                onTap: {
+                                    selectedIndex = item.rawValue
+                                    AnalyticsManager.shared.tabChanged(tabName: item.title)
+                                },
+                                onToggle: { enabled in
+                                    toggleMonitoring(enabled: enabled)
+                                }
+                            )
+                        } else {
+                            NavItemView(
+                                icon: item.icon,
+                                label: item.title,
+                                isSelected: selectedIndex == item.rawValue,
+                                isCollapsed: isCollapsed,
+                                iconWidth: iconWidth,
+                                badge: item == .advice ? adviceStorage.unreadCount : 0,
+                                statusColor: item == .focus ? focusStatusColor : nil,
+                                onTap: {
+                                    selectedIndex = item.rawValue
+                                    AnalyticsManager.shared.tabChanged(tabName: item.title)
+                                }
+                            )
+                        }
                     }
 
                     Spacer()
 
                     // Subscription upgrade banner
-                    upgradeToPro
+                    // upgradeToPro
 
                     // Get Omi Device widget
                     if showGetOmiWidget {
@@ -215,6 +259,12 @@ struct SidebarView: View {
                 }
         }
         .frame(width: currentWidth)
+        .onAppear {
+            syncMonitoringState()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
+            syncMonitoringState()
+        }
     }
 
     // MARK: - Collapse Button (at top, icon only)
@@ -295,36 +345,36 @@ struct SidebarView: View {
     }
 
     // MARK: - Upgrade to Pro
-    private var upgradeToPro: some View {
-        Button(action: {
-            if let url = URL(string: "https://omi.me/pricing") {
-                NSWorkspace.shared.open(url)
-            }
-        }) {
-            HStack(spacing: 12) {
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 17))
-                    .foregroundColor(.white)
-                    .frame(width: iconWidth)
-
-                if !isCollapsed {
-                    Text("Upgrade to Pro")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(.white)
-
-                    Spacer()
-                }
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(OmiColors.purpleGradient)
-            )
-        }
-        .buttonStyle(.plain)
-        .help("Upgrade to Pro")
-    }
+//    private var upgradeToPro: some View {
+//        Button(action: {
+//            if let url = URL(string: "https://omi.me/pricing") {
+//                NSWorkspace.shared.open(url)
+//            }
+//        }) {
+//            HStack(spacing: 12) {
+//                Image(systemName: "bolt.fill")
+//                    .font(.system(size: 17))
+//                    .foregroundColor(.white)
+//                    .frame(width: iconWidth)
+//
+//                if !isCollapsed {
+//                    Text("Upgrade to Pro")
+//                        .font(.system(size: 14, weight: .semibold))
+//                        .foregroundColor(.white)
+//
+//                    Spacer()
+//                }
+//            }
+//            .padding(.horizontal, 12)
+//            .padding(.vertical, 11)
+//            .background(
+//                RoundedRectangle(cornerRadius: 10)
+//                    .fill(OmiColors.purpleGradient)
+//            )
+//        }
+//        .buttonStyle(.plain)
+//        .help("Upgrade to Pro")
+//    }
 
     // MARK: - Get Omi Widget
     private var getOmiWidget: some View {
@@ -448,6 +498,69 @@ struct SidebarView: View {
             }
         }
     }
+
+    // MARK: - Toggle Handlers
+
+    private func toggleTranscription(enabled: Bool) {
+        // Check microphone permission
+        if enabled && !appState.hasMicrophonePermission {
+            return
+        }
+
+        isTogglingTranscription = true
+
+        // Track setting change
+        AnalyticsManager.shared.settingToggled(setting: "transcription", enabled: enabled)
+
+        if enabled {
+            appState.startTranscription()
+        } else {
+            appState.stopTranscription()
+        }
+
+        isTogglingTranscription = false
+
+        // Persist the setting
+        AssistantSettings.shared.transcriptionEnabled = enabled
+    }
+
+    private func toggleMonitoring(enabled: Bool) {
+        if enabled && !ProactiveAssistantsPlugin.shared.hasScreenRecordingPermission {
+            isMonitoring = false
+            ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
+            return
+        }
+
+        isTogglingMonitoring = true
+
+        // Track setting change
+        AnalyticsManager.shared.settingToggled(setting: "monitoring", enabled: enabled)
+
+        if enabled {
+            ProactiveAssistantsPlugin.shared.startMonitoring { success, _ in
+                DispatchQueue.main.async {
+                    isTogglingMonitoring = false
+                    if success {
+                        isMonitoring = true
+                    } else {
+                        isMonitoring = false
+                    }
+                }
+            }
+        } else {
+            ProactiveAssistantsPlugin.shared.stopMonitoring()
+            isTogglingMonitoring = false
+            isMonitoring = false
+        }
+
+        // Persist the setting
+        screenAnalysisEnabled = enabled
+        AssistantSettings.shared.screenAnalysisEnabled = enabled
+    }
+
+    private func syncMonitoringState() {
+        isMonitoring = ProactiveAssistantsPlugin.shared.isMonitoring
+    }
 }
 
 // MARK: - Nav Item View
@@ -530,6 +643,86 @@ struct NavItemView: View {
         }
         .padding(.bottom, 2)
         .help(isCollapsed ? label : "")
+    }
+}
+
+// MARK: - Nav Item With Toggle View
+struct NavItemWithToggleView: View {
+    let icon: String
+    let label: String
+    let isSelected: Bool
+    let isCollapsed: Bool
+    let iconWidth: CGFloat
+    let isToggleOn: Bool
+    let isToggling: Bool
+    let onTap: () -> Void
+    let onToggle: (Bool) -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 0) {
+            // Main nav item button
+            Button(action: onTap) {
+                HStack(spacing: 12) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: icon)
+                            .font(.system(size: 17))
+                            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                            .frame(width: iconWidth)
+
+                        // Status indicator when collapsed
+                        if isCollapsed {
+                            Circle()
+                                .fill(isToggleOn ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
+                                .frame(width: 8, height: 8)
+                                .offset(x: 4, y: -4)
+                        }
+                    }
+
+                    if !isCollapsed {
+                        Text(label)
+                            .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+
+                        Spacer()
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 11)
+            }
+            .buttonStyle(.plain)
+
+            // Toggle (only when expanded)
+            if !isCollapsed {
+                if isToggling {
+                    ProgressView()
+                        .scaleEffect(0.6)
+                        .frame(width: 32)
+                        .padding(.trailing, 8)
+                } else {
+                    Toggle("", isOn: Binding(
+                        get: { isToggleOn },
+                        set: { onToggle($0) }
+                    ))
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .scaleEffect(0.7)
+                    .padding(.trailing, 8)
+                }
+            }
+        }
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected
+                      ? OmiColors.backgroundTertiary.opacity(0.8)
+                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
+        )
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .padding(.bottom, 2)
+        .help(isCollapsed ? "\(label) (\(isToggleOn ? "On" : "Off"))" : "")
     }
 }
 
