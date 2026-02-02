@@ -218,8 +218,9 @@ struct SidebarView: View {
                     Spacer().frame(height: 16)
                 }
                 .padding(.horizontal, isCollapsed ? 8 : 16)
+                .frame(maxHeight: .infinity)
             }
-            .frame(width: currentWidth + dragOffset)
+            .frame(maxWidth: currentWidth + dragOffset, maxHeight: .infinity, alignment: .top)
             .background(Color.clear)
             .animation(.easeInOut(duration: 0.2), value: isCollapsed)
 
