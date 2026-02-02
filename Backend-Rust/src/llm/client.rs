@@ -190,45 +190,6 @@ impl LlmClient {
     // CONVERSATION PROCESSING - Port from Python llm.py
     // =========================================================================
 
-    /// Check if a conversation should be discarded
-    /// Copied from Python should_discard_conversation
-    pub async fn should_discard(&self, transcript: &str) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        // Quick optimization: long transcripts are very unlikely to be discarded
-        let word_count = transcript.split_whitespace().count();
-        if word_count > 100 {
-            return Ok(false);
-        }
-
-        // Check word count first - if too short, discard without LLM call
-        if word_count < MIN_WORD_COUNT {
-            tracing::info!("Discarding: word count {} < {}", word_count, MIN_WORD_COUNT);
-            return Ok(true);
-        }
-
-        let prompt = DISCARD_CHECK_PROMPT.replace("{transcript_text}", transcript);
-
-        // Define schema for structured output
-        let schema = serde_json::json!({
-            "type": "object",
-            "properties": {
-                "discard": {"type": "boolean"}
-            },
-            "required": ["discard"]
-        });
-
-        let response = self.call_with_schema(&prompt, Some(0.3), Some(100), Some(schema)).await?;
-
-        #[derive(Deserialize)]
-        struct DiscardResponse {
-            discard: bool,
-        }
-
-        let result: DiscardResponse = serde_json::from_str(&response)
-            .map_err(|e| format!("Failed to parse discard response: {} - {}", e, response))?;
-
-        Ok(result.discard)
-    }
-
     /// Extract brief structure from a short transcript
     /// Used for transcripts below BRIEF_TRANSCRIPT_THRESHOLD words
     /// Returns a simple summary without action items, events, or memories
