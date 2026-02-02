@@ -60,6 +60,7 @@ class AppState: ObservableObject {
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
     @Published var hasScreenRecordingPermission = false
+    @Published var isScreenCaptureKitBroken = false  // TCC says yes but ScreenCaptureKit says no
     @Published var hasAutomationPermission = false
     @Published var hasAccessibilityPermission = false
 
@@ -68,7 +69,7 @@ class AppState: ObservableObject {
     var missingPermissions: [String] {
         var missing: [String] = []
         if !hasMicrophonePermission { missing.append("Microphone") }
-        if !hasScreenRecordingPermission { missing.append("Screen Recording") }
+        if !hasScreenRecordingPermission || isScreenCaptureKitBroken { missing.append("Screen Recording") }
         if !hasNotificationPermission { missing.append("Notifications") }
         if !hasAccessibilityPermission { missing.append("Accessibility") }
         return missing
@@ -372,7 +373,7 @@ class AppState: ObservableObject {
                 if !wasGranted && isNowGranted {
                     NotificationService.shared.sendNotification(
                         title: "Notifications Enabled",
-                        message: "You'll receive proactive alerts from Omi."
+                        message: "If you don't see this banner, set notification style to \"Banners\" in System Settings."
                     )
                 }
             }
@@ -382,6 +383,20 @@ class AppState: ObservableObject {
     /// Check screen recording permission status
     func checkScreenRecordingPermission() {
         hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
+
+        // Also check if ScreenCaptureKit is in a broken state (TCC yes, SCK no)
+        if #available(macOS 14.0, *) {
+            Task {
+                let broken = await ScreenCaptureService.isScreenCaptureKitBroken()
+                await MainActor.run {
+                    self.isScreenCaptureKitBroken = broken
+                    // If broken, we effectively don't have permission
+                    if broken {
+                        log("ScreenCaptureKit is broken (TCC granted but SCK declined)")
+                    }
+                }
+            }
+        }
     }
 
     /// Check automation permission by attempting to use Apple Events
