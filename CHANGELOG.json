@@ -2,26 +2,203 @@
   "releases": [
     {
       "version": "0.1.8",
-      "date": "2025-02-02",
+      "date": "2026-02-02",
       "changes": [
         "Unified search field into persistent top bar",
-        "Backward compatibility for Flutter chat sessions"
+        "Added backward compatibility for Flutter chat sessions"
       ]
     },
     {
       "version": "0.1.7",
-      "date": "2025-02-01",
+      "date": "2026-02-02",
       "changes": [
-        "Compact RewindPage controls and improve frame display sizing",
-        "Rewrite InteractiveTimelineBar with NSView for proper scroll handling"
+        "Fixed window screenshot to maintain aspect ratio",
+        "Added no-results state to search UI",
+        "Fixed bundled ffmpeg path for SPM builds",
+        "Enhanced reset onboarding with thorough cleanup"
       ]
     },
     {
       "version": "0.1.6",
-      "date": "2025-02-01",
+      "date": "2026-02-02",
       "changes": [
-        "Skip Sentry in dev builds for resource monitoring",
-        "Change Rewind hotkey to Cmd+Option+R"
+        "Added bundled ffmpeg binary for users without Homebrew",
+        "Simplified search UI to default to results view",
+        "Added Reset Now action button to screen capture notifications",
+        "Added Launch Services registration to fix permission confusion"
+      ]
+    },
+    {
+      "version": "0.1.5",
+      "date": "2026-02-01",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.1.4",
+      "date": "2026-02-01",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.1.3",
+      "date": "2026-02-01",
+      "changes": [
+        "Redesigned search results with mode picker and Google-style list view",
+        "Changed Rewind hotkey to Cmd+Option+R",
+        "Compact RewindPage controls and improved frame display sizing",
+        "Rewrote InteractiveTimelineBar with NSView for proper scroll handling",
+        "Fixed sidebar layout to expand to full height"
+      ]
+    },
+    {
+      "version": "0.1.2",
+      "date": "2026-02-01",
+      "changes": [
+        "Updated Rewind timeline player view",
+        "Improved Rewind indexer performance",
+        "Updated settings and sidebar UI",
+        "Enhanced memories and conversations pages"
+      ]
+    },
+    {
+      "version": "0.1.1",
+      "date": "2026-02-01",
+      "changes": [
+        "Updated chat interface",
+        "Improved proactive assistants",
+        "Enhanced settings page",
+        "Focus assistant improvements"
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-02-01",
+      "changes": [
+        "Major UI overhaul with new OmiColors theme",
+        "Added chat sessions with full CRUD operations",
+        "Integrated chat sessions UI in ChatPage",
+        "Updated Tasks and Focus pages UI",
+        "Enhanced Rewind database and view model"
+      ]
+    },
+    {
+      "version": "0.0.14",
+      "date": "2026-01-31",
+      "changes": [
+        "Added transcription toggle to Settings page",
+        "Respect transcription and screen analysis settings on app launch",
+        "Fixed PostHog person profile linking",
+        "Updated OnboardingView colors to use OmiColors"
+      ]
+    },
+    {
+      "version": "0.0.13",
+      "date": "2026-01-31",
+      "changes": [
+        "Added custom Bundle extension for resource bundle access",
+        "Updated all views to use custom resource bundle accessor"
+      ]
+    },
+    {
+      "version": "0.0.12",
+      "date": "2026-01-31",
+      "changes": [
+        "Added /download endpoint to redirect to latest DMG",
+        "Added JSON schema enforcement to Gemini LLM calls",
+        "Fixed empty userId by extracting from JWT token"
+      ]
+    },
+    {
+      "version": "0.0.11",
+      "date": "2026-01-30",
+      "changes": [
+        "Added automated installation testing to release pipeline",
+        "Fixed missing notarization stapling ticket in DMG"
+      ]
+    },
+    {
+      "version": "0.0.10",
+      "date": "2026-01-30",
+      "changes": [
+        "Added ResourceMonitor for memory and CPU tracking",
+        "Track rewind screenshot viewed and timeline navigation",
+        "Track chat cleared analytics event",
+        "Improved FocusAssistant task cleanup"
+      ]
+    },
+    {
+      "version": "0.0.9",
+      "date": "2026-01-30",
+      "changes": [
+        "Removed email routes and Firestore functions from Rust backend"
+      ]
+    },
+    {
+      "version": "0.0.8",
+      "date": "2026-01-30",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.0.7",
+      "date": "2026-01-30",
+      "changes": [
+        "Added first launch tracking with system diagnostics",
+        "Fixed Firestore auth to use service account credentials",
+        "Added Sparkle delegate for update analytics tracking"
+      ]
+    },
+    {
+      "version": "0.0.6",
+      "date": "2026-01-30",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.0.5",
+      "date": "2026-01-30",
+      "changes": [
+        "Set Sparkle update check interval to 1 hour",
+        "Track advice, task, and memory extraction analytics",
+        "Track focus alert and rewind search analytics",
+        "Track app enabled/disabled analytics events",
+        "Show version number in window title"
+      ]
+    },
+    {
+      "version": "0.0.4",
+      "date": "2026-01-30",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.0.3",
+      "date": "2026-01-30",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.0.2",
+      "date": "2026-01-30",
+      "changes": [
+        "Bug fixes and stability improvements"
+      ]
+    },
+    {
+      "version": "0.0.1",
+      "date": "2026-01-30",
+      "changes": [
+        "Initial release",
+        "Updated DMG background image",
+        "Added Frameworks rpath for Sparkle runtime loading",
+        "Unified AnalyticsManager across all views"
       ]
     }
   ]
