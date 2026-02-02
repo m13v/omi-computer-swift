@@ -1768,10 +1768,13 @@ impl FirestoreService {
             field_paths.push("completed");
             fields["completed"] = json!({"booleanValue": c});
 
-            // Set completed_at if completing the item
+            // Set or clear completed_at based on completion status
+            field_paths.push("completed_at");
             if c {
-                field_paths.push("completed_at");
                 fields["completed_at"] = json!({"timestampValue": Utc::now().to_rfc3339()});
+            } else {
+                // Clear completed_at when marking as incomplete (matches Python backend behavior)
+                fields["completed_at"] = json!({"nullValue": null});
             }
         }
 
