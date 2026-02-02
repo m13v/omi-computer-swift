@@ -326,6 +326,10 @@ struct MemoriesPage: View {
                     memoryCard(memory)
                         .onTapGesture {
                             selectedMemory = memory
+                            // Auto-mark tips as read when opened
+                            if memory.isTip && !memory.isRead {
+                                Task { await markAsRead(memory) }
+                            }
                         }
                 }
             }
@@ -336,40 +340,6 @@ struct MemoriesPage: View {
 
     private func memoryCard(_ memory: ServerMemory) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Tags row
-            HStack(spacing: 6) {
-                // Unread indicator for tips
-                if memory.isTip && !memory.isRead {
-                    Circle()
-                        .fill(OmiColors.warning)
-                        .frame(width: 8, height: 8)
-                }
-
-                // Show tags
-                if memory.isTip {
-                    tagBadge("Tips", "lightbulb.fill", OmiColors.warning)
-
-                    if let tipCat = memory.tipCategory {
-                        tagBadge(tipCat.capitalized, memory.tipCategoryIcon, tagColorFor(tipCat))
-                    }
-                } else {
-                    tagBadge(memory.category.displayName, categoryIcon(memory.category), categoryColor(memory.category))
-                }
-
-                Spacer()
-
-                // Confidence score
-                if let confidence = memory.confidenceString {
-                    Text(confidence)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(OmiColors.backgroundTertiary)
-                        .cornerRadius(4)
-                }
-            }
-
             // Content
             Text(memory.content)
                 .font(.system(size: 14))
@@ -393,55 +363,67 @@ struct MemoriesPage: View {
                 .cornerRadius(6)
             }
 
-            // Footer
+            // Footer - all metadata in one line
             HStack(spacing: 6) {
-                // Source app
-                if let sourceApp = memory.sourceApp {
-                    HStack(spacing: 4) {
-                        Image(systemName: "app")
-                            .font(.system(size: 10))
-                        Text(sourceApp)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
+                // Unread indicator
+                if memory.isTip && !memory.isRead {
+                    Circle()
+                        .fill(OmiColors.warning)
+                        .frame(width: 6, height: 6)
                 }
 
-                // Source device
-                if let sourceName = memory.sourceName {
-                    if memory.sourceApp != nil {
+                // Category/Tags
+                if memory.isTip {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 10))
+                        Text("Tips")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.warning)
+
+                    if let tipCat = memory.tipCategory {
                         Text("·")
                             .foregroundColor(OmiColors.textQuaternary)
+                        HStack(spacing: 4) {
+                            Image(systemName: memory.tipCategoryIcon)
+                                .font(.system(size: 10))
+                            Text(tipCat.capitalized)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(tagColorFor(tipCat))
                     }
+                } else {
                     HStack(spacing: 4) {
-                        Image(systemName: memory.sourceIcon)
+                        Image(systemName: categoryIcon(memory.category))
                             .font(.system(size: 10))
-                        Text(sourceName)
-                            .font(.system(size: 11))
+                        Text(memory.category.displayName)
+                            .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(OmiColors.textTertiary)
+                    .foregroundColor(categoryColor(memory.category))
                 }
 
-                // Visibility
-                if memory.isPublic {
+                // Source app
+                if let sourceApp = memory.sourceApp {
                     Text("·")
                         .foregroundColor(OmiColors.textQuaternary)
-                    HStack(spacing: 4) {
-                        Image(systemName: "globe")
-                            .font(.system(size: 10))
-                        Text("Public")
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.info)
+                    Text(sourceApp)
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // Confidence
+                if let confidence = memory.confidenceString {
+                    Text("·")
+                        .foregroundColor(OmiColors.textQuaternary)
+                    Text(confidence)
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
                 }
 
                 Spacer()
 
-                // Date
-                Text(formatDate(memory.createdAt))
-                    .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textTertiary)
-
-                // Actions menu
+                // Date + dropdown menu
                 Menu {
                     Button {
                         editingMemory = memory
@@ -473,10 +455,14 @@ struct MemoriesPage: View {
                         Label("Delete", systemImage: "trash")
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .frame(width: 24, height: 24)
+                    HStack(spacing: 4) {
+                        Text(formatDate(memory.createdAt))
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
                 }
                 .menuStyle(.borderlessButton)
             }
