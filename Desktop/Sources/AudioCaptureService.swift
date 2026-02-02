@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import CoreAudio
 
 /// Service for capturing microphone audio as 16-bit PCM at 16kHz
 /// Suitable for streaming to speech-to-text services like DeepGram
@@ -259,6 +260,50 @@ class AudioCaptureService {
     /// Check if currently capturing
     var capturing: Bool {
         return isCapturing
+    }
+
+    /// Get the name of the current default input device (microphone)
+    static func getCurrentMicrophoneName() -> String? {
+        var deviceID: AudioDeviceID = 0
+        var size = UInt32(MemoryLayout<AudioDeviceID>.size)
+        var address = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultInputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+
+        let status = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &address,
+            0,
+            nil,
+            &size,
+            &deviceID
+        )
+
+        guard status == noErr, deviceID != kAudioDeviceUnknown else {
+            return nil
+        }
+
+        // Get the device name
+        var name: CFString = "" as CFString
+        size = UInt32(MemoryLayout<CFString>.size)
+        address.mSelector = kAudioObjectPropertyName
+
+        let nameStatus = AudioObjectGetPropertyData(
+            deviceID,
+            &address,
+            0,
+            nil,
+            &size,
+            &name
+        )
+
+        guard nameStatus == noErr else {
+            return nil
+        }
+
+        return name as String
     }
 
     // MARK: - Private Methods
