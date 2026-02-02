@@ -8,50 +8,49 @@ allowed-tools: Bash, Read, Edit, Grep
 
 Release a new version of the OMI Desktop app with auto-generated changelog.
 
+## CRITICAL RULES
+
+**NEVER run release steps manually.** Always use `./release.sh` for the entire pipeline.
+
+If `release.sh` fails mid-way:
+1. **DO NOT** manually run the remaining steps (staple, DMG, upload, etc.)
+2. **DO NOT** edit `release.sh` during a release to fix the issue
+3. **INVESTIGATE** why it failed
+4. **PROPOSE** changes to `release.sh` for the user to approve
+5. **RE-RUN** `./release.sh [version]` from the beginning after fixes
+
+**Why?** Manual steps lead to errors (wrong entitlements, wrong endpoints, missing signatures). The script is designed to run as a complete unit.
+
+**Exception:** If the failure is in the project code itself (not release.sh), fix the project code, then re-run release.sh.
+
 ## Release Process
 
-### Step 1: Get the last release version
+### Step 1: Get commits since last release
 
 ```bash
-git tag -l 'v*' | sort -V | tail -1
-```
-
-### Step 2: Get commits since last release
-
-```bash
-# Get commits since last tag
 LAST_TAG=$(git tag -l 'v*' | sort -V | tail -1)
+echo "Last release: $LAST_TAG"
 git log ${LAST_TAG}..HEAD --oneline --no-merges
 ```
 
-### Step 3: Analyze changes and create changelog
+### Step 2: Analyze changes and create changelog
 
 Review the commits and create a concise changelog. Group changes by category:
 - **New Features**: New functionality added
 - **Improvements**: Enhancements to existing features
 - **Bug Fixes**: Issues that were resolved
-- **Other**: Refactoring, docs, etc.
 
 Keep it user-friendly - focus on what users will notice, not internal changes.
 
-### Step 4: Update release.sh with the changelog
+### Step 3: Update release.sh with the changelog
 
-Edit `release.sh` to update two places:
+Edit `release.sh` to update two places **before** running the release:
 
-1. **GitHub Release Notes** (around line 423):
+1. **GitHub Release Notes** (around line 426):
 ```bash
-RELEASE_NOTES=$(cat <<EOF
-## Omi Desktop v${VERSION}
-
 ### What's New
 - Your changelog item 1
 - Your changelog item 2
-
-### Downloads
-- **DMG Installer**: For fresh installs, download the DMG below
-- **Auto-Update**: Existing users will receive this update automatically
-EOF
-)
 ```
 
 2. **Sparkle Appcast Changelog** (around line 470):
@@ -59,7 +58,7 @@ EOF
 "changelog": ["Changelog item 1", "Changelog item 2"],
 ```
 
-### Step 5: Run the release
+### Step 4: Run the release
 
 ```bash
 ./release.sh [version]
@@ -67,9 +66,9 @@ EOF
 
 If no version specified, it auto-increments the patch version.
 
-### Step 6: Verify the release
+### Step 5: Verify the release
 
-After release completes:
+After release completes successfully:
 1. Download the DMG from GitHub
 2. Install and launch to verify it works
 3. Check the appcast shows correct changelog:
@@ -77,22 +76,11 @@ After release completes:
    curl -s https://desktop-backend-hhibjajaja-uc.a.run.app/appcast.xml | head -30
    ```
 
-## Quick Release Command
-
-For a quick release with default changelog:
-```bash
-./release.sh
-```
-
-## Release Script Location
-
-The main release script is at: `/Users/matthewdi/omi-desktop/release.sh`
-
 ## What release.sh Does (12 Steps)
 
 1. Deploy Rust backend to Cloud Run
 2. Build the Swift desktop app
-3. Sign with Developer ID
+3. Sign with Developer ID (including ffmpeg)
 4. Notarize with Apple
 5. Staple notarization ticket
 6. Create DMG installer
@@ -103,6 +91,27 @@ The main release script is at: `/Users/matthewdi/omi-desktop/release.sh`
 11. Publish to GitHub and register in Firestore
 12. Trigger installation test
 
+## Handling Failures
+
+### Stapling fails (CDN propagation delay)
+This is common - Apple's CDN can be slow. **DO NOT** manually retry staple.
+- Wait a few minutes
+- Re-run `./release.sh [same-version]` from the beginning
+- The rebuild is fast (cached), notarization may be quick too
+
+### Notarization fails (unsigned binary)
+- Check the notarization log for which binary is unsigned
+- **Propose** adding signing for that binary in release.sh
+- After user approves the change, re-run release.sh
+
+### GitHub/GCloud auth expires
+- Run `gh auth login` or `gcloud auth login`
+- Re-run release.sh
+
+### Build fails
+- This is a project code issue, not release.sh
+- Fix the code, then re-run release.sh
+
 ## Environment Requirements
 
 The release requires these in `.env`:
@@ -112,13 +121,6 @@ The release requires these in `.env`:
 - `APPLE_PRIVATE_KEY` - For Apple Sign-In config
 - Various Firebase/Google/Apple OAuth keys
 
-## Troubleshooting
+## Release Script Location
 
-### Notarization fails with unsigned binary
-The script now signs `ffmpeg` automatically. If other binaries are added, update the signing section in release.sh.
-
-### GitHub release fails
-Run `gh auth login` to re-authenticate.
-
-### GCloud auth expires
-Run `gcloud auth login` to re-authenticate.
+`/Users/matthewdi/omi-desktop/release.sh`
