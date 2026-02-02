@@ -931,7 +931,7 @@ impl FirestoreService {
         self.get_memories_filtered(uid, limit, 0, None, None, false).await
     }
 
-    /// Batch fetch conversations and populate source field on memories
+    /// Batch fetch conversations and populate source and input_device_name fields on memories
     async fn enrich_memories_with_source(&self, uid: &str, memories: &mut [MemoryDB]) {
         use std::collections::{HashMap, HashSet};
 
@@ -946,7 +946,8 @@ impl FirestoreService {
         }
 
         // Fetch conversations in parallel (limit to avoid too many concurrent requests)
-        let mut source_map: HashMap<String, String> = HashMap::new();
+        // Store both source and input_device_name
+        let mut source_map: HashMap<String, (String, Option<String>)> = HashMap::new();
 
         // Batch fetch - fetch up to 10 at a time
         let ids: Vec<&str> = conversation_ids.into_iter().collect();
@@ -961,15 +962,18 @@ impl FirestoreService {
             for (id, result) in chunk.iter().zip(results) {
                 if let Ok(Some(conv)) = result {
                     let source_str = format!("{:?}", conv.source).to_lowercase();
-                    source_map.insert(id.to_string(), source_str);
+                    source_map.insert(id.to_string(), (source_str, conv.input_device_name.clone()));
                 }
             }
         }
 
-        // Populate source field on memories
+        // Populate source and input_device_name fields on memories
         for memory in memories.iter_mut() {
             if let Some(conv_id) = &memory.conversation_id {
-                memory.source = source_map.get(conv_id).cloned();
+                if let Some((source, device_name)) = source_map.get(conv_id) {
+                    memory.source = Some(source.clone());
+                    memory.input_device_name = device_name.clone();
+                }
             }
         }
     }
@@ -1173,6 +1177,7 @@ impl FirestoreService {
         tags: &[String],
         reasoning: Option<&str>,
         current_activity: Option<&str>,
+        source: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let memory_id = document_id_from_seed(content);
         let now = Utc::now();
@@ -1249,6 +1254,9 @@ impl FirestoreService {
         if let Some(activity) = current_activity {
             fields["current_activity"] = json!({"stringValue": activity});
         }
+        if let Some(src) = source {
+            fields["source"] = json!({"stringValue": src});
+        }
 
         let doc = json!({ "fields": fields });
 
@@ -1275,7 +1283,7 @@ impl FirestoreService {
         content: &str,
         visibility: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        self.create_memory(uid, content, visibility, None, None, None, None, &[], None, None).await
+        self.create_memory(uid, content, visibility, None, None, None, None, &[], None, None, None).await
     }
 
     /// Update memory read/dismissed status
@@ -1626,7 +1634,7 @@ impl FirestoreService {
         }
 
         let results: Vec<Value> = response.json().await?;
-        let action_items = results
+        let mut action_items: Vec<ActionItemDB> = results
             .into_iter()
             .filter_map(|doc| {
                 doc.get("document")
@@ -1634,7 +1642,66 @@ impl FirestoreService {
             })
             .collect();
 
+        // Enrich action items that have conversation_id but no source
+        self.enrich_action_items_with_source(uid, &mut action_items).await;
+
         Ok(action_items)
+    }
+
+    /// Batch fetch conversations and populate source field on action items
+    /// For items with conversation_id but no source, derives source as "transcription:{conversation.source}"
+    async fn enrich_action_items_with_source(&self, uid: &str, action_items: &mut [ActionItemDB]) {
+        use std::collections::{HashMap, HashSet};
+
+        // Collect unique conversation IDs from items that need enrichment
+        // (have conversation_id but no source)
+        let conversation_ids: HashSet<&str> = action_items
+            .iter()
+            .filter(|item| item.source.is_none() && item.conversation_id.is_some())
+            .filter_map(|item| item.conversation_id.as_deref())
+            .collect();
+
+        if conversation_ids.is_empty() {
+            return;
+        }
+
+        tracing::debug!(
+            "Enriching {} action items with source from {} conversations",
+            action_items.iter().filter(|i| i.source.is_none()).count(),
+            conversation_ids.len()
+        );
+
+        // Fetch conversations in parallel (limit to avoid too many concurrent requests)
+        let mut source_map: HashMap<String, String> = HashMap::new();
+
+        // Batch fetch - fetch up to 10 at a time
+        let ids: Vec<&str> = conversation_ids.into_iter().collect();
+        for chunk in ids.chunks(10) {
+            let futures: Vec<_> = chunk
+                .iter()
+                .map(|id| self.get_conversation(uid, id))
+                .collect();
+
+            let results = futures::future::join_all(futures).await;
+
+            for (id, result) in chunk.iter().zip(results) {
+                if let Ok(Some(conv)) = result {
+                    // Format as "transcription:{source}" to match expected values
+                    // e.g., "transcription:omi", "transcription:desktop"
+                    let source_str = format!("transcription:{:?}", conv.source).to_lowercase();
+                    source_map.insert(id.to_string(), source_str);
+                }
+            }
+        }
+
+        // Populate source field on action items that don't have one
+        for item in action_items.iter_mut() {
+            if item.source.is_none() {
+                if let Some(conv_id) = &item.conversation_id {
+                    item.source = source_map.get(conv_id).cloned();
+                }
+            }
+        }
     }
 
     /// Get a single action item by ID
@@ -1668,7 +1735,17 @@ impl FirestoreService {
         }
 
         let doc: Value = response.json().await?;
-        let action_item = self.parse_action_item(&doc)?;
+        let mut action_item = self.parse_action_item(&doc)?;
+
+        // Enrich with source from conversation if needed
+        if action_item.source.is_none() {
+            if let Some(conv_id) = &action_item.conversation_id {
+                if let Ok(Some(conv)) = self.get_conversation(uid, conv_id).await {
+                    action_item.source = Some(format!("transcription:{:?}", conv.source).to_lowercase());
+                }
+            }
+        }
+
         Ok(Some(action_item))
     }
 
@@ -1740,7 +1817,16 @@ impl FirestoreService {
 
         // Parse and return the updated document
         let updated_doc: Value = response.json().await?;
-        let action_item = self.parse_action_item(&updated_doc)?;
+        let mut action_item = self.parse_action_item(&updated_doc)?;
+
+        // Enrich with source from conversation if needed
+        if action_item.source.is_none() {
+            if let Some(conv_id) = &action_item.conversation_id {
+                if let Ok(Some(conv)) = self.get_conversation(uid, conv_id).await {
+                    action_item.source = Some(format!("transcription:{:?}", conv.source).to_lowercase());
+                }
+            }
+        }
 
         tracing::info!("Updated action item {} for user {}", item_id, uid);
         Ok(action_item)
@@ -2602,6 +2688,7 @@ impl FirestoreService {
             apps_results,
             geolocation: self.parse_geolocation(fields),
             photos: self.parse_photos(fields),
+            input_device_name: self.parse_string(fields, "input_device_name"),
         })
     }
 
@@ -2690,7 +2777,8 @@ impl FirestoreService {
             visibility: self.parse_string(fields, "visibility").unwrap_or_else(|| "private".to_string()),
             manually_added: self.parse_bool(fields, "manually_added").unwrap_or(false),
             scoring: self.parse_string(fields, "scoring"),
-            source: None, // Enriched later from linked conversation
+            source: self.parse_string(fields, "source"), // Can be stored directly for tips, or enriched from conversation
+            input_device_name: None, // Enriched later from linked conversation
             confidence: self.parse_float(fields, "confidence"),
             source_app: self.parse_string(fields, "source_app"),
             context_summary: self.parse_string(fields, "context_summary"),
@@ -3046,6 +3134,11 @@ impl FirestoreService {
 
         // Add apps_results
         fields.insert("apps_results".to_string(), json!({"arrayValue": {"values": apps_results_values}}));
+
+        // Add input_device_name if present
+        if let Some(device_name) = &conv.input_device_name {
+            fields.insert("input_device_name".to_string(), json!({"stringValue": device_name}));
+        }
 
         json!({"fields": fields})
     }
