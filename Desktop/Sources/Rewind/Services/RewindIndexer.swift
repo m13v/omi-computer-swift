@@ -31,9 +31,6 @@ actor RewindIndexer {
 
     /// Process a captured frame from ProactiveAssistantsPlugin
     func processFrame(_ frame: CapturedFrame) async {
-        // Check if Rewind is enabled
-        guard RewindSettings.shared.isEnabled else { return }
-
         // Ensure initialized
         if !isInitialized {
             do {
@@ -97,8 +94,6 @@ actor RewindIndexer {
 
     /// Process a frame with additional metadata (focus status, etc.)
     func processFrame(_ frame: CapturedFrame, focusStatus: String?, extractedTasks: [String]?, advice: String?) async {
-        guard RewindSettings.shared.isEnabled else { return }
-
         if !isInitialized {
             do {
                 try await initialize()
