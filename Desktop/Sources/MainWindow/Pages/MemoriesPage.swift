@@ -403,13 +403,43 @@ struct MemoriesPage: View {
                     .foregroundColor(categoryColor(memory.category))
                 }
 
-                // Source app
+                // Source device (Screenshot for tips, device name for transcriptions)
+                if let sourceName = memory.sourceName {
+                    Text("·")
+                        .foregroundColor(OmiColors.textQuaternary)
+                    HStack(spacing: 4) {
+                        Image(systemName: memory.sourceIcon)
+                            .font(.system(size: 10))
+                        Text(sourceName)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // Source app (for tips from specific apps)
                 if let sourceApp = memory.sourceApp {
                     Text("·")
                         .foregroundColor(OmiColors.textQuaternary)
-                    Text(sourceApp)
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "app")
+                            .font(.system(size: 10))
+                        Text(sourceApp)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // Microphone name (for desktop transcriptions only)
+                if let micName = memory.inputDeviceName, memory.source == "desktop" {
+                    Text("·")
+                        .foregroundColor(OmiColors.textQuaternary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "mic")
+                            .font(.system(size: 10))
+                        Text(micName)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
                 }
 
                 // Confidence
@@ -639,6 +669,20 @@ struct MemoriesPage: View {
                             HStack(spacing: 4) {
                                 Image(systemName: memory.sourceIcon)
                                 Text(sourceName)
+                            }
+                            .foregroundColor(OmiColors.textPrimary)
+                        }
+                        .font(.system(size: 13))
+                    }
+
+                    if let micName = memory.inputDeviceName, memory.source == "desktop" {
+                        HStack {
+                            Text("Microphone")
+                                .foregroundColor(OmiColors.textSecondary)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Image(systemName: "mic")
+                                Text(micName)
                             }
                             .foregroundColor(OmiColors.textPrimary)
                         }
