@@ -471,14 +471,10 @@ class AppState: ObservableObject {
     /// Trigger accessibility permission prompt
     func triggerAccessibilityPermission() {
         // This will prompt the user if not already trusted
+        // The system alert includes an "Open System Settings" button, so we don't need to open it separately
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
         hasAccessibilityPermission = trusted
-
-        // Also open the settings pane for manual grant
-        if !trusted {
-            openAccessibilityPreferences()
-        }
     }
 
     /// Open Accessibility preferences in System Settings
@@ -1163,6 +1159,48 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Reset onboarding state and all TCC permissions, then restart the app
+    /// This clears UserDefaults onboarding keys and resets permissions so the user
+    /// can go through onboarding again with fresh permission prompts
+    nonisolated func resetOnboardingAndRestart() {
+        let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
+        log("Resetting onboarding for \(bundleId)...")
+
+        // 1. Clear onboarding-related UserDefaults keys
+        let onboardingKeys = [
+            "hasCompletedOnboarding",
+            "onboardingStep",
+            "hasTriggeredNotification",
+            "hasTriggeredAutomation",
+            "hasTriggeredScreenRecording",
+            "hasTriggeredMicrophone",
+            "hasTriggeredSystemAudio",
+            "hasTriggeredAccessibility"
+        ]
+        for key in onboardingKeys {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        UserDefaults.standard.synchronize()
+        log("Cleared onboarding UserDefaults keys")
+
+        // 2. Reset ALL TCC permissions using tccutil
+        // Using "All" is more reliable than resetting individual services
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "All", bundleId]
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            log("tccutil reset All completed with exit code: \(process.terminationStatus)")
+        } catch {
+            log("Failed to run tccutil: \(error)")
+        }
+
+        // 3. Restart the app
+        restartApp()
+    }
+
     /// Reset microphone permission using tccutil (Option 1: Direct)
     /// Returns true if the reset command was executed successfully
     /// If shouldRestart is true, the app will restart after reset
@@ -1285,6 +1323,6 @@ extension Notification.Name {
     static let screenCaptureKitBroken = Notification.Name("screenCaptureKitBroken")
     /// Posted to navigate to Rewind settings
     static let navigateToRewindSettings = Notification.Name("navigateToRewindSettings")
-    /// Posted to navigate to Rewind page (global hotkey: Cmd+Shift+Space)
+    /// Posted to navigate to Rewind page (global hotkey: Cmd+Option+R)
     static let navigateToRewind = Notification.Name("navigateToRewind")
 }
