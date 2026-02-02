@@ -42,21 +42,27 @@ Review the commits and create a concise changelog. Group changes by category:
 
 Keep it user-friendly - focus on what users will notice, not internal changes.
 
-### Step 3: Update release.sh with the changelog
+### Step 3: Update CHANGELOG.json
 
-Edit `release.sh` to update two places **before** running the release:
+Add a new entry at the **top** of the `releases` array in `CHANGELOG.json`:
 
-1. **GitHub Release Notes** (around line 426):
-```bash
-### What's New
-- Your changelog item 1
-- Your changelog item 2
+```json
+{
+  "releases": [
+    {
+      "version": "X.Y.Z",
+      "date": "YYYY-MM-DD",
+      "changes": [
+        "Your changelog item 1",
+        "Your changelog item 2"
+      ]
+    },
+    // ... previous releases remain below
+  ]
+}
 ```
 
-2. **Sparkle Appcast Changelog** (around line 470):
-```bash
-"changelog": ["Changelog item 1", "Changelog item 2"],
-```
+The release script reads the first entry and uses it for both GitHub release notes and Sparkle appcast.
 
 ### Step 4: Run the release
 
@@ -121,6 +127,7 @@ The release requires these in `.env`:
 - `APPLE_PRIVATE_KEY` - For Apple Sign-In config
 - Various Firebase/Google/Apple OAuth keys
 
-## Release Script Location
+## Key Files
 
-`/Users/matthewdi/omi-desktop/release.sh`
+- **Release script**: `/Users/matthewdi/omi-desktop/release.sh`
+- **Changelog**: `/Users/matthewdi/omi-desktop/CHANGELOG.json` - Version history with all release notes
