@@ -133,21 +133,24 @@ struct FeedbackView: View {
         // Track feedback submitted
         AnalyticsManager.shared.feedbackSubmitted(feedbackLength: feedbackText.count)
 
-        // Create a Sentry event ID (capture a message to attach feedback to)
-        let eventId = SentrySDK.capture(message: "User Feedback Submitted")
+        // Submit to Sentry (skip in dev builds)
+        if !AnalyticsManager.isDevBuild {
+            // Create a Sentry event ID (capture a message to attach feedback to)
+            let eventId = SentrySDK.capture(message: "User Feedback Submitted")
 
-        // Create feedback using new API
-        let feedback = SentryFeedback(
-            message: feedbackText.trimmingCharacters(in: .whitespacesAndNewlines),
-            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-            email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-            associatedEventId: eventId
-        )
+            // Create feedback using new API
+            let feedback = SentryFeedback(
+                message: feedbackText.trimmingCharacters(in: .whitespacesAndNewlines),
+                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                associatedEventId: eventId
+            )
 
-        // Submit to Sentry
-        SentrySDK.capture(feedback: feedback)
-
-        log("User feedback submitted to Sentry")
+            SentrySDK.capture(feedback: feedback)
+            log("User feedback submitted to Sentry")
+        } else {
+            log("User feedback (dev build - not sent to Sentry): \(feedbackText.trimmingCharacters(in: .whitespacesAndNewlines))")
+        }
 
         // Show success
         withAnimation {
