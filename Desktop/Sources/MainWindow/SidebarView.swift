@@ -442,7 +442,7 @@ struct SidebarView: View {
 
     // Check if any permission is specifically denied (not just missing)
     private var hasPermissionDenied: Bool {
-        appState.isMicrophonePermissionDenied() || appState.isScreenRecordingPermissionDenied() || appState.isNotificationPermissionDenied()
+        appState.isMicrophonePermissionDenied() || appState.isScreenRecordingPermissionDenied() || appState.isNotificationPermissionDenied() || appState.isAccessibilityPermissionDenied()
     }
 
     @State private var permissionPulse = false
@@ -450,7 +450,8 @@ struct SidebarView: View {
     private var permissionWarningButton: some View {
         VStack(spacing: 6) {
             // Screen Recording permission (primary for Rewind)
-            if !appState.hasScreenRecordingPermission {
+            // Also show if ScreenCaptureKit is broken (TCC says yes but SCK says no)
+            if !appState.hasScreenRecordingPermission || appState.isScreenCaptureKitBroken {
                 screenRecordingPermissionRow
             }
 
@@ -462,6 +463,11 @@ struct SidebarView: View {
             // Notification permission
             if !appState.hasNotificationPermission {
                 notificationPermissionRow
+            }
+
+            // Accessibility permission
+            if !appState.hasAccessibilityPermission {
+                accessibilityPermissionRow
             }
         }
         .padding(.bottom, 8)
@@ -486,17 +492,19 @@ struct SidebarView: View {
 
     private var screenRecordingPermissionRow: some View {
         let isDenied = appState.isScreenRecordingPermissionDenied()
-        let color: Color = isDenied ? .red : OmiColors.warning
+        let isBroken = appState.isScreenCaptureKitBroken  // TCC yes but SCK no
+        let needsReset = isBroken  // Show reset when broken
+        let color: Color = (isDenied || isBroken) ? .red : OmiColors.warning
 
         return HStack(spacing: 8) {
-            Image(systemName: isDenied ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle")
+            Image(systemName: (isDenied || isBroken) ? "rectangle.on.rectangle.slash" : "rectangle.on.rectangle")
                 .font(.system(size: 15))
                 .foregroundColor(color)
                 .frame(width: iconWidth)
-                .scaleEffect(permissionPulse && isDenied ? 1.1 : 1.0)
+                .scaleEffect(permissionPulse && (isDenied || isBroken) ? 1.1 : 1.0)
 
             if !isCollapsed {
-                Text("Screen Recording")
+                Text(isBroken ? "Screen Recording (Reset Required)" : "Screen Recording")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(color)
                     .lineLimit(1)
@@ -504,12 +512,17 @@ struct SidebarView: View {
                 Spacer()
 
                 Button(action: {
-                    // Request both traditional TCC and ScreenCaptureKit permissions
-                    ScreenCaptureService.requestAllScreenCapturePermissions()
-                    // Also open settings for manual grant if needed
-                    ScreenCaptureService.openScreenRecordingPreferences()
+                    if needsReset {
+                        // Reset and restart to fix broken ScreenCaptureKit state
+                        ScreenCaptureService.resetScreenCapturePermissionAndRestart()
+                    } else {
+                        // Request both traditional TCC and ScreenCaptureKit permissions
+                        ScreenCaptureService.requestAllScreenCapturePermissions()
+                        // Also open settings for manual grant if needed
+                        ScreenCaptureService.openScreenRecordingPreferences()
+                    }
                 }) {
-                    Text("Grant")
+                    Text(needsReset ? "Reset" : "Grant")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundColor(.white)
                         .padding(.horizontal, 10)
@@ -526,13 +539,13 @@ struct SidebarView: View {
         .padding(.vertical, 9)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(color.opacity(permissionPulse && isDenied ? 0.25 : 0.15))
+                .fill(color.opacity(permissionPulse && (isDenied || isBroken) ? 0.25 : 0.15))
                 .overlay(
                     RoundedRectangle(cornerRadius: 10)
-                        .stroke(color.opacity(0.3), lineWidth: isDenied ? 2 : 1)
+                        .stroke(color.opacity(0.3), lineWidth: (isDenied || isBroken) ? 2 : 1)
                 )
         )
-        .help(isCollapsed ? "Screen Recording permission required" : "")
+        .help(isCollapsed ? (isBroken ? "Screen Recording needs reset" : "Screen Recording permission required") : "")
     }
 
     private var microphonePermissionRow: some View {
@@ -641,6 +654,55 @@ struct SidebarView: View {
                 )
         )
         .help(isCollapsed ? "Notification permission required" : "")
+    }
+
+    private var accessibilityPermissionRow: some View {
+        let isDenied = appState.isAccessibilityPermissionDenied()
+        let color: Color = isDenied ? .red : OmiColors.warning
+
+        return HStack(spacing: 8) {
+            Image(systemName: isDenied ? "hand.raised.slash.fill" : "hand.raised.fill")
+                .font(.system(size: 15))
+                .foregroundColor(color)
+                .frame(width: iconWidth)
+                .scaleEffect(permissionPulse && isDenied ? 1.1 : 1.0)
+
+            if !isCollapsed {
+                Text("Accessibility")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(color)
+                    .lineLimit(1)
+
+                Spacer()
+
+                Button(action: {
+                    // Trigger the permission request, which will also open settings
+                    appState.triggerAccessibilityPermission()
+                }) {
+                    Text(isDenied ? "Fix" : "Grant")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(color)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 9)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(color.opacity(permissionPulse && isDenied ? 0.25 : 0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10)
+                        .stroke(color.opacity(0.3), lineWidth: isDenied ? 2 : 1)
+                )
+        )
+        .help(isCollapsed ? "Accessibility permission required" : "")
     }
 
     // MARK: - Toggle Handlers
