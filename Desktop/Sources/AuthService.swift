@@ -281,11 +281,13 @@ class AuthService {
             AnalyticsManager.shared.identify()
             AnalyticsManager.shared.signInCompleted(provider: provider)
 
-            // Set Sentry user context for error tracking
-            let sentryUser = User(userId: userId)
-            sentryUser.email = tokenResult.email
-            sentryUser.username = displayName.isEmpty ? nil : displayName
-            SentrySDK.setUser(sentryUser)
+            // Set Sentry user context for error tracking (skip in dev builds)
+            if !AnalyticsManager.isDevBuild {
+                let sentryUser = User(userId: userId)
+                sentryUser.email = tokenResult.email
+                sentryUser.username = displayName.isEmpty ? nil : displayName
+                SentrySDK.setUser(sentryUser)
+            }
 
             NSLog("OMI AUTH: Sign in complete!")
 
@@ -731,8 +733,10 @@ class AuthService {
         AnalyticsManager.shared.signedOut()
         AnalyticsManager.shared.reset()
 
-        // Clear Sentry user context
-        SentrySDK.setUser(nil)
+        // Clear Sentry user context (skip in dev builds)
+        if !AnalyticsManager.isDevBuild {
+            SentrySDK.setUser(nil)
+        }
 
         try Auth.auth().signOut()
         isSignedIn = false
