@@ -131,7 +131,8 @@ struct DesktopHomeView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToRewind)) { _ in
-            // Navigate to Rewind page (index 6) - triggered by global hotkey Cmd+Shift+Space
+            // Navigate to Rewind page (index 6) - triggered by global hotkey Cmd+Option+R
+            log("DesktopHomeView: Received navigateToRewind notification, navigating to Rewind (index \(SidebarNavItem.rewind.rawValue))")
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedIndex = SidebarNavItem.rewind.rawValue
             }
