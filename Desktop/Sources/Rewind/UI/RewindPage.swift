@@ -13,7 +13,13 @@ struct RewindPage: View {
     @State private var playbackTimer: Timer?
 
     @State private var showSearchResults = false
+    @State private var selectedSearchTab: SearchResultsTab? = nil
     @FocusState private var isSearchFocused: Bool
+
+    enum SearchResultsTab {
+        case list
+        case timeline
+    }
 
     var body: some View {
         ZStack {
@@ -44,6 +50,10 @@ struct RewindPage: View {
         }
         // Global keyboard handlers
         .onKeyPress(.escape) {
+            if selectedSearchTab != nil {
+                selectedSearchTab = nil
+                return .handled
+            }
             if showSearchResults {
                 showSearchResults = false
                 return .handled
@@ -226,6 +236,7 @@ struct RewindPage: View {
                 Button {
                     viewModel.searchQuery = ""
                     showSearchResults = false
+                    selectedSearchTab = nil
                 } label: {
                     Image(systemName: "xmark.circle.fill")
                         .font(.system(size: 12))
@@ -251,19 +262,58 @@ struct RewindPage: View {
 
     private var searchResultsPanel: some View {
         VStack(spacing: 0) {
-            // Results header
-            HStack {
+            // Results header with match count and tabs
+            HStack(spacing: 16) {
                 if let query = viewModel.activeSearchQuery {
-                    Text("Results for \"\(query)\"")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.white.opacity(0.8))
-
-                    Text("• \(viewModel.screenshots.count) matches")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.5))
+                    Text("\(viewModel.screenshots.count) matches for \"\(query)\"")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.white.opacity(0.9))
                 }
 
                 Spacer()
+
+                // Tab buttons
+                HStack(spacing: 8) {
+                    // Search Results tab
+                    Button {
+                        selectedSearchTab = selectedSearchTab == .list ? nil : .list
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 11))
+                            Text("Search Results")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundColor(selectedSearchTab == .list ? .white : .white.opacity(0.6))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(selectedSearchTab == .list ? OmiColors.purplePrimary : Color.white.opacity(0.1))
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Timeline tab
+                    Button {
+                        selectedSearchTab = selectedSearchTab == .timeline ? nil : .timeline
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "timeline.selection")
+                                .font(.system(size: 11))
+                            Text("Timeline")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundColor(selectedSearchTab == .timeline ? .white : .white.opacity(0.6))
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(selectedSearchTab == .timeline ? OmiColors.purplePrimary : Color.white.opacity(0.1))
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 // App filter in results
                 if !viewModel.availableApps.isEmpty {
@@ -308,6 +358,7 @@ struct RewindPage: View {
 
                 Button {
                     showSearchResults = false
+                    selectedSearchTab = nil
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 10, weight: .semibold))
@@ -319,45 +370,77 @@ struct RewindPage: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 20)
-            .padding(.vertical, 8)
+            .padding(.vertical, 10)
 
-            // Horizontal scrolling results
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    ForEach(Array(viewModel.screenshots.prefix(20).enumerated()), id: \.element.id) { index, screenshot in
-                        SearchResultCard(
-                            screenshot: screenshot,
-                            searchQuery: viewModel.activeSearchQuery,
-                            isSelected: currentIndex < viewModel.screenshots.count &&
-                                       viewModel.screenshots[currentIndex].id == screenshot.id
-                        ) {
-                            // Navigate to this result
-                            if let idx = viewModel.screenshots.firstIndex(where: { $0.id == screenshot.id }) {
-                                seekToIndex(idx)
-                            }
-                            showSearchResults = false
-                        }
-                    }
-
-                    if viewModel.screenshots.count > 20 {
-                        VStack {
-                            Text("+\(viewModel.screenshots.count - 20)")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white.opacity(0.7))
-                            Text("more")
-                                .font(.system(size: 11))
-                                .foregroundColor(.white.opacity(0.5))
-                        }
-                        .frame(width: 80, height: 60)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(6)
-                    }
-                }
-                .padding(.horizontal, 20)
-                .padding(.bottom, 12)
+            // Tab content
+            if selectedSearchTab == .list {
+                searchResultsListView
+            } else if selectedSearchTab == .timeline {
+                searchResultsTimelineView
             }
         }
         .background(Color.black.opacity(0.8))
+    }
+
+    // MARK: - Search Results List View
+
+    private var searchResultsListView: some View {
+        ScrollView {
+            LazyVStack(spacing: 8) {
+                ForEach(viewModel.screenshots, id: \.id) { screenshot in
+                    SearchResultRow(
+                        screenshot: screenshot,
+                        searchQuery: viewModel.activeSearchQuery,
+                        isSelected: currentIndex < viewModel.screenshots.count &&
+                                   viewModel.screenshots[currentIndex].id == screenshot.id
+                    ) {
+                        // Navigate to this result
+                        if let idx = viewModel.screenshots.firstIndex(where: { $0.id == screenshot.id }) {
+                            seekToIndex(idx)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+        }
+        .frame(maxHeight: 300)
+    }
+
+    // MARK: - Search Results Timeline View
+
+    private var searchResultsTimelineView: some View {
+        VStack(spacing: 12) {
+            // Mini timeline showing all results as dots
+            GeometryReader { geometry in
+                ZStack(alignment: .leading) {
+                    // Background track
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.white.opacity(0.1))
+
+                    // Result markers
+                    ForEach(Array(viewModel.screenshots.enumerated()), id: \.element.id) { index, _ in
+                        let position = geometry.size.width * CGFloat(index) / CGFloat(max(1, viewModel.screenshots.count - 1))
+                        Circle()
+                            .fill(index == currentIndex ? OmiColors.purplePrimary : Color.yellow)
+                            .frame(width: index == currentIndex ? 10 : 6, height: index == currentIndex ? 10 : 6)
+                            .position(x: position, y: geometry.size.height / 2)
+                            .onTapGesture {
+                                seekToIndex(index)
+                            }
+                    }
+                }
+            }
+            .frame(height: 20)
+            .padding(.horizontal, 20)
+
+            // Navigation hint
+            Text("Click on a marker to jump to that result • Use arrow keys to navigate")
+                .font(.system(size: 11))
+                .foregroundColor(.white.opacity(0.5))
+                .padding(.bottom, 8)
+        }
+        .padding(.top, 8)
     }
 
     // MARK: - Frame Display
@@ -633,18 +716,60 @@ struct RewindPage: View {
         guard currentIndex < viewModel.screenshots.count else { return }
 
         isLoadingFrame = true
-        let screenshot = viewModel.screenshots[currentIndex]
 
-        do {
-            let image = try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+        // Try to load current frame
+        if let image = await tryLoadFrame(at: currentIndex) {
             currentImage = image
-            viewModel.selectScreenshot(screenshot)
-        } catch {
-            logError("RewindPage: Failed to load frame: \(error)")
-            currentImage = nil
+            viewModel.selectScreenshot(viewModel.screenshots[currentIndex])
+            isLoadingFrame = false
+            return
         }
 
+        // Current frame failed - search for first valid frame
+        for offset in 1..<viewModel.screenshots.count {
+            // Try forward
+            let forwardIndex = currentIndex + offset
+            if forwardIndex < viewModel.screenshots.count {
+                if let image = await tryLoadFrame(at: forwardIndex) {
+                    currentIndex = forwardIndex
+                    currentImage = image
+                    viewModel.selectScreenshot(viewModel.screenshots[forwardIndex])
+                    isLoadingFrame = false
+                    log("RewindPage: Skipped to valid frame at index \(forwardIndex)")
+                    return
+                }
+            }
+
+            // Try backward
+            let backwardIndex = currentIndex - offset
+            if backwardIndex >= 0 {
+                if let image = await tryLoadFrame(at: backwardIndex) {
+                    currentIndex = backwardIndex
+                    currentImage = image
+                    viewModel.selectScreenshot(viewModel.screenshots[backwardIndex])
+                    isLoadingFrame = false
+                    log("RewindPage: Skipped to valid frame at index \(backwardIndex)")
+                    return
+                }
+            }
+        }
+
+        // No valid frames found
+        currentImage = nil
         isLoadingFrame = false
+        logError("RewindPage: No valid frames found")
+    }
+
+    /// Try to load a frame at a specific index, returns nil if failed
+    private func tryLoadFrame(at index: Int) async -> NSImage? {
+        guard index >= 0 && index < viewModel.screenshots.count else { return nil }
+        let screenshot = viewModel.screenshots[index]
+
+        do {
+            return try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+        } catch {
+            return nil
+        }
     }
 
     private func seekToIndex(_ index: Int) {
@@ -788,99 +913,76 @@ struct RewindPage: View {
     }
 }
 
-// MARK: - Search Result Card
+// MARK: - Search Result Row
 
-struct SearchResultCard: View {
+struct SearchResultRow: View {
     let screenshot: Screenshot
     let searchQuery: String?
     let isSelected: Bool
     let onTap: () -> Void
 
-    @State private var thumbnail: NSImage?
     @State private var isHovered = false
 
     var body: some View {
         Button(action: onTap) {
-            VStack(alignment: .leading, spacing: 6) {
-                // Thumbnail
-                ZStack {
-                    if let image = thumbnail {
-                        Image(nsImage: image)
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                            .frame(width: 140, height: 80)
-                            .clipped()
-                    } else {
-                        Rectangle()
-                            .fill(Color.white.opacity(0.1))
-                            .frame(width: 140, height: 80)
-                        ProgressView()
-                            .scaleEffect(0.6)
-                            .tint(.white)
-                    }
-                }
-                .cornerRadius(6)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(isSelected ? OmiColors.purplePrimary : Color.clear, lineWidth: 2)
-                )
+            HStack(spacing: 12) {
+                // App icon
+                AppIconView(appName: screenshot.appName, size: 24)
 
                 // Info
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 4) {
-                        AppIconView(appName: screenshot.appName, size: 12)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
                         Text(screenshot.appName)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white.opacity(0.9))
-                            .lineLimit(1)
-                    }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
 
-                    Text(screenshot.formattedTime)
-                        .font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(.white.opacity(0.5))
+                        if let windowTitle = screenshot.windowTitle, !windowTitle.isEmpty {
+                            Text("— \(windowTitle)")
+                                .font(.system(size: 12))
+                                .foregroundColor(.white.opacity(0.6))
+                                .lineLimit(1)
+                        }
+                    }
 
                     // Context snippet if searching
                     if let query = searchQuery,
                        let snippet = screenshot.contextSnippet(for: query) {
                         Text(snippet)
-                            .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.6))
+                            .font(.system(size: 12))
+                            .foregroundColor(.white.opacity(0.7))
                             .lineLimit(2)
-                            .padding(.top, 2)
                     }
                 }
+
+                Spacer()
+
+                // Timestamp
+                Text(screenshot.formattedDate)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.white.opacity(0.5))
+
+                // Selection indicator
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
             }
-            .padding(6)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isHovered ? Color.white.opacity(0.15) : Color.white.opacity(0.05))
+                    .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) :
+                          (isHovered ? Color.white.opacity(0.1) : Color.white.opacity(0.05)))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
-        }
-        .task {
-            await loadThumbnail()
-        }
-    }
-
-    private func loadThumbnail() async {
-        do {
-            let fullImage = try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
-            let size = NSSize(width: 280, height: 160)
-            let newImage = NSImage(size: size)
-            newImage.lockFocus()
-            fullImage.draw(
-                in: NSRect(origin: .zero, size: size),
-                from: NSRect(origin: .zero, size: fullImage.size),
-                operation: .copy,
-                fraction: 1.0
-            )
-            newImage.unlockFocus()
-            thumbnail = newImage
-        } catch {
-            // Silent fail
         }
     }
 }
