@@ -25,15 +25,15 @@ struct RewindPage: View {
             // Background
             Color.black.ignoresSafeArea()
 
-            if viewModel.isLoading && viewModel.screenshots.isEmpty {
+            if viewModel.isLoading && viewModel.screenshots.isEmpty && viewModel.activeSearchQuery == nil {
                 loadingView
             } else if let error = viewModel.errorMessage {
                 errorView(error)
+            } else if viewModel.activeSearchQuery != nil || !viewModel.searchQuery.isEmpty {
+                // Search is active - always show search UI even with 0 results
+                searchContent
             } else if viewModel.screenshots.isEmpty {
                 emptyState
-            } else if viewModel.activeSearchQuery != nil {
-                // Search is active - show mode picker or selected mode
-                searchContent
             } else {
                 // Normal timeline view
                 timelineContent
@@ -58,6 +58,15 @@ struct RewindPage: View {
             // When search is cleared, reset view mode
             if newQuery == nil {
                 searchViewMode = nil
+            }
+        }
+        .onChange(of: viewModel.searchQuery) { _, newQuery in
+            // Restore focus when typing (view may have switched between timelineContent and searchContent)
+            if !newQuery.isEmpty && !isSearchFocused {
+                Task { @MainActor in
+                    try? await Task.sleep(for: .milliseconds(50))
+                    isSearchFocused = true
+                }
             }
         }
         // Global keyboard handlers
@@ -122,13 +131,44 @@ struct RewindPage: View {
             // Search header with editable field and view toggles
             searchHeader
 
-            if searchViewMode == .timeline {
+            if viewModel.screenshots.isEmpty {
+                // No results found
+                noSearchResultsView
+            } else if searchViewMode == .timeline {
                 // Timeline view with search highlights
                 timelineWithSearch
             } else {
                 // Default to results list view
                 fullScreenResultsView
             }
+        }
+    }
+
+    // MARK: - No Search Results
+
+    private var noSearchResultsView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 48))
+                .foregroundColor(.white.opacity(0.3))
+
+            if viewModel.isSearching {
+                Text("Searching...")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            } else {
+                Text("No results found")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+
+                Text("Try a different search term")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.4))
+            }
+
+            Spacer()
         }
     }
 
