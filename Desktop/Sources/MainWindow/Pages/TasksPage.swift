@@ -326,16 +326,18 @@ struct TasksPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .sheet(isPresented: $viewModel.showingCreateTask) {
+        .dismissableSheet(isPresented: $viewModel.showingCreateTask) {
             TaskEditSheet(
                 mode: .create,
-                viewModel: viewModel
+                viewModel: viewModel,
+                onDismiss: { viewModel.showingCreateTask = false }
             )
         }
-        .sheet(item: $viewModel.editingTask) { task in
+        .dismissableSheet(item: $viewModel.editingTask) { task in
             TaskEditSheet(
                 mode: .edit(task),
-                viewModel: viewModel
+                viewModel: viewModel,
+                onDismiss: { viewModel.editingTask = nil }
             )
         }
     }
@@ -1151,6 +1153,7 @@ enum TaskEditMode: Identifiable {
 struct TaskEditSheet: View {
     let mode: TaskEditMode
     @ObservedObject var viewModel: TasksViewModel
+    var onDismiss: (() -> Void)? = nil
 
     @State private var description: String = ""
     @State private var hasDueDate: Bool = false
@@ -1158,7 +1161,15 @@ struct TaskEditSheet: View {
     @State private var priority: String? = nil
     @State private var isSaving = false
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     private var isEditing: Bool {
         if case .edit = mode { return true }
@@ -1224,14 +1235,7 @@ struct TaskEditSheet: View {
 
             Spacer()
 
-            Button {
-                dismiss()
-            } label: {
-                Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 20))
-                    .foregroundColor(OmiColors.textTertiary)
-            }
-            .buttonStyle(.plain)
+            DismissButton(action: dismissSheet)
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
@@ -1337,7 +1341,7 @@ struct TaskEditSheet: View {
     private var sheetFooter: some View {
         HStack(spacing: 12) {
             Button("Cancel") {
-                dismiss()
+                dismissSheet()
             }
             .buttonStyle(.bordered)
             .controlSize(.large)
@@ -1389,7 +1393,7 @@ struct TaskEditSheet: View {
         }
 
         isSaving = false
-        dismiss()
+        dismissSheet()
     }
 }
 
