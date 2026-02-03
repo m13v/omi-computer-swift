@@ -116,15 +116,11 @@ class DashboardViewModel: ObservableObject {
 
 struct DashboardPage: View {
     @ObservedObject var viewModel: DashboardViewModel
-    var isActive: Bool = true
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    // Invisible anchor at very top
-                    Color.clear.frame(height: 0).id("top-anchor")
-                    // Header
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                // Header
                     HStack {
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Dashboard")
@@ -156,7 +152,6 @@ struct DashboardPage: View {
                     }
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
-                    .id("dashboard-top")
 
                 // Widgets
                 HStack(alignment: .top, spacing: 20) {
@@ -201,18 +196,6 @@ struct DashboardPage: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
             }
-        }
-        .onChange(of: isActive) { _, newValue in
-            // Reset scroll position to top when page becomes active
-            if newValue {
-                Task { @MainActor in
-                    try? await Task.sleep(nanoseconds: 50_000_000) // 0.05 seconds
-                    withAnimation(.easeOut(duration: 0.2)) {
-                        proxy.scrollTo("top-anchor", anchor: .top)
-                    }
-                }
-            }
-        }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
