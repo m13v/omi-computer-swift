@@ -1,6 +1,23 @@
 {
   "releases": [
     {
+      "version": "0.2.0",
+      "date": "2026-02-03",
+      "changes": [
+        "New Dashboard with daily score, goals, tasks widgets, and streak tracking",
+        "AI Persona management for personalized interactions",
+        "OMI device connectivity with Bluetooth support",
+        "Support for multiple devices: Bee, Fieldy, Friend Pendant, Limitless, Plaud, Frame",
+        "Live transcript overlay and audio level monitoring",
+        "Focus session sound notifications and summaries",
+        "Rewind day summary generation",
+        "Improved conversations with expandable transcripts and undo delete",
+        "Enhanced memories page with editing and category filtering",
+        "Apps management with enable/disable and chat functionality",
+        "Redis caching for improved backend performance"
+      ]
+    },
+    {
       "version": "0.1.9",
       "date": "2026-02-02",
       "changes": [
