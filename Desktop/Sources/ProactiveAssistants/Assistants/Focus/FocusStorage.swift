@@ -218,27 +218,40 @@ class FocusStorage: ObservableObject {
         return sessions.filter { calendar.isDate($0.createdAt, inSameDayAs: date) }
     }
 
-    /// Fetch sessions from backend and merge
+    /// Fetch focus sessions from backend (stored as memories with "focus" tag) and merge
     func refreshFromBackend() async {
         do {
-            let backendSessions: [FocusSessionResponse] = try await APIClient.shared.getFocusSessions(limit: 100, date: nil)
+            // Fetch memories that have the "focus" tag
+            let focusMemories = try await APIClient.shared.getMemories(
+                limit: 100,
+                tags: ["focus"]
+            )
 
             await MainActor.run {
-                // Merge backend sessions with local ones
+                // Merge backend memories with local sessions
                 var mergedIds = Set<String>()
                 var merged: [StoredFocusSession] = []
 
-                // Add backend sessions first (they are authoritative)
-                for remote in backendSessions {
-                    mergedIds.insert(remote.id)
+                // Add backend memories first (they are authoritative)
+                for memory in focusMemories {
+                    mergedIds.insert(memory.id)
+
+                    // Parse status from tags
+                    let status: FocusStatus = memory.tags.contains("focused") ? .focused : .distracted
+
+                    // Parse app name from tags (look for "app:*" tag)
+                    let appOrSite = memory.tags
+                        .first { $0.hasPrefix("app:") }
+                        .map { String($0.dropFirst(4)) } ?? memory.sourceApp ?? "Unknown"
+
                     merged.append(StoredFocusSession(
-                        id: remote.id,
-                        status: remote.status == "focused" ? .focused : .distracted,
-                        appOrSite: remote.appOrSite,
-                        description: remote.description,
-                        message: remote.message,
-                        createdAt: remote.createdAt,
-                        durationSeconds: remote.durationSeconds,
+                        id: memory.id,
+                        status: status,
+                        appOrSite: appOrSite,
+                        description: memory.content,
+                        message: nil,  // Message not stored separately in memory
+                        createdAt: memory.createdAt,
+                        durationSeconds: nil,
                         isSynced: true
                     ))
                 }
@@ -255,7 +268,7 @@ class FocusStorage: ObservableObject {
                 self.saveToStorage()
             }
         } catch {
-            logError("Failed to refresh focus sessions from backend", error: error)
+            logError("Failed to refresh focus memories from backend", error: error)
         }
     }
 
@@ -294,32 +307,57 @@ class FocusStorage: ObservableObject {
 
     private func syncSession(_ session: StoredFocusSession) async {
         do {
-            let request = CreateFocusSessionRequest(
-                status: session.status == .focused ? "focused" : "distracted",
-                appOrSite: session.appOrSite,
-                description: session.description,
-                message: session.message
+            // Build content for the memory
+            let statusText = session.status == .focused ? "Focused" : "Distracted"
+            let content = "\(statusText) on \(session.appOrSite): \(session.description)"
+
+            // Build tags: ["focus", "focused"/"distracted", "app:{appName}"]
+            let statusTag = session.status == .focused ? "focused" : "distracted"
+            let appTag = "app:\(session.appOrSite)"
+            var tags = ["focus", statusTag, appTag]
+
+            // Add message as additional context if present
+            if let message = session.message, !message.isEmpty {
+                tags.append("has-message")
+            }
+
+            let response = try await APIClient.shared.createMemory(
+                content: content,
+                visibility: "private",
+                category: .system,
+                tags: tags,
+                source: "desktop"
             )
 
-            let _: FocusSessionResponse = try await APIClient.shared.createFocusSession(request)
-
-            // Mark as synced
+            // Mark as synced with the backend memory ID
             await MainActor.run {
                 if let index = self.sessions.firstIndex(where: { $0.id == session.id }) {
-                    self.sessions[index] = session.withSynced(true)
+                    // Update the session with backend ID for future reference
+                    let syncedSession = StoredFocusSession(
+                        id: response.id,  // Use backend ID
+                        status: session.status,
+                        appOrSite: session.appOrSite,
+                        description: session.description,
+                        message: session.message,
+                        createdAt: session.createdAt,
+                        durationSeconds: session.durationSeconds,
+                        isSynced: true
+                    )
+                    self.sessions[index] = syncedSession
                     self.saveToStorage()
                 }
             }
         } catch {
-            logError("Failed to sync focus session to backend", error: error)
+            logError("Failed to sync focus session as memory to backend", error: error)
         }
     }
 
     private func deleteFromBackend(_ id: String) async {
         do {
-            try await APIClient.shared.deleteFocusSession(id)
+            // Focus sessions are now stored as memories, so delete the memory
+            try await APIClient.shared.deleteMemory(id: id)
         } catch {
-            logError("Failed to delete focus session from backend", error: error)
+            logError("Failed to delete focus memory from backend", error: error)
         }
     }
 }
