@@ -269,10 +269,10 @@ final class WALService: ObservableObject {
         if let existingIndex = wals.firstIndex(where: { $0.id == wal.id }) {
             // Append to existing
             wals[existingIndex].totalFrames += currentFrames.count
-            logger.debug("Appended \(currentFrames.count) frames to existing WAL")
+            logger.debug("Appended \(self.currentFrames.count) frames to existing WAL")
         } else {
             wals.append(wal)
-            logger.info("Created new WAL: \(wal.id) with \(currentFrames.count) frames")
+            logger.info("Created new WAL: \(wal.id) with \(self.currentFrames.count) frames")
         }
 
         // Write frames to disk
