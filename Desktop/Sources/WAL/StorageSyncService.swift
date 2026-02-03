@@ -358,7 +358,7 @@ final class StorageSyncService: ObservableObject {
             totalBytesDownloaded = 0
         }
 
-        logger.info("Sync completed: \(downloadedFrames.count) frames downloaded")
+        logger.info("Sync completed: \(self.downloadedFrames.count) frames downloaded")
     }
 }
 
