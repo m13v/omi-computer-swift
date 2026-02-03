@@ -31,6 +31,11 @@ class AppState: ObservableObject {
     @Published var hasSystemAudioPermission = false
     @Published var isSystemAudioSupported = false
 
+    // Audio source (microphone or BLE device)
+    @Published var audioSource: AudioSource = .microphone
+    /// Tracks the source for the current recording (for API tagging)
+    private var currentConversationSource: ConversationSource = .desktop
+
     // Audio levels moved to AudioLevelMonitor to avoid triggering global re-renders
     // Access via AudioLevelMonitor.shared.microphoneLevel / .systemLevel
     var microphoneAudioLevel: Float { AudioLevelMonitor.shared.microphoneLevel }
@@ -40,8 +45,9 @@ class AppState: ObservableObject {
     // Access via RecordingTimer.shared.duration
     var recordingDuration: TimeInterval { RecordingTimer.shared.duration }
 
-    // Exposed speaker segments for live transcript display
-    @Published var liveSpeakerSegments: [SpeakerSegment] = []
+    // Live speaker segments moved to LiveTranscriptMonitor to avoid triggering global re-renders
+    // Access via LiveTranscriptMonitor.shared.segments
+    var liveSpeakerSegments: [SpeakerSegment] { LiveTranscriptMonitor.shared.segments }
 
     // Conversation state
     @Published var conversations: [ServerConversation] = []
@@ -137,6 +143,9 @@ class AppState: ObservableObject {
     // Debounce timestamps to prevent duplicate system notifications
     private var lastScreenLockTime: Date?
     private var lastScreenUnlockTime: Date?
+
+    // BLE device button handling
+    private var buttonStreamTask: Task<Void, Never>?
 
     init() {
         // Load API key from environment or .env file
@@ -616,13 +625,25 @@ class AppState: ObservableObject {
     }
 
     /// Start real-time transcription
-    func startTranscription() {
+    /// - Parameter source: Audio source to use (defaults to current audioSource setting)
+    func startTranscription(source: AudioSource? = nil) {
         guard !isTranscribing else { return }
 
-        // Check microphone permission
-        guard AudioCaptureService.checkPermission() else {
-            requestMicrophonePermission()
-            return
+        // Use provided source or fall back to current setting
+        let effectiveSource = source ?? audioSource
+
+        // For BLE device, check if device is connected
+        if effectiveSource == .bleDevice {
+            guard DeviceProvider.shared.isConnected else {
+                showAlert(title: "Device Not Connected", message: "Please connect a wearable device first.")
+                return
+            }
+        } else {
+            // For microphone, check permission
+            guard AudioCaptureService.checkPermission() else {
+                requestMicrophonePermission()
+                return
+            }
         }
 
         do {
@@ -635,19 +656,32 @@ class AppState: ObservableObject {
             // Initialize transcription service with language and vocabulary
             transcriptionService = try TranscriptionService(language: effectiveLanguage, vocabulary: vocabulary)
 
-            // Initialize audio capture service
-            audioCaptureService = AudioCaptureService()
-
-            // Initialize audio mixer for combining mic and system audio
-            audioMixer = AudioMixer()
-
-            // Initialize system audio capture if supported (macOS 14.4+)
-            if #available(macOS 14.4, *) {
-                systemAudioCaptureService = SystemAudioCaptureService()
-                log("Transcription: System audio capture initialized (macOS 14.4+)")
+            // Set conversation source based on audio source
+            if effectiveSource == .bleDevice, let device = DeviceProvider.shared.connectedDevice {
+                currentConversationSource = ConversationSource.from(deviceType: device.type)
+                recordingInputDeviceName = device.displayName
             } else {
-                log("Transcription: System audio capture not available (requires macOS 14.4+)")
+                currentConversationSource = .desktop
+                recordingInputDeviceName = AudioCaptureService.getCurrentMicrophoneName()
             }
+
+            // Initialize audio services based on source
+            if effectiveSource == .microphone {
+                // Initialize audio capture service
+                audioCaptureService = AudioCaptureService()
+
+                // Initialize audio mixer for combining mic and system audio
+                audioMixer = AudioMixer()
+
+                // Initialize system audio capture if supported (macOS 14.4+)
+                if #available(macOS 14.4, *) {
+                    systemAudioCaptureService = SystemAudioCaptureService()
+                    log("Transcription: System audio capture initialized (macOS 14.4+)")
+                } else {
+                    log("Transcription: System audio capture not available (requires macOS 14.4+)")
+                }
+            }
+            // For BLE device, BleAudioService will be used in startAudioCapture
 
             // Start transcription service first
             transcriptionService?.start(
@@ -667,7 +701,7 @@ class AppState: ObservableObject {
                     Task { @MainActor in
                         log("Transcription: Connected to DeepGram")
                         // Start audio capture once connected
-                        self?.startAudioCapture()
+                        await self?.startAudioCapture(source: effectiveSource)
                     }
                 },
                 onDisconnected: {
@@ -676,15 +710,15 @@ class AppState: ObservableObject {
             )
 
             isTranscribing = true
+            audioSource = effectiveSource
             currentTranscript = ""
             speakerSegments = []
-            liveSpeakerSegments = []
+            LiveTranscriptMonitor.shared.clear()
             recordingStartTime = Date()
-            recordingInputDeviceName = AudioCaptureService.getCurrentMicrophoneName()
             AudioLevelMonitor.shared.reset()
             RecordingTimer.shared.start()
 
-            log("Transcription: Using microphone: \(recordingInputDeviceName ?? "Unknown")")
+            log("Transcription: Using source: \(effectiveSource.rawValue), device: \(recordingInputDeviceName ?? "Unknown")")
 
             // Start 4-hour max recording timer
             maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: maxRecordingDuration, repeats: false) { [weak self] _ in
@@ -711,7 +745,19 @@ class AppState: ObservableObject {
     }
 
     /// Start audio capture and pipe to transcription service
-    private func startAudioCapture() {
+    /// - Parameter source: Audio source to capture from
+    private func startAudioCapture(source: AudioSource = .microphone) async {
+        if source == .bleDevice {
+            // Use BLE device audio
+            await startBleAudioCapture()
+        } else {
+            // Use microphone (+ optional system audio)
+            startMicrophoneAudioCapture()
+        }
+    }
+
+    /// Start microphone audio capture (original implementation)
+    private func startMicrophoneAudioCapture() {
         guard let audioCaptureService = audioCaptureService,
               let audioMixer = audioMixer else { return }
 
@@ -761,6 +807,90 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Start BLE device audio capture
+    private func startBleAudioCapture() async {
+        guard let connection = DeviceProvider.shared.activeConnection,
+              let transcriptionService = transcriptionService else {
+            logError("Transcription: No device connection or transcription service", error: nil)
+            stopTranscription()
+            return
+        }
+
+        // Start BLE audio processing and pipe directly to transcription
+        await BleAudioService.shared.startProcessing(
+            from: connection,
+            transcriptionService: transcriptionService,
+            audioDataHandler: { [weak self] _ in
+                // Audio level is updated by BleAudioService
+                Task { @MainActor in
+                    AudioLevelMonitor.shared.updateMicrophoneLevel(BleAudioService.shared.audioLevel)
+                }
+            }
+        )
+
+        // Start listening for button events
+        startButtonEventListener()
+
+        log("Transcription: BLE audio capture started (device: \(connection.device.displayName))")
+    }
+
+    /// Start listening for button events from BLE device
+    private func startButtonEventListener() {
+        guard let buttonStream = DeviceProvider.shared.getButtonStream() else {
+            log("Transcription: Device does not support button events")
+            return
+        }
+
+        buttonStreamTask?.cancel()
+        buttonStreamTask = Task { [weak self] in
+            do {
+                for try await buttonState in buttonStream {
+                    await self?.handleButtonEvent(buttonState)
+                }
+            } catch {
+                log("Transcription: Button stream ended: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Handle button events from BLE device
+    private func handleButtonEvent(_ buttonState: [UInt8]) {
+        guard !buttonState.isEmpty else { return }
+
+        let state = buttonState[0]
+        log("Transcription: Device button event: \(state)")
+
+        switch state {
+        case 1:
+            // Single tap - could be used for voice command mode (future feature)
+            log("Transcription: Single tap - no action configured")
+
+        case 2:
+            // Double tap - finalize conversation and continue recording
+            log("Transcription: Double tap - finalizing conversation")
+            Task {
+                _ = await finalizeConversation()
+                clearTranscriptionState()
+                // Restart with same source
+                startTranscription(source: audioSource)
+            }
+
+        case 3:
+            // Long press - stop transcription completely
+            log("Transcription: Long press - stopping transcription")
+            stopTranscription()
+
+        default:
+            log("Transcription: Unknown button state: \(state)")
+        }
+    }
+
+    /// Stop button event listener
+    private func stopButtonEventListener() {
+        buttonStreamTask?.cancel()
+        buttonStreamTask = nil
+    }
+
     /// Stop real-time transcription and finalize the conversation
     func stopTranscription() {
         // Immediately stop audio capture but show saving state
@@ -786,6 +916,12 @@ class AppState: ObservableObject {
 
         // Reset audio levels
         AudioLevelMonitor.shared.reset()
+
+        // Stop BLE audio if active
+        if audioSource == .bleDevice {
+            BleAudioService.shared.stopProcessing()
+            stopButtonEventListener()
+        }
 
         // Stop system audio capture first (if available)
         if #available(macOS 14.4, *) {
@@ -818,7 +954,7 @@ class AppState: ObservableObject {
 
         // Clear segments after finalization
         speakerSegments = []
-        liveSpeakerSegments = []
+        LiveTranscriptMonitor.shared.clear()
         recordingStartTime = nil
 
         // Track transcription stopped
@@ -1026,9 +1162,10 @@ class AppState: ObservableObject {
                 segments: apiSegments,
                 startedAt: startTime,
                 finishedAt: endTime,
+                source: currentConversationSource,
                 inputDeviceName: recordingInputDeviceName
             )
-            log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded), mic=\(recordingInputDeviceName ?? "Unknown")")
+            log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded), source=\(currentConversationSource.rawValue), device=\(recordingInputDeviceName ?? "Unknown")")
 
             if response.discarded {
                 return .discarded
@@ -1038,7 +1175,7 @@ class AppState: ObservableObject {
             let durationSeconds = Int(endTime.timeIntervalSince(startTime))
             AnalyticsManager.shared.conversationCreated(
                 conversationId: response.id,
-                source: "desktop",
+                source: currentConversationSource.rawValue,
                 durationSeconds: durationSeconds
             )
 
@@ -1140,8 +1277,8 @@ class AppState: ObservableObject {
             log("  [\(i)] Speaker \(seg.speaker)(\(speakerLabel)) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
         }
 
-        // Update published segments for UI
-        liveSpeakerSegments = speakerSegments
+        // Update published segments for UI (via isolated monitor)
+        LiveTranscriptMonitor.shared.updateSegments(speakerSegments)
 
         // Update display transcript
         updateTranscriptDisplay()
