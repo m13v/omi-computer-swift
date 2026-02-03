@@ -101,50 +101,62 @@ struct DesktopHomeView: View {
                     DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
                         .opacity(selectedIndex == 0 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 0)
+                        .trackRender("DashboardPage")
 
                     ConversationsPage(appState: appState)
                         .opacity(selectedIndex == 1 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 1)
+                        .trackRender("ConversationsPage")
 
                     ChatPage(appProvider: viewModelContainer.appProvider, chatProvider: viewModelContainer.chatProvider)
                         .opacity(selectedIndex == 2 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 2)
+                        .trackRender("ChatPage")
 
                     MemoriesPage(viewModel: viewModelContainer.memoriesViewModel)
                         .opacity(selectedIndex == 3 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 3)
+                        .trackRender("MemoriesPage")
 
                     TasksPage(viewModel: viewModelContainer.tasksViewModel)
                         .opacity(selectedIndex == 4 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 4)
+                        .trackRender("TasksPage")
 
                     FocusPage()
                         .opacity(selectedIndex == 5 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 5)
+                        .trackRender("FocusPage")
 
                     AdvicePage()
                         .opacity(selectedIndex == 6 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 6)
+                        .trackRender("AdvicePage")
 
                     RewindPage()
                         .opacity(selectedIndex == 7 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 7)
+                        .trackRender("RewindPage")
 
                     AppsPage(appProvider: viewModelContainer.appProvider)
                         .opacity(selectedIndex == 8 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 8)
+                        .trackRender("AppsPage")
 
                     SettingsPage(appState: appState)
                         .opacity(selectedIndex == 9 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 9)
+                        .trackRender("SettingsPage")
 
                     PermissionsPage(appState: appState)
                         .opacity(selectedIndex == 10 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 10)
+                        .trackRender("PermissionsPage")
 
                     DeviceSettingsPage()
                         .opacity(selectedIndex == 11 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 11)
+                        .trackRender("DeviceSettingsPage")
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
