@@ -79,10 +79,10 @@ enum DeviceUUIDs {
 
     // MARK: - PLAUD NotePin
 
-    enum Plaud {
+    enum PLAUD {
         static let service = CBUUID(string: "00001910-0000-1000-8000-00805F9B34FB")
-        static let writeChar = CBUUID(string: "00002BB1-0000-1000-8000-00805F9B34FB")
-        static let notifyChar = CBUUID(string: "00002BB0-0000-1000-8000-00805F9B34FB")
+        static let writeCharacteristic = CBUUID(string: "00002BB1-0000-1000-8000-00805F9B34FB")
+        static let notifyCharacteristic = CBUUID(string: "00002BB0-0000-1000-8000-00805F9B34FB")
 
         /// PLAUD manufacturer ID for advertisement data detection
         static let manufacturerId: UInt16 = 93
@@ -104,15 +104,15 @@ enum DeviceUUIDs {
 
     enum FriendPendant {
         static let service = CBUUID(string: "1A3FD0E7-B1F3-AC9E-2E49-B647B2C4F8DA")
-        static let audioChar = CBUUID(string: "01000000-1111-1111-1111-111111111111")
+        static let audioCharacteristic = CBUUID(string: "01000000-1111-1111-1111-111111111111")
     }
 
     // MARK: - Limitless Pendant
 
     enum Limitless {
         static let service = CBUUID(string: "632DE001-604C-446B-A80F-7963E950F3FB")
-        static let txChar = CBUUID(string: "632DE002-604C-446B-A80F-7963E950F3FB")
-        static let rxChar = CBUUID(string: "632DE003-604C-446B-A80F-7963E950F3FB")
+        static let txCharacteristic = CBUUID(string: "632DE002-604C-446B-A80F-7963E950F3FB")
+        static let rxCharacteristic = CBUUID(string: "632DE003-604C-446B-A80F-7963E950F3FB")
     }
 
     // MARK: - Helper Methods
@@ -122,7 +122,7 @@ enum DeviceUUIDs {
         [
             Omi.mainService,
             Frame.service,
-            Plaud.service,
+            PLAUD.service,
             Bee.service,
             Fieldy.service,
             FriendPendant.service,
