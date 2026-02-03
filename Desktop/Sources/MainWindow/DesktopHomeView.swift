@@ -95,27 +95,29 @@ struct DesktopHomeView: View {
                 Group {
                     switch selectedIndex {
                     case 0:
-                        ConversationsPage(appState: appState)
+                        DashboardPage()
                     case 1:
-                        ChatPage()
+                        ConversationsPage(appState: appState)
                     case 2:
-                        MemoriesPage()
+                        ChatPage()
                     case 3:
-                        TasksPage()
+                        MemoriesPage()
                     case 4:
-                        FocusPage()
+                        TasksPage()
                     case 5:
-                        AdvicePage()
+                        FocusPage()
                     case 6:
-                        RewindPage()
+                        AdvicePage()
                     case 7:
-                        AppsPage()
+                        RewindPage()
                     case 8:
-                        SettingsPage(appState: appState)
+                        AppsPage()
                     case 9:
+                        SettingsPage(appState: appState)
+                    case 10:
                         PermissionsPage(appState: appState)
                     default:
-                        ConversationsPage(appState: appState)
+                        DashboardPage()
                     }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
