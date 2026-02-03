@@ -23,6 +23,20 @@ class RewindViewModel: ObservableObject {
     /// The active search query (trimmed, non-empty) for highlighting
     @Published var activeSearchQuery: String? = nil
 
+    /// Time window in seconds for grouping search results
+    var searchGroupingTimeWindow: TimeInterval = 30
+
+    /// Grouped search results (computed from screenshots when searching)
+    var groupedSearchResults: [SearchResultGroup] {
+        guard activeSearchQuery != nil else { return [] }
+        return screenshots.groupedByContext(timeWindowSeconds: searchGroupingTimeWindow)
+    }
+
+    /// Total number of individual screenshots across all groups
+    var totalScreenshotCount: Int {
+        screenshots.count
+    }
+
     // MARK: - Private State
 
     private var searchTask: Task<Void, Never>?
