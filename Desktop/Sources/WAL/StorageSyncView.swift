@@ -67,7 +67,7 @@ struct StorageSyncView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(OmiColors.backgroundSecondary)
         )
-        .sheet(isPresented: $showWifiSetup) {
+        .dismissableSheet(isPresented: $showWifiSetup) {
             wifiSetupSheet
         }
     }
@@ -287,8 +287,14 @@ struct StorageSyncView: View {
 
     private var wifiSetupSheet: some View {
         VStack(spacing: 20) {
-            Text("WiFi Sync Setup")
-                .font(.system(size: 16, weight: .semibold))
+            // Header
+            HStack {
+                Text("WiFi Sync Setup")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+                Spacer()
+                DismissButton(action: { showWifiSetup = false })
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Network Name (SSID)")
@@ -308,11 +314,14 @@ struct StorageSyncView: View {
                     .textFieldStyle(.roundedBorder)
             }
 
+            Spacer()
+
             HStack(spacing: 12) {
                 Button("Cancel") {
                     showWifiSetup = false
                 }
                 .buttonStyle(.plain)
+                .foregroundColor(OmiColors.textSecondary)
 
                 Button("Start Sync") {
                     showWifiSetup = false
@@ -325,7 +334,8 @@ struct StorageSyncView: View {
             }
         }
         .padding(24)
-        .frame(width: 320)
+        .frame(width: 360, height: 280)
+        .background(OmiColors.backgroundSecondary)
     }
 
     // MARK: - Actions
@@ -339,7 +349,7 @@ struct StorageSyncView: View {
         do {
             try await storageSyncService.startSync(
                 device: device,
-                codec: codec.rawValue
+                codec: codec.name
             )
         } catch {
             // Error is shown in UI
@@ -355,7 +365,7 @@ struct StorageSyncView: View {
         do {
             try await wifiSyncService.startWifiSync(
                 device: device,
-                codec: codec.rawValue,
+                codec: codec.name,
                 ssid: wifiSsid,
                 password: wifiPassword
             )
