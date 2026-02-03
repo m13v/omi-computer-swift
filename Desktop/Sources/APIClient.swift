@@ -3067,6 +3067,8 @@ struct ChatContextResponse: Codable {
     let memories: [ChatMemorySummary]
     /// Pre-formatted context string ready for prompt injection
     let contextString: String
+    /// Citation sources for tracking which conversations/memories are cited
+    let citationSources: [CitationSource]
 
     enum CodingKeys: String, CodingKey {
         case requiresContext = "requires_context"
@@ -3074,6 +3076,7 @@ struct ChatContextResponse: Codable {
         case conversations
         case memories
         case contextString = "context_string"
+        case citationSources = "citation_sources"
     }
 
     init(from decoder: Decoder) throws {
@@ -3083,6 +3086,7 @@ struct ChatContextResponse: Codable {
         conversations = try container.decodeIfPresent([ChatConversationSummary].self, forKey: .conversations) ?? []
         memories = try container.decodeIfPresent([ChatMemorySummary].self, forKey: .memories) ?? []
         contextString = try container.decodeIfPresent(String.self, forKey: .contextString) ?? ""
+        citationSources = try container.decodeIfPresent([CitationSource].self, forKey: .citationSources) ?? []
     }
 }
 
@@ -3122,4 +3126,40 @@ struct ChatMemorySummary: Codable, Identifiable {
     let id: String
     let content: String
     let category: String
+}
+
+/// Citation source for tracking which conversations/memories are cited
+struct CitationSource: Codable, Identifiable {
+    /// 1-based index matching [1], [2] in context string
+    let index: Int
+    /// Type of source: "conversation" or "memory"
+    let sourceType: String
+    /// ID of the source document
+    let id: String
+    /// Title or summary of the source
+    let title: String
+    /// Preview text of the source
+    let preview: String
+    /// Emoji (for conversations)
+    let emoji: String?
+    /// When the source was created
+    let createdAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case index
+        case sourceType = "source_type"
+        case id, title, preview, emoji
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        index = try container.decode(Int.self, forKey: .index)
+        sourceType = try container.decode(String.self, forKey: .sourceType)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        preview = try container.decodeIfPresent(String.self, forKey: .preview) ?? ""
+        emoji = try container.decodeIfPresent(String.self, forKey: .emoji)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
 }
