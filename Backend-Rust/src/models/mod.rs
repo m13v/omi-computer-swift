@@ -8,6 +8,7 @@ pub mod chat_session;
 pub mod conversation;
 pub mod focus_session;
 pub mod folder;
+pub mod goal;
 pub mod memory;
 pub mod message;
 pub mod request;
@@ -52,4 +53,8 @@ pub use user_settings::{
 pub use chat_session::{
     ChatSessionDB, ChatSessionStatusResponse, CreateChatSessionRequest, GetChatSessionsQuery,
     UpdateChatSessionRequest,
+};
+pub use goal::{
+    CreateGoalRequest, DailyScore, DailyScoreQuery, GoalDB, GoalStatusResponse, GoalType,
+    GoalsListResponse, UpdateGoalProgressQuery, UpdateGoalRequest,
 };
