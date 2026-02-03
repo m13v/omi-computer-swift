@@ -174,7 +174,10 @@ struct FocusPage: View {
             await viewModel.refresh()
         }
         .onReceive(countdownTimer) { time in
-            currentTime = time
+            // Only update if there's an active countdown to avoid unnecessary re-renders
+            if storage.delayEndTime != nil || storage.cooldownEndTime != nil {
+                currentTime = time
+            }
         }
     }
 
