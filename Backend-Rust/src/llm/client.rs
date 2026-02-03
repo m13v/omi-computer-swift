@@ -147,7 +147,7 @@ impl LlmClient {
     }
 
     /// Call the LLM with a specific JSON schema for structured output
-    async fn call_with_schema(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>, schema: Option<serde_json::Value>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn call_with_schema(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>, schema: Option<serde_json::Value>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let request = GeminiRequest {
             contents: vec![GeminiContent {
                 parts: vec![GeminiPart {
@@ -674,7 +674,7 @@ impl LlmClient {
     }
 
     /// Call Gemini API with text (non-JSON) response
-    async fn call_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn call_text(&self, prompt: &str, temperature: Option<f32>, max_tokens: Option<i32>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         #[derive(Debug, Serialize)]
         struct GeminiTextRequest {
             contents: Vec<GeminiContent>,
