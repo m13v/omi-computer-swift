@@ -8,7 +8,7 @@ class DashboardViewModel: ObservableObject {
     // Observe the shared TasksStore
     private let tasksStore = TasksStore.shared
 
-    @Published var dailyScore: DailyScore?
+    @Published var scoreResponse: ScoreResponse?
     @Published var goals: [Goal] = []
     @Published var isLoading = false
     @Published var error: String?
@@ -39,7 +39,7 @@ class DashboardViewModel: ObservableObject {
         error = nil
 
         // Load all data in parallel
-        async let scoreTask: Void = loadDailyScore()
+        async let scoreTask: Void = loadScores()
         async let tasksTask: Void = tasksStore.loadTasks()  // Use shared store
         async let goalsTask: Void = loadGoals()
 
@@ -48,11 +48,11 @@ class DashboardViewModel: ObservableObject {
         isLoading = false
     }
 
-    private func loadDailyScore() async {
+    private func loadScores() async {
         do {
-            dailyScore = try await APIClient.shared.getDailyScore()
+            scoreResponse = try await APIClient.shared.getScores()
         } catch {
-            logError("Failed to load daily score", error: error)
+            logError("Failed to load scores", error: error)
         }
     }
 
@@ -67,8 +67,8 @@ class DashboardViewModel: ObservableObject {
     func toggleTaskCompletion(_ task: TaskActionItem) async {
         // Delegate to shared store - it handles the update
         await tasksStore.toggleTask(task)
-        // Reload daily score after task completion change
-        await loadDailyScore()
+        // Reload scores after task completion change
+        await loadScores()
     }
 
     func createGoal(title: String, goalType: GoalType, targetValue: Double, unit: String?) async {
@@ -155,9 +155,9 @@ struct DashboardPage: View {
 
                 // Widgets
                 HStack(alignment: .top, spacing: 20) {
-                    // Left column: Daily Score + Today's Tasks
+                    // Left column: Score + Today's Tasks
                     VStack(spacing: 20) {
-                        DailyScoreWidget(dailyScore: viewModel.dailyScore)
+                        ScoreWidget(scoreResponse: viewModel.scoreResponse)
                         TasksWidget(
                             overdueTasks: viewModel.overdueTasks,
                             todaysTasks: viewModel.todaysTasks,
