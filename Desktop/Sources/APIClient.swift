@@ -306,6 +306,16 @@ extension APIClient {
         }
     }
 
+    /// Gets a shareable link for a conversation by setting it to shared visibility
+    /// - Parameter id: The conversation ID
+    /// - Returns: The shareable URL for the conversation
+    func getConversationShareLink(id: String) async throws -> String {
+        // Set visibility to shared
+        try await setConversationVisibility(id: id, visibility: "shared")
+        // Return the web URL for the shared conversation
+        return "https://omi.me/c/\(id)"
+    }
+
     /// Updates the title of a conversation
     func updateConversationTitle(id: String, title: String) async throws {
         struct TitleUpdate: Encodable {
