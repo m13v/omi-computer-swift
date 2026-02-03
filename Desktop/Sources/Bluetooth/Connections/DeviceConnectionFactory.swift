@@ -26,28 +26,23 @@ struct DeviceConnectionFactory {
             return OmiDeviceConnection(device: device, transport: transport)
 
         case .plaud:
-            // TODO: Implement PlaudDeviceConnection
-            return BaseDeviceConnection(device: device, transport: transport)
+            return PlaudDeviceConnection(device: device, transport: transport)
 
         case .bee:
-            // TODO: Implement BeeDeviceConnection
-            return BaseDeviceConnection(device: device, transport: transport)
+            return BeeDeviceConnection(device: device, transport: transport)
 
         case .fieldy:
-            // TODO: Implement FieldyDeviceConnection
-            return BaseDeviceConnection(device: device, transport: transport)
+            return FieldyDeviceConnection(device: device, transport: transport)
 
         case .friendPendant:
-            // TODO: Implement FriendPendantDeviceConnection
-            return BaseDeviceConnection(device: device, transport: transport)
+            return FriendPendantConnection(device: device, transport: transport)
 
         case .limitless:
-            // TODO: Implement LimitlessDeviceConnection
-            return BaseDeviceConnection(device: device, transport: transport)
+            return LimitlessDeviceConnection(device: device, transport: transport)
 
         case .frame:
-            // TODO: Implement FrameDeviceConnection (uses different transport)
-            return BaseDeviceConnection(device: device, transport: transport)
+            // Frame uses Brilliant Labs SDK, but basic BLE fallback is available
+            return FrameDeviceConnection(device: device, transport: transport)
 
         case .appleWatch:
             // Apple Watch uses WatchConnectivity, not BLE
