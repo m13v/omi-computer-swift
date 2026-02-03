@@ -8,6 +8,9 @@ struct ConversationRowView: View {
     let folders: [Folder]
     let onMoveToFolder: (String, String?) async -> Void
 
+    // View mode
+    var isCompactView: Bool = true
+
     // Multi-select support
     var isMultiSelectMode: Bool = false
     var isSelected: Bool = false
@@ -158,9 +161,13 @@ struct ConversationRowView: View {
                         .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
                 }
 
-                // Title and overview
+                // Emoji, Title, and overview
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {
+                        // Emoji from structured data (fallback to default)
+                        Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
+                            .font(.system(size: 14))
+
                         Text(conversation.title)
                             .font(.system(size: 14, weight: .medium))
                             .foregroundColor(OmiColors.textPrimary)
@@ -174,7 +181,8 @@ struct ConversationRowView: View {
                         }
                     }
 
-                    if !conversation.overview.isEmpty {
+                    // Only show overview in expanded mode
+                    if !isCompactView && !conversation.overview.isEmpty {
                         Text(conversation.overview)
                             .font(.system(size: 12))
                             .foregroundColor(OmiColors.textTertiary)
