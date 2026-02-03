@@ -113,8 +113,10 @@ struct DesktopHomeView: View {
                     case 8:
                         AppsPage()
                     case 9:
-                        SettingsPage(appState: appState)
+                        PersonaPage()
                     case 10:
+                        SettingsPage(appState: appState)
+                    case 11:
                         PermissionsPage(appState: appState)
                     default:
                         DashboardPage()
