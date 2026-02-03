@@ -468,7 +468,7 @@ struct MemoriesPage: View {
                 formatDate: formatDate,
                 onDismiss: { viewModel.selectedMemory = nil }
             )
-            .frame(width: 450, maxHeight: 600)
+            .frame(width: 450, height: 600)
         }
         .overlay(alignment: .bottom) {
             undoDeleteToast
