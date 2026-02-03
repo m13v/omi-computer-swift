@@ -58,7 +58,8 @@ final class DeviceProvider: ObservableObject {
     // MARK: - Private Properties
 
     private let bluetoothManager = BluetoothManager.shared
-    private var activeConnection: DeviceConnection?
+    /// The active device connection (internal for AudioSourceManager access)
+    private(set) var activeConnection: DeviceConnection?
     private var batterySubscription: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
     private var reconnectionTimer: Timer?
