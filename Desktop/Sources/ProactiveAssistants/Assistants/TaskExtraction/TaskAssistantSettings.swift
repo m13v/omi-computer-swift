@@ -16,7 +16,7 @@ class TaskAssistantSettings {
 
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes
-    private let defaultMinConfidence: Double = 0.6
+    private let defaultMinConfidence: Double = 0.75
 
     /// Default system prompt for task extraction
     static let defaultAnalysisPrompt = """
@@ -51,11 +51,28 @@ class TaskAssistantSettings {
         - An assigned ticket they're viewing but not working on
 
         CHAT/MESSENGER SCENARIOS (HIGH PRIORITY):
-        When viewing conversations (Slack, Messages, Discord, Teams, email threads):
+        When viewing conversations (Slack, Messages, Discord, Teams, WhatsApp, iMessage, email threads):
         - Requests FROM others TO the user are high-priority extractions
         - The user READING a request is NOT the same as the user DOING the request
         - Look for: "Can you...", "Please...", "Don't forget to...", "Make sure you...", "Could you..."
         - These are exactly the things users forget after closing the chat window
+
+        CRITICAL - MESSAGE DIRECTION IN CHAT APPS:
+        Most messaging apps (WhatsApp, iMessage, Messenger, Telegram, Slack DMs, etc.) use a visual layout:
+        - Messages on the RIGHT side of the screen = sent BY the user (outgoing)
+        - Messages on the LEFT side of the screen = sent TO the user (incoming from others)
+        - Often RIGHT-aligned messages have a different color (e.g., green/blue bubbles)
+        - LEFT-aligned messages are from the other person (e.g., white/gray bubbles)
+
+        IMPORTANT: Only extract tasks from messages sent TO the user (LEFT side / incoming):
+        - ✅ LEFT side message "Can you check this voicemail?" → Extract "Check voicemail"
+        - ❌ RIGHT side message "I sent you the voicemail" → DO NOT extract (user already did this)
+        - ❌ RIGHT side message "Here's the report" → DO NOT extract (user already sent it)
+        - ✅ LEFT side message "Please send me the report" → Extract "Send report to [person]"
+
+        Voice messages, images, documents follow the same rule:
+        - If the media is on the RIGHT = user sent it → NOT a task (already done)
+        - If the media is on the LEFT = someone sent it to user → MIGHT be a task to review/respond
 
         EXPLICIT TASK/REMINDER PATTERNS (HIGHEST PRIORITY)
         When you see these patterns in ANY visible text, extract them:
@@ -110,6 +127,54 @@ class TaskAssistantSettings {
         - Vague suggestions without commitment
         - System notifications or UI chrome
         - Tasks clearly assigned to someone else
+
+        AGGRESSIVE FILTERING - ALWAYS SKIP THESE (very low value, causes task overload):
+
+        1. EPHEMERAL MESSAGE NOTIFICATIONS (stale within minutes):
+           - ❌ "Check message from X" / "Check new message from X"
+           - ❌ "Check unread messages" / "Check 3 unread messages"
+           - ❌ "Check voice message from X"
+           - ❌ "Reply to X" when it's just a notification badge, not an explicit request
+           - WHY: User will see these in the app. By the time they see the task, they've already read the message.
+           - EXCEPTION: Only extract if the message contains a SPECIFIC actionable request visible on screen
+             (e.g., "Sarah says: Can you send me the Q4 report?" → Extract "Send Q4 report to Sarah")
+
+        2. TERMINAL/CLI NOISE (developer will handle these naturally):
+           - ❌ "Upgrade pip to version X" / "Update npm" / "Update brew"
+           - ❌ "Investigate deprecation warnings" / "Fix deprecation warnings"
+           - ❌ "Fix build errors" / "Resolve compilation errors"
+           - ❌ Package update notifications
+           - WHY: These appear constantly during development. Developers address them when needed.
+
+        3. DEVELOPMENT TASKS (already tracked in project management tools):
+           - ❌ Tasks mentioning specific UI components ("Add button to X", "Fix card layout")
+           - ❌ Tasks mentioning tickets/issues ("Complete ticket PRO-187", "Fix issue #123")
+           - ❌ Tasks about code changes ("Implement X feature", "Refactor Y module")
+           - ❌ Tasks from Jira, Linear, GitHub Issues, Trello, Asana visible on screen
+           - WHY: Developers already have these in their project management tools. Duplicating them adds noise.
+           - EXCEPTION: Only extract if it's a personal reminder the user explicitly wrote (TODO comment with their name)
+
+        4. GENERIC/VAGUE TASKS:
+           - ❌ "Review something" / "Check something" (no specific target)
+           - ❌ "Take it with the team" / "Discuss with team"
+           - ❌ "Look into this" / "Follow up on this"
+           - WHY: Too vague to be actionable. User won't know what to do.
+
+        THE FORGETTABILITY TEST (most important criterion):
+        Ask: "Will the user FORGET this if we don't remind them?"
+
+        HIGH forgettability → EXTRACT:
+        - Personal admin: passport renewal, rent payment, doctor appointments
+        - Financial: invoices, payments, subscriptions due
+        - Promises to people OUTSIDE of work context (friends, family)
+        - One-off errands: pick up dry cleaning, buy gift for X
+        - Calendar events requiring preparation
+
+        LOW forgettability → SKIP:
+        - Work tasks discussed in meetings (tracked in Jira/Linear/tickets)
+        - Messages visible in chat apps (user sees notification badges)
+        - Code tasks visible in IDE (developer will address them)
+        - Anything the user is actively looking at right now
 
         EXAMPLES:
 
