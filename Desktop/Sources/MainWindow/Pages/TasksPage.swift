@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 // MARK: - Task Category (by due date)
 
@@ -46,70 +47,122 @@ enum TaskSortOption: String, CaseIterable {
     }
 }
 
-// MARK: - Tasks View Model
+// MARK: - Tasks View Model (uses shared TasksStore)
 
 @MainActor
 class TasksViewModel: ObservableObject {
-    @Published var tasks: [TaskActionItem] = []
-    @Published var isLoading = false
-    @Published var error: String?
-    @Published var showCompleted = false
-    @Published var sortOption: TaskSortOption = .dueDate
+    // Use shared TasksStore as single source of truth
+    private let store = TasksStore.shared
+
+    // UI-specific state
+    @Published var showCompleted = false {
+        didSet { recomputeDisplayCaches() }
+    }
+    @Published var sortOption: TaskSortOption = .dueDate {
+        didSet { recomputeDisplayCaches() }
+    }
     @Published var expandedCategories: Set<TaskCategory> = Set(TaskCategory.allCases)
 
     // Create/Edit task state
     @Published var showingCreateTask = false
     @Published var editingTask: TaskActionItem? = nil
 
-    // Pagination state
-    @Published var hasMoreTasks = true
-    @Published var isLoadingMore = false
-    private var currentOffset = 0
-    private let pageSize = 1000  // Load more tasks upfront for accurate counts
-
     // Multi-select state
     @Published var isMultiSelectMode = false
     @Published var selectedTaskIds: Set<String> = []
 
-    // Date filter state
-    @Published var filterStartDate: Date? = nil
-    @Published var filterEndDate: Date? = nil
+    // Date filter state (filters locally from store's tasks)
+    @Published var filterStartDate: Date? = nil {
+        didSet { recomputeAllCaches() }
+    }
+    @Published var filterEndDate: Date? = nil {
+        didSet { recomputeAllCaches() }
+    }
     @Published var showingDateFilter = false
+
+    private var cancellables = Set<AnyCancellable>()
+
+    // MARK: - Cached Properties (avoid recomputation on every render)
+
+    @Published private(set) var displayTasks: [TaskActionItem] = []
+    @Published private(set) var categorizedTasks: [TaskCategory: [TaskActionItem]] = [:]
+    @Published private(set) var todoCount: Int = 0
+    @Published private(set) var doneCount: Int = 0
+
+    // Delegate to store
+    var isLoading: Bool { store.isLoading }
+    var isLoadingMore: Bool { store.isLoadingMore }
+    var hasMoreTasks: Bool { store.hasMoreTasks }
+    var error: String? { store.error }
+    var tasks: [TaskActionItem] { store.tasks }
 
     var isFiltered: Bool {
         filterStartDate != nil || filterEndDate != nil
     }
 
-    // MARK: - Computed Properties
-
-    var displayTasks: [TaskActionItem] {
-        let filtered = showCompleted
-            ? tasks.filter { $0.completed }
-            : tasks.filter { !$0.completed }
-        return sortTasks(filtered)
+    init() {
+        // Forward store changes to trigger view updates and recompute caches
+        store.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.recomputeAllCaches()
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
 
-    var categorizedTasks: [TaskCategory: [TaskActionItem]] {
-        var result: [TaskCategory: [TaskActionItem]] = [:]
+    // MARK: - Cache Recomputation
 
+    /// All tasks from store, optionally filtered by date
+    private func computeFilteredTasks() -> [TaskActionItem] {
+        var tasks = store.tasks
+
+        // Apply local date filter if set
+        if let start = filterStartDate {
+            tasks = tasks.filter { $0.createdAt >= start }
+        }
+        if let end = filterEndDate {
+            tasks = tasks.filter { $0.createdAt <= end }
+        }
+
+        return tasks
+    }
+
+    /// Recompute all caches when tasks or date filters change
+    private func recomputeAllCaches() {
+        let filtered = computeFilteredTasks()
+
+        // Compute counts
+        todoCount = filtered.filter { !$0.completed }.count
+        doneCount = filtered.filter { $0.completed }.count
+
+        // Recompute display caches
+        recomputeDisplayCachesWithFiltered(filtered)
+    }
+
+    /// Recompute display-related caches when showCompleted or sortOption change
+    private func recomputeDisplayCaches() {
+        let filtered = computeFilteredTasks()
+        recomputeDisplayCachesWithFiltered(filtered)
+    }
+
+    private func recomputeDisplayCachesWithFiltered(_ filtered: [TaskActionItem]) {
+        // Compute displayTasks
+        let display = showCompleted
+            ? filtered.filter { $0.completed }
+            : filtered.filter { !$0.completed }
+        displayTasks = sortTasks(display)
+
+        // Compute categorizedTasks
+        var result: [TaskCategory: [TaskActionItem]] = [:]
         for category in TaskCategory.allCases {
             result[category] = []
         }
-
         for task in displayTasks {
             let category = categoryFor(task: task)
             result[category, default: []].append(task)
         }
-
-        return result
-    }
-
-    var todoCount: Int {
-        tasks.filter { !$0.completed }.count
-    }
-
-    var doneCount: Int {
-        tasks.filter { $0.completed }.count
+        categorizedTasks = result
     }
 
     // MARK: - Category Helpers
@@ -167,99 +220,36 @@ class TasksViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Actions
+    // MARK: - Actions (delegate to shared store)
 
     func loadTasks() async {
-        isLoading = true
-        error = nil
-        currentOffset = 0
-
-        do {
-            let response = try await APIClient.shared.getActionItems(
-                limit: pageSize,
-                offset: 0,
-                startDate: filterStartDate,
-                endDate: filterEndDate
-            )
-            tasks = response.items
-            hasMoreTasks = response.hasMore
-            currentOffset = response.items.count
-        } catch {
-            self.error = error.localizedDescription
-            logError("Failed to load tasks", error: error)
-        }
-
-        isLoading = false
+        await store.loadTasks()
     }
 
     func loadMoreIfNeeded(currentTask: TaskActionItem) async {
-        // Load more when we're near the end of the list
-        guard hasMoreTasks, !isLoadingMore else { return }
-
-        let thresholdIndex = tasks.index(tasks.endIndex, offsetBy: -5, limitedBy: tasks.startIndex) ?? tasks.startIndex
-        guard let taskIndex = tasks.firstIndex(where: { $0.id == currentTask.id }),
-              taskIndex >= thresholdIndex else {
-            return
-        }
-
-        isLoadingMore = true
-
-        do {
-            let response = try await APIClient.shared.getActionItems(
-                limit: pageSize,
-                offset: currentOffset,
-                startDate: filterStartDate,
-                endDate: filterEndDate
-            )
-            tasks.append(contentsOf: response.items)
-            hasMoreTasks = response.hasMore
-            currentOffset += response.items.count
-        } catch {
-            logError("Failed to load more tasks", error: error)
-        }
-
-        isLoadingMore = false
+        await store.loadMoreIfNeeded(currentTask: currentTask)
     }
 
-    func applyDateFilter(startDate: Date?, endDate: Date?) async {
+    func applyDateFilter(startDate: Date?, endDate: Date?) {
         filterStartDate = startDate
         filterEndDate = endDate
         showingDateFilter = false
-        await loadTasks()
+        // No need to reload - filtering is done locally
     }
 
-    func clearDateFilter() async {
+    func clearDateFilter() {
         filterStartDate = nil
         filterEndDate = nil
         showingDateFilter = false
-        await loadTasks()
     }
 
     func toggleTask(_ task: TaskActionItem) async {
-        log("TasksViewModel: toggleTask called for id=\(task.id), setting completed=\(!task.completed)")
-        do {
-            let updated = try await APIClient.shared.updateActionItem(
-                id: task.id,
-                completed: !task.completed
-            )
-            log("TasksViewModel: toggleTask succeeded")
-            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                tasks[index] = updated
-            }
-        } catch {
-            self.error = error.localizedDescription
-            logError("Failed to toggle task", error: error)
-        }
+        log("TasksViewModel: toggleTask called for id=\(task.id)")
+        await store.toggleTask(task)
     }
 
     func deleteTask(_ task: TaskActionItem) async {
-        do {
-            try await APIClient.shared.deleteActionItem(id: task.id)
-            tasks.removeAll { $0.id == task.id }
-        } catch {
-            self.error = error.localizedDescription
-            logError("Failed to delete task", error: error)
-        }
+        await store.deleteTask(task)
     }
 
     func toggleCategory(_ category: TaskCategory) {
@@ -297,49 +287,19 @@ class TasksViewModel: ObservableObject {
 
     func deleteSelectedTasks() async {
         let idsToDelete = Array(selectedTaskIds)
-        for id in idsToDelete {
-            do {
-                try await APIClient.shared.deleteActionItem(id: id)
-                tasks.removeAll { $0.id == id }
-                selectedTaskIds.remove(id)
-            } catch {
-                logError("Failed to delete task \(id)", error: error)
-            }
-        }
+        await store.deleteMultipleTasks(ids: idsToDelete)
+        selectedTaskIds.removeAll()
         isMultiSelectMode = false
     }
 
     func createTask(description: String, dueAt: Date?, priority: String?) async {
-        do {
-            let created = try await APIClient.shared.createActionItem(
-                description: description,
-                dueAt: dueAt,
-                source: "manual",
-                priority: priority
-            )
-            tasks.insert(created, at: 0)
-            showingCreateTask = false
-        } catch {
-            self.error = error.localizedDescription
-            logError("Failed to create task", error: error)
-        }
+        await store.createTask(description: description, dueAt: dueAt, priority: priority)
+        showingCreateTask = false
     }
 
     func updateTaskDetails(_ task: TaskActionItem, description: String?, dueAt: Date?, priority: String?) async {
-        do {
-            let updated = try await APIClient.shared.updateActionItem(
-                id: task.id,
-                description: description,
-                dueAt: dueAt
-            )
-            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                tasks[index] = updated
-            }
-            editingTask = nil
-        } catch {
-            self.error = error.localizedDescription
-            logError("Failed to update task", error: error)
-        }
+        await store.updateTask(task, description: description, dueAt: dueAt)
+        editingTask = nil
     }
 }
 
