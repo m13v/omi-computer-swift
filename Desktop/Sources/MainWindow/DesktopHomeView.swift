@@ -141,6 +141,10 @@ struct DesktopHomeView: View {
                     PermissionsPage(appState: appState)
                         .opacity(selectedIndex == 10 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 10)
+
+                    DeviceSettingsPage()
+                        .opacity(selectedIndex == 11 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 11)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
