@@ -29,6 +29,7 @@ final class BleAudioService: ObservableObject {
     // Audio delivery
     private var transcriptionService: TranscriptionService?
     private var audioDataHandler: ((Data) -> Void)?
+    private var rawFrameHandler: ((Data) -> Void)?
 
     // Statistics
     private var totalSamplesProcessed: Int = 0
@@ -44,11 +45,13 @@ final class BleAudioService: ObservableObject {
     /// - Parameters:
     ///   - connection: The device connection to get audio from
     ///   - transcriptionService: Optional transcription service to send audio to
-    ///   - audioDataHandler: Optional handler for raw PCM data (alternative to transcription)
+    ///   - audioDataHandler: Optional handler for decoded PCM data (alternative to transcription)
+    ///   - rawFrameHandler: Optional handler for raw encoded frames (for WAL recording)
     func startProcessing(
         from connection: DeviceConnection,
         transcriptionService: TranscriptionService? = nil,
-        audioDataHandler: ((Data) -> Void)? = nil
+        audioDataHandler: ((Data) -> Void)? = nil,
+        rawFrameHandler: ((Data) -> Void)? = nil
     ) async {
         guard !isProcessing else {
             logger.warning("Already processing audio")
@@ -57,6 +60,7 @@ final class BleAudioService: ObservableObject {
 
         self.transcriptionService = transcriptionService
         self.audioDataHandler = audioDataHandler
+        self.rawFrameHandler = rawFrameHandler
 
         // Get codec from device
         let codec = await connection.getAudioCodec()
@@ -124,6 +128,7 @@ final class BleAudioService: ObservableObject {
         isProcessing = false
         transcriptionService = nil
         audioDataHandler = nil
+        rawFrameHandler = nil
 
         // Log statistics
         if let start = startTime {
@@ -142,6 +147,9 @@ final class BleAudioService: ObservableObject {
     /// Process audio data from a device
     private func processDeviceAudio(_ data: Data, from connection: DeviceConnection) async {
         guard let processor = processor else { return }
+
+        // Capture raw frame for WAL recording
+        rawFrameHandler?(data)
 
         // Different devices need different handling
         let deviceType = connection.device.type
