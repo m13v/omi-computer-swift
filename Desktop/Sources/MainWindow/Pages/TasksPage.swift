@@ -346,7 +346,7 @@ class TasksViewModel: ObservableObject {
 // MARK: - Tasks Page
 
 struct TasksPage: View {
-    @StateObject private var viewModel = TasksViewModel()
+    @ObservedObject var viewModel: TasksViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -366,9 +366,6 @@ struct TasksPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .task {
-            await viewModel.loadTasks()
-        }
         .sheet(isPresented: $viewModel.showingCreateTask) {
             TaskEditSheet(
                 mode: .create,
