@@ -64,6 +64,46 @@ struct SafeDismissButton: View {
     }
 }
 
+// MARK: - Dismiss Button (Action-based)
+/// A dismiss button that takes a closure instead of a DismissAction.
+/// Used for overlay-based sheets where the dismiss is controlled externally.
+struct DismissButton: View {
+    let action: () -> Void
+    var icon: String = "xmark"
+    var showBackground: Bool = true
+
+    @State private var isPressed = false
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(isPressed ? OmiColors.textTertiary : OmiColors.textSecondary)
+            .frame(width: 28, height: 28)
+            .background(showBackground ? OmiColors.backgroundSecondary : Color.clear)
+            .clipShape(Circle())
+            .contentShape(Circle())
+            .opacity(isPressed ? 0.7 : 1.0)
+            .onTapGesture {
+                guard !isPressed else { return }
+                isPressed = true
+
+                log("DISMISS_BUTTON: Tap gesture fired")
+
+                // Consume the click by resigning first responder
+                NSApp.keyWindow?.makeFirstResponder(nil)
+
+                // Small delay then dismiss
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                    log("DISMISS_BUTTON: Calling action")
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        action()
+                    }
+                }
+            }
+    }
+}
+
 struct AppsPage: View {
     @ObservedObject var appProvider: AppProvider
     @State private var searchText = ""
@@ -195,9 +235,11 @@ struct AppsPage: View {
         .sheet(item: $viewAllCategory) { category in
             CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 })
         }
-        .sheet(isPresented: $showPersonaPage) {
-            PersonaPage()
-                .frame(width: 500, height: 650)
+        .dismissableSheet(isPresented: $showPersonaPage) {
+            PersonaPage(onDismiss: {
+                showPersonaPage = false
+            })
+            .frame(width: 500, height: 650)
         }
     }
 
@@ -1473,6 +1515,51 @@ struct FlowLayout: Layout {
 
             self.size.height = y + rowHeight
         }
+    }
+}
+
+// MARK: - Dismissable Sheet
+/// A sheet that can be dismissed by clicking outside the content area.
+/// This provides macOS-friendly modal behavior where clicking the dimmed background dismisses the sheet.
+
+struct DismissableSheetModifier<SheetContent: View>: ViewModifier {
+    @Binding var isPresented: Bool
+    let sheetContent: () -> SheetContent
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if isPresented {
+                    // Dimmed background that dismisses on tap
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            log("DISMISSABLE_SHEET: Background tapped, dismissing")
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                isPresented = false
+                            }
+                        }
+                        .transition(.opacity)
+
+                    // Sheet content centered
+                    sheetContent()
+                        .background(OmiColors.backgroundPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: isPresented)
+    }
+}
+
+extension View {
+    /// Presents a sheet that can be dismissed by clicking outside the content area.
+    func dismissableSheet<Content: View>(
+        isPresented: Binding<Bool>,
+        @ViewBuilder content: @escaping () -> Content
+    ) -> some View {
+        self.modifier(DismissableSheetModifier(isPresented: isPresented, sheetContent: content))
     }
 }
 
