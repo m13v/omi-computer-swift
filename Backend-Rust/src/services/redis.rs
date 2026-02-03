@@ -56,7 +56,7 @@ impl RedisService {
     ) -> Result<(), redis::RedisError> {
         let mut conn = self.get_connection().await?;
         let key = format!("memories-visibility:{}", conversation_id);
-        conn.set(&key, uid).await?;
+        let _: () = conn.set(&key, uid).await?;
         tracing::info!("Stored conversation visibility: {} -> {}", conversation_id, uid);
         Ok(())
     }
@@ -68,7 +68,7 @@ impl RedisService {
     ) -> Result<(), redis::RedisError> {
         let mut conn = self.get_connection().await?;
         let key = format!("memories-visibility:{}", conversation_id);
-        conn.del(&key).await?;
+        let _: () = conn.del(&key).await?;
         tracing::info!("Removed conversation visibility: {}", conversation_id);
         Ok(())
     }
@@ -92,7 +92,7 @@ impl RedisService {
         conversation_id: &str,
     ) -> Result<(), redis::RedisError> {
         let mut conn = self.get_connection().await?;
-        conn.sadd("public-memories", conversation_id).await?;
+        let _: () = conn.sadd("public-memories", conversation_id).await?;
         tracing::info!("Added conversation to public set: {}", conversation_id);
         Ok(())
     }
@@ -103,7 +103,7 @@ impl RedisService {
         conversation_id: &str,
     ) -> Result<(), redis::RedisError> {
         let mut conn = self.get_connection().await?;
-        conn.srem("public-memories", conversation_id).await?;
+        let _: () = conn.srem("public-memories", conversation_id).await?;
         tracing::info!("Removed conversation from public set: {}", conversation_id);
         Ok(())
     }
