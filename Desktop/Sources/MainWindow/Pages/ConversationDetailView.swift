@@ -222,9 +222,9 @@ struct ConversationDetailView: View {
     // MARK: - Actions
 
     private func copyTranscript() {
-        let transcript = conversation.transcriptSegments.map { segment in
-            let speaker = segment.isUser ? "You" : "Speaker \(segment.speaker)"
-            return "[\(speaker)]: \(segment.text)"
+        let transcript: String = conversation.transcriptSegments.map { segment -> String in
+            let speakerName = segment.isUser ? "You" : "Speaker \(segment.speaker ?? "Unknown")"
+            return "[\(speakerName)]: \(segment.text)"
         }.joined(separator: "\n\n")
 
         NSPasteboard.general.clearContents()
@@ -232,12 +232,18 @@ struct ConversationDetailView: View {
     }
 
     private func copyLink() async {
-        // TODO: Implement when getConversationShareLink API is available
         isCopyingLink = true
         defer { isCopyingLink = false }
 
-        // API not implemented yet - show error or just do nothing
-        logError("Copy link not implemented", error: NSError(domain: "ConversationDetailView", code: -1, userInfo: [NSLocalizedDescriptionKey: "API not available"]))
+        do {
+            let shareableUrl = try await APIClient.shared.getConversationShareLink(id: conversation.id)
+            await MainActor.run {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(shareableUrl, forType: .string)
+            }
+        } catch {
+            logError("Failed to get share link", error: error)
+        }
     }
 
     private func updateTitle() async {
