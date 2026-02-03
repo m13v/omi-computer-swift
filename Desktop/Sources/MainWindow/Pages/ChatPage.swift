@@ -2,8 +2,8 @@ import SwiftUI
 import MarkdownUI
 
 struct ChatPage: View {
-    @StateObject private var appProvider = AppProvider()
-    @StateObject private var chatProvider = ChatProvider()
+    @ObservedObject var appProvider: AppProvider
+    @ObservedObject var chatProvider: ChatProvider
     @State private var inputText = ""
     @State private var showAppPicker = false
     @State private var showHistoryPopover = false
@@ -31,11 +31,6 @@ struct ChatPage: View {
                 .padding()
         }
         .background(OmiColors.backgroundPrimary)
-        .task {
-            await appProvider.fetchApps()
-            // Initialize chat: fetch sessions and load messages
-            await chatProvider.initialize()
-        }
     }
 
     // MARK: - Header
@@ -962,7 +957,7 @@ struct HistorySessionRow: View {
 }
 
 #Preview {
-    ChatPage()
+    ChatPage(appProvider: AppProvider(), chatProvider: ChatProvider())
         .frame(width: 600, height: 700)
 }
 
