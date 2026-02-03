@@ -112,11 +112,23 @@ struct ConversationDetailView: View {
             Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
                 .font(.system(size: 28))
 
-            // Title
+            // Title with edit button
             Text(conversation.title)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
+
+            // Edit title button (inline with title)
+            Button(action: {
+                editedTitle = conversation.title
+                showEditDialog = true
+            }) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Edit title")
 
             Spacer()
 
@@ -125,8 +137,8 @@ struct ConversationDetailView: View {
                 statusBadge
             }
 
-            // Action buttons
-            actionButtonsMenu
+            // Inline action buttons
+            inlineActionButtons
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
@@ -151,29 +163,40 @@ struct ConversationDetailView: View {
         }
     }
 
-    // MARK: - Action Buttons Menu
+    // MARK: - Inline Action Buttons
 
-    private var actionButtonsMenu: some View {
-        Menu {
-            Button(action: copyTranscript) {
-                Label("Copy Transcript", systemImage: "doc.on.doc")
-            }
-
+    private var inlineActionButtons: some View {
+        HStack(spacing: 8) {
+            // Copy link button
             Button(action: { Task { await copyLink() } }) {
-                Label(isCopyingLink ? "Generating Link..." : "Copy Link", systemImage: isCopyingLink ? "arrow.triangle.2.circlepath" : "link")
+                Image(systemName: isCopyingLink ? "arrow.triangle.2.circlepath" : "link")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(OmiColors.backgroundTertiary)
+                    )
             }
+            .buttonStyle(.plain)
             .disabled(isCopyingLink)
+            .help("Copy link")
 
-            Divider()
-
-            Button(action: {
-                editedTitle = conversation.title
-                showEditDialog = true
-            }) {
-                Label("Edit Title", systemImage: "pencil")
+            // Copy transcript button
+            Button(action: copyTranscript) {
+                Image(systemName: "doc.on.doc")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(OmiColors.backgroundTertiary)
+                    )
             }
+            .buttonStyle(.plain)
+            .help("Copy transcript")
 
-            // Move to Folder submenu
+            // Move to folder button (menu)
             if !folders.isEmpty {
                 Menu {
                     if conversation.folderId != nil {
@@ -199,24 +222,34 @@ struct ConversationDetailView: View {
                         .disabled(conversation.folderId == folder.id)
                     }
                 } label: {
-                    Label("Move to Folder", systemImage: "folder")
+                    Image(systemName: conversation.folderId != nil ? "folder.fill" : "folder")
+                        .font(.system(size: 14))
+                        .foregroundColor(conversation.folderId != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(
+                            Circle()
+                                .fill(OmiColors.backgroundTertiary)
+                        )
                 }
+                .menuStyle(.borderlessButton)
+                .frame(width: 28)
+                .help("Move to folder")
             }
 
-            Divider()
-
-            Button(role: .destructive, action: {
-                showDeleteConfirmation = true
-            }) {
-                Label("Delete", systemImage: "trash")
+            // Delete button
+            Button(action: { showDeleteConfirmation = true }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.error)
+                    .frame(width: 28, height: 28)
+                    .background(
+                        Circle()
+                            .fill(OmiColors.backgroundTertiary)
+                    )
             }
-        } label: {
-            Image(systemName: "ellipsis.circle")
-                .font(.system(size: 20))
-                .foregroundColor(OmiColors.textSecondary)
+            .buttonStyle(.plain)
+            .help("Delete conversation")
         }
-        .menuStyle(.borderlessButton)
-        .frame(width: 32)
     }
 
     // MARK: - Actions
