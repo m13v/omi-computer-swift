@@ -38,10 +38,18 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
             // Skip if we're processing a synthetic click (prevent re-entry loop)
             guard !self.isProcessingSyntheticClick else { return event }
 
+            // CRITICAL: Only capture events that are actually for OUR window, not sheets or other windows
+            // event.window is the window where the click occurred
+            guard event.window == window else {
+                log("CLICKTHROUGH: Ignoring click from different window (event.window=\(String(describing: event.window?.className)), our window=\(window.className))")
+                return event
+            }
+
             // If clicking in our view while window is not key, save the location
             if !window.isKeyWindow {
                 let locationInView = self.convert(event.locationInWindow, from: nil)
                 if self.bounds.contains(locationInView) {
+                    log("CLICKTHROUGH: Captured pending click at \(event.locationInWindow) in view bounds")
                     self.pendingClickLocation = event.locationInWindow
                     self.wasWindowKey = false
                 }
@@ -55,7 +63,22 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
         guard let location = pendingClickLocation,
               !wasWindowKey,
               self.window != nil else {
+            if pendingClickLocation != nil {
+                log("CLICKTHROUGH: windowDidBecomeKey - clearing pending click (wasWindowKey=\(wasWindowKey))")
+            }
             pendingClickLocation = nil
+            return
+        }
+
+        log("CLICKTHROUGH: windowDidBecomeKey - has pending click at \(location)")
+
+        // Check if a sheet was just dismissed - if so, don't process the pending click
+        // This prevents click-through when dismissing modals/sheets
+        if let keyWindow = NSApp.keyWindow,
+           keyWindow.className.contains("Sheet") || NSApp.windows.contains(where: { $0.isSheet && $0.isVisible }) {
+            log("CLICKTHROUGH: Sheet detected, ignoring pending click")
+            pendingClickLocation = nil
+            wasWindowKey = true
             return
         }
 
@@ -82,6 +105,7 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
             self.isProcessingSyntheticClick = true
 
             // Create and post a synthetic mouse event at the SAVED click location
+            log("CLICKTHROUGH: Posting synthetic click at screen position \(cgPoint)")
             if let cgEvent = CGEvent(
                 mouseEventSource: nil,
                 mouseType: .leftMouseDown,
