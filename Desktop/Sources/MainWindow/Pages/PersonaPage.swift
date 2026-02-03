@@ -72,8 +72,9 @@ struct PersonaPage: View {
             }
         }
         .background(OmiColors.backgroundSecondary.opacity(0.3))
-        .sheet(isPresented: $showingCreateForm) {
+        .dismissableSheet(isPresented: $showingCreateForm) {
             createPersonaSheet
+                .frame(width: 400, height: 400)
         }
         .alert("Delete Persona", isPresented: $showingDeleteConfirmation) {
             Button("Cancel", role: .cancel) {}
@@ -506,7 +507,8 @@ struct PersonaPage: View {
             isCreating: $isCreating,
             onCheckUsername: checkUsername,
             onCreate: createPersona,
-            canCreate: canCreate
+            canCreate: canCreate,
+            onDismiss: { showingCreateForm = false }
         )
     }
 
@@ -608,8 +610,6 @@ struct PersonaPage: View {
 // MARK: - Create Persona Sheet Content (extracted for proper dismiss handling)
 
 private struct CreatePersonaSheetContent: View {
-    @Environment(\.dismiss) private var dismiss
-
     @Binding var newPersonaName: String
     @Binding var newPersonaUsername: String
     @Binding var isCheckingUsername: Bool
@@ -618,6 +618,17 @@ private struct CreatePersonaSheetContent: View {
     let onCheckUsername: () async -> Void
     let onCreate: () async -> Void
     let canCreate: Bool
+    var onDismiss: (() -> Void)? = nil
+
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -629,7 +640,7 @@ private struct CreatePersonaSheetContent: View {
 
                 Spacer()
 
-                SafeDismissButton(dismiss: dismiss)
+                DismissButton(action: dismissSheet)
             }
             .padding(20)
 
