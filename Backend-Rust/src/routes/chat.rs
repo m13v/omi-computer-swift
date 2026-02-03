@@ -63,6 +63,8 @@ pub struct ChatContextResponse {
     pub memories: Vec<MemorySummary>,
     /// Formatted context string ready for prompt injection
     pub context_string: String,
+    /// Citation sources for tracking which conversations/memories are cited
+    pub citation_sources: Vec<CitationSource>,
 }
 
 /// Request for initial message generation
@@ -127,6 +129,25 @@ pub struct MemorySummary {
     pub id: String,
     pub content: String,
     pub category: String,
+}
+
+/// Source for citation tracking
+#[derive(Debug, Clone, Serialize)]
+pub struct CitationSource {
+    /// 1-based index matching [1], [2] in context string
+    pub index: usize,
+    /// Type of source: "conversation" or "memory"
+    pub source_type: String,
+    /// ID of the source document
+    pub id: String,
+    /// Title or summary of the source
+    pub title: String,
+    /// Preview text of the source
+    pub preview: String,
+    /// Emoji (for conversations)
+    pub emoji: Option<String>,
+    /// When the source was created
+    pub created_at: Option<DateTime<Utc>>,
 }
 
 // ============================================================================
@@ -195,6 +216,7 @@ async fn get_chat_context(
             conversations: vec![],
             memories: vec![],
             context_string: String::new(),
+            citation_sources: vec![],
         }));
     }
 
@@ -257,6 +279,7 @@ async fn get_chat_context(
             conversations: vec![],
             memories,
             context_string,
+            citation_sources: vec![],
         }));
     }
 
@@ -275,7 +298,7 @@ async fn get_chat_context(
     let memories = get_user_memories(&state.firestore, &user.uid).await;
 
     // Step 5: Build context string for prompt (including conversation history and app context)
-    let base_context = build_context_string(&conversations, &memories);
+    let (base_context, citation_sources) = build_context_string(&conversations, &memories);
 
     // Add app-specific context if available
     let context_with_app = if let Some((app_name, chat_prompt, persona_prompt)) = &app_context {
@@ -306,10 +329,11 @@ async fn get_chat_context(
     };
 
     tracing::info!(
-        "Chat context: {} conversations, {} memories, {} prior messages",
+        "Chat context: {} conversations, {} memories, {} prior messages, {} citation sources",
         conversations.len(),
         memories.len(),
-        request.messages.len()
+        request.messages.len(),
+        citation_sources.len()
     );
 
     Ok(Json(ChatContextResponse {
@@ -318,6 +342,7 @@ async fn get_chat_context(
         conversations,
         memories,
         context_string,
+        citation_sources,
     }))
 }
 
@@ -633,11 +658,13 @@ async fn get_user_memories(firestore: &Arc<FirestoreService>, uid: &str) -> Vec<
 }
 
 /// Build a formatted context string for prompt injection
+/// Returns the context string and a list of citation sources for tracking
 fn build_context_string(
     conversations: &[ConversationSummary],
     memories: &[MemorySummary],
-) -> String {
+) -> (String, Vec<CitationSource>) {
     let mut parts = Vec::new();
+    let mut citation_sources = Vec::new();
 
     // Add memories section
     if !memories.is_empty() {
@@ -650,25 +677,47 @@ fn build_context_string(
         parts.push(memory_lines.join("\n"));
     }
 
-    // Add conversations section
+    // Add conversations section with citation sources
     if !conversations.is_empty() {
         let mut conv_lines = vec!["<recent_conversations>".to_string()];
         conv_lines.push("Recent conversations for context:".to_string());
         for (i, conv) in conversations.iter().take(10).enumerate() {
+            let index = i + 1;
             conv_lines.push(format!(
                 "[{}] {} {} - {} ({})",
-                i + 1,
+                index,
                 conv.emoji,
                 conv.title,
                 conv.overview,
                 conv.created_at.format("%Y-%m-%d")
             ));
+
+            // Track citation source
+            citation_sources.push(CitationSource {
+                index,
+                source_type: "conversation".to_string(),
+                id: conv.id.clone(),
+                title: conv.title.clone(),
+                preview: conv.overview.clone(),
+                emoji: Some(conv.emoji.clone()),
+                created_at: Some(conv.created_at),
+            });
         }
         conv_lines.push("</recent_conversations>".to_string());
+
+        // Add citation instructions when conversations are present
+        conv_lines.push(String::new());
+        conv_lines.push("<citing_instructions>".to_string());
+        conv_lines.push("When answering questions using the conversations above, cite your sources using [index] format.".to_string());
+        conv_lines.push("- Cite at the end of sentences that use information from conversations".to_string());
+        conv_lines.push("- NO SPACE between the last word and citation: \"discussed yesterday[1]\" not \"discussed yesterday [1]\"".to_string());
+        conv_lines.push("- Use multiple citations if needed: \"mentioned in meetings[1][3]\"".to_string());
+        conv_lines.push("</citing_instructions>".to_string());
+
         parts.push(conv_lines.join("\n"));
     }
 
-    parts.join("\n\n")
+    (parts.join("\n\n"), citation_sources)
 }
 
 /// Format memories only for context (when no conversation context needed)
@@ -713,7 +762,7 @@ async fn get_basic_context(
 
     // Include conversation history in context string
     let conversation_history = format_conversation_history(&request.messages);
-    let base_context = build_context_string(&conversations, &memories);
+    let (base_context, citation_sources) = build_context_string(&conversations, &memories);
 
     // Add app-specific context if available
     let context_with_app = if let Some((app_name, chat_prompt, persona_prompt)) = &app_context {
@@ -746,6 +795,7 @@ async fn get_basic_context(
         conversations,
         memories,
         context_string,
+        citation_sources,
     }))
 }
 
