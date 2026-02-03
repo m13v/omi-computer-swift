@@ -737,7 +737,6 @@ struct TasksPage: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
-            .animation(.easeInOut(duration: 0.3), value: viewModel.displayTasks.map(\.id))
         }
         .refreshable {
             await viewModel.loadTasks()
@@ -956,8 +955,11 @@ struct TaskRow: View {
             checkmarkScale = 1.0
         }
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovering = hovering
+            isHovering = hovering
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
             }
         }
         .confirmationDialog(
