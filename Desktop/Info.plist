@@ -36,6 +36,8 @@
     <string>Omi Computer needs microphone access to transcribe your conversations in real-time.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>Omi Computer needs permission to capture system audio for transcription of calls and meetings.</string>
+    <key>NSBluetoothAlwaysUsageDescription</key>
+    <string>Omi Computer needs Bluetooth access to connect to your Omi wearable device for audio capture and transcription.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
