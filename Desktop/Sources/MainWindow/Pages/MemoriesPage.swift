@@ -1,62 +1,6 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Safe Dismiss Button
-/// A dismiss button that prevents click-through to underlying views on macOS.
-/// Uses onTapGesture with async delay and synthetic mouse-up event to ensure the click is fully consumed.
-/// Copied from AppsPage.swift SafeDismissButton for consistency.
-struct MemorySafeDismissButton: View {
-    let dismiss: DismissAction
-    var icon: String = "xmark.circle.fill"
-    var iconSize: CGFloat = 20
-
-    @State private var isPressed = false
-
-    var body: some View {
-        Image(systemName: icon)
-            .font(.system(size: iconSize))
-            .foregroundColor(isPressed ? OmiColors.textQuaternary : OmiColors.textTertiary)
-            .contentShape(Circle())
-            .opacity(isPressed ? 0.7 : 1.0)
-            .onTapGesture {
-                guard !isPressed else { return } // Prevent double-tap
-                isPressed = true
-
-                log("MEMORY DISMISS: Tap gesture fired at mouse position: \(NSEvent.mouseLocation)")
-
-                // Consume the click by resigning first responder
-                NSApp.keyWindow?.makeFirstResponder(nil)
-
-                // Post a mouse-up event to ensure any pending click is consumed
-                if let window = NSApp.keyWindow {
-                    let event = NSEvent.mouseEvent(
-                        with: .leftMouseUp,
-                        location: window.mouseLocationOutsideOfEventStream,
-                        modifierFlags: [],
-                        timestamp: ProcessInfo.processInfo.systemUptime,
-                        windowNumber: window.windowNumber,
-                        context: nil,
-                        eventNumber: 0,
-                        clickCount: 1,
-                        pressure: 0
-                    )
-                    if let event = event {
-                        window.sendEvent(event)
-                        log("MEMORY DISMISS: Sent synthetic mouse-up event")
-                    }
-                }
-
-                // Use async with longer delay to ensure mouse event fully completes
-                Task { @MainActor in
-                    log("MEMORY DISMISS: Starting 250ms delay before dismiss")
-                    try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
-                    log("MEMORY DISMISS: Calling dismiss()")
-                    dismiss()
-                }
-            }
-    }
-}
-
 /// All available tags for filtering memories
 enum MemoryTag: String, CaseIterable, Identifiable {
     // Focus tags - shown first
@@ -506,21 +450,25 @@ struct MemoriesPage: View {
             }
         }
         .background(Color.clear)
-        .sheet(isPresented: $viewModel.showingAddMemory) {
-            AddMemorySheet(viewModel: viewModel)
+        .dismissableSheet(isPresented: $viewModel.showingAddMemory) {
+            AddMemorySheet(viewModel: viewModel, onDismiss: { viewModel.showingAddMemory = false })
+                .frame(width: 400)
         }
-        .sheet(item: $viewModel.editingMemory) { memory in
-            EditMemorySheet(memory: memory, viewModel: viewModel)
+        .dismissableSheet(item: $viewModel.editingMemory) { memory in
+            EditMemorySheet(memory: memory, viewModel: viewModel, onDismiss: { viewModel.editingMemory = nil })
+                .frame(width: 400)
         }
-        .sheet(item: $viewModel.selectedMemory) { memory in
+        .dismissableSheet(item: $viewModel.selectedMemory) { memory in
             MemoryDetailSheet(
                 memory: memory,
                 viewModel: viewModel,
                 categoryIcon: categoryIcon,
                 categoryColor: categoryColor,
                 tagColorFor: tagColorFor,
-                formatDate: formatDate
+                formatDate: formatDate,
+                onDismiss: { viewModel.selectedMemory = nil }
             )
+            .frame(width: 450, maxHeight: 600)
         }
         .overlay(alignment: .bottom) {
             undoDeleteToast
@@ -1167,8 +1115,17 @@ struct MemoryDetailSheet: View {
     let categoryColor: (MemoryCategory) -> Color
     let tagColorFor: (String) -> Color
     let formatDate: (Date) -> String
+    var onDismiss: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -1186,7 +1143,7 @@ struct MemoryDetailSheet: View {
 
                     Spacer()
 
-                    MemorySafeDismissButton(dismiss: dismiss)
+                    DismissButton(action: dismissSheet)
                 }
 
                 // Content
@@ -1319,7 +1276,7 @@ struct MemoryDetailSheet: View {
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 150_000_000) // 150ms before dismiss
-                            dismiss()
+                            dismissSheet()
                             // Wait for sheet dismiss animation to complete (~300ms)
                             try? await Task.sleep(nanoseconds: 350_000_000) // 350ms after dismiss
                             viewModel.editingMemory = memoryToEdit
@@ -1370,7 +1327,7 @@ struct MemoryDetailSheet: View {
                             NSApp.keyWindow?.makeFirstResponder(nil)
                             Task { @MainActor in
                                 try? await Task.sleep(nanoseconds: 100_000_000)
-                                dismiss()
+                                dismissSheet()
                                 await viewModel.markAsRead(memory)
                             }
                         }
@@ -1389,7 +1346,7 @@ struct MemoryDetailSheet: View {
                             NSApp.keyWindow?.makeFirstResponder(nil)
                             Task { @MainActor in
                                 try? await Task.sleep(nanoseconds: 100_000_000)
-                                dismiss()
+                                dismissSheet()
                                 await viewModel.navigateToConversation(id: conversationId)
                             }
                         }
@@ -1406,7 +1363,7 @@ struct MemoryDetailSheet: View {
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         Task { @MainActor in
                             try? await Task.sleep(nanoseconds: 100_000_000)
-                            dismiss()
+                            dismissSheet()
                             await viewModel.deleteMemory(memory)
                         }
                     }
@@ -1506,14 +1463,29 @@ private struct MemoryActionRow: View {
 
 struct AddMemorySheet: View {
     @ObservedObject var viewModel: MemoriesViewModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var isCancelPressed = false
+    var onDismiss: (() -> Void)? = nil
+
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        viewModel.newMemoryText = ""
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Add Memory")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
+            // Header with close button
+            HStack {
+                Text("Add Memory")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+                Spacer()
+                DismissButton(action: dismissSheet)
+            }
 
             TextEditor(text: $viewModel.newMemoryText)
                 .font(.system(size: 14))
@@ -1525,47 +1497,11 @@ struct AddMemorySheet: View {
                 .frame(height: 150)
 
             HStack(spacing: 12) {
-                // Cancel button with safe dismiss
-                Text("Cancel")
-                    .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .opacity(isCancelPressed ? 0.7 : 1.0)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !isCancelPressed else { return }
-                        isCancelPressed = true
-
-                        log("ADD MEMORY: Cancel tapped")
-
-                        // Consume the click by resigning first responder
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-
-                        // Post a mouse-up event to ensure any pending click is consumed
-                        if let window = NSApp.keyWindow {
-                            let event = NSEvent.mouseEvent(
-                                with: .leftMouseUp,
-                                location: window.mouseLocationOutsideOfEventStream,
-                                modifierFlags: [],
-                                timestamp: ProcessInfo.processInfo.systemUptime,
-                                windowNumber: window.windowNumber,
-                                context: nil,
-                                eventNumber: 0,
-                                clickCount: 1,
-                                pressure: 0
-                            )
-                            if let event = event {
-                                window.sendEvent(event)
-                                log("ADD MEMORY: Sent synthetic mouse-up event")
-                            }
-                        }
-
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
-                            dismiss()
-                            viewModel.newMemoryText = ""
-                        }
-                    }
+                // Cancel button
+                Button(action: dismissSheet) {
+                    Text("Cancel")
+                        .foregroundColor(OmiColors.textSecondary)
+                }
 
                 Spacer()
 
@@ -1595,14 +1531,29 @@ struct AddMemorySheet: View {
 struct EditMemorySheet: View {
     let memory: ServerMemory
     @ObservedObject var viewModel: MemoriesViewModel
-    @Environment(\.dismiss) private var dismiss
-    @State private var isCancelPressed = false
+    var onDismiss: (() -> Void)? = nil
+
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        viewModel.editText = ""
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 20) {
-            Text("Edit Memory")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
+            // Header with close button
+            HStack {
+                Text("Edit Memory")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+                Spacer()
+                DismissButton(action: dismissSheet)
+            }
 
             TextEditor(text: $viewModel.editText)
                 .font(.system(size: 14))
@@ -1614,47 +1565,11 @@ struct EditMemorySheet: View {
                 .frame(height: 150)
 
             HStack(spacing: 12) {
-                // Cancel button with safe dismiss
-                Text("Cancel")
-                    .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .opacity(isCancelPressed ? 0.7 : 1.0)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        guard !isCancelPressed else { return }
-                        isCancelPressed = true
-
-                        log("EDIT MEMORY: Cancel tapped")
-
-                        // Consume the click by resigning first responder
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-
-                        // Post a mouse-up event to ensure any pending click is consumed
-                        if let window = NSApp.keyWindow {
-                            let event = NSEvent.mouseEvent(
-                                with: .leftMouseUp,
-                                location: window.mouseLocationOutsideOfEventStream,
-                                modifierFlags: [],
-                                timestamp: ProcessInfo.processInfo.systemUptime,
-                                windowNumber: window.windowNumber,
-                                context: nil,
-                                eventNumber: 0,
-                                clickCount: 1,
-                                pressure: 0
-                            )
-                            if let event = event {
-                                window.sendEvent(event)
-                                log("EDIT MEMORY: Sent synthetic mouse-up event")
-                            }
-                        }
-
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
-                            dismiss()
-                            viewModel.editText = ""
-                        }
-                    }
+                // Cancel button
+                Button(action: dismissSheet) {
+                    Text("Cancel")
+                        .foregroundColor(OmiColors.textSecondary)
+                }
 
                 Spacer()
 
