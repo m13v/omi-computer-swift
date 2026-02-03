@@ -289,6 +289,23 @@ extension APIClient {
         }
     }
 
+    /// Sets the visibility of a conversation for sharing
+    /// - Parameters:
+    ///   - id: The conversation ID
+    ///   - visibility: The visibility level ("shared", "public", or "private")
+    func setConversationVisibility(id: String, visibility: String = "shared") async throws {
+        let url = URL(string: baseURL + "v1/conversations/\(id)/visibility?value=\(visibility)&visibility=\(visibility)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+    }
+
     /// Updates the title of a conversation
     func updateConversationTitle(id: String, title: String) async throws {
         struct TitleUpdate: Encodable {
@@ -883,7 +900,7 @@ struct ServerMemory: Codable, Identifiable {
     let conversationId: String?
     let reviewed: Bool
     let userReview: Bool?
-    let visibility: String
+    var visibility: String
     let manuallyAdded: Bool
     let scoring: String?
     let source: String?
