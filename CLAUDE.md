@@ -70,3 +70,43 @@ See `.claude/settings.json` for connection details.
 - **DO NOT** run the app after making changes
 - Let the user build, run, and test the app manually
 - Wait for user feedback before making additional changes
+
+## SwiftUI macOS Patterns
+
+### Click-Through Prevention for Sheets/Modals
+
+**CRITICAL**: On macOS, when dismissing sheets or modals, click events can "fall through" to underlying views, causing the cursor to jump and trigger unintended clicks. This happens because the dismiss animation and click event complete at different times.
+
+**Always use `SafeDismissButton` for sheet dismiss buttons** (defined in `AppsPage.swift`):
+```swift
+SafeDismissButton(dismiss: dismiss)
+```
+
+**For interactive elements that dismiss sheets**, use the async delay pattern:
+```swift
+.onTapGesture {
+    // Resign first responder to consume the click
+    NSApp.keyWindow?.makeFirstResponder(nil)
+    Task { @MainActor in
+        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms delay
+        // Then perform action (dismiss, show another sheet, etc.)
+        onTap()
+    }
+}
+```
+
+**Key rules:**
+1. Never use `Button(action:)` for sheet dismiss actions - use `onTapGesture` with async delay
+2. Always call `NSApp.keyWindow?.makeFirstResponder(nil)` before the delay
+3. Use at least 100ms delay before triggering sheet transitions
+4. When transitioning between sheets, dismiss first, then use `DispatchQueue.main.asyncAfter` with 0.3s delay before showing the next sheet
+
+**Example of sheet-to-sheet transition:**
+```swift
+onCreatePersona: {
+    showFirstSheet = false
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+        showSecondSheet = true
+    }
+}
+```
