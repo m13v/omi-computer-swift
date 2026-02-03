@@ -2,6 +2,7 @@ import SwiftUI
 
 struct DesktopHomeView: View {
     @StateObject private var appState = AppState()
+    @StateObject private var viewModelContainer = ViewModelContainer()
     @ObservedObject private var authState = AuthState.shared
     @State private var selectedIndex: Int = 0
     @State private var isSidebarCollapsed: Bool = false
@@ -51,6 +52,10 @@ struct DesktopHomeView: View {
                             log("DesktopHomeView: Screen analysis disabled in settings, skipping auto-start")
                         }
                     }
+                    .task {
+                        // Trigger eager data loading when main content appears
+                        await viewModelContainer.loadAllData()
+                    }
             }
         }
         .background(OmiColors.backgroundPrimary)
@@ -82,7 +87,7 @@ struct DesktopHomeView: View {
 
             // Main content area with rounded container
             ZStack {
-                // Content container
+                // Content container background
                 RoundedRectangle(cornerRadius: 16)
                     .fill(OmiColors.backgroundSecondary.opacity(0.4))
                     .overlay(
@@ -91,36 +96,55 @@ struct DesktopHomeView: View {
                     )
                     .shadow(color: .black.opacity(0.05), radius: 20, x: 0, y: 4)
 
-                // Page content
-                Group {
-                    switch selectedIndex {
-                    case 0:
-                        DashboardPage()
-                    case 1:
-                        ConversationsPage(appState: appState)
-                    case 2:
-                        ChatPage()
-                    case 3:
-                        MemoriesPage()
-                    case 4:
-                        TasksPage()
-                    case 5:
-                        FocusPage()
-                    case 6:
-                        AdvicePage()
-                    case 7:
-                        RewindPage()
-                    case 8:
-                        AppsPage()
-                    case 9:
-                        PersonaPage()
-                    case 10:
-                        SettingsPage(appState: appState)
-                    case 11:
-                        PermissionsPage(appState: appState)
-                    default:
-                        DashboardPage()
-                    }
+                // Page content - ZStack keeps all views alive
+                ZStack {
+                    DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
+                        .opacity(selectedIndex == 0 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 0)
+
+                    ConversationsPage(appState: appState)
+                        .opacity(selectedIndex == 1 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 1)
+
+                    ChatPage(appProvider: viewModelContainer.appProvider, chatProvider: viewModelContainer.chatProvider)
+                        .opacity(selectedIndex == 2 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 2)
+
+                    MemoriesPage(viewModel: viewModelContainer.memoriesViewModel)
+                        .opacity(selectedIndex == 3 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 3)
+
+                    TasksPage(viewModel: viewModelContainer.tasksViewModel)
+                        .opacity(selectedIndex == 4 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 4)
+
+                    FocusPage()
+                        .opacity(selectedIndex == 5 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 5)
+
+                    AdvicePage()
+                        .opacity(selectedIndex == 6 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 6)
+
+                    RewindPage()
+                        .opacity(selectedIndex == 7 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 7)
+
+                    AppsPage(appProvider: viewModelContainer.appProvider)
+                        .opacity(selectedIndex == 8 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 8)
+
+                    PersonaPage()
+                        .opacity(selectedIndex == 9 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 9)
+
+                    SettingsPage(appState: appState)
+                        .opacity(selectedIndex == 10 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 10)
+
+                    PermissionsPage(appState: appState)
+                        .opacity(selectedIndex == 11 ? 1 : 0)
+                        .allowsHitTesting(selectedIndex == 11)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
