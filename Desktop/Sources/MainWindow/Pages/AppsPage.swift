@@ -42,7 +42,7 @@ struct SafeDismissButton: View {
 }
 
 struct AppsPage: View {
-    @StateObject private var appProvider = AppProvider()
+    @ObservedObject var appProvider: AppProvider
     @State private var searchText = ""
     @State private var selectedApp: OmiApp?
     @State private var showFilterSheet = false
@@ -124,9 +124,6 @@ struct AppsPage: View {
             }
         }
         .background(OmiColors.backgroundPrimary)
-        .task {
-            await appProvider.fetchApps()
-        }
         .onChange(of: searchText) { _, newValue in
             appProvider.searchQuery = newValue
             Task {
@@ -1427,6 +1424,6 @@ struct FlowLayout: Layout {
 }
 
 #Preview {
-    AppsPage()
+    AppsPage(appProvider: AppProvider())
         .frame(width: 900, height: 700)
 }
