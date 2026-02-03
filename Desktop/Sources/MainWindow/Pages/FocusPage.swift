@@ -443,7 +443,7 @@ struct FocusPage: View {
                 GridItem(.flexible()),
                 GridItem(.flexible())
             ], spacing: 12) {
-                statCard(
+                FocusStatCard(
                     title: "Focus Time",
                     value: "\(viewModel.stats.focusedMinutes)",
                     unit: "min",
@@ -451,7 +451,7 @@ struct FocusPage: View {
                     color: Color.green
                 )
 
-                statCard(
+                FocusStatCard(
                     title: "Distracted",
                     value: "\(viewModel.stats.distractedMinutes)",
                     unit: "min",
@@ -459,7 +459,7 @@ struct FocusPage: View {
                     color: Color.orange
                 )
 
-                statCard(
+                FocusStatCard(
                     title: "Focus Rate",
                     value: String(format: "%.0f", viewModel.stats.focusRate),
                     unit: "%",
@@ -467,7 +467,7 @@ struct FocusPage: View {
                     color: OmiColors.purplePrimary
                 )
 
-                statCard(
+                FocusStatCard(
                     title: "Sessions",
                     value: "\(viewModel.stats.sessionCount)",
                     unit: "",
@@ -476,39 +476,6 @@ struct FocusPage: View {
                 )
             }
         }
-    }
-
-    private func statCard(title: String, value: String, unit: String, icon: String, color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(color)
-
-                Spacer()
-            }
-
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                if !unit.isEmpty {
-                    Text(unit)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-            }
-
-            Text(title)
-                .font(.system(size: 12))
-                .foregroundColor(OmiColors.textTertiary)
-        }
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(OmiColors.backgroundTertiary.opacity(0.6))
-        )
     }
 
     // MARK: - Top Distractions
