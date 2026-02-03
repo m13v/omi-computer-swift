@@ -120,7 +120,6 @@ struct RewindPage: View {
         .onKeyPress(.upArrow) {
             // Up/down navigate search result groups
             if searchViewMode == .results {
-                let groups = viewModel.groupedSearchResults
                 if selectedGroupIndex > 0 {
                     selectedGroupIndex -= 1
                     return .handled
