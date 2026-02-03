@@ -3,6 +3,7 @@ import SwiftUI
 /// Recording view showing recording status, audio levels, and live transcript
 struct RecordingView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var liveTranscript = LiveTranscriptMonitor.shared
 
     var body: some View {
         VStack(spacing: 0) {
@@ -14,10 +15,10 @@ struct RecordingView: View {
                 .background(OmiColors.backgroundTertiary)
 
             // Live transcript
-            if appState.liveSpeakerSegments.isEmpty {
+            if liveTranscript.isEmpty {
                 emptyTranscriptView
             } else {
-                LiveTranscriptView(segments: appState.liveSpeakerSegments)
+                LiveTranscriptView(segments: liveTranscript.segments)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
