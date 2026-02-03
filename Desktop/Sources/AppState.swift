@@ -31,13 +31,14 @@ class AppState: ObservableObject {
     @Published var hasSystemAudioPermission = false
     @Published var isSystemAudioSupported = false
 
-    // Audio levels for visualization (0.0 - 1.0)
-    @Published var microphoneAudioLevel: Float = 0.0
-    @Published var systemAudioLevel: Float = 0.0
+    // Audio levels moved to AudioLevelMonitor to avoid triggering global re-renders
+    // Access via AudioLevelMonitor.shared.microphoneLevel / .systemLevel
+    var microphoneAudioLevel: Float { AudioLevelMonitor.shared.microphoneLevel }
+    var systemAudioLevel: Float { AudioLevelMonitor.shared.systemLevel }
 
-    // Recording timer
-    @Published var recordingDuration: TimeInterval = 0
-    private var recordingDisplayTimer: Timer?
+    // Recording timer moved to RecordingTimer to avoid triggering global re-renders
+    // Access via RecordingTimer.shared.duration
+    var recordingDuration: TimeInterval { RecordingTimer.shared.duration }
 
     // Exposed speaker segments for live transcript display
     @Published var liveSpeakerSegments: [SpeakerSegment] = []
@@ -61,6 +62,7 @@ class AppState: ObservableObject {
     @Published var hasNotificationPermission = false
     @Published var notificationAlertStyle: UNAlertStyle = .none  // .none, .banner, or .alert
     @Published var hasScreenRecordingPermission = false
+    @Published var hasBluetoothPermission = false
 
     // Track last notification settings for change detection (avoid duplicate analytics)
     private var lastNotificationAuthStatus: String?
@@ -400,6 +402,40 @@ class AppState: ObservableObject {
         checkMicrophonePermission()
         checkSystemAudioPermission()
         checkAccessibilityPermission()
+        checkBluetoothPermission()
+    }
+
+    /// Check Bluetooth permission status
+    /// Bluetooth is considered "granted" if state is poweredOn or poweredOff (allowed but BT off)
+    func checkBluetoothPermission() {
+        let state = BluetoothManager.shared.bluetoothState
+        // poweredOn = ready to use, poweredOff = allowed but BT is off
+        // unauthorized = denied
+        hasBluetoothPermission = state == .poweredOn || state == .poweredOff
+    }
+
+    /// Trigger Bluetooth permission by accessing BluetoothManager
+    /// The CBCentralManager will prompt for permission when first accessed
+    func triggerBluetoothPermission() {
+        // Accessing BluetoothManager.shared triggers CBCentralManager creation
+        // which prompts for Bluetooth permission if not yet determined
+        _ = BluetoothManager.shared.bluetoothState
+        // Check permission state after a brief delay to allow the system to update
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.checkBluetoothPermission()
+        }
+    }
+
+    /// Check if Bluetooth permission was explicitly denied
+    func isBluetoothPermissionDenied() -> Bool {
+        return BluetoothManager.shared.bluetoothState == .unauthorized
+    }
+
+    /// Open Bluetooth preferences in System Settings
+    func openBluetoothPreferences() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Bluetooth") {
+            NSWorkspace.shared.open(url)
+        }
     }
 
     /// Check notification permission status and alert style
@@ -645,19 +681,10 @@ class AppState: ObservableObject {
             liveSpeakerSegments = []
             recordingStartTime = Date()
             recordingInputDeviceName = AudioCaptureService.getCurrentMicrophoneName()
-            recordingDuration = 0
-            microphoneAudioLevel = 0.0
-            systemAudioLevel = 0.0
+            AudioLevelMonitor.shared.reset()
+            RecordingTimer.shared.start()
 
             log("Transcription: Using microphone: \(recordingInputDeviceName ?? "Unknown")")
-
-            // Start display timer for recording duration
-            recordingDisplayTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor in
-                    guard let self = self, let startTime = self.recordingStartTime else { return }
-                    self.recordingDuration = Date().timeIntervalSince(startTime)
-                }
-            }
 
             // Start 4-hour max recording timer
             maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: maxRecordingDuration, repeats: false) { [weak self] _ in
@@ -699,8 +726,9 @@ class AppState: ObservableObject {
                 onAudioChunk: { [weak self] audioData in
                     self?.audioMixer?.setMicAudio(audioData)
                 },
-                onAudioLevel: { [weak self] level in
-                    self?.microphoneAudioLevel = level
+                onAudioLevel: { level in
+                    // Use dedicated monitor to avoid triggering AppState re-renders
+                    AudioLevelMonitor.shared.updateMicrophoneLevel(level)
                 }
             )
             log("Transcription: Microphone capture started")
@@ -713,8 +741,9 @@ class AppState: ObservableObject {
                             onAudioChunk: { [weak self] audioData in
                                 self?.audioMixer?.setSystemAudio(audioData)
                             },
-                            onAudioLevel: { [weak self] level in
-                                self?.systemAudioLevel = level
+                            onAudioLevel: { level in
+                                // Use dedicated monitor to avoid triggering AppState re-renders
+                                AudioLevelMonitor.shared.updateSystemLevel(level)
                             }
                         )
                         log("Transcription: System audio capture started")
@@ -753,12 +782,10 @@ class AppState: ObservableObject {
         // Cancel timers
         maxRecordingTimer?.invalidate()
         maxRecordingTimer = nil
-        recordingDisplayTimer?.invalidate()
-        recordingDisplayTimer = nil
+        RecordingTimer.shared.stop()
 
         // Reset audio levels
-        microphoneAudioLevel = 0.0
-        systemAudioLevel = 0.0
+        AudioLevelMonitor.shared.reset()
 
         // Stop system audio capture first (if available)
         if #available(macOS 14.4, *) {
@@ -1234,7 +1261,8 @@ class AppState: ObservableObject {
             "hasTriggeredScreenRecording",
             "hasTriggeredMicrophone",
             "hasTriggeredSystemAudio",
-            "hasTriggeredAccessibility"
+            "hasTriggeredAccessibility",
+            "hasTriggeredBluetooth"
         ]
         for key in onboardingKeys {
             UserDefaults.standard.removeObject(forKey: key)
