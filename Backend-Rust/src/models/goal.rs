@@ -115,7 +115,33 @@ pub struct GoalStatusResponse {
     pub status: String,
 }
 
-/// Daily score calculation result
+/// Single score calculation (used for daily, weekly, overall)
+#[derive(Debug, Clone, Serialize)]
+pub struct ScoreData {
+    /// Score as percentage (0-100)
+    pub score: f64,
+    /// Number of completed tasks
+    pub completed_tasks: i32,
+    /// Total number of tasks in scope
+    pub total_tasks: i32,
+}
+
+/// Combined score response with all three score types
+#[derive(Debug, Clone, Serialize)]
+pub struct ScoreResponse {
+    /// Tasks due today
+    pub daily: ScoreData,
+    /// Tasks from last 7 days (created or completed)
+    pub weekly: ScoreData,
+    /// All tasks ever
+    pub overall: ScoreData,
+    /// Which tab to show by default (highest score, or "overall" if tie)
+    pub default_tab: String,
+    /// Date of the calculation
+    pub date: String,
+}
+
+/// Legacy daily score for backwards compatibility
 #[derive(Debug, Clone, Serialize)]
 pub struct DailyScore {
     /// Score as percentage (0-100)
