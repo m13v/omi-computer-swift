@@ -2,6 +2,8 @@ import SwiftUI
 
 /// Page for managing user's AI persona/clone
 struct PersonaPage: View {
+    @Environment(\.dismiss) private var dismiss
+
     @State private var persona: Persona?
     @State private var isLoading = false
     @State private var errorMessage: String?
@@ -26,28 +28,38 @@ struct PersonaPage: View {
     @State private var isRegenerating = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Header
-                header
-                    .padding(.horizontal, 32)
-                    .padding(.top, 32)
-                    .padding(.bottom, 24)
-
-                // Content
-                if isLoading && persona == nil {
-                    loadingView
-                } else if let error = errorMessage {
-                    errorView(error)
-                } else if let persona = persona {
-                    personaDetailView(persona)
-                        .padding(.horizontal, 32)
-                } else {
-                    noPersonaView
-                        .padding(.horizontal, 32)
-                }
-
+        VStack(spacing: 0) {
+            // Sheet header with close button
+            HStack {
                 Spacer()
+                SafeDismissButton(dismiss: dismiss)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Header
+                    header
+                        .padding(.horizontal, 32)
+                        .padding(.top, 16)
+                        .padding(.bottom, 24)
+
+                    // Content
+                    if isLoading && persona == nil {
+                        loadingView
+                    } else if let error = errorMessage {
+                        errorView(error)
+                    } else if let persona = persona {
+                        personaDetailView(persona)
+                            .padding(.horizontal, 32)
+                    } else {
+                        noPersonaView
+                            .padding(.horizontal, 32)
+                    }
+
+                    Spacer()
+                }
             }
         }
         .background(OmiColors.backgroundSecondary.opacity(0.3))
@@ -477,135 +489,16 @@ struct PersonaPage: View {
     // MARK: - Create Persona Sheet
 
     private var createPersonaSheet: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Create AI Persona")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                Spacer()
-
-                Button {
-                    showingCreateForm = false
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                .buttonStyle(.plain)
-            }
-            .padding(20)
-
-            Divider()
-                .background(OmiColors.textQuaternary.opacity(0.3))
-
-            // Form
-            VStack(alignment: .leading, spacing: 20) {
-                // Name field
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Name")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-
-                    TextField("Your display name", text: $newPersonaName)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .padding(12)
-                        .background(OmiColors.backgroundPrimary)
-                        .cornerRadius(8)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 8)
-                                .stroke(OmiColors.textQuaternary.opacity(0.5), lineWidth: 1)
-                        )
-                }
-
-                // Username field
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Username (optional)")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-
-                    HStack {
-                        Text("@")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textTertiary)
-
-                        TextField("username", text: $newPersonaUsername)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textPrimary)
-                            .onChange(of: newPersonaUsername) { _, newValue in
-                                newPersonaUsername = newValue.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" }
-                                usernameAvailable = nil
-                                if !newPersonaUsername.isEmpty {
-                                    Task { await checkUsername() }
-                                }
-                            }
-
-                        if isCheckingUsername {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        } else if let available = usernameAvailable {
-                            Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle.fill")
-                                .foregroundColor(available ? .green : .red)
-                        }
-                    }
-                    .padding(12)
-                    .background(OmiColors.backgroundPrimary)
-                    .cornerRadius(8)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(OmiColors.textQuaternary.opacity(0.5), lineWidth: 1)
-                    )
-
-                    Text("3-30 characters, lowercase letters, numbers, and underscores only")
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-
-                // Info
-                HStack(spacing: 8) {
-                    Image(systemName: "info.circle")
-                        .font(.system(size: 13))
-
-                    Text("Your persona will be built from your public memories. Make more memories public to improve it.")
-                        .font(.system(size: 12))
-                }
-                .foregroundColor(OmiColors.textTertiary)
-                .padding(12)
-                .background(OmiColors.info.opacity(0.1))
-                .cornerRadius(8)
-
-                Spacer()
-
-                // Create button
-                Button {
-                    Task { await createPersona() }
-                } label: {
-                    HStack {
-                        if isCreating {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        }
-
-                        Text(isCreating ? "Creating..." : "Create Persona")
-                    }
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(canCreate ? OmiColors.purplePrimary : OmiColors.textTertiary)
-                    .cornerRadius(10)
-                }
-                .buttonStyle(.plain)
-                .disabled(!canCreate || isCreating)
-            }
-            .padding(20)
-        }
-        .frame(width: 400, height: 450)
-        .background(OmiColors.backgroundSecondary)
+        CreatePersonaSheetContent(
+            newPersonaName: $newPersonaName,
+            newPersonaUsername: $newPersonaUsername,
+            isCheckingUsername: $isCheckingUsername,
+            usernameAvailable: $usernameAvailable,
+            isCreating: $isCreating,
+            onCheckUsername: checkUsername,
+            onCreate: createPersona,
+            canCreate: canCreate
+        )
     }
 
     private var canCreate: Bool {
@@ -700,5 +593,145 @@ struct PersonaPage: View {
         }
 
         isCheckingUsername = false
+    }
+}
+
+// MARK: - Create Persona Sheet Content (extracted for proper dismiss handling)
+
+private struct CreatePersonaSheetContent: View {
+    @Environment(\.dismiss) private var dismiss
+
+    @Binding var newPersonaName: String
+    @Binding var newPersonaUsername: String
+    @Binding var isCheckingUsername: Bool
+    @Binding var usernameAvailable: Bool?
+    @Binding var isCreating: Bool
+    let onCheckUsername: () async -> Void
+    let onCreate: () async -> Void
+    let canCreate: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Create AI Persona")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                SafeDismissButton(dismiss: dismiss)
+            }
+            .padding(20)
+
+            Divider()
+                .background(OmiColors.textQuaternary.opacity(0.3))
+
+            // Form
+            VStack(alignment: .leading, spacing: 20) {
+                // Name field
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Name")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    TextField("Your display name", text: $newPersonaName)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(12)
+                        .background(OmiColors.backgroundPrimary)
+                        .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(OmiColors.textQuaternary.opacity(0.5), lineWidth: 1)
+                        )
+                }
+
+                // Username field
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Username (optional)")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    HStack {
+                        Text("@")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        TextField("username", text: $newPersonaUsername)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .onChange(of: newPersonaUsername) { _, newValue in
+                                newPersonaUsername = newValue.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "_" }
+                                usernameAvailable = nil
+                                if !newPersonaUsername.isEmpty {
+                                    Task { await onCheckUsername() }
+                                }
+                            }
+
+                        if isCheckingUsername {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else if let available = usernameAvailable {
+                            Image(systemName: available ? "checkmark.circle.fill" : "xmark.circle.fill")
+                                .foregroundColor(available ? .green : .red)
+                        }
+                    }
+                    .padding(12)
+                    .background(OmiColors.backgroundPrimary)
+                    .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(OmiColors.textQuaternary.opacity(0.5), lineWidth: 1)
+                    )
+
+                    Text("3-30 characters, lowercase letters, numbers, and underscores only")
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                // Info
+                HStack(spacing: 8) {
+                    Image(systemName: "info.circle")
+                        .font(.system(size: 13))
+
+                    Text("Your persona will be built from your public memories. Make more memories public to improve it.")
+                        .font(.system(size: 12))
+                }
+                .foregroundColor(OmiColors.textTertiary)
+                .padding(12)
+                .background(OmiColors.info.opacity(0.1))
+                .cornerRadius(8)
+
+                Spacer()
+
+                // Create button
+                Button {
+                    Task { await onCreate() }
+                } label: {
+                    HStack {
+                        if isCreating {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+
+                        Text(isCreating ? "Creating..." : "Create Persona")
+                    }
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(canCreate ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                    .cornerRadius(10)
+                }
+                .buttonStyle(.plain)
+                .disabled(!canCreate || isCreating)
+            }
+            .padding(20)
+        }
+        .frame(width: 400, height: 450)
+        .background(OmiColors.backgroundSecondary)
     }
 }
