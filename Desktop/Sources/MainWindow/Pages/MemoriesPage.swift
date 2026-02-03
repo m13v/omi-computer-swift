@@ -351,6 +351,21 @@ struct MemoriesPage: View {
     @ObservedObject var viewModel: MemoriesViewModel
 
     var body: some View {
+        Group {
+            if let conversation = viewModel.linkedConversation {
+                // Show conversation detail view
+                ConversationDetailView(
+                    conversation: conversation,
+                    onBack: { viewModel.dismissConversation() }
+                )
+            } else {
+                // Main memories view
+                mainMemoriesView
+            }
+        }
+    }
+
+    private var mainMemoriesView: some View {
         VStack(spacing: 0) {
             // Header
             header
@@ -383,6 +398,18 @@ struct MemoriesPage: View {
         }
         .overlay(alignment: .bottom) {
             undoDeleteToast
+        }
+        .overlay {
+            // Loading overlay for conversation fetch
+            if viewModel.isLoadingConversation {
+                Color.black.opacity(0.3)
+                    .ignoresSafeArea()
+                    .overlay {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .tint(.white)
+                    }
+            }
         }
     }
 
@@ -819,6 +846,14 @@ struct MemoriesPage: View {
                         }
                     }
 
+                    if let conversationId = memory.conversationId {
+                        Button {
+                            Task { await viewModel.navigateToConversation(id: conversationId) }
+                        } label: {
+                            Label("View Conversation", systemImage: "bubble.left.and.bubble.right")
+                        }
+                    }
+
                     Divider()
 
                     Button(role: .destructive) {
@@ -1250,132 +1285,5 @@ struct MemoriesPage: View {
         .padding(24)
         .frame(width: 400)
         .background(OmiColors.backgroundSecondary)
-    }
-
-    private func undoDelete() {
-        guard let memory = pendingDeleteMemory else { return }
-
-        // Cancel the delete timer
-        deleteTask?.cancel()
-        deleteTask = nil
-
-        // Restore the memory to the list
-        withAnimation(.easeInOut(duration: 0.2)) {
-            memories.append(memory)
-            memories.sort { $0.createdAt > $1.createdAt }
-            pendingDeleteMemory = nil
-            undoTimeRemaining = 0
-        }
-    }
-
-    private func confirmDelete() {
-        guard let memory = pendingDeleteMemory else { return }
-
-        // Cancel timer if still running
-        deleteTask?.cancel()
-        deleteTask = nil
-
-        Task {
-            await performActualDelete(memory)
-        }
-
-        withAnimation(.easeInOut(duration: 0.2)) {
-            pendingDeleteMemory = nil
-            undoTimeRemaining = 0
-        }
-    }
-
-    private func performActualDelete(_ memory: ServerMemory) async {
-        do {
-            try await APIClient.shared.deleteMemory(id: memory.id)
-            AnalyticsManager.shared.memoryDeleted(conversationId: memory.id)
-        } catch {
-            logError("Failed to delete memory", error: error)
-            // Restore on failure
-            await MainActor.run {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    if !memories.contains(where: { $0.id == memory.id }) {
-                        memories.append(memory)
-                        memories.sort { $0.createdAt > $1.createdAt }
-                    }
-                }
-            }
-        }
-    }
-
-    private func saveEditedMemory(_ memory: ServerMemory) async {
-        guard !editText.isEmpty else { return }
-
-        do {
-            try await APIClient.shared.editMemory(id: memory.id, content: editText)
-            editingMemory = nil
-            editText = ""
-            await loadMemories()
-        } catch {
-            logError("Failed to edit memory", error: error)
-        }
-    }
-
-    private func toggleVisibility(_ memory: ServerMemory) async {
-        let newVisibility = memory.isPublic ? "private" : "public"
-        do {
-            try await APIClient.shared.updateMemoryVisibility(id: memory.id, visibility: newVisibility)
-            await loadMemories()
-        } catch {
-            logError("Failed to update memory visibility", error: error)
-        }
-    }
-
-    private func markAsRead(_ memory: ServerMemory) async {
-        do {
-            _ = try await APIClient.shared.updateMemoryReadStatus(id: memory.id, isRead: true, isDismissed: nil)
-            await loadMemories()
-        } catch {
-            logError("Failed to mark memory as read", error: error)
-        }
-    }
-
-    // MARK: - Bulk Operations
-
-    private func makeAllMemoriesPrivate() async {
-        isBulkOperationInProgress = true
-        do {
-            try await APIClient.shared.updateAllMemoriesVisibility(visibility: "private")
-            await loadMemories()
-        } catch {
-            logError("Failed to make all memories private", error: error)
-        }
-        isBulkOperationInProgress = false
-    }
-
-    private func makeAllMemoriesPublic() async {
-        isBulkOperationInProgress = true
-        do {
-            try await APIClient.shared.updateAllMemoriesVisibility(visibility: "public")
-            await loadMemories()
-        } catch {
-            logError("Failed to make all memories public", error: error)
-        }
-        isBulkOperationInProgress = false
-    }
-
-    private func deleteAllMemories() async {
-        isBulkOperationInProgress = true
-
-        // Cancel any pending single delete
-        deleteTask?.cancel()
-        pendingDeleteMemory = nil
-
-        do {
-            try await APIClient.shared.deleteAllMemories()
-            withAnimation(.easeInOut(duration: 0.3)) {
-                memories.removeAll()
-            }
-        } catch {
-            logError("Failed to delete all memories", error: error)
-            // Reload to restore state
-            await loadMemories()
-        }
-        isBulkOperationInProgress = false
     }
 }
