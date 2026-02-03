@@ -363,7 +363,8 @@ actor FocusAssistant: ProactiveAssistant {
                         NotificationService.shared.sendNotification(
                             title: "Focus",
                             message: fullMessage,
-                            assistantId: identifier
+                            assistantId: identifier,
+                            sound: .focusLost
                         )
                     }
 
@@ -399,7 +400,8 @@ actor FocusAssistant: ProactiveAssistant {
                             NotificationService.shared.sendNotification(
                                 title: "Focus",
                                 message: message,
-                                assistantId: identifier
+                                assistantId: identifier,
+                                sound: .focusRegained
                             )
                         }
                     }
