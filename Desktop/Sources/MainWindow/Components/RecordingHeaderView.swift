@@ -3,17 +3,15 @@ import SwiftUI
 /// Recording header showing status, timer, and audio levels
 struct RecordingHeaderView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var audioLevels = AudioLevelMonitor.shared
+    @ObservedObject private var recordingTimer = RecordingTimer.shared
 
     /// Pulsing animation state
     @State private var isPulsing = false
 
     /// Format duration as HH:MM:SS
     private var formattedDuration: String {
-        let duration = Int(appState.recordingDuration)
-        let hours = duration / 3600
-        let minutes = (duration % 3600) / 60
-        let seconds = duration % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+        recordingTimer.formattedDuration
     }
 
     var body: some View {
@@ -81,7 +79,7 @@ struct RecordingHeaderView: View {
                         .foregroundColor(OmiColors.textTertiary)
 
                     AudioLevelWaveformView(
-                        level: appState.microphoneAudioLevel,
+                        level: audioLevels.microphoneLevel,
                         isActive: appState.isTranscribing
                     )
 
@@ -97,7 +95,7 @@ struct RecordingHeaderView: View {
                         .foregroundColor(OmiColors.textTertiary)
 
                     AudioLevelWaveformView(
-                        level: appState.systemAudioLevel,
+                        level: audioLevels.systemLevel,
                         isActive: appState.isTranscribing
                     )
 
