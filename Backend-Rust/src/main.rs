@@ -33,13 +33,14 @@ mod services;
 use auth::{firebase_auth_extension, FirebaseAuth};
 use config::Config;
 use routes::{action_items_routes, advice_routes, apps_routes, auth_routes, chat_routes, chat_sessions_routes, conversations_routes, daily_score_routes, focus_sessions_routes, folder_routes, goals_routes, health_routes, memories_routes, messages_routes, personas_routes, updates_routes, users_routes};
-use services::{FirestoreService, IntegrationService};
+use services::{FirestoreService, IntegrationService, RedisService};
 
 /// Application state shared across handlers
 #[derive(Clone)]
 pub struct AppState {
     pub firestore: Arc<FirestoreService>,
     pub integrations: Arc<IntegrationService>,
+    pub redis: Option<Arc<RedisService>>,
     pub config: Arc<Config>,
 }
 
@@ -117,10 +118,28 @@ async fn main() {
     // Initialize Integration Service
     let integrations = Arc::new(IntegrationService::new());
 
+    // Initialize Redis (optional - for conversation visibility/sharing)
+    let redis = if let Some(redis_url) = config.redis_url() {
+        match RedisService::new(&redis_url) {
+            Ok(rs) => {
+                tracing::info!("Redis connected successfully");
+                Some(Arc::new(rs))
+            }
+            Err(e) => {
+                tracing::warn!("Failed to connect to Redis: {} - conversation sharing will not work", e);
+                None
+            }
+        }
+    } else {
+        tracing::warn!("Redis not configured - conversation sharing will not work");
+        None
+    };
+
     // Create app state
     let state = AppState {
         firestore,
         integrations,
+        redis,
         config: Arc::new(config.clone()),
     };
 
