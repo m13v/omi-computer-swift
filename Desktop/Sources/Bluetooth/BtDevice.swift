@@ -163,7 +163,7 @@ extension BtDevice {
         guard manufacturerData.count >= 2 else { return false }
 
         let manufacturerId = UInt16(manufacturerData[0]) | (UInt16(manufacturerData[1]) << 8)
-        if manufacturerId == DeviceUUIDs.Plaud.manufacturerId {
+        if manufacturerId == DeviceUUIDs.PLAUD.manufacturerId {
             // Known NotePin pattern: 0456cf00
             if manufacturerData.count >= 6 {
                 let payload = manufacturerData.dropFirst(2)
