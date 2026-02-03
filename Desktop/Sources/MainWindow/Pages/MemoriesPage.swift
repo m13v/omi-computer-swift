@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// All available tags for filtering memories
 enum MemoryTag: String, CaseIterable, Identifiable {
@@ -685,201 +686,27 @@ struct MemoriesPage: View {
 
     private var memoryList: some View {
         ScrollView {
-            LazyVStack(spacing: 12) {
+            LazyVStack(spacing: 8) {
                 ForEach(viewModel.filteredMemories) { memory in
-                    memoryCard(memory)
-                        .onTapGesture {
+                    MemoryCardView(
+                        memory: memory,
+                        onTap: {
                             viewModel.selectedMemory = memory
                             // Auto-mark tips as read when opened
                             if memory.isTip && !memory.isRead {
                                 Task { await viewModel.markAsRead(memory) }
                             }
-                        }
+                        },
+                        categoryIcon: categoryIcon,
+                        categoryColor: categoryColor,
+                        tagColorFor: tagColorFor,
+                        formatDate: formatDate
+                    )
                 }
             }
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
         }
-    }
-
-    private func memoryCard(_ memory: ServerMemory) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Content
-            Text(memory.content)
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textPrimary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Reasoning (for tips)
-            if let reasoning = memory.reasoning, !reasoning.isEmpty {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "quote.opening")
-                        .font(.system(size: 10))
-                        .foregroundColor(OmiColors.textQuaternary)
-                    Text(reasoning)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .lineLimit(2)
-                }
-                .padding(8)
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(6)
-            }
-
-            // Footer - all metadata in one line
-            HStack(spacing: 6) {
-                // Unread indicator
-                if memory.isTip && !memory.isRead {
-                    Circle()
-                        .fill(OmiColors.warning)
-                        .frame(width: 6, height: 6)
-                }
-
-                // Category/Tags
-                if memory.isTip {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 10))
-                        Text("Tips")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(OmiColors.warning)
-
-                    if let tipCat = memory.tipCategory {
-                        Text("·")
-                            .foregroundColor(OmiColors.textQuaternary)
-                        HStack(spacing: 4) {
-                            Image(systemName: memory.tipCategoryIcon)
-                                .font(.system(size: 10))
-                            Text(tipCat.capitalized)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundColor(tagColorFor(tipCat))
-                    }
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: categoryIcon(memory.category))
-                            .font(.system(size: 10))
-                        Text(memory.category.displayName)
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(categoryColor(memory.category))
-                }
-
-                // Source device (Screenshot for tips, device name for transcriptions)
-                if let sourceName = memory.sourceName {
-                    Text("·")
-                        .foregroundColor(OmiColors.textQuaternary)
-                    HStack(spacing: 4) {
-                        Image(systemName: memory.sourceIcon)
-                            .font(.system(size: 10))
-                        Text(sourceName)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
-                }
-
-                // Source app (for tips from specific apps)
-                if let sourceApp = memory.sourceApp {
-                    Text("·")
-                        .foregroundColor(OmiColors.textQuaternary)
-                    HStack(spacing: 4) {
-                        Image(systemName: "app")
-                            .font(.system(size: 10))
-                        Text(sourceApp)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
-                }
-
-                // Microphone name (for desktop transcriptions only)
-                if let micName = memory.inputDeviceName, memory.source == "desktop" {
-                    Text("·")
-                        .foregroundColor(OmiColors.textQuaternary)
-                    HStack(spacing: 4) {
-                        Image(systemName: "mic")
-                            .font(.system(size: 10))
-                        Text(micName)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
-                }
-
-                // Confidence
-                if let confidence = memory.confidenceString {
-                    Text("·")
-                        .foregroundColor(OmiColors.textQuaternary)
-                    Text(confidence)
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-
-                Spacer()
-
-                // Date
-                Text(formatDate(memory.createdAt))
-                    .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textTertiary)
-
-                // Actions menu
-                Menu {
-                    Button {
-                        viewModel.editingMemory = memory
-                        viewModel.editText = memory.content
-                    } label: {
-                        Label("Edit", systemImage: "pencil")
-                    }
-
-                    Button {
-                        Task { await viewModel.toggleVisibility(memory) }
-                    } label: {
-                        Label(memory.isPublic ? "Make Private" : "Make Public",
-                              systemImage: memory.isPublic ? "lock" : "globe")
-                    }
-
-                    if memory.isTip && !memory.isRead {
-                        Button {
-                            Task { await viewModel.markAsRead(memory) }
-                        } label: {
-                            Label("Mark as Read", systemImage: "checkmark.circle")
-                        }
-                    }
-
-                    if let conversationId = memory.conversationId {
-                        Button {
-                            Task { await viewModel.navigateToConversation(id: conversationId) }
-                        } label: {
-                            Label("View Conversation", systemImage: "bubble.left.and.bubble.right")
-                        }
-                    }
-
-                    Divider()
-
-                    Button(role: .destructive) {
-                        Task { await viewModel.deleteMemory(memory) }
-                    } label: {
-                        Label("Delete", systemImage: "trash")
-                    }
-                } label: {
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .frame(width: 24, height: 24)
-                        .background(OmiColors.backgroundSecondary)
-                        .cornerRadius(6)
-                }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-            }
-        }
-        .padding(16)
-        .background(OmiColors.backgroundTertiary)
-        .cornerRadius(12)
-        .overlay(
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : Color.clear, lineWidth: 1)
-        )
     }
 
     private func tagBadge(_ title: String, _ icon: String, _ color: Color) -> some View {
@@ -1077,10 +904,117 @@ struct MemoriesPage: View {
                 .padding(12)
                 .background(OmiColors.backgroundTertiary)
                 .cornerRadius(8)
+
+                // Action Buttons
+                VStack(spacing: 10) {
+                    // Edit button
+                    Button {
+                        viewModel.selectedMemory = nil
+                        viewModel.editingMemory = memory
+                        viewModel.editText = memory.content
+                    } label: {
+                        HStack {
+                            Image(systemName: "pencil")
+                            Text("Edit Memory")
+                            Spacer()
+                        }
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(12)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Visibility toggle
+                    Button {
+                        Task {
+                            await viewModel.toggleVisibility(memory)
+                            viewModel.selectedMemory = nil
+                        }
+                    } label: {
+                        HStack {
+                            Image(systemName: memory.isPublic ? "lock" : "globe")
+                            Text(memory.isPublic ? "Make Private" : "Make Public")
+                            Spacer()
+                        }
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(12)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+
+                    // Mark as read (for unread tips)
+                    if memory.isTip && !memory.isRead {
+                        Button {
+                            Task {
+                                await viewModel.markAsRead(memory)
+                                viewModel.selectedMemory = nil
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: "checkmark.circle")
+                                Text("Mark as Read")
+                                Spacer()
+                            }
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .padding(12)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // View conversation (if linked)
+                    if let conversationId = memory.conversationId {
+                        Button {
+                            viewModel.selectedMemory = nil
+                            Task { await viewModel.navigateToConversation(id: conversationId) }
+                        } label: {
+                            HStack {
+                                Image(systemName: "bubble.left.and.bubble.right")
+                                Text("View Source Conversation")
+                                Spacer()
+                                Image(systemName: "arrow.up.right")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .padding(12)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // Delete button
+                    Button {
+                        viewModel.selectedMemory = nil
+                        Task { await viewModel.deleteMemory(memory) }
+                    } label: {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Memory")
+                            Spacer()
+                        }
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.error)
+                        .padding(12)
+                        .background(OmiColors.error.opacity(0.1))
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 8)
             }
             .padding(24)
         }
-        .frame(width: 450, height: 500)
+        .frame(width: 450)
+        .frame(maxHeight: 600)
         .background(OmiColors.backgroundSecondary)
     }
 
@@ -1285,5 +1219,136 @@ struct MemoriesPage: View {
         .padding(24)
         .frame(width: 400)
         .background(OmiColors.backgroundSecondary)
+    }
+}
+
+// MARK: - Memory Card View
+
+private struct MemoryCardView: View {
+    let memory: ServerMemory
+    let onTap: () -> Void
+    let categoryIcon: (MemoryCategory) -> String
+    let categoryColor: (MemoryCategory) -> Color
+    let tagColorFor: (String) -> Color
+    let formatDate: (Date) -> String
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Content
+            Text(memory.content)
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textPrimary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Reasoning (for tips)
+            if let reasoning = memory.reasoning, !reasoning.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "quote.opening")
+                        .font(.system(size: 10))
+                        .foregroundColor(OmiColors.textQuaternary)
+                    Text(reasoning)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .background(OmiColors.backgroundSecondary)
+                .cornerRadius(6)
+            }
+
+            // Footer - metadata
+            HStack(spacing: 6) {
+                // Unread indicator
+                if memory.isTip && !memory.isRead {
+                    Circle()
+                        .fill(OmiColors.warning)
+                        .frame(width: 6, height: 6)
+                }
+
+                // Category/Tags
+                if memory.isTip {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 10))
+                        Text("Tips")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.warning)
+
+                    if let tipCat = memory.tipCategory {
+                        Text("·")
+                            .foregroundColor(OmiColors.textQuaternary)
+                        HStack(spacing: 4) {
+                            Image(systemName: memory.tipCategoryIcon)
+                                .font(.system(size: 10))
+                            Text(tipCat.capitalized)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(tagColorFor(tipCat))
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: categoryIcon(memory.category))
+                            .font(.system(size: 10))
+                        Text(memory.category.displayName)
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(categoryColor(memory.category))
+                }
+
+                // Source device
+                if let sourceName = memory.sourceName {
+                    Text("·")
+                        .foregroundColor(OmiColors.textQuaternary)
+                    HStack(spacing: 4) {
+                        Image(systemName: memory.sourceIcon)
+                            .font(.system(size: 10))
+                        Text(sourceName)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+
+                // Date
+                Text(formatDate(memory.createdAt))
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textTertiary)
+
+                // Click hint on hover
+                if isHovered {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(isHovered ? OmiColors.backgroundSecondary : OmiColors.backgroundTertiary)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+            // Change cursor to pointing hand on hover
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture {
+            onTap()
+        }
     }
 }
