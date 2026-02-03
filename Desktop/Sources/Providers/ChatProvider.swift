@@ -559,7 +559,7 @@ class ChatProvider: ObservableObject {
                 let response = try await APIClient.shared.saveMessage(
                     text: trimmedText,
                     sender: "human",
-                    appId: selectedAppId,
+                    appId: self.selectedAppId,
                     sessionId: sessionId
                 )
                 // Sync local message ID with server ID
