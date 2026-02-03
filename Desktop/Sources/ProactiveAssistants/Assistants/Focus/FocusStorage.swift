@@ -87,7 +87,13 @@ class FocusStorage: ObservableObject {
     private let maxStoredSessions = 500
 
     private init() {
-        loadFromStorage()
+        // First load from UserDefaults cache for quick startup
+        loadFromUserDefaultsCache()
+
+        // Then load from SQLite (authoritative source) in background
+        Task {
+            await loadFromSQLite()
+        }
     }
 
     // MARK: - Real-time Status Updates
@@ -218,63 +224,16 @@ class FocusStorage: ObservableObject {
         return sessions.filter { calendar.isDate($0.createdAt, inSameDayAs: date) }
     }
 
-    /// Fetch focus sessions from backend (stored as memories with "focus" tag) and merge
+    /// Refresh focus sessions from local SQLite database
+    /// Note: SQLite is the authoritative local source. Backend sync happens when new events are created.
     func refreshFromBackend() async {
-        do {
-            // Fetch memories that have the "focus" tag
-            let focusMemories = try await APIClient.shared.getMemories(
-                limit: 100,
-                tags: ["focus"]
-            )
-
-            await MainActor.run {
-                // Merge backend memories with local sessions
-                var mergedIds = Set<String>()
-                var merged: [StoredFocusSession] = []
-
-                // Add backend memories first (they are authoritative)
-                for memory in focusMemories {
-                    mergedIds.insert(memory.id)
-
-                    // Parse status from tags
-                    let status: FocusStatus = memory.tags.contains("focused") ? .focused : .distracted
-
-                    // Parse app name from tags (look for "app:*" tag)
-                    let appOrSite = memory.tags
-                        .first { $0.hasPrefix("app:") }
-                        .map { String($0.dropFirst(4)) } ?? memory.sourceApp ?? "Unknown"
-
-                    merged.append(StoredFocusSession(
-                        id: memory.id,
-                        status: status,
-                        appOrSite: appOrSite,
-                        description: memory.content,
-                        message: nil,  // Message not stored separately in memory
-                        createdAt: memory.createdAt,
-                        durationSeconds: nil,
-                        isSynced: true
-                    ))
-                }
-
-                // Add local sessions that weren't synced
-                for local in self.sessions where !mergedIds.contains(local.id) && !local.isSynced {
-                    merged.append(local)
-                }
-
-                // Sort by date
-                merged.sort { $0.createdAt > $1.createdAt }
-
-                self.sessions = Array(merged.prefix(self.maxStoredSessions))
-                self.saveToStorage()
-            }
-        } catch {
-            logError("Failed to refresh focus memories from backend", error: error)
-        }
+        await loadFromSQLite()
     }
 
     // MARK: - Private Methods
 
-    private func loadFromStorage() {
+    /// Quick load from UserDefaults cache (called synchronously on init)
+    private func loadFromUserDefaultsCache() {
         guard let data = UserDefaults.standard.data(forKey: storageKey) else {
             return
         }
@@ -290,7 +249,55 @@ class FocusStorage: ObservableObject {
                 currentApp = latest.appOrSite
             }
         } catch {
-            logError("Failed to load focus sessions", error: error)
+            logError("Failed to load focus sessions from cache", error: error)
+        }
+    }
+
+    /// Load sessions from SQLite (authoritative source)
+    private func loadFromSQLite() async {
+        do {
+            // Get all focus sessions from SQLite (not just today - get recent ones)
+            let calendar = Calendar.current
+            let startDate = calendar.date(byAdding: .day, value: -30, to: Date()) ?? Date()
+            let endDate = Date()
+
+            let sqliteSessions = try await ProactiveStorage.shared.getFocusSessions(
+                from: startDate,
+                to: endDate,
+                limit: maxStoredSessions
+            )
+
+            // Convert to StoredFocusSession
+            let converted = sqliteSessions.map { record in
+                StoredFocusSession(
+                    id: record.backendId ?? String(record.id ?? 0),
+                    status: record.isFocused ? .focused : .distracted,
+                    appOrSite: record.appOrSite,
+                    description: record.description,
+                    message: record.message,
+                    createdAt: record.createdAt,
+                    durationSeconds: record.durationSeconds,
+                    isSynced: record.backendSynced
+                )
+            }
+
+            // Update on main thread
+            await MainActor.run {
+                self.sessions = converted
+
+                // Update current status from most recent session
+                if let latest = self.sessions.first {
+                    self.currentStatus = latest.status
+                    self.currentApp = latest.appOrSite
+                }
+
+                // Also update UserDefaults cache
+                self.saveToStorage()
+
+                log("FocusStorage: Loaded \(converted.count) sessions from SQLite")
+            }
+        } catch {
+            logError("Failed to load focus sessions from SQLite", error: error)
         }
     }
 
