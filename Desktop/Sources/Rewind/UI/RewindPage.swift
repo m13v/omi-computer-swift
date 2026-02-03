@@ -13,6 +13,7 @@ struct RewindPage: View {
     @State private var playbackTimer: Timer?
 
     @State private var searchViewMode: SearchViewMode? = nil
+    @State private var selectedGroupIndex: Int = 0
     @FocusState private var isSearchFocused: Bool
 
     enum SearchViewMode {
@@ -62,10 +63,11 @@ struct RewindPage: View {
             await viewModel.loadInitialData()
         }
         .onChange(of: viewModel.screenshots) { _, screenshots in
-            // Reset to first frame when screenshots change
+            // Reset indices when screenshots change
             if !screenshots.isEmpty && currentIndex >= screenshots.count {
                 currentIndex = 0
             }
+            selectedGroupIndex = 0
             // Load frame for current position
             Task { await loadCurrentFrame() }
         }
@@ -73,10 +75,12 @@ struct RewindPage: View {
             // When search becomes active, default to results view
             if oldQuery == nil && newQuery != nil {
                 searchViewMode = .results
+                selectedGroupIndex = 0
             }
             // When search is cleared, reset view mode
             if newQuery == nil {
                 searchViewMode = nil
+                selectedGroupIndex = 0
             }
         }
         // Global keyboard handlers
@@ -114,17 +118,23 @@ struct RewindPage: View {
             return .ignored
         }
         .onKeyPress(.upArrow) {
-            // Up/down navigate search results
-            if searchViewMode == .results && currentIndex < viewModel.screenshots.count - 1 {
-                currentIndex += 1
-                return .handled
+            // Up/down navigate search result groups
+            if searchViewMode == .results {
+                let groups = viewModel.groupedSearchResults
+                if selectedGroupIndex > 0 {
+                    selectedGroupIndex -= 1
+                    return .handled
+                }
             }
             return .ignored
         }
         .onKeyPress(.downArrow) {
-            if searchViewMode == .results && currentIndex > 0 {
-                currentIndex -= 1
-                return .handled
+            if searchViewMode == .results {
+                let groups = viewModel.groupedSearchResults
+                if selectedGroupIndex < groups.count - 1 {
+                    selectedGroupIndex += 1
+                    return .handled
+                }
             }
             return .ignored
         }
@@ -338,36 +348,56 @@ struct RewindPage: View {
         }
     }
 
-    // MARK: - Full Screen Results View (Google-style vertical list)
+    // MARK: - Full Screen Results View (Google-style vertical list with grouping)
 
     private var fullScreenResultsView: some View {
-        ScrollViewReader { proxy in
+        let groups = viewModel.groupedSearchResults
+
+        return ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 1) {
-                    ForEach(Array(viewModel.screenshots.enumerated()), id: \.element.id) { index, screenshot in
-                        SearchResultListItem(
-                            screenshot: screenshot,
-                            index: index,
-                            totalCount: viewModel.screenshots.count,
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { groupIndex, group in
+                        SearchResultGroupItem(
+                            group: group,
+                            index: groupIndex,
+                            totalGroups: groups.count,
+                            totalScreenshots: viewModel.totalScreenshotCount,
                             searchQuery: viewModel.activeSearchQuery ?? "",
-                            isSelected: index == currentIndex,
+                            isSelected: selectedGroupIndex == groupIndex,
                             onTap: {
-                                currentIndex = index
+                                // Set the screenshots to this group's screenshots for timeline navigation
+                                selectedGroupIndex = groupIndex
+                                currentIndex = 0
                                 searchViewMode = .timeline
                                 Task { await loadCurrentFrame() }
                             }
                         )
-                        .id(index)
+                        .id(groupIndex)
                     }
                 }
                 .padding(.vertical, 8)
             }
-            .onChange(of: currentIndex) { _, newIndex in
+            .onChange(of: selectedGroupIndex) { _, newIndex in
                 withAnimation {
                     proxy.scrollTo(newIndex, anchor: .center)
                 }
             }
         }
+    }
+
+    /// Screenshots for the currently selected group (used in timeline view)
+    private var currentGroupScreenshots: [Screenshot] {
+        let groups = viewModel.groupedSearchResults
+        guard selectedGroupIndex < groups.count else { return viewModel.screenshots }
+        return groups[selectedGroupIndex].screenshots
+    }
+
+    /// The active screenshot list - either group screenshots (when viewing a group) or all screenshots
+    private var activeScreenshots: [Screenshot] {
+        if searchViewMode == .timeline && viewModel.activeSearchQuery != nil {
+            return currentGroupScreenshots
+        }
+        return viewModel.screenshots
     }
 
     // MARK: - Timeline with Search
@@ -403,10 +433,18 @@ struct RewindPage: View {
                     .progressViewStyle(.circular)
                     .scaleEffect(0.6)
                     .tint(.white)
-            } else if showResultsCount && !viewModel.searchQuery.isEmpty {
-                Text("\(viewModel.screenshots.count) results")
-                    .font(.system(size: 11))
-                    .foregroundColor(.white.opacity(0.5))
+            } else if showResultsCount && !viewModel.searchQuery.isEmpty && viewModel.activeSearchQuery != nil {
+                let groups = viewModel.groupedSearchResults
+                let total = viewModel.totalScreenshotCount
+                if groups.count == total {
+                    Text("\(total) results")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                } else {
+                    Text("\(groups.count) groups (\(total) total)")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.5))
+                }
             }
 
             if !viewModel.searchQuery.isEmpty {
@@ -472,9 +510,9 @@ struct RewindPage: View {
 
                     // Search highlight overlays with explicit frame
                     if let query = viewModel.activeSearchQuery,
-                       currentIndex < viewModel.screenshots.count {
+                       currentIndex < activeScreenshots.count {
                         SearchHighlightOverlay(
-                            screenshot: viewModel.screenshots[currentIndex],
+                            screenshot: activeScreenshots[currentIndex],
                             query: query,
                             imageSize: image.size,
                             containerSize: displaySize
@@ -501,12 +539,14 @@ struct RewindPage: View {
     // MARK: - Bottom Controls (Compact - all on one line)
 
     private var bottomControls: some View {
-        VStack(spacing: 8) {
+        let screenshots = activeScreenshots
+
+        return VStack(spacing: 8) {
             // Timeline bar
             InteractiveTimelineBar(
-                screenshots: viewModel.screenshots,
+                screenshots: screenshots,
                 currentIndex: currentIndex,
-                searchResultIndices: viewModel.activeSearchQuery != nil ? Set(searchResultIndices) : nil,
+                searchResultIndices: viewModel.activeSearchQuery != nil && searchViewMode != .timeline ? Set(searchResultIndices) : nil,
                 onSelect: { index in
                     seekToIndex(index)
                 }
@@ -515,8 +555,8 @@ struct RewindPage: View {
             // Single compact control bar: app info | playback | position/time
             HStack(spacing: 16) {
                 // Left: App icon and name
-                if currentIndex < viewModel.screenshots.count {
-                    let screenshot = viewModel.screenshots[currentIndex]
+                if currentIndex < screenshots.count {
+                    let screenshot = screenshots[currentIndex]
                     HStack(spacing: 6) {
                         AppIconView(appName: screenshot.appName, size: 16)
                         Text(screenshot.appName)
@@ -531,7 +571,7 @@ struct RewindPage: View {
 
                 // Center: Compact playback controls
                 HStack(spacing: 12) {
-                    Button { seekToIndex(viewModel.screenshots.count - 1) } label: {
+                    Button { seekToIndex(screenshots.count - 1) } label: {
                         Image(systemName: "backward.end.fill")
                             .font(.system(size: 10))
                             .foregroundColor(.white.opacity(0.7))
@@ -573,10 +613,10 @@ struct RewindPage: View {
                 Spacer()
 
                 // Right: Position and timestamp
-                if currentIndex < viewModel.screenshots.count {
-                    let screenshot = viewModel.screenshots[currentIndex]
+                if currentIndex < screenshots.count {
+                    let screenshot = screenshots[currentIndex]
                     HStack(spacing: 8) {
-                        Text("\(currentIndex + 1)/\(viewModel.screenshots.count)")
+                        Text("\(currentIndex + 1)/\(screenshots.count)")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.white.opacity(0.5))
                         Text(screenshot.formattedDate)
@@ -604,33 +644,34 @@ struct RewindPage: View {
     private var searchResultIndices: [Int] {
         guard viewModel.activeSearchQuery != nil else { return [] }
         // All current screenshots are search results when searching
-        return Array(0..<min(viewModel.screenshots.count, 100))
+        return Array(0..<min(activeScreenshots.count, 100))
     }
 
     // MARK: - Playback
 
     private func loadCurrentFrame() async {
-        guard currentIndex < viewModel.screenshots.count else { return }
+        let screenshots = activeScreenshots
+        guard currentIndex < screenshots.count else { return }
 
         isLoadingFrame = true
 
         // Try to load current frame
         if let image = await tryLoadFrame(at: currentIndex) {
             currentImage = image
-            viewModel.selectScreenshot(viewModel.screenshots[currentIndex])
+            viewModel.selectScreenshot(screenshots[currentIndex])
             isLoadingFrame = false
             return
         }
 
         // Current frame failed - search for first valid frame
-        for offset in 1..<viewModel.screenshots.count {
+        for offset in 1..<screenshots.count {
             // Try forward
             let forwardIndex = currentIndex + offset
-            if forwardIndex < viewModel.screenshots.count {
+            if forwardIndex < screenshots.count {
                 if let image = await tryLoadFrame(at: forwardIndex) {
                     currentIndex = forwardIndex
                     currentImage = image
-                    viewModel.selectScreenshot(viewModel.screenshots[forwardIndex])
+                    viewModel.selectScreenshot(screenshots[forwardIndex])
                     isLoadingFrame = false
                     log("RewindPage: Skipped to valid frame at index \(forwardIndex)")
                     return
@@ -643,7 +684,7 @@ struct RewindPage: View {
                 if let image = await tryLoadFrame(at: backwardIndex) {
                     currentIndex = backwardIndex
                     currentImage = image
-                    viewModel.selectScreenshot(viewModel.screenshots[backwardIndex])
+                    viewModel.selectScreenshot(screenshots[backwardIndex])
                     isLoadingFrame = false
                     log("RewindPage: Skipped to valid frame at index \(backwardIndex)")
                     return
@@ -659,8 +700,9 @@ struct RewindPage: View {
 
     /// Try to load a frame at a specific index, returns nil if failed
     private func tryLoadFrame(at index: Int) async -> NSImage? {
-        guard index >= 0 && index < viewModel.screenshots.count else { return nil }
-        let screenshot = viewModel.screenshots[index]
+        let screenshots = activeScreenshots
+        guard index >= 0 && index < screenshots.count else { return nil }
+        let screenshot = screenshots[index]
 
         do {
             return try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
@@ -670,7 +712,8 @@ struct RewindPage: View {
     }
 
     private func seekToIndex(_ index: Int) {
-        let newIndex = max(0, min(index, viewModel.screenshots.count - 1))
+        let screenshots = activeScreenshots
+        let newIndex = max(0, min(index, screenshots.count - 1))
         guard newIndex != currentIndex else { return }
 
         currentIndex = newIndex
@@ -936,6 +979,158 @@ struct SearchResultListItem: View {
     private func loadThumbnail() async {
         do {
             let image = try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+            await MainActor.run {
+                thumbnail = image
+            }
+        } catch {
+            // Thumbnail load failed, keep placeholder
+        }
+    }
+}
+
+// MARK: - Search Result Group Item (Grouped results)
+
+struct SearchResultGroupItem: View {
+    let group: SearchResultGroup
+    let index: Int
+    let totalGroups: Int
+    let totalScreenshots: Int
+    let searchQuery: String
+    let isSelected: Bool
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+    @State private var thumbnail: NSImage?
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(alignment: .top, spacing: 16) {
+                // Left side: Text content
+                VStack(alignment: .leading, spacing: 6) {
+                    // App name and window title
+                    HStack(spacing: 6) {
+                        AppIconView(appName: group.appName, size: 16)
+                        Text(group.appName)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(OmiColors.purplePrimary)
+                        if let windowTitle = group.windowTitle, !windowTitle.isEmpty {
+                            Text("›")
+                                .foregroundColor(.white.opacity(0.3))
+                            Text(windowTitle)
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.5))
+                                .lineLimit(1)
+                        }
+                    }
+
+                    // Time range
+                    Text(group.formattedTimeRange)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+
+                    // Context snippet from representative screenshot
+                    if let snippet = group.representativeScreenshot.contextSnippet(for: searchQuery) {
+                        highlightedSnippet(snippet)
+                    }
+
+                    // Group info: count and position
+                    HStack(spacing: 8) {
+                        if group.count > 1 {
+                            HStack(spacing: 4) {
+                                Image(systemName: "square.stack")
+                                    .font(.system(size: 9))
+                                Text("\(group.count) screenshots")
+                            }
+                            .font(.system(size: 10))
+                            .foregroundColor(OmiColors.purplePrimary.opacity(0.8))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(OmiColors.purplePrimary.opacity(0.15))
+                            .cornerRadius(4)
+                        }
+
+                        Text("Group \(index + 1) of \(totalGroups)")
+                            .font(.system(size: 10))
+                            .foregroundColor(.white.opacity(0.3))
+                    }
+                    .padding(.top, 2)
+                }
+
+                Spacer()
+
+                // Right side: Small thumbnail
+                Group {
+                    if let thumb = thumbnail {
+                        Image(nsImage: thumb)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                            .frame(width: 120, height: 80)
+                            .cornerRadius(6)
+                            .clipped()
+                    } else {
+                        Rectangle()
+                            .fill(Color.white.opacity(0.1))
+                            .frame(width: 120, height: 80)
+                            .cornerRadius(6)
+                            .overlay(
+                                ProgressView()
+                                    .progressViewStyle(.circular)
+                                    .scaleEffect(0.6)
+                                    .tint(.white.opacity(0.5))
+                            )
+                    }
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? OmiColors.purplePrimary.opacity(0.15) :
+                          (isHovered ? Color.white.opacity(0.05) : Color.clear))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .task {
+            await loadThumbnail()
+        }
+    }
+
+    @ViewBuilder
+    private func highlightedSnippet(_ snippet: String) -> some View {
+        let lowercasedQuery = searchQuery.lowercased()
+        let lowercasedSnippet = snippet.lowercased()
+
+        if let range = lowercasedSnippet.range(of: lowercasedQuery) {
+            let beforeIndex = snippet.distance(from: snippet.startIndex, to: range.lowerBound)
+            let afterIndex = snippet.distance(from: snippet.startIndex, to: range.upperBound)
+
+            let before = String(snippet.prefix(beforeIndex))
+            let match = String(snippet[snippet.index(snippet.startIndex, offsetBy: beforeIndex)..<snippet.index(snippet.startIndex, offsetBy: afterIndex)])
+            let after = String(snippet.suffix(from: snippet.index(snippet.startIndex, offsetBy: afterIndex)))
+
+            (Text(before).foregroundColor(.white.opacity(0.6)) +
+             Text(match).foregroundColor(.white).bold() +
+             Text(after).foregroundColor(.white.opacity(0.6)))
+                .font(.system(size: 12))
+                .lineLimit(3)
+        } else {
+            Text(snippet)
+                .font(.system(size: 12))
+                .foregroundColor(.white.opacity(0.6))
+                .lineLimit(3)
+        }
+    }
+
+    private func loadThumbnail() async {
+        do {
+            let image = try await RewindStorage.shared.loadScreenshotImage(for: group.representativeScreenshot)
             await MainActor.run {
                 thumbnail = image
             }
