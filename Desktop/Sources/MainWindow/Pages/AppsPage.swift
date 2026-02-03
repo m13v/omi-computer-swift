@@ -1,18 +1,43 @@
 import SwiftUI
 import AppKit
 
-// MARK: - Safe Sheet Dismiss Helper
-/// Workaround for SwiftUI macOS bug where dismissing a sheet can cause
-/// the click to propagate to underlying views (cursor jump issue).
-/// This resigns first responder before dismissing to prevent click-through.
-extension View {
-    func safeDismiss(_ dismiss: DismissAction) {
-        // Resign first responder to prevent click-through on underlying views
-        NSApp.keyWindow?.makeFirstResponder(nil)
-        // Small delay to allow the responder change to take effect
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            dismiss()
-        }
+// MARK: - Safe Dismiss Button
+/// A dismiss button that prevents click-through to underlying views on macOS.
+/// Uses onTapGesture with async delay to ensure the click is fully consumed before dismissing.
+struct SafeDismissButton: View {
+    let dismiss: DismissAction
+    var icon: String = "xmark"
+    var showBackground: Bool = true
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: 14, weight: .medium))
+            .foregroundColor(OmiColors.textSecondary)
+            .frame(width: 28, height: 28)
+            .background(showBackground ? OmiColors.backgroundSecondary : Color.clear)
+            .clipShape(Circle())
+            .contentShape(Circle())
+            .onTapGesture {
+                let mouseLocation = NSEvent.mouseLocation
+                NSLog("OMI DISMISS: Tap gesture fired at mouse position: \(mouseLocation)")
+                NSLog("OMI DISMISS: Key window: \(String(describing: NSApp.keyWindow))")
+                NSLog("OMI DISMISS: First responder: \(String(describing: NSApp.keyWindow?.firstResponder))")
+
+                // Try to consume the click by resigning first responder
+                NSApp.keyWindow?.makeFirstResponder(nil)
+                NSLog("OMI DISMISS: Resigned first responder")
+
+                // Use async to ensure tap gesture completes before dismiss
+                Task { @MainActor in
+                    NSLog("OMI DISMISS: Starting 100ms delay before dismiss")
+                    // Delay to ensure mouse-up event is fully processed
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                    NSLog("OMI DISMISS: Delay complete, calling dismiss()")
+                    NSLog("OMI DISMISS: Mouse position before dismiss: \(NSEvent.mouseLocation)")
+                    dismiss()
+                    NSLog("OMI DISMISS: dismiss() called")
+                }
+            }
     }
 }
 
@@ -622,15 +647,7 @@ struct AppFilterSheet: View {
                     .foregroundColor(OmiColors.purplePrimary)
                 }
 
-                Button(action: { safeDismiss(dismiss) }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(OmiColors.backgroundSecondary)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
+                SafeDismissButton(dismiss: dismiss)
             }
             .padding()
 
@@ -751,12 +768,7 @@ struct CategoryAppsSheet: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Button(action: { safeDismiss(dismiss) }) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-                }
-                .buttonStyle(.plain)
+                SafeDismissButton(dismiss: dismiss, icon: "chevron.left", showBackground: false)
 
                 Text(category.title)
                     .font(.system(size: 18, weight: .semibold))
@@ -806,17 +818,9 @@ struct AppDetailSheet: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Button(action: { safeDismiss(dismiss) }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(OmiColors.backgroundSecondary)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
-
                 Spacer()
+
+                SafeDismissButton(dismiss: dismiss)
             }
             .padding()
 
@@ -1058,15 +1062,9 @@ struct AddReviewSheet: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Button(action: { safeDismiss(dismiss) }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 28, height: 28)
-                        .background(OmiColors.backgroundSecondary)
-                        .clipShape(Circle())
-                }
-                .buttonStyle(.plain)
+                // Placeholder for symmetry
+                Color.clear
+                    .frame(width: 28, height: 28)
 
                 Spacer()
 
@@ -1076,9 +1074,7 @@ struct AddReviewSheet: View {
 
                 Spacer()
 
-                // Placeholder for symmetry
-                Color.clear
-                    .frame(width: 28, height: 28)
+                SafeDismissButton(dismiss: dismiss)
             }
             .padding()
 
