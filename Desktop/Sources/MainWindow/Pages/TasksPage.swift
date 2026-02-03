@@ -65,7 +65,7 @@ class TasksViewModel: ObservableObject {
     @Published var hasMoreTasks = true
     @Published var isLoadingMore = false
     private var currentOffset = 0
-    private let pageSize = 50
+    private let pageSize = 1000  // Load more tasks upfront for accurate counts
 
     // Multi-select state
     @Published var isMultiSelectMode = false
