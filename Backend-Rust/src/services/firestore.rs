@@ -731,6 +731,49 @@ impl FirestoreService {
         Ok(())
     }
 
+    /// Set the visibility of a conversation (for sharing)
+    pub async fn set_conversation_visibility(
+        &self,
+        uid: &str,
+        conversation_id: &str,
+        visibility: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}?updateMask.fieldPaths=visibility",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CONVERSATIONS_SUBCOLLECTION,
+            conversation_id
+        );
+
+        let doc = json!({
+            "fields": {
+                "visibility": {"stringValue": visibility}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update error: {}", error_text).into());
+        }
+
+        tracing::info!(
+            "Set conversation {} visibility='{}' for user {}",
+            conversation_id,
+            visibility,
+            uid
+        );
+        Ok(())
+    }
+
     /// Delete a conversation
     pub async fn delete_conversation(
         &self,
