@@ -244,7 +244,12 @@ final class ScreenCaptureService: Sendable {
             return (appName, nil, nil)
         }
 
-        // Collect all windows belonging to the active app
+        // Try Accessibility API first (most accurate - gets actual focused window)
+        if let axResult = getWindowInfoViaAccessibility(pid: activePID, windowList: windowList) {
+            return (appName, axResult.title, axResult.windowID)
+        }
+
+        // Fallback to largest window heuristic
         var appWindows: [(title: String?, windowID: CGWindowID, area: CGFloat)] = []
 
         for window in windowList {
@@ -253,7 +258,6 @@ final class ScreenCaptureService: Sendable {
                 continue
             }
 
-            // Skip windows that are too small (like menu bar items)
             if let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
                let width = bounds["Width"],
                let height = bounds["Height"],
@@ -264,12 +268,87 @@ final class ScreenCaptureService: Sendable {
             }
         }
 
-        // Pick the largest window by area (handles apps like Arc with multiple utility windows)
         guard let largest = appWindows.max(by: { $0.area < $1.area }) else {
             return (appName, nil, nil)
         }
 
         return (appName, largest.title, largest.windowID)
+    }
+
+    /// Get focused window info using Accessibility API, then match to CGWindowList for windowID
+    private static func getWindowInfoViaAccessibility(pid: pid_t, windowList: [[String: Any]]) -> (title: String?, windowID: CGWindowID)? {
+        let appElement = AXUIElementCreateApplication(pid)
+
+        // Get the focused window
+        var focusedWindow: CFTypeRef?
+        let focusResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindow)
+
+        guard focusResult == .success, let windowElement = focusedWindow else {
+            return nil
+        }
+
+        // Get window title from AX
+        var titleValue: CFTypeRef?
+        AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXTitleAttribute as CFString, &titleValue)
+        let axTitle = titleValue as? String
+
+        // Get window position
+        var positionValue: CFTypeRef?
+        let posResult = AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXPositionAttribute as CFString, &positionValue)
+
+        guard posResult == .success, let posRef = positionValue else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        if !AXValueGetValue(posRef as! AXValue, .cgPoint, &position) {
+            return nil
+        }
+
+        // Get window size
+        var sizeValue: CFTypeRef?
+        let sizeResult = AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXSizeAttribute as CFString, &sizeValue)
+
+        guard sizeResult == .success, let sizeRef = sizeValue else {
+            return nil
+        }
+
+        var size = CGSize.zero
+        if !AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) {
+            return nil
+        }
+
+        // Skip tiny windows
+        guard size.width > 100 && size.height > 100 else {
+            return nil
+        }
+
+        // Find matching window in CGWindowList by position/size
+        for window in windowList {
+            guard let windowPID = window[kCGWindowOwnerPID as String] as? Int32,
+                  windowPID == pid,
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                  let x = bounds["X"],
+                  let y = bounds["Y"],
+                  let width = bounds["Width"],
+                  let height = bounds["Height"],
+                  let windowNumber = window[kCGWindowNumber as String] as? CGWindowID else {
+                continue
+            }
+
+            // Match by position and size (with small tolerance for rounding)
+            let tolerance: CGFloat = 2.0
+            if abs(x - position.x) < tolerance &&
+               abs(y - position.y) < tolerance &&
+               abs(width - size.width) < tolerance &&
+               abs(height - size.height) < tolerance {
+                // Use AX title if available, otherwise fall back to CGWindowList title
+                let title = axTitle ?? (window[kCGWindowName as String] as? String)
+                return (title: title, windowID: windowNumber)
+            }
+        }
+
+        return nil
     }
 
     // MARK: - Async Capture (Primary API)
