@@ -98,7 +98,7 @@ struct DesktopHomeView: View {
 
                 // Page content - ZStack keeps all views alive
                 ZStack {
-                    DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
+                    DashboardPage(viewModel: viewModelContainer.dashboardViewModel, isActive: selectedIndex == 0)
                         .opacity(selectedIndex == 0 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 0)
                         .trackRender("DashboardPage")
