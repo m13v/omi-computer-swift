@@ -2,7 +2,8 @@ import SwiftUI
 
 /// Page for managing user's AI persona/clone
 struct PersonaPage: View {
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var environmentDismiss
+    var onDismiss: (() -> Void)? = nil  // Optional external dismiss handler for overlay-based presentation
 
     @State private var persona: Persona?
     @State private var isLoading = false
@@ -27,12 +28,20 @@ struct PersonaPage: View {
     // Regenerate prompt
     @State private var isRegenerating = false
 
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Sheet header with close button
             HStack {
                 Spacer()
-                SafeDismissButton(dismiss: dismiss)
+                DismissButton(action: dismissSheet)
             }
             .padding(.horizontal, 20)
             .padding(.top, 16)
