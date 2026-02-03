@@ -7,7 +7,15 @@ struct DailyScoreWidget: View {
         dailyScore?.score ?? 0
     }
 
+    private var hasTasksToday: Bool {
+        (dailyScore?.totalTasks ?? 0) > 0
+    }
+
     private var scoreColor: Color {
+        // Grey when no tasks (like Flutter)
+        if !hasTasksToday {
+            return Color.gray
+        }
         if score >= 80 {
             return .green
         } else if score >= 60 {
@@ -52,13 +60,13 @@ struct DailyScoreWidget: View {
             }
 
             // Task count
-            if let ds = dailyScore {
+            if let ds = dailyScore, ds.totalTasks > 0 {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 12))
                         .foregroundColor(scoreColor)
                     Text("\(ds.completedTasks) of \(ds.totalTasks) tasks completed")
-                        .font(.system(size: 12))
+                        .font(.system(size: 12).monospacedDigit())
                         .foregroundColor(OmiColors.textTertiary)
                 }
             } else {
