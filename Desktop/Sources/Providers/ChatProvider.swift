@@ -60,8 +60,10 @@ struct ChatMessage: Identifiable {
     var rating: Int?
     /// Whether the message has been synced with the backend (has valid server ID)
     var isSynced: Bool
+    /// Citations extracted from the AI response
+    var citations: [Citation]
 
-    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil, isSynced: Bool = false) {
+    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil, isSynced: Bool = false, citations: [Citation] = []) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
@@ -69,12 +71,39 @@ struct ChatMessage: Identifiable {
         self.isStreaming = isStreaming
         self.rating = rating
         self.isSynced = isSynced
+        self.citations = citations
     }
 }
 
 enum ChatSender {
     case user
     case ai
+}
+
+// MARK: - Citation Model
+
+/// A citation referencing a source conversation or memory
+struct Citation: Identifiable {
+    let id: String
+    let sourceType: CitationSourceType
+    let title: String
+    let preview: String
+    let emoji: String?
+    let createdAt: Date?
+
+    enum CitationSourceType {
+        case conversation
+        case memory
+    }
+
+    init(from source: CitationSource) {
+        self.id = source.id
+        self.sourceType = source.sourceType == "conversation" ? .conversation : .memory
+        self.title = source.title
+        self.preview = source.preview
+        self.emoji = source.emoji
+        self.createdAt = source.createdAt
+    }
 }
 
 /// State management for chat functionality with client-side Gemini
@@ -480,6 +509,45 @@ class ChatProvider: ObservableObject {
         )
     }
 
+    // MARK: - Citation Extraction
+
+    /// Extracts citations from an AI response based on [N] patterns
+    /// - Parameters:
+    ///   - response: The AI response text containing citation markers
+    ///   - sources: Available citation sources from the context
+    /// - Returns: Array of citations that were actually referenced in the response
+    private func extractCitations(from response: String, sources: [CitationSource]) -> [Citation] {
+        guard !sources.isEmpty else { return [] }
+
+        // Find all [N] patterns in response
+        let pattern = "\\[(\\d+)\\]"
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+
+        let range = NSRange(response.startIndex..., in: response)
+        let matches = regex.matches(in: response, range: range)
+
+        // Extract unique indices
+        var citedIndices = Set<Int>()
+        for match in matches {
+            if let indexRange = Range(match.range(at: 1), in: response),
+               let index = Int(response[indexRange]) {
+                citedIndices.insert(index)
+            }
+        }
+
+        // Map to Citation objects (only cited sources)
+        return sources
+            .filter { citedIndices.contains($0.index) }
+            .map { Citation(from: $0) }
+    }
+
+    /// Strips citation markers [N] from display text
+    /// - Parameter text: Text containing citation markers
+    /// - Returns: Cleaned text without citation markers
+    private func stripCitationMarkers(from text: String) -> String {
+        text.replacingOccurrences(of: "\\[\\d+\\]", with: "", options: .regularExpression)
+    }
+
     // MARK: - Fetch Messages
 
     /// Fetch chat messages from backend and load context
@@ -632,19 +700,27 @@ class ChatProvider: ObservableObject {
                 finalResponse = result.text
             }
 
-            // Update AI message with final response
-            updateMessage(id: aiMessageId, text: finalResponse)
+            // Extract citations from the response and strip markers for display
+            let citationSources = cachedContext?.citationSources ?? []
+            let citations = extractCitations(from: finalResponse, sources: citationSources)
+            let displayText = stripCitationMarkers(from: finalResponse)
 
-            // Mark streaming complete (but not synced yet - rating disabled until synced)
+            // Update AI message with cleaned text and citations
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                messages[index].text = displayText
+                messages[index].citations = citations
                 messages[index].isStreaming = false
 
+                if !citations.isEmpty {
+                    log("Extracted \(citations.count) citation(s) from response")
+                }
+
                 // Save AI response to backend and sync ID (awaited, not fire-and-forget)
-                let aiResponseText = messages[index].text
-                if !aiResponseText.isEmpty {
+                // Save the original response with markers for backend storage
+                if !finalResponse.isEmpty {
                     do {
                         let response = try await APIClient.shared.saveMessage(
-                            text: aiResponseText,
+                            text: finalResponse,  // Save original with citation markers
                             sender: "ai",
                             appId: selectedAppId,
                             sessionId: sessionId
