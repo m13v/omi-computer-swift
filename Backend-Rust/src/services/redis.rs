@@ -1,7 +1,7 @@
 // Redis service for conversation visibility
 // Mirrors the Python backend's redis_db.py functionality for sharing conversations
 
-use redis::{AsyncCommands, Client};
+use redis::{AsyncCommands, Client, ConnectionAddr, ConnectionInfo, RedisConnectionInfo};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -12,7 +12,25 @@ pub struct RedisService {
 }
 
 impl RedisService {
-    /// Create a new Redis service
+    /// Create a new Redis service with explicit connection parameters
+    /// This avoids URL encoding issues with special characters in passwords
+    pub fn new_with_params(host: &str, port: u16, password: Option<&str>) -> Result<Self, redis::RedisError> {
+        let info = ConnectionInfo {
+            addr: ConnectionAddr::Tcp(host.to_string(), port),
+            redis: RedisConnectionInfo {
+                db: 0,
+                username: None,
+                password: password.map(|p| p.to_string()),
+            },
+        };
+        let client = Client::open(info)?;
+        Ok(Self {
+            client,
+            connection: Arc::new(RwLock::new(None)),
+        })
+    }
+
+    /// Create a new Redis service from URL (legacy, may have encoding issues)
     pub fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
         let client = Client::open(redis_url)?;
         Ok(Self {
