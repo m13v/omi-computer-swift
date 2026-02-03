@@ -191,6 +191,19 @@ enum BleAudioCodec: Int, CaseIterable, Codable {
         }
     }
 
+    /// Alias for LC3 codec (for code clarity)
+    static var lc3: BleAudioCodec { .lc3FS1030 }
+
+    /// Check if this is an Opus-based codec
+    var isOpus: Bool {
+        self == .opus || self == .opusFS320
+    }
+
+    /// Check if this is a PCM-based codec (no decoding needed)
+    var isPCM: Bool {
+        self == .pcm8 || self == .pcm16
+    }
+
     /// Sample rate in Hz
     var sampleRate: Int { 16000 }
 
