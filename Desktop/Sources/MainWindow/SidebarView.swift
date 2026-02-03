@@ -13,6 +13,7 @@ enum SidebarNavItem: Int, CaseIterable {
     case apps = 8
     case settings = 9
     case permissions = 10
+    case device = 11
 
     var title: String {
         switch self {
@@ -27,6 +28,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .apps: return "Apps"
         case .settings: return "Settings"
         case .permissions: return "Permissions"
+        case .device: return "Device"
         }
     }
 
@@ -43,6 +45,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .apps: return "square.grid.2x2.fill"
         case .settings: return "gearshape.fill"
         case .permissions: return "exclamationmark.triangle.fill"
+        case .device: return "wave.3.right.circle.fill"
         }
     }
 
@@ -59,8 +62,9 @@ struct SidebarView: View {
     @ObservedObject var appState: AppState
     @ObservedObject private var adviceStorage = AdviceStorage.shared
     @ObservedObject private var focusStorage = FocusStorage.shared
+    @ObservedObject private var deviceProvider = DeviceProvider.shared
 
-    // State for Get Omi Widget
+    // State for Get Omi Widget (shown when no device is paired)
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
 
     // Toggle states for quick controls
@@ -163,9 +167,11 @@ struct SidebarView: View {
                     // Subscription upgrade banner
                     // upgradeToPro
 
-                    // Get Omi Device widget
-                    if showGetOmiWidget {
-                        Spacer().frame(height: 12)
+                    // Device status widget or Get Omi widget
+                    Spacer().frame(height: 12)
+                    if deviceProvider.isConnected || deviceProvider.pairedDevice != nil {
+                        deviceStatusWidget
+                    } else if showGetOmiWidget {
                         getOmiWidget
                     }
 
@@ -440,6 +446,113 @@ struct SidebarView: View {
         }
         .buttonStyle(.plain)
         .help(isCollapsed ? "Get Omi Device" : "")
+    }
+
+    // MARK: - Device Status Widget
+    private var deviceStatusWidget: some View {
+        Button(action: {
+            selectedIndex = SidebarNavItem.device.rawValue
+        }) {
+            HStack(spacing: 12) {
+                // Device icon with status indicator
+                ZStack(alignment: .bottomTrailing) {
+                    // Device image or icon
+                    if let deviceUrl = Bundle.resourceBundle.url(forResource: "omi-with-rope-no-padding", withExtension: "webp"),
+                       let deviceImage = NSImage(contentsOf: deviceUrl) {
+                        Image(nsImage: deviceImage)
+                            .resizable()
+                            .aspectRatio(contentMode: .fit)
+                            .frame(width: 24, height: 24)
+                            .opacity(deviceProvider.isConnected ? 1.0 : 0.5)
+                    } else {
+                        Image(systemName: "wave.3.right.circle.fill")
+                            .font(.system(size: 17))
+                            .foregroundColor(deviceProvider.isConnected ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                            .frame(width: iconWidth)
+                    }
+
+                    // Connection status dot
+                    Circle()
+                        .fill(deviceProvider.isConnected ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 2, y: 2)
+                }
+
+                if !isCollapsed {
+                    // Text content
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let device = deviceProvider.connectedDevice ?? deviceProvider.pairedDevice {
+                            Text(device.displayName)
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
+                                .lineLimit(1)
+
+                            HStack(spacing: 6) {
+                                if deviceProvider.isConnected {
+                                    if deviceProvider.batteryLevel >= 0 {
+                                        // Battery indicator
+                                        Image(systemName: batteryIconName(level: deviceProvider.batteryLevel))
+                                            .font(.system(size: 10))
+                                            .foregroundColor(batteryColor(level: deviceProvider.batteryLevel))
+                                        Text("\(deviceProvider.batteryLevel)%")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(batteryColor(level: deviceProvider.batteryLevel))
+                                    } else {
+                                        Text("Connected")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(.green)
+                                    }
+                                } else {
+                                    Text("Disconnected")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.orange)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(selectedIndex == SidebarNavItem.device.rawValue
+                          ? OmiColors.backgroundTertiary.opacity(0.8)
+                          : OmiColors.backgroundTertiary.opacity(0.6))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(deviceProvider.isConnected
+                                    ? Color.green.opacity(0.3)
+                                    : OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .help(isCollapsed ? (deviceProvider.connectedDevice?.displayName ?? "Device Settings") : "")
+    }
+
+    private func batteryIconName(level: Int) -> String {
+        switch level {
+        case 0..<10: return "battery.0"
+        case 10..<35: return "battery.25"
+        case 35..<60: return "battery.50"
+        case 60..<85: return "battery.75"
+        default: return "battery.100"
+        }
+    }
+
+    private func batteryColor(level: Int) -> Color {
+        switch level {
+        case 0..<20: return .red
+        case 20..<40: return .orange
+        default: return .green
+        }
     }
 
     // MARK: - Permission Warning Button
