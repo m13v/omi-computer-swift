@@ -158,18 +158,72 @@ gcloud run services update "$CLOUD_RUN_SERVICE" \
 echo "  ✓ Backend deployed"
 
 # -----------------------------------------------------------------------------
-# Step 2: Build Desktop App
+# Step 1.5: Prepare Universal ffmpeg
 # -----------------------------------------------------------------------------
-echo "[2/12] Building $APP_NAME..."
+echo "[1.5/12] Preparing universal ffmpeg binary..."
+
+FFMPEG_RESOURCE="Desktop/Sources/Resources/ffmpeg"
+FFMPEG_UNIVERSAL_URL="https://github.com/ColorsWind/FFmpeg-macOS/releases/download/8.0.1/ffmpeg"
+
+# Check if current ffmpeg is already universal
+if file "$FFMPEG_RESOURCE" | grep -q "universal binary"; then
+    echo "  ffmpeg is already universal, skipping download"
+else
+    echo "  Current ffmpeg is single-arch, downloading universal binary..."
+
+    # Backup current ffmpeg
+    if [ -f "$FFMPEG_RESOURCE" ]; then
+        mv "$FFMPEG_RESOURCE" "$FFMPEG_RESOURCE.backup"
+    fi
+
+    # Download universal ffmpeg from ColorsWind/FFmpeg-macOS
+    curl -L -o "$FFMPEG_RESOURCE" "$FFMPEG_UNIVERSAL_URL" || {
+        echo "  Warning: Failed to download universal ffmpeg, restoring backup"
+        mv "$FFMPEG_RESOURCE.backup" "$FFMPEG_RESOURCE"
+    }
+
+    # Make executable
+    chmod +x "$FFMPEG_RESOURCE"
+
+    # Verify it's universal
+    if file "$FFMPEG_RESOURCE" | grep -q "universal binary"; then
+        echo "  ✓ Universal ffmpeg ready"
+        rm -f "$FFMPEG_RESOURCE.backup"
+    else
+        echo "  Warning: Downloaded ffmpeg is not universal, restoring backup"
+        mv "$FFMPEG_RESOURCE.backup" "$FFMPEG_RESOURCE"
+    fi
+fi
+
+# Show ffmpeg architectures
+echo "  ffmpeg architectures: $(file "$FFMPEG_RESOURCE" | sed 's/.*: //')"
+
+# -----------------------------------------------------------------------------
+# Step 2: Build Desktop App (Universal Binary: arm64 + x86_64)
+# -----------------------------------------------------------------------------
+echo "[2/12] Building $APP_NAME (Universal Binary)..."
 
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-swift build -c release --package-path Desktop
+# Build for Apple Silicon (arm64)
+echo "  Building for arm64..."
+swift build -c release --package-path Desktop --triple arm64-apple-macosx
 
-BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/$APP_NAME
-if [ ! -f "$BINARY_PATH" ]; then
-    echo "Error: Binary not found at $BINARY_PATH"
+# Build for Intel (x86_64)
+echo "  Building for x86_64..."
+swift build -c release --package-path Desktop --triple x86_64-apple-macosx
+
+# Get binary paths for each architecture
+ARM64_BINARY="Desktop/.build/arm64-apple-macosx/release/$APP_NAME"
+X86_64_BINARY="Desktop/.build/x86_64-apple-macosx/release/$APP_NAME"
+
+if [ ! -f "$ARM64_BINARY" ]; then
+    echo "Error: arm64 binary not found at $ARM64_BINARY"
+    exit 1
+fi
+if [ ! -f "$X86_64_BINARY" ]; then
+    echo "Error: x86_64 binary not found at $X86_64_BINARY"
     exit 1
 fi
 
@@ -178,14 +232,24 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
-cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+# Create universal binary with lipo
+echo "  Creating universal binary with lipo..."
+lipo -create "$ARM64_BINARY" "$X86_64_BINARY" -output "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+
+# Verify universal binary
+echo "  Verifying universal binary..."
+file "$APP_BUNDLE/Contents/MacOS/$APP_NAME" | grep -q "universal binary" || {
+    echo "Error: Failed to create universal binary"
+    exit 1
+}
+
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
-# Copy Sparkle framework
-SPARKLE_FRAMEWORK="$(swift build -c release --package-path Desktop --show-bin-path)/Sparkle.framework"
+# Copy Sparkle framework (already universal from SPM)
+SPARKLE_FRAMEWORK="Desktop/.build/arm64-apple-macosx/release/Sparkle.framework"
 if [ -d "$SPARKLE_FRAMEWORK" ]; then
     cp -R "$SPARKLE_FRAMEWORK" "$APP_BUNDLE/Contents/Frameworks/"
-    echo "  Copied Sparkle.framework"
+    echo "  Copied Sparkle.framework (universal)"
 else
     echo "Error: Sparkle.framework not found at $SPARKLE_FRAMEWORK"
     exit 1
@@ -205,7 +269,7 @@ cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
 # Copy resource bundle (contains app assets like permissions.gif, herologo.png, etc.)
 # Note: Bundle goes in Contents/Resources/ - our custom BundleExtension.swift looks for it there
-SWIFT_BUILD_DIR=$(swift build -c release --package-path Desktop --show-bin-path)
+SWIFT_BUILD_DIR="Desktop/.build/arm64-apple-macosx/release"
 if [ -d "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" ]; then
     cp -R "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" "$APP_BUNDLE/Contents/Resources/"
     echo "  Copied resource bundle"
