@@ -27,6 +27,8 @@ class SearchDebouncer: ObservableObject {
 
 struct ConversationsPage: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var audioLevels = AudioLevelMonitor.shared
+    @ObservedObject private var recordingTimer = RecordingTimer.shared
     @State private var selectedConversation: ServerConversation? = nil
 
     // Transcript visibility state - hidden by default
@@ -897,7 +899,7 @@ struct ConversationsPage: View {
                         .font(.system(size: 12))
                         .foregroundColor(OmiColors.textTertiary)
                     AudioLevelWaveformView(
-                        level: appState.microphoneAudioLevel,
+                        level: audioLevels.microphoneLevel,
                         barCount: 8,
                         isActive: appState.isTranscribing
                     )
@@ -908,7 +910,7 @@ struct ConversationsPage: View {
                         .font(.system(size: 12))
                         .foregroundColor(OmiColors.textTertiary)
                     AudioLevelWaveformView(
-                        level: appState.systemAudioLevel,
+                        level: audioLevels.systemLevel,
                         barCount: 8,
                         isActive: appState.isTranscribing
                     )
@@ -1008,11 +1010,7 @@ struct ConversationsPage: View {
 
     /// Recording duration formatted - separate from conversation duration
     private var recordingDurationFormatted: String {
-        let duration = Int(appState.recordingDuration)
-        let hours = duration / 3600
-        let minutes = (duration % 3600) / 60
-        let seconds = duration % 60
-        return String(format: "%02d:%02d:%02d", hours, minutes, seconds)
+        recordingTimer.formattedDuration
     }
 }
 
