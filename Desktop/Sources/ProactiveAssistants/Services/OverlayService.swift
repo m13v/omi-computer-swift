@@ -102,7 +102,7 @@ class OverlayService {
         edgeWindows.removeAll()
     }
 
-    /// Get the frame of the currently active window
+    /// Get the frame of the currently active window using Accessibility API
     private func getActiveWindowFrame() -> NSRect? {
         guard let frontApp = NSWorkspace.shared.frontmostApplication else {
             return nil
@@ -110,7 +110,67 @@ class OverlayService {
 
         let activePID = frontApp.processIdentifier
 
-        // Get all on-screen windows
+        // Try Accessibility API first (most accurate - gets actual focused window)
+        if let frame = getWindowFrameViaAccessibility(pid: activePID) {
+            return frame
+        }
+
+        // Fallback to CGWindowList with largest window heuristic
+        return getWindowFrameViaWindowList(pid: activePID)
+    }
+
+    /// Get focused window frame using Accessibility API
+    private func getWindowFrameViaAccessibility(pid: pid_t) -> NSRect? {
+        let appElement = AXUIElementCreateApplication(pid)
+
+        // Get the focused window
+        var focusedWindow: CFTypeRef?
+        let focusResult = AXUIElementCopyAttributeValue(appElement, kAXFocusedWindowAttribute as CFString, &focusedWindow)
+
+        guard focusResult == .success, let windowElement = focusedWindow else {
+            return nil
+        }
+
+        // Get window position
+        var positionValue: CFTypeRef?
+        let posResult = AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXPositionAttribute as CFString, &positionValue)
+
+        guard posResult == .success, let posRef = positionValue else {
+            return nil
+        }
+
+        var position = CGPoint.zero
+        if !AXValueGetValue(posRef as! AXValue, .cgPoint, &position) {
+            return nil
+        }
+
+        // Get window size
+        var sizeValue: CFTypeRef?
+        let sizeResult = AXUIElementCopyAttributeValue(windowElement as! AXUIElement, kAXSizeAttribute as CFString, &sizeValue)
+
+        guard sizeResult == .success, let sizeRef = sizeValue else {
+            return nil
+        }
+
+        var size = CGSize.zero
+        if !AXValueGetValue(sizeRef as! AXValue, .cgSize, &size) {
+            return nil
+        }
+
+        // Skip tiny windows
+        guard size.width > 100 && size.height > 100 else {
+            return nil
+        }
+
+        // AXPosition uses top-left origin, convert to bottom-left for NSWindow
+        let screenHeight = NSScreen.main?.frame.height ?? 0
+        let flippedY = screenHeight - position.y - size.height
+
+        return NSRect(x: position.x, y: flippedY, width: size.width, height: size.height)
+    }
+
+    /// Fallback: Get window frame using CGWindowList (picks largest window)
+    private func getWindowFrameViaWindowList(pid: pid_t) -> NSRect? {
         guard let windowList = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
@@ -118,16 +178,14 @@ class OverlayService {
             return nil
         }
 
-        // Collect all windows belonging to the active app
         var appWindows: [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] = []
 
         for window in windowList {
             guard let windowPID = window[kCGWindowOwnerPID as String] as? Int32,
-                  windowPID == activePID else {
+                  windowPID == pid else {
                 continue
             }
 
-            // Get window bounds
             if let boundsDict = window[kCGWindowBounds as String] as? [String: CGFloat],
                let x = boundsDict["X"],
                let y = boundsDict["Y"],
@@ -138,13 +196,10 @@ class OverlayService {
             }
         }
 
-        // Pick the largest window by area (handles apps like Arc with multiple utility windows)
         guard let largest = appWindows.max(by: { $0.width * $0.height < $1.width * $1.height }) else {
             return nil
         }
 
-        // CGWindowList uses top-left origin, but NSWindow uses bottom-left
-        // Convert coordinate system
         let screenHeight = NSScreen.main?.frame.height ?? 0
         let flippedY = screenHeight - largest.y - largest.height
 
