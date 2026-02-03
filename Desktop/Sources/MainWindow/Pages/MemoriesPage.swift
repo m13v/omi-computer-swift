@@ -1,6 +1,34 @@
 import SwiftUI
 import AppKit
 
+// MARK: - Safe Dismiss Button
+/// A dismiss button that prevents click-through to underlying views on macOS.
+/// Uses onTapGesture with async delay to ensure the click is fully consumed before dismissing.
+/// Copied from AppsPage.swift for consistency.
+struct MemorySafeDismissButton: View {
+    let dismiss: DismissAction
+    var icon: String = "xmark.circle.fill"
+    var iconSize: CGFloat = 20
+
+    var body: some View {
+        Image(systemName: icon)
+            .font(.system(size: iconSize))
+            .foregroundColor(OmiColors.textTertiary)
+            .contentShape(Circle())
+            .onTapGesture {
+                // Try to consume the click by resigning first responder
+                NSApp.keyWindow?.makeFirstResponder(nil)
+
+                // Use async to ensure tap gesture completes before dismiss
+                Task { @MainActor in
+                    // Delay to ensure mouse-up event is fully processed
+                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                    dismiss()
+                }
+            }
+    }
+}
+
 /// All available tags for filtering memories
 enum MemoryTag: String, CaseIterable, Identifiable {
     // Tips tag (from advice system) - shown first
@@ -81,11 +109,17 @@ enum MemoryTag: String, CaseIterable, Identifiable {
 
 @MainActor
 class MemoriesViewModel: ObservableObject {
-    @Published var memories: [ServerMemory] = []
+    @Published var memories: [ServerMemory] = [] {
+        didSet { recomputeCaches() }
+    }
     @Published var isLoading = false
     @Published var errorMessage: String?
-    @Published var searchText = ""
-    @Published var selectedTags: Set<MemoryTag> = []
+    @Published var searchText = "" {
+        didSet { recomputeFilteredMemories() }
+    }
+    @Published var selectedTags: Set<MemoryTag> = [] {
+        didSet { recomputeFilteredMemories() }
+    }
     @Published var showingAddMemory = false
     @Published var newMemoryText = ""
     @Published var editingMemory: ServerMemory? = nil
@@ -105,7 +139,43 @@ class MemoriesViewModel: ObservableObject {
     @Published var linkedConversation: ServerConversation? = nil
     @Published var isLoadingConversation = false
 
-    var filteredMemories: [ServerMemory] {
+    // Visibility toggle state
+    @Published var isTogglingVisibility = false
+
+    // MARK: - Cached Properties (avoid recomputation on every render)
+
+    /// Cached filtered and sorted memories - only recomputed when inputs change
+    @Published private(set) var filteredMemories: [ServerMemory] = []
+
+    /// Cached tag counts - only recomputed when memories change
+    @Published private(set) var tagCounts: [MemoryTag: Int] = [:]
+
+    /// Cached unread tips count - only recomputed when memories change
+    @Published private(set) var unreadTipsCount: Int = 0
+
+    /// Count memories for a specific tag (uses cached value)
+    func tagCount(_ tag: MemoryTag) -> Int {
+        tagCounts[tag] ?? 0
+    }
+
+    /// Recompute all caches when memories change
+    private func recomputeCaches() {
+        // Compute tag counts once
+        var counts: [MemoryTag: Int] = [:]
+        for tag in MemoryTag.allCases {
+            counts[tag] = memories.filter { tag.matches($0) }.count
+        }
+        tagCounts = counts
+
+        // Compute unread tips count
+        unreadTipsCount = memories.filter { $0.isTip && !$0.isRead }.count
+
+        // Recompute filtered memories
+        recomputeFilteredMemories()
+    }
+
+    /// Recompute filtered memories when search/tags change
+    private func recomputeFilteredMemories() {
         var result = memories
 
         // Filter by selected tags (OR logic - match any selected tag)
@@ -123,17 +193,7 @@ class MemoriesViewModel: ObservableObject {
         // Sort by date (newest first)
         result.sort { $0.createdAt > $1.createdAt }
 
-        return result
-    }
-
-    /// Count memories for a specific tag
-    func tagCount(_ tag: MemoryTag) -> Int {
-        memories.filter { tag.matches($0) }.count
-    }
-
-    /// Total unread tips count
-    var unreadTipsCount: Int {
-        memories.filter { $0.isTip && !$0.isRead }.count
+        filteredMemories = result
     }
 
     // MARK: - API Actions
@@ -267,13 +327,23 @@ class MemoriesViewModel: ObservableObject {
     }
 
     func toggleVisibility(_ memory: ServerMemory) async {
+        isTogglingVisibility = true
         let newVisibility = memory.isPublic ? "private" : "public"
         do {
             try await APIClient.shared.updateMemoryVisibility(id: memory.id, visibility: newVisibility)
-            await loadMemories()
+            // Update memory in place
+            if let index = memories.firstIndex(where: { $0.id == memory.id }) {
+                memories[index].visibility = newVisibility
+            }
+            // Update selectedMemory if it's the same memory (reassign to trigger SwiftUI update)
+            if var selected = selectedMemory, selected.id == memory.id {
+                selected.visibility = newVisibility
+                selectedMemory = selected
+            }
         } catch {
             logError("Failed to update memory visibility", error: error)
         }
+        isTogglingVisibility = false
     }
 
     func markAsRead(_ memory: ServerMemory) async {
@@ -389,13 +459,20 @@ struct MemoriesPage: View {
         }
         .background(Color.clear)
         .sheet(isPresented: $viewModel.showingAddMemory) {
-            addMemorySheet
+            AddMemorySheet(viewModel: viewModel)
         }
         .sheet(item: $viewModel.editingMemory) { memory in
-            editMemorySheet(memory)
+            EditMemorySheet(memory: memory, viewModel: viewModel)
         }
         .sheet(item: $viewModel.selectedMemory) { memory in
-            memoryDetailSheet(memory)
+            MemoryDetailSheet(
+                memory: memory,
+                viewModel: viewModel,
+                categoryIcon: categoryIcon,
+                categoryColor: categoryColor,
+                tagColorFor: tagColorFor,
+                formatDate: formatDate
+            )
         }
         .overlay(alignment: .bottom) {
             undoDeleteToast
@@ -762,9 +839,265 @@ struct MemoriesPage: View {
         return "\(relativeTime) · \(absoluteTime)"
     }
 
-    // MARK: - Detail Sheet
 
-    private func memoryDetailSheet(_ memory: ServerMemory) -> some View {
+    // MARK: - Empty States
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "brain.head.profile")
+                .font(.system(size: 48))
+                .foregroundColor(OmiColors.textTertiary)
+
+            Text("No Memories Yet")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundColor(OmiColors.textPrimary)
+
+            Text("Your memories and tips will appear here.\nMemories are extracted from your conversations.")
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textTertiary)
+                .multilineTextAlignment(.center)
+
+            Button {
+                viewModel.showingAddMemory = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "plus")
+                    Text("Add Your First Memory")
+                }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(OmiColors.purplePrimary)
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 8)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var noResultsView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 36))
+                .foregroundColor(OmiColors.textTertiary)
+
+            Text("No Results")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(OmiColors.textPrimary)
+
+            Text("Try a different search or filter")
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textTertiary)
+
+            if !viewModel.selectedTags.isEmpty {
+                Button {
+                    viewModel.selectedTags.removeAll()
+                } label: {
+                    Text("Clear Filters")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private var loadingView: some View {
+        VStack(spacing: 12) {
+            ProgressView()
+                .progressViewStyle(.circular)
+                .scaleEffect(1.2)
+
+            Text("Loading memories...")
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textTertiary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func errorView(_ message: String) -> some View {
+        VStack(spacing: 16) {
+            Image(systemName: "exclamationmark.triangle")
+                .font(.system(size: 36))
+                .foregroundColor(OmiColors.error)
+
+            Text("Failed to Load Memories")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(OmiColors.textPrimary)
+
+            Text(message)
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textTertiary)
+
+            Button {
+                Task { await viewModel.loadMemories() }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Retry")
+                }
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(OmiColors.purplePrimary)
+                .cornerRadius(8)
+            }
+            .buttonStyle(.plain)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: - Sheets
+
+}
+
+// MARK: - Memory Card View
+
+private struct MemoryCardView: View {
+    let memory: ServerMemory
+    let onTap: () -> Void
+    let categoryIcon: (MemoryCategory) -> String
+    let categoryColor: (MemoryCategory) -> Color
+    let tagColorFor: (String) -> Color
+    let formatDate: (Date) -> String
+
+    @State private var isHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Content
+            Text(memory.content)
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textPrimary)
+                .lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            // Reasoning (for tips)
+            if let reasoning = memory.reasoning, !reasoning.isEmpty {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "quote.opening")
+                        .font(.system(size: 10))
+                        .foregroundColor(OmiColors.textQuaternary)
+                    Text(reasoning)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .lineLimit(2)
+                }
+                .padding(8)
+                .background(OmiColors.backgroundSecondary)
+                .cornerRadius(6)
+            }
+
+            // Footer - metadata
+            HStack(spacing: 6) {
+                // Unread indicator
+                if memory.isTip && !memory.isRead {
+                    Circle()
+                        .fill(OmiColors.warning)
+                        .frame(width: 6, height: 6)
+                }
+
+                // Category/Tags
+                if memory.isTip {
+                    HStack(spacing: 4) {
+                        Image(systemName: "lightbulb.fill")
+                            .font(.system(size: 10))
+                        Text("Tips")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.warning)
+
+                    if let tipCat = memory.tipCategory {
+                        Text("·")
+                            .foregroundColor(OmiColors.textQuaternary)
+                        HStack(spacing: 4) {
+                            Image(systemName: memory.tipCategoryIcon)
+                                .font(.system(size: 10))
+                            Text(tipCat.capitalized)
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(tagColorFor(tipCat))
+                    }
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: categoryIcon(memory.category))
+                            .font(.system(size: 10))
+                        Text(memory.category.displayName)
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(categoryColor(memory.category))
+                }
+
+                // Source device
+                if let sourceName = memory.sourceName {
+                    Text("·")
+                        .foregroundColor(OmiColors.textQuaternary)
+                    HStack(spacing: 4) {
+                        Image(systemName: memory.sourceIcon)
+                            .font(.system(size: 10))
+                        Text(sourceName)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+
+                // Date
+                Text(formatDate(memory.createdAt))
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textTertiary)
+
+                // Click hint on hover
+                if isHovered {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(isHovered ? OmiColors.backgroundSecondary : OmiColors.backgroundTertiary)
+        .cornerRadius(8)
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            // No animation wrapper - simple state update for instant response
+            isHovered = hovering
+            // Change cursor to pointing hand on hover
+            if hovering {
+                NSCursor.pointingHand.push()
+            } else {
+                NSCursor.pop()
+            }
+        }
+        .onTapGesture {
+            onTap()
+        }
+    }
+}
+
+// MARK: - Memory Detail Sheet
+
+struct MemoryDetailSheet: View {
+    let memory: ServerMemory
+    @ObservedObject var viewModel: MemoriesViewModel
+    let categoryIcon: (MemoryCategory) -> String
+    let categoryColor: (MemoryCategory) -> Color
+    let tagColorFor: (String) -> Color
+    let formatDate: (Date) -> String
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Header with tags
@@ -780,14 +1113,7 @@ struct MemoriesPage: View {
 
                     Spacer()
 
-                    Button {
-                        viewModel.selectedMemory = nil
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 20))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-                    .buttonStyle(.plain)
+                    MemorySafeDismissButton(dismiss: dismiss)
                 }
 
                 // Content
@@ -908,106 +1234,109 @@ struct MemoriesPage: View {
                 // Action Buttons
                 VStack(spacing: 10) {
                     // Edit button
-                    Button {
-                        viewModel.selectedMemory = nil
-                        viewModel.editingMemory = memory
-                        viewModel.editText = memory.content
-                    } label: {
-                        HStack {
-                            Image(systemName: "pencil")
-                            Text("Edit Memory")
-                            Spacer()
+                    MemoryActionRow(
+                        icon: "pencil",
+                        title: "Edit Memory",
+                        iconColor: OmiColors.textPrimary,
+                        textColor: OmiColors.textPrimary,
+                        backgroundColor: OmiColors.backgroundTertiary
+                    ) {
+                        let memoryToEdit = memory
+                        // Dismiss first, then open edit sheet after delay
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                            dismiss()
+                            // Small additional delay before opening the new sheet
+                            try? await Task.sleep(nanoseconds: 50_000_000)
+                            viewModel.editingMemory = memoryToEdit
+                            viewModel.editText = memoryToEdit.content
                         }
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .padding(12)
-                        .background(OmiColors.backgroundTertiary)
-                        .cornerRadius(8)
                     }
-                    .buttonStyle(.plain)
 
                     // Visibility toggle
-                    Button {
-                        Task {
-                            await viewModel.toggleVisibility(memory)
-                            viewModel.selectedMemory = nil
+                    HStack {
+                        Image(systemName: memory.isPublic ? "globe" : "lock")
+                            .foregroundColor(memory.isPublic ? OmiColors.success : OmiColors.textTertiary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Public")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textPrimary)
+                            Text(memory.isPublic ? "Visible in your persona" : "Only you can see this")
+                                .font(.system(size: 11))
+                                .foregroundColor(OmiColors.textTertiary)
                         }
-                    } label: {
-                        HStack {
-                            Image(systemName: memory.isPublic ? "lock" : "globe")
-                            Text(memory.isPublic ? "Make Private" : "Make Public")
-                            Spacer()
+                        Spacer()
+                        if viewModel.isTogglingVisibility {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else {
+                            Toggle("", isOn: Binding(
+                                get: { memory.isPublic },
+                                set: { _ in
+                                    Task { await viewModel.toggleVisibility(memory) }
+                                }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
                         }
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .padding(12)
-                        .background(OmiColors.backgroundTertiary)
-                        .cornerRadius(8)
                     }
-                    .buttonStyle(.plain)
+                    .padding(12)
+                    .background(OmiColors.backgroundTertiary)
+                    .cornerRadius(8)
 
                     // Mark as read (for unread tips)
                     if memory.isTip && !memory.isRead {
-                        Button {
-                            Task {
+                        MemoryActionRow(
+                            icon: "checkmark.circle",
+                            title: "Mark as Read",
+                            iconColor: OmiColors.textPrimary,
+                            textColor: OmiColors.textPrimary,
+                            backgroundColor: OmiColors.backgroundTertiary
+                        ) {
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 100_000_000)
+                                dismiss()
                                 await viewModel.markAsRead(memory)
-                                viewModel.selectedMemory = nil
                             }
-                        } label: {
-                            HStack {
-                                Image(systemName: "checkmark.circle")
-                                Text("Mark as Read")
-                                Spacer()
-                            }
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textPrimary)
-                            .padding(12)
-                            .background(OmiColors.backgroundTertiary)
-                            .cornerRadius(8)
                         }
-                        .buttonStyle(.plain)
                     }
 
                     // View conversation (if linked)
                     if let conversationId = memory.conversationId {
-                        Button {
-                            viewModel.selectedMemory = nil
-                            Task { await viewModel.navigateToConversation(id: conversationId) }
-                        } label: {
-                            HStack {
-                                Image(systemName: "bubble.left.and.bubble.right")
-                                Text("View Source Conversation")
-                                Spacer()
-                                Image(systemName: "arrow.up.right")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(OmiColors.textTertiary)
+                        MemoryActionRow(
+                            icon: "bubble.left.and.bubble.right",
+                            title: "View Source Conversation",
+                            iconColor: OmiColors.textPrimary,
+                            textColor: OmiColors.textPrimary,
+                            backgroundColor: OmiColors.backgroundTertiary,
+                            trailingIcon: "arrow.up.right"
+                        ) {
+                            NSApp.keyWindow?.makeFirstResponder(nil)
+                            Task { @MainActor in
+                                try? await Task.sleep(nanoseconds: 100_000_000)
+                                dismiss()
+                                await viewModel.navigateToConversation(id: conversationId)
                             }
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textPrimary)
-                            .padding(12)
-                            .background(OmiColors.backgroundTertiary)
-                            .cornerRadius(8)
                         }
-                        .buttonStyle(.plain)
                     }
 
                     // Delete button
-                    Button {
-                        viewModel.selectedMemory = nil
-                        Task { await viewModel.deleteMemory(memory) }
-                    } label: {
-                        HStack {
-                            Image(systemName: "trash")
-                            Text("Delete Memory")
-                            Spacer()
+                    MemoryActionRow(
+                        icon: "trash",
+                        title: "Delete Memory",
+                        iconColor: OmiColors.error,
+                        textColor: OmiColors.error,
+                        backgroundColor: OmiColors.error.opacity(0.1)
+                    ) {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                            dismiss()
+                            await viewModel.deleteMemory(memory)
                         }
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.error)
-                        .padding(12)
-                        .background(OmiColors.error.opacity(0.1))
-                        .cornerRadius(8)
                     }
-                    .buttonStyle(.plain)
                 }
                 .padding(.top, 8)
             }
@@ -1018,120 +1347,63 @@ struct MemoriesPage: View {
         .background(OmiColors.backgroundSecondary)
     }
 
-    // MARK: - Empty States
-
-    private var emptyState: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "brain.head.profile")
-                .font(.system(size: 48))
-                .foregroundColor(OmiColors.textTertiary)
-
-            Text("No Memories Yet")
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
-
-            Text("Your memories and tips will appear here.\nMemories are extracted from your conversations.")
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textTertiary)
-                .multilineTextAlignment(.center)
-
-            Button {
-                viewModel.showingAddMemory = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                    Text("Add Your First Memory")
-                }
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(OmiColors.purplePrimary)
-                .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 8)
+    private func tagBadge(_ title: String, _ icon: String, _ color: Color) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: icon)
+                .font(.system(size: 10))
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .foregroundColor(color)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(color.opacity(0.15))
+        .cornerRadius(4)
     }
+}
 
-    private var noResultsView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 36))
-                .foregroundColor(OmiColors.textTertiary)
+// MARK: - Memory Action Row
+/// A row button that prevents click-through when tapped, using the same pattern as SafeDismissButton.
+private struct MemoryActionRow: View {
+    let icon: String
+    let title: String
+    let iconColor: Color
+    let textColor: Color
+    let backgroundColor: Color
+    var trailingIcon: String? = nil
+    let action: () -> Void
 
-            Text("No Results")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
-
-            Text("Try a different search or filter")
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textTertiary)
-
-            if !viewModel.selectedTags.isEmpty {
-                Button {
-                    viewModel.selectedTags.removeAll()
-                } label: {
-                    Text("Clear Filters")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(OmiColors.purplePrimary)
-                }
-                .buttonStyle(.plain)
+    var body: some View {
+        HStack {
+            Image(systemName: icon)
+                .foregroundColor(iconColor)
+            Text(title)
+            Spacer()
+            if let trailing = trailingIcon {
+                Image(systemName: trailing)
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textTertiary)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var loadingView: some View {
-        VStack(spacing: 12) {
-            ProgressView()
-                .progressViewStyle(.circular)
-                .scaleEffect(1.2)
-
-            Text("Loading memories...")
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textTertiary)
+        .font(.system(size: 14))
+        .foregroundColor(textColor)
+        .padding(12)
+        .background(backgroundColor)
+        .cornerRadius(8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            action()
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
+}
 
-    private func errorView(_ message: String) -> some View {
-        VStack(spacing: 16) {
-            Image(systemName: "exclamationmark.triangle")
-                .font(.system(size: 36))
-                .foregroundColor(OmiColors.error)
+// MARK: - Add Memory Sheet
 
-            Text("Failed to Load Memories")
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
+struct AddMemorySheet: View {
+    @ObservedObject var viewModel: MemoriesViewModel
+    @Environment(\.dismiss) private var dismiss
 
-            Text(message)
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textTertiary)
-
-            Button {
-                Task { await viewModel.loadMemories() }
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "arrow.clockwise")
-                    Text("Retry")
-                }
-                .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 20)
-                .padding(.vertical, 10)
-                .background(OmiColors.purplePrimary)
-                .cornerRadius(8)
-            }
-            .buttonStyle(.plain)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    // MARK: - Sheets
-
-    private var addMemorySheet: some View {
+    var body: some View {
         VStack(spacing: 20) {
             Text("Add Memory")
                 .font(.system(size: 18, weight: .semibold))
@@ -1147,12 +1419,18 @@ struct MemoriesPage: View {
                 .frame(height: 150)
 
             HStack(spacing: 12) {
-                Button("Cancel") {
-                    viewModel.showingAddMemory = false
-                    viewModel.newMemoryText = ""
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(OmiColors.textSecondary)
+                // Cancel button with safe dismiss
+                Text("Cancel")
+                    .foregroundColor(OmiColors.textSecondary)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                            viewModel.newMemoryText = ""
+                            dismiss()
+                        }
+                    }
 
                 Spacer()
 
@@ -1175,8 +1453,16 @@ struct MemoriesPage: View {
         .frame(width: 400)
         .background(OmiColors.backgroundSecondary)
     }
+}
 
-    private func editMemorySheet(_ memory: ServerMemory) -> some View {
+// MARK: - Edit Memory Sheet
+
+struct EditMemorySheet: View {
+    let memory: ServerMemory
+    @ObservedObject var viewModel: MemoriesViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
         VStack(spacing: 20) {
             Text("Edit Memory")
                 .font(.system(size: 18, weight: .semibold))
@@ -1192,12 +1478,18 @@ struct MemoriesPage: View {
                 .frame(height: 150)
 
             HStack(spacing: 12) {
-                Button("Cancel") {
-                    viewModel.editingMemory = nil
-                    viewModel.editText = ""
-                }
-                .buttonStyle(.plain)
-                .foregroundColor(OmiColors.textSecondary)
+                // Cancel button with safe dismiss
+                Text("Cancel")
+                    .foregroundColor(OmiColors.textSecondary)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                            viewModel.editText = ""
+                            dismiss()
+                        }
+                    }
 
                 Spacer()
 
@@ -1219,136 +1511,5 @@ struct MemoriesPage: View {
         .padding(24)
         .frame(width: 400)
         .background(OmiColors.backgroundSecondary)
-    }
-}
-
-// MARK: - Memory Card View
-
-private struct MemoryCardView: View {
-    let memory: ServerMemory
-    let onTap: () -> Void
-    let categoryIcon: (MemoryCategory) -> String
-    let categoryColor: (MemoryCategory) -> Color
-    let tagColorFor: (String) -> Color
-    let formatDate: (Date) -> String
-
-    @State private var isHovered = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Content
-            Text(memory.content)
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textPrimary)
-                .lineLimit(3)
-                .fixedSize(horizontal: false, vertical: true)
-
-            // Reasoning (for tips)
-            if let reasoning = memory.reasoning, !reasoning.isEmpty {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "quote.opening")
-                        .font(.system(size: 10))
-                        .foregroundColor(OmiColors.textQuaternary)
-                    Text(reasoning)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .lineLimit(2)
-                }
-                .padding(8)
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(6)
-            }
-
-            // Footer - metadata
-            HStack(spacing: 6) {
-                // Unread indicator
-                if memory.isTip && !memory.isRead {
-                    Circle()
-                        .fill(OmiColors.warning)
-                        .frame(width: 6, height: 6)
-                }
-
-                // Category/Tags
-                if memory.isTip {
-                    HStack(spacing: 4) {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 10))
-                        Text("Tips")
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(OmiColors.warning)
-
-                    if let tipCat = memory.tipCategory {
-                        Text("·")
-                            .foregroundColor(OmiColors.textQuaternary)
-                        HStack(spacing: 4) {
-                            Image(systemName: memory.tipCategoryIcon)
-                                .font(.system(size: 10))
-                            Text(tipCat.capitalized)
-                                .font(.system(size: 11, weight: .medium))
-                        }
-                        .foregroundColor(tagColorFor(tipCat))
-                    }
-                } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: categoryIcon(memory.category))
-                            .font(.system(size: 10))
-                        Text(memory.category.displayName)
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                    .foregroundColor(categoryColor(memory.category))
-                }
-
-                // Source device
-                if let sourceName = memory.sourceName {
-                    Text("·")
-                        .foregroundColor(OmiColors.textQuaternary)
-                    HStack(spacing: 4) {
-                        Image(systemName: memory.sourceIcon)
-                            .font(.system(size: 10))
-                        Text(sourceName)
-                            .font(.system(size: 11))
-                    }
-                    .foregroundColor(OmiColors.textTertiary)
-                }
-
-                Spacer()
-
-                // Date
-                Text(formatDate(memory.createdAt))
-                    .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textTertiary)
-
-                // Click hint on hover
-                if isHovered {
-                    Image(systemName: "arrow.up.right")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(isHovered ? OmiColors.backgroundSecondary : OmiColors.backgroundTertiary)
-        .cornerRadius(8)
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : Color.clear, lineWidth: 1)
-        )
-        .contentShape(Rectangle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
-                isHovered = hovering
-            }
-            // Change cursor to pointing hand on hover
-            if hovering {
-                NSCursor.pointingHand.push()
-            } else {
-                NSCursor.pop()
-            }
-        }
-        .onTapGesture {
-            onTap()
-        }
     }
 }
