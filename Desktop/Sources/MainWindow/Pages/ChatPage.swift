@@ -7,6 +7,9 @@ struct ChatPage: View {
     @State private var inputText = ""
     @State private var showAppPicker = false
     @State private var showHistoryPopover = false
+    @State private var selectedCitation: Citation?
+    @State private var citedConversation: ServerConversation?
+    @State private var isLoadingCitation = false
     @FocusState private var isInputFocused: Bool
 
     var selectedApp: OmiApp? {
@@ -31,6 +34,33 @@ struct ChatPage: View {
                 .padding()
         }
         .background(OmiColors.backgroundPrimary)
+        .sheet(item: $citedConversation) { conversation in
+            ConversationDetailView(
+                conversation: conversation,
+                onBack: {
+                    citedConversation = nil
+                    selectedCitation = nil
+                }
+            )
+            .frame(minWidth: 500, minHeight: 500)
+        }
+        .overlay {
+            // Loading overlay when fetching citation
+            if isLoadingCitation {
+                ZStack {
+                    Color.black.opacity(0.3)
+                    VStack(spacing: 12) {
+                        ProgressView()
+                        Text("Loading source...")
+                            .font(.system(size: 13))
+                            .foregroundColor(.white)
+                    }
+                    .padding(20)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(12)
+                }
+            }
+        }
     }
 
     // MARK: - Header
@@ -220,6 +250,9 @@ struct ChatPage: View {
                                     Task {
                                         await chatProvider.rateMessage(message.id, rating: rating)
                                     }
+                                },
+                                onCitationTap: { citation in
+                                    handleCitationTap(citation)
                                 }
                             )
                             .id(message.id)
@@ -346,6 +379,35 @@ struct ChatPage: View {
             await chatProvider.sendMessage(messageText)
         }
     }
+
+    /// Handle tapping on a citation card
+    private func handleCitationTap(_ citation: Citation) {
+        guard citation.sourceType == .conversation else {
+            // Memories don't have a detail view yet
+            log("Citation tapped: \(citation.title) (memory - no detail view)")
+            return
+        }
+
+        selectedCitation = citation
+        isLoadingCitation = true
+
+        // Fetch the full conversation
+        Task {
+            do {
+                let conversation = try await APIClient.shared.getConversation(id: citation.id)
+                await MainActor.run {
+                    citedConversation = conversation
+                    isLoadingCitation = false
+                }
+            } catch {
+                logError("Failed to fetch cited conversation", error: error)
+                await MainActor.run {
+                    isLoadingCitation = false
+                    selectedCitation = nil
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Chat Bubble
@@ -354,6 +416,7 @@ struct ChatBubble: View {
     let message: ChatMessage
     let app: OmiApp?
     let onRate: (Int?) -> Void
+    var onCitationTap: ((Citation) -> Void)? = nil
 
     @State private var isHovering = false
 
@@ -397,6 +460,14 @@ struct ChatBubble: View {
                         .padding(.vertical, 10)
                         .background(message.sender == .user ? OmiColors.purplePrimary : OmiColors.backgroundSecondary)
                         .cornerRadius(18)
+                }
+
+                // Citation cards for AI messages with citations
+                if message.sender == .ai && !message.citations.isEmpty && !message.isStreaming {
+                    CitationCardsView(citations: message.citations) { citation in
+                        onCitationTap?(citation)
+                    }
+                    .frame(maxWidth: 280)
                 }
 
                 // Rating buttons and timestamp row for AI messages (only when synced with backend)
