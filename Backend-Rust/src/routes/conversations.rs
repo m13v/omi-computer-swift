@@ -956,7 +956,7 @@ async fn set_conversation_visibility(
     );
 
     // Verify conversation exists and belongs to user
-    let conversation = state
+    let _conversation = state
         .firestore
         .get_conversation(&user.uid, &conversation_id)
         .await
