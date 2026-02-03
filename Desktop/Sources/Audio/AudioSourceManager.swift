@@ -76,6 +76,7 @@ final class AudioSourceManager: ObservableObject {
     private let logger = Logger(subsystem: "me.omi.desktop", category: "AudioSourceManager")
     private let deviceProvider = DeviceProvider.shared
     private let bleAudioService = BleAudioService.shared
+    private let walService = WALService.shared
 
     // Audio services
     private var audioCaptureService: AudioCaptureService?
@@ -281,13 +282,25 @@ final class AudioSourceManager: ObservableObject {
             throw AudioSourceError.deviceNotConnected
         }
 
-        // Start BLE audio processing with direct audio callback
+        // Get codec for WAL recording
+        let codec = await connection.getAudioCodec()
+
+        // Start WAL recording for offline storage
+        if let device = deviceProvider.connectedDevice {
+            walService.startRecording(device: device.id, codec: codec.rawValue)
+        }
+
+        // Start BLE audio processing with direct audio callback and WAL recording
         await bleAudioService.startProcessing(
             from: connection,
             transcriptionService: nil,  // We'll handle routing ourselves
-            audioDataHandler: { [weak self] monoData in
-                // Convert mono to stereo and forward
-                self?.handleBleAudio(monoData)
+            audioDataHandler: { [weak self] pcmData in
+                // Convert decoded PCM mono to stereo and forward
+                self?.handleBleAudio(pcmData)
+            },
+            rawFrameHandler: { [weak self] rawFrame in
+                // Record raw encoded frame to WAL for offline storage
+                self?.walService.addFrame(rawFrame, synced: true)
             }
         )
 
@@ -304,6 +317,9 @@ final class AudioSourceManager: ObservableObject {
         bleAudioService.stopProcessing()
         buttonStreamTask?.cancel()
         buttonStreamTask = nil
+
+        // Stop WAL recording
+        walService.stopRecording()
     }
 
     /// Handle decoded mono PCM from BLE device
