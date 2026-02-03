@@ -245,10 +245,71 @@ async fn mark_all_read(
     }
 }
 
+/// PATCH /v3/memories/visibility - Update visibility of all memories
+async fn update_all_visibility(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<UpdateVisibilityRequest>,
+) -> Result<Json<MemoryStatusResponse>, StatusCode> {
+    tracing::info!(
+        "Updating all memories visibility to '{}' for user {}",
+        request.value,
+        user.uid
+    );
+
+    match state
+        .firestore
+        .update_all_memories_visibility(&user.uid, &request.value)
+        .await
+    {
+        Ok(count) => {
+            tracing::info!(
+                "Updated visibility for {} memories for user {}",
+                count,
+                user.uid
+            );
+            Ok(Json(MemoryStatusResponse {
+                status: format!("updated {} memories", count),
+            }))
+        }
+        Err(e) => {
+            tracing::error!("Failed to update all memories visibility: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+/// DELETE /v3/memories - Delete all memories
+async fn delete_all_memories(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<MemoryStatusResponse>, StatusCode> {
+    tracing::info!("Deleting all memories for user {}", user.uid);
+
+    match state.firestore.delete_all_memories(&user.uid).await {
+        Ok(count) => {
+            tracing::info!("Deleted {} memories for user {}", count, user.uid);
+            Ok(Json(MemoryStatusResponse {
+                status: format!("deleted {} memories", count),
+            }))
+        }
+        Err(e) => {
+            tracing::error!("Failed to delete all memories: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub fn memories_routes() -> Router<AppState> {
     Router::new()
-        .route("/v3/memories", get(get_memories).post(create_memory))
+        .route(
+            "/v3/memories",
+            get(get_memories)
+                .post(create_memory)
+                .delete(delete_all_memories),
+        )
         .route("/v3/memories/mark-all-read", post(mark_all_read))
+        .route("/v3/memories/visibility", patch(update_all_visibility))
         .route("/v3/memories/:id", delete(delete_memory).patch(edit_memory))
         .route("/v3/memories/:id/visibility", patch(update_visibility))
         .route("/v3/memories/:id/review", post(review_memory))
