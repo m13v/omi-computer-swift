@@ -198,11 +198,10 @@ struct DashboardPage: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
             }
-        }
-        .onAppear {
-            // Reset scroll position to top when view appears
-            proxy.scrollTo("dashboard-top", anchor: .top)
-        }
+            .onAppear {
+                // Reset scroll position to top when view appears
+                proxy.scrollTo("dashboard-top", anchor: .top)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
