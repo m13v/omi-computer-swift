@@ -180,7 +180,7 @@ final class OpusAudioDecoder: AudioCodecDecoder {
 
         // Validate Opus TOC byte
         let tocByte = data[0]
-        guard isValidOpusToc(tocByte) else {
+        if !isValidOpusToc(tocByte) {
             logger.debug("Invalid Opus TOC byte: 0x\(String(format: "%02x", tocByte))")
             // Still try to decode - might be valid
         }
