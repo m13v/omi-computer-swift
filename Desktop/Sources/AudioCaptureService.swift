@@ -286,8 +286,8 @@ class AudioCaptureService {
         }
 
         // Get the device name
-        var name: CFString = "" as CFString
-        size = UInt32(MemoryLayout<CFString>.size)
+        var name: Unmanaged<CFString>?
+        size = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
         address.mSelector = kAudioObjectPropertyName
 
         let nameStatus = AudioObjectGetPropertyData(
@@ -299,11 +299,11 @@ class AudioCaptureService {
             &name
         )
 
-        guard nameStatus == noErr else {
+        guard nameStatus == noErr, let cfName = name?.takeRetainedValue() else {
             return nil
         }
 
-        return name as String
+        return cfName as String
     }
 
     // MARK: - Private Methods
