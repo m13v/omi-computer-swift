@@ -76,28 +76,35 @@ enum MemoryTag: String, CaseIterable, Identifiable {
     }
 }
 
-struct MemoriesPage: View {
-    @State private var memories: [ServerMemory] = []
-    @State private var isLoading = false
-    @State private var errorMessage: String?
-    @State private var searchText = ""
-    @State private var selectedTags: Set<MemoryTag> = []
-    @State private var showingAddMemory = false
-    @State private var newMemoryText = ""
-    @State private var editingMemory: ServerMemory? = nil
-    @State private var editText = ""
-    @State private var selectedMemory: ServerMemory? = nil
+// MARK: - Memories View Model
+
+@MainActor
+class MemoriesViewModel: ObservableObject {
+    @Published var memories: [ServerMemory] = []
+    @Published var isLoading = false
+    @Published var errorMessage: String?
+    @Published var searchText = ""
+    @Published var selectedTags: Set<MemoryTag> = []
+    @Published var showingAddMemory = false
+    @Published var newMemoryText = ""
+    @Published var editingMemory: ServerMemory? = nil
+    @Published var editText = ""
+    @Published var selectedMemory: ServerMemory? = nil
 
     // Undo delete state
-    @State private var pendingDeleteMemory: ServerMemory? = nil
-    @State private var deleteTask: Task<Void, Never>? = nil
-    @State private var undoTimeRemaining: Double = 0
+    @Published var pendingDeleteMemory: ServerMemory? = nil
+    @Published var undoTimeRemaining: Double = 0
+    private var deleteTask: Task<Void, Never>? = nil
 
     // Bulk operations state
-    @State private var showingDeleteAllConfirmation = false
-    @State private var isBulkOperationInProgress = false
+    @Published var showingDeleteAllConfirmation = false
+    @Published var isBulkOperationInProgress = false
 
-    private var filteredMemories: [ServerMemory] {
+    // Conversation linking state
+    @Published var linkedConversation: ServerConversation? = nil
+    @Published var isLoadingConversation = false
+
+    var filteredMemories: [ServerMemory] {
         var result = memories
 
         // Filter by selected tags (OR logic - match any selected tag)
@@ -119,14 +126,229 @@ struct MemoriesPage: View {
     }
 
     /// Count memories for a specific tag
-    private func tagCount(_ tag: MemoryTag) -> Int {
+    func tagCount(_ tag: MemoryTag) -> Int {
         memories.filter { tag.matches($0) }.count
     }
 
     /// Total unread tips count
-    private var unreadTipsCount: Int {
+    var unreadTipsCount: Int {
         memories.filter { $0.isTip && !$0.isRead }.count
     }
+
+    // MARK: - API Actions
+
+    func loadMemories() async {
+        isLoading = true
+        errorMessage = nil
+
+        do {
+            // Use high limit to fetch all memories (rejected memories are filtered server-side
+            // but the filter happens after the Firestore limit, so we need a high limit)
+            memories = try await APIClient.shared.getMemories(limit: 10000)
+        } catch {
+            errorMessage = error.localizedDescription
+            logError("Failed to load memories", error: error)
+        }
+
+        isLoading = false
+    }
+
+    func createMemory() async {
+        guard !newMemoryText.isEmpty else { return }
+
+        do {
+            _ = try await APIClient.shared.createMemory(content: newMemoryText)
+            showingAddMemory = false
+            newMemoryText = ""
+            await loadMemories()
+        } catch {
+            logError("Failed to create memory", error: error)
+        }
+    }
+
+    func deleteMemory(_ memory: ServerMemory) async {
+        // Cancel any existing pending delete
+        deleteTask?.cancel()
+        if let existingPending = pendingDeleteMemory {
+            // Immediately delete the previous pending memory
+            await performActualDelete(existingPending)
+        }
+
+        // Remove from UI immediately (optimistic)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            memories.removeAll { $0.id == memory.id }
+            pendingDeleteMemory = memory
+            undoTimeRemaining = 4
+        }
+
+        // Start countdown timer
+        deleteTask = Task {
+            // Update countdown every 100ms
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    undoTimeRemaining = max(0, undoTimeRemaining - 0.1)
+                }
+            }
+
+            if Task.isCancelled { return }
+
+            // Timer expired, perform actual delete
+            await MainActor.run {
+                confirmDelete()
+            }
+        }
+    }
+
+    func undoDelete() {
+        guard let memory = pendingDeleteMemory else { return }
+
+        // Cancel the delete timer
+        deleteTask?.cancel()
+        deleteTask = nil
+
+        // Restore the memory to the list
+        withAnimation(.easeInOut(duration: 0.2)) {
+            memories.append(memory)
+            memories.sort { $0.createdAt > $1.createdAt }
+            pendingDeleteMemory = nil
+            undoTimeRemaining = 0
+        }
+    }
+
+    func confirmDelete() {
+        guard let memory = pendingDeleteMemory else { return }
+
+        // Cancel timer if still running
+        deleteTask?.cancel()
+        deleteTask = nil
+
+        Task {
+            await performActualDelete(memory)
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            pendingDeleteMemory = nil
+            undoTimeRemaining = 0
+        }
+    }
+
+    private func performActualDelete(_ memory: ServerMemory) async {
+        do {
+            try await APIClient.shared.deleteMemory(id: memory.id)
+            AnalyticsManager.shared.memoryDeleted(conversationId: memory.id)
+        } catch {
+            logError("Failed to delete memory", error: error)
+            // Restore on failure
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if !memories.contains(where: { $0.id == memory.id }) {
+                        memories.append(memory)
+                        memories.sort { $0.createdAt > $1.createdAt }
+                    }
+                }
+            }
+        }
+    }
+
+    func saveEditedMemory(_ memory: ServerMemory) async {
+        guard !editText.isEmpty else { return }
+
+        do {
+            try await APIClient.shared.editMemory(id: memory.id, content: editText)
+            editingMemory = nil
+            editText = ""
+            await loadMemories()
+        } catch {
+            logError("Failed to edit memory", error: error)
+        }
+    }
+
+    func toggleVisibility(_ memory: ServerMemory) async {
+        let newVisibility = memory.isPublic ? "private" : "public"
+        do {
+            try await APIClient.shared.updateMemoryVisibility(id: memory.id, visibility: newVisibility)
+            await loadMemories()
+        } catch {
+            logError("Failed to update memory visibility", error: error)
+        }
+    }
+
+    func markAsRead(_ memory: ServerMemory) async {
+        do {
+            _ = try await APIClient.shared.updateMemoryReadStatus(id: memory.id, isRead: true, isDismissed: nil)
+            await loadMemories()
+        } catch {
+            logError("Failed to mark memory as read", error: error)
+        }
+    }
+
+    // MARK: - Bulk Operations
+
+    func makeAllMemoriesPrivate() async {
+        isBulkOperationInProgress = true
+        do {
+            try await APIClient.shared.updateAllMemoriesVisibility(visibility: "private")
+            await loadMemories()
+        } catch {
+            logError("Failed to make all memories private", error: error)
+        }
+        isBulkOperationInProgress = false
+    }
+
+    func makeAllMemoriesPublic() async {
+        isBulkOperationInProgress = true
+        do {
+            try await APIClient.shared.updateAllMemoriesVisibility(visibility: "public")
+            await loadMemories()
+        } catch {
+            logError("Failed to make all memories public", error: error)
+        }
+        isBulkOperationInProgress = false
+    }
+
+    func deleteAllMemories() async {
+        isBulkOperationInProgress = true
+
+        // Cancel any pending single delete
+        deleteTask?.cancel()
+        pendingDeleteMemory = nil
+
+        do {
+            try await APIClient.shared.deleteAllMemories()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                memories.removeAll()
+            }
+        } catch {
+            logError("Failed to delete all memories", error: error)
+            // Reload to restore state
+            await loadMemories()
+        }
+        isBulkOperationInProgress = false
+    }
+
+    // MARK: - Conversation Linking
+
+    func navigateToConversation(id: String) async {
+        isLoadingConversation = true
+        do {
+            linkedConversation = try await APIClient.shared.getConversation(id: id)
+        } catch {
+            logError("Failed to load conversation", error: error)
+        }
+        isLoadingConversation = false
+    }
+
+    func dismissConversation() {
+        linkedConversation = nil
+    }
+}
+
+// MARK: - Memories Page
+
+struct MemoriesPage: View {
+    @ObservedObject var viewModel: MemoriesViewModel
 
     var body: some View {
         VStack(spacing: 0) {
@@ -137,33 +359,30 @@ struct MemoriesPage: View {
             filterBar
 
             // Content
-            if isLoading && memories.isEmpty {
+            if viewModel.isLoading && viewModel.memories.isEmpty {
                 loadingView
-            } else if let error = errorMessage {
+            } else if let error = viewModel.errorMessage {
                 errorView(error)
-            } else if memories.isEmpty {
+            } else if viewModel.memories.isEmpty {
                 emptyState
-            } else if filteredMemories.isEmpty {
+            } else if viewModel.filteredMemories.isEmpty {
                 noResultsView
             } else {
                 memoryList
             }
         }
         .background(Color.clear)
-        .sheet(isPresented: $showingAddMemory) {
+        .sheet(isPresented: $viewModel.showingAddMemory) {
             addMemorySheet
         }
-        .sheet(item: $editingMemory) { memory in
+        .sheet(item: $viewModel.editingMemory) { memory in
             editMemorySheet(memory)
         }
-        .sheet(item: $selectedMemory) { memory in
+        .sheet(item: $viewModel.selectedMemory) { memory in
             memoryDetailSheet(memory)
         }
         .overlay(alignment: .bottom) {
             undoDeleteToast
-        }
-        .task {
-            await loadMemories()
         }
     }
 
@@ -171,7 +390,7 @@ struct MemoriesPage: View {
 
     @ViewBuilder
     private var undoDeleteToast: some View {
-        if pendingDeleteMemory != nil {
+        if viewModel.pendingDeleteMemory != nil {
             HStack(spacing: 12) {
                 Image(systemName: "trash")
                     .font(.system(size: 14))
@@ -184,13 +403,13 @@ struct MemoriesPage: View {
                 Spacer()
 
                 // Progress indicator
-                Text(String(format: "%.0fs", undoTimeRemaining))
+                Text(String(format: "%.0fs", viewModel.undoTimeRemaining))
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(OmiColors.textTertiary)
                     .monospacedDigit()
 
                 Button {
-                    undoDelete()
+                    viewModel.undoDelete()
                 } label: {
                     Text("Undo")
                         .font(.system(size: 14, weight: .semibold))
@@ -200,7 +419,7 @@ struct MemoriesPage: View {
 
                 Button {
                     // Dismiss immediately and delete now
-                    confirmDelete()
+                    viewModel.confirmDelete()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 12, weight: .medium))
@@ -220,7 +439,7 @@ struct MemoriesPage: View {
             .padding(.horizontal, 24)
             .padding(.bottom, 24)
             .transition(.move(edge: .bottom).combined(with: .opacity))
-            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: pendingDeleteMemory != nil)
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: viewModel.pendingDeleteMemory != nil)
         }
     }
 
@@ -234,12 +453,12 @@ struct MemoriesPage: View {
                     .foregroundColor(OmiColors.textPrimary)
 
                 HStack(spacing: 8) {
-                    Text("\(memories.count) memories")
+                    Text("\(viewModel.memories.count) memories")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
 
-                    if unreadTipsCount > 0 {
-                        Text("\(unreadTipsCount) new tips")
+                    if viewModel.unreadTipsCount > 0 {
+                        Text("\(viewModel.unreadTipsCount) new tips")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(OmiColors.warning)
                             .padding(.horizontal, 8)
@@ -254,7 +473,7 @@ struct MemoriesPage: View {
 
             HStack(spacing: 8) {
                 Button {
-                    showingAddMemory = true
+                    viewModel.showingAddMemory = true
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "plus")
@@ -273,59 +492,52 @@ struct MemoriesPage: View {
                 Menu {
                     Section("Visibility") {
                         Button {
-                            Task { await makeAllMemoriesPrivate() }
+                            Task { await viewModel.makeAllMemoriesPrivate() }
                         } label: {
                             Label("Make All Private", systemImage: "lock")
                         }
-                        .disabled(memories.isEmpty || isBulkOperationInProgress)
+                        .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
 
                         Button {
-                            Task { await makeAllMemoriesPublic() }
+                            Task { await viewModel.makeAllMemoriesPublic() }
                         } label: {
                             Label("Make All Public", systemImage: "globe")
                         }
-                        .disabled(memories.isEmpty || isBulkOperationInProgress)
+                        .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
                     }
 
                     Divider()
 
                     Section {
                         Button(role: .destructive) {
-                            showingDeleteAllConfirmation = true
+                            viewModel.showingDeleteAllConfirmation = true
                         } label: {
                             Label("Delete All Memories", systemImage: "trash")
                         }
-                        .disabled(memories.isEmpty || isBulkOperationInProgress)
+                        .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
                     }
                 } label: {
-                    Image(systemName: isBulkOperationInProgress ? "ellipsis.circle" : "ellipsis")
-                        .font(.system(size: 16))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(OmiColors.textSecondary)
                         .frame(width: 32, height: 32)
                         .background(OmiColors.backgroundTertiary)
                         .cornerRadius(8)
-                        .overlay(
-                            Group {
-                                if isBulkOperationInProgress {
-                                    ProgressView()
-                                        .scaleEffect(0.5)
-                                }
-                            }
-                        )
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
             }
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 16)
-        .alert("Delete All Memories?", isPresented: $showingDeleteAllConfirmation) {
+        .alert("Delete All Memories?", isPresented: $viewModel.showingDeleteAllConfirmation) {
             Button("Cancel", role: .cancel) { }
             Button("Delete All", role: .destructive) {
-                Task { await deleteAllMemories() }
+                Task { await viewModel.deleteAllMemories() }
             }
         } message: {
-            Text("This will permanently delete all \(memories.count) memories. This action cannot be undone.")
+            Text("This will permanently delete all \(viewModel.memories.count) memories. This action cannot be undone.")
         }
     }
 
@@ -338,13 +550,13 @@ struct MemoriesPage: View {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(OmiColors.textTertiary)
 
-                TextField("Search memories...", text: $searchText)
+                TextField("Search memories...", text: $viewModel.searchText)
                     .textFieldStyle(.plain)
                     .foregroundColor(OmiColors.textPrimary)
 
-                if !searchText.isEmpty {
+                if !viewModel.searchText.isEmpty {
                     Button {
-                        searchText = ""
+                        viewModel.searchText = ""
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(OmiColors.textTertiary)
@@ -361,7 +573,7 @@ struct MemoriesPage: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     // All button
-                    tagFilterButton(nil, "All", "tray.full", memories.count)
+                    tagFilterButton(nil, "All", "tray.full", viewModel.memories.count)
 
                     // Divider
                     Rectangle()
@@ -371,23 +583,23 @@ struct MemoriesPage: View {
 
                     // Tags in order: tips first, then categories, then tip subcategories
                     ForEach(MemoryTag.allCases) { tag in
-                        tagFilterButton(tag, tag.displayName, tag.icon, tagCount(tag))
+                        tagFilterButton(tag, tag.displayName, tag.icon, viewModel.tagCount(tag))
                     }
 
                     Spacer()
 
                     // Refresh button
                     Button {
-                        Task { await loadMemories() }
+                        Task { await viewModel.loadMemories() }
                     } label: {
                         Image(systemName: "arrow.clockwise")
                             .font(.system(size: 13))
                             .foregroundColor(OmiColors.textTertiary)
-                            .rotationEffect(.degrees(isLoading ? 360 : 0))
-                            .animation(isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: isLoading)
+                            .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+                            .animation(viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
                     }
                     .buttonStyle(.plain)
-                    .disabled(isLoading)
+                    .disabled(viewModel.isLoading)
                 }
             }
         }
@@ -396,18 +608,18 @@ struct MemoriesPage: View {
     }
 
     private func tagFilterButton(_ tag: MemoryTag?, _ title: String, _ icon: String, _ count: Int) -> some View {
-        let isSelected = tag == nil ? selectedTags.isEmpty : selectedTags.contains(tag!)
+        let isSelected = tag == nil ? viewModel.selectedTags.isEmpty : viewModel.selectedTags.contains(tag!)
 
         return Button {
             if tag == nil {
                 // "All" clears selection
-                selectedTags.removeAll()
+                viewModel.selectedTags.removeAll()
             } else {
                 // Toggle tag selection
-                if selectedTags.contains(tag!) {
-                    selectedTags.remove(tag!)
+                if viewModel.selectedTags.contains(tag!) {
+                    viewModel.selectedTags.remove(tag!)
                 } else {
-                    selectedTags.insert(tag!)
+                    viewModel.selectedTags.insert(tag!)
                 }
             }
         } label: {
@@ -447,13 +659,13 @@ struct MemoriesPage: View {
     private var memoryList: some View {
         ScrollView {
             LazyVStack(spacing: 12) {
-                ForEach(filteredMemories) { memory in
+                ForEach(viewModel.filteredMemories) { memory in
                     memoryCard(memory)
                         .onTapGesture {
-                            selectedMemory = memory
+                            viewModel.selectedMemory = memory
                             // Auto-mark tips as read when opened
                             if memory.isTip && !memory.isRead {
-                                Task { await markAsRead(memory) }
+                                Task { await viewModel.markAsRead(memory) }
                             }
                         }
                 }
@@ -586,14 +798,14 @@ struct MemoriesPage: View {
                 // Actions menu
                 Menu {
                     Button {
-                        editingMemory = memory
-                        editText = memory.content
+                        viewModel.editingMemory = memory
+                        viewModel.editText = memory.content
                     } label: {
                         Label("Edit", systemImage: "pencil")
                     }
 
                     Button {
-                        Task { await toggleVisibility(memory) }
+                        Task { await viewModel.toggleVisibility(memory) }
                     } label: {
                         Label(memory.isPublic ? "Make Private" : "Make Public",
                               systemImage: memory.isPublic ? "lock" : "globe")
@@ -601,7 +813,7 @@ struct MemoriesPage: View {
 
                     if memory.isTip && !memory.isRead {
                         Button {
-                            Task { await markAsRead(memory) }
+                            Task { await viewModel.markAsRead(memory) }
                         } label: {
                             Label("Mark as Read", systemImage: "checkmark.circle")
                         }
@@ -610,17 +822,20 @@ struct MemoriesPage: View {
                     Divider()
 
                     Button(role: .destructive) {
-                        Task { await deleteMemory(memory) }
+                        Task { await viewModel.deleteMemory(memory) }
                     } label: {
                         Label("Delete", systemImage: "trash")
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.system(size: 12))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .medium))
                         .foregroundColor(OmiColors.textTertiary)
                         .frame(width: 24, height: 24)
+                        .background(OmiColors.backgroundSecondary)
+                        .cornerRadius(6)
                 }
                 .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
             }
         }
         .padding(16)
@@ -704,7 +919,7 @@ struct MemoriesPage: View {
                     Spacer()
 
                     Button {
-                        selectedMemory = nil
+                        viewModel.selectedMemory = nil
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .font(.system(size: 20))
@@ -852,7 +1067,7 @@ struct MemoriesPage: View {
                 .multilineTextAlignment(.center)
 
             Button {
-                showingAddMemory = true
+                viewModel.showingAddMemory = true
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "plus")
@@ -885,9 +1100,9 @@ struct MemoriesPage: View {
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textTertiary)
 
-            if !selectedTags.isEmpty {
+            if !viewModel.selectedTags.isEmpty {
                 Button {
-                    selectedTags.removeAll()
+                    viewModel.selectedTags.removeAll()
                 } label: {
                     Text("Clear Filters")
                         .font(.system(size: 13, weight: .medium))
@@ -927,7 +1142,7 @@ struct MemoriesPage: View {
                 .foregroundColor(OmiColors.textTertiary)
 
             Button {
-                Task { await loadMemories() }
+                Task { await viewModel.loadMemories() }
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: "arrow.clockwise")
@@ -953,7 +1168,7 @@ struct MemoriesPage: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
 
-            TextEditor(text: $newMemoryText)
+            TextEditor(text: $viewModel.newMemoryText)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
                 .scrollContentBackground(.hidden)
@@ -964,8 +1179,8 @@ struct MemoriesPage: View {
 
             HStack(spacing: 12) {
                 Button("Cancel") {
-                    showingAddMemory = false
-                    newMemoryText = ""
+                    viewModel.showingAddMemory = false
+                    viewModel.newMemoryText = ""
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(OmiColors.textSecondary)
@@ -973,18 +1188,18 @@ struct MemoriesPage: View {
                 Spacer()
 
                 Button {
-                    Task { await createMemory() }
+                    Task { await viewModel.createMemory() }
                 } label: {
                     Text("Save")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(newMemoryText.isEmpty ? OmiColors.textQuaternary : OmiColors.purplePrimary)
+                        .background(viewModel.newMemoryText.isEmpty ? OmiColors.textQuaternary : OmiColors.purplePrimary)
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-                .disabled(newMemoryText.isEmpty)
+                .disabled(viewModel.newMemoryText.isEmpty)
             }
         }
         .padding(24)
@@ -998,7 +1213,7 @@ struct MemoriesPage: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
 
-            TextEditor(text: $editText)
+            TextEditor(text: $viewModel.editText)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
                 .scrollContentBackground(.hidden)
@@ -1009,8 +1224,8 @@ struct MemoriesPage: View {
 
             HStack(spacing: 12) {
                 Button("Cancel") {
-                    editingMemory = nil
-                    editText = ""
+                    viewModel.editingMemory = nil
+                    viewModel.editText = ""
                 }
                 .buttonStyle(.plain)
                 .foregroundColor(OmiColors.textSecondary)
@@ -1018,89 +1233,23 @@ struct MemoriesPage: View {
                 Spacer()
 
                 Button {
-                    Task { await saveEditedMemory(memory) }
+                    Task { await viewModel.saveEditedMemory(memory) }
                 } label: {
                     Text("Save")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(.white)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(editText.isEmpty ? OmiColors.textQuaternary : OmiColors.purplePrimary)
+                        .background(viewModel.editText.isEmpty ? OmiColors.textQuaternary : OmiColors.purplePrimary)
                         .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
-                .disabled(editText.isEmpty)
+                .disabled(viewModel.editText.isEmpty)
             }
         }
         .padding(24)
         .frame(width: 400)
         .background(OmiColors.backgroundSecondary)
-    }
-
-    // MARK: - API Actions
-
-    private func loadMemories() async {
-        isLoading = true
-        errorMessage = nil
-
-        do {
-            memories = try await APIClient.shared.getMemories()
-        } catch {
-            errorMessage = error.localizedDescription
-            logError("Failed to load memories", error: error)
-        }
-
-        isLoading = false
-    }
-
-    private func createMemory() async {
-        guard !newMemoryText.isEmpty else { return }
-
-        do {
-            _ = try await APIClient.shared.createMemory(content: newMemoryText)
-            showingAddMemory = false
-            newMemoryText = ""
-            await loadMemories()
-        } catch {
-            logError("Failed to create memory", error: error)
-        }
-    }
-
-    private func deleteMemory(_ memory: ServerMemory) async {
-        // Cancel any existing pending delete
-        deleteTask?.cancel()
-        if let existingPending = pendingDeleteMemory {
-            // Immediately delete the previous pending memory
-            await performActualDelete(existingPending)
-        }
-
-        // Remove from UI immediately (optimistic)
-        withAnimation(.easeInOut(duration: 0.2)) {
-            memories.removeAll { $0.id == memory.id }
-            pendingDeleteMemory = memory
-            undoTimeRemaining = 4
-        }
-
-        // Start countdown timer
-        deleteTask = Task {
-            // Update countdown every 100ms
-            for _ in 0..<40 {
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                if Task.isCancelled { return }
-                await MainActor.run {
-                    undoTimeRemaining = max(0, undoTimeRemaining - 0.1)
-                }
-            }
-
-            if Task.isCancelled { return }
-
-            // Timer expired, perform actual delete
-            await MainActor.run {
-                Task {
-                    await confirmDelete()
-                }
-            }
-        }
     }
 
     private func undoDelete() {
