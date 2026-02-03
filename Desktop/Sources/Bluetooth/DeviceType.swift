@@ -144,6 +144,28 @@ enum DeviceType: String, CaseIterable, Codable {
         We recommend keeping your current firmware and not updating through the \(appName) app, as newer versions may affect compatibility.
         """
     }
+
+    /// SF Symbol icon name for this device type
+    var iconName: String {
+        switch self {
+        case .omi, .openglass:
+            return "wave.3.right.circle.fill"
+        case .frame:
+            return "eyeglasses"
+        case .appleWatch:
+            return "applewatch"
+        case .plaud:
+            return "waveform.circle.fill"
+        case .bee:
+            return "antenna.radiowaves.left.and.right.circle.fill"
+        case .fieldy:
+            return "circle.dotted"
+        case .friendPendant:
+            return "person.wave.2.fill"
+        case .limitless:
+            return "infinity.circle.fill"
+        }
+    }
 }
 
 // MARK: - Audio Codec Support
