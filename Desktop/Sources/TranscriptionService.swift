@@ -66,7 +66,8 @@ class TranscriptionService {
 
     // Configuration
     private let model = "nova-3"
-    private let language = "en"
+    private let language: String
+    private let vocabulary: [String]
     private let sampleRate = 16000
     private let encoding = "linear16"
     private let channels = 2  // Stereo: channel 0 = mic (user), channel 1 = system audio (others)
@@ -87,11 +88,19 @@ class TranscriptionService {
 
     // MARK: - Initialization
 
-    init(apiKey: String? = nil) throws {
+    /// Initialize the transcription service
+    /// - Parameters:
+    ///   - apiKey: DeepGram API key (defaults to DEEPGRAM_API_KEY environment variable)
+    ///   - language: Language code for transcription (e.g., "en", "uk", "ru", "multi" for auto-detect)
+    ///   - vocabulary: Custom vocabulary/keyterms to improve transcription accuracy (Nova-3 limit: 500 tokens total)
+    init(apiKey: String? = nil, language: String = "en", vocabulary: [String] = []) throws {
         guard let key = apiKey ?? ProcessInfo.processInfo.environment["DEEPGRAM_API_KEY"] else {
             throw TranscriptionError.missingAPIKey
         }
         self.apiKey = key
+        self.language = language
+        self.vocabulary = vocabulary
+        log("TranscriptionService: Initialized with language=\(language), vocabulary=\(self.vocabulary.count) terms")
     }
 
     // MARK: - Public Methods
@@ -180,7 +189,7 @@ class TranscriptionService {
     private func connect() {
         // Build DeepGram WebSocket URL with parameters
         var components = URLComponents(string: "wss://api.deepgram.com/v1/listen")!
-        components.queryItems = [
+        var queryItems = [
             URLQueryItem(name: "model", value: model),
             URLQueryItem(name: "language", value: language),
             URLQueryItem(name: "smart_format", value: "true"),
@@ -196,6 +205,13 @@ class TranscriptionService {
             URLQueryItem(name: "channels", value: String(channels)),
             URLQueryItem(name: "multichannel", value: "true"),  // Enable per-channel transcription
         ]
+
+        // Add keyterm parameters for custom vocabulary (Nova-3 uses "keyterm" not "keywords")
+        for term in vocabulary {
+            queryItems.append(URLQueryItem(name: "keyterm", value: term))
+        }
+
+        components.queryItems = queryItems
 
         guard let url = components.url else {
             onError?(TranscriptionError.connectionFailed(NSError(domain: "Invalid URL", code: -1)))
