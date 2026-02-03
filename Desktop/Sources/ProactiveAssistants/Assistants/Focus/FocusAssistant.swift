@@ -476,18 +476,32 @@ actor FocusAssistant: ProactiveAssistant {
         }
     }
 
-    /// Sync focus session to backend, returns backend ID if successful
+    /// Sync focus session to backend as a memory with focus tags, returns backend ID if successful
     private func syncFocusSessionToBackend(analysis: ScreenAnalysis) async -> String? {
         do {
-            let request = CreateFocusSessionRequest(
-                status: analysis.status.rawValue,
-                appOrSite: analysis.appOrSite,
-                description: analysis.description,
-                message: analysis.message
+            // Build content for the memory
+            let statusText = analysis.status == .focused ? "Focused" : "Distracted"
+            let content = "\(statusText) on \(analysis.appOrSite): \(analysis.description)"
+
+            // Build tags: ["focus", "focused"/"distracted", "app:{appName}"]
+            let statusTag = analysis.status == .focused ? "focused" : "distracted"
+            let appTag = "app:\(analysis.appOrSite)"
+            var tags = ["focus", statusTag, appTag]
+
+            // Add message indicator if present
+            if let message = analysis.message, !message.isEmpty {
+                tags.append("has-message")
+            }
+
+            let response = try await APIClient.shared.createMemory(
+                content: content,
+                visibility: "private",
+                category: .system,
+                tags: tags,
+                source: "desktop"
             )
 
-            let response: FocusSessionResponse = try await APIClient.shared.createFocusSession(request)
-            log("Focus: Synced to backend (id: \(response.id))")
+            log("Focus: Synced as memory to backend (id: \(response.id))")
             return response.id
         } catch {
             logError("Focus: Failed to sync to backend", error: error)
