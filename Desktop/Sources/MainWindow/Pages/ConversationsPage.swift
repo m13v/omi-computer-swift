@@ -29,6 +29,7 @@ struct ConversationsPage: View {
     @ObservedObject var appState: AppState
     @ObservedObject private var audioLevels = AudioLevelMonitor.shared
     @ObservedObject private var recordingTimer = RecordingTimer.shared
+    @ObservedObject private var liveTranscript = LiveTranscriptMonitor.shared
     @State private var selectedConversation: ServerConversation? = nil
 
     // Transcript visibility state - hidden by default
@@ -149,7 +150,7 @@ struct ConversationsPage: View {
             .background(OmiColors.backgroundTertiary.opacity(0.5))
 
             // Full-page transcript
-            if appState.liveSpeakerSegments.isEmpty {
+            if liveTranscript.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "waveform")
                         .font(.system(size: 32))
@@ -161,7 +162,7 @@ struct ConversationsPage: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                LiveTranscriptView(segments: appState.liveSpeakerSegments)
+                LiveTranscriptView(segments: liveTranscript.segments)
             }
         }
     }
@@ -921,9 +922,9 @@ struct ConversationsPage: View {
 
     /// Get the latest transcript text for inline display
     private var latestTranscriptText: String? {
-        guard !appState.liveSpeakerSegments.isEmpty else { return nil }
+        guard !liveTranscript.isEmpty else { return nil }
         // Get the last segment's text
-        return appState.liveSpeakerSegments.last?.text
+        return liveTranscript.latestText
     }
 
     // MARK: - Saving Indicator
