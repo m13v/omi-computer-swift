@@ -5,6 +5,13 @@ import os.log
 import SwiftUI
 import UserNotifications
 
+// MARK: - Notification Names
+
+extension Notification.Name {
+    /// Posted when device has storage data available to sync
+    static let storageSyncAvailable = Notification.Name("storageSyncAvailable")
+}
+
 /// State management for Bluetooth device connectivity
 /// Ported from: omi/app/lib/providers/device_provider.dart
 @MainActor
@@ -429,6 +436,34 @@ final class DeviceProvider: ObservableObject {
 
         let storageList = await connection.getStorageList()
         isDeviceStorageSupported = !storageList.isEmpty
+
+        // Check for pending storage data to sync
+        if isDeviceStorageSupported {
+            await checkPendingStorageSync()
+        }
+    }
+
+    /// Check if device has pending storage data to sync
+    private func checkPendingStorageSync() async {
+        guard let (totalBytes, currentOffset) = await StorageSyncService.shared.checkForStorageData() else {
+            return
+        }
+
+        let bytesToSync = totalBytes - currentOffset
+
+        // Only notify if there's significant data (more than 10 seconds worth)
+        let minBytesThreshold = 80 * 100 * 10 // 80 bytes/frame * 100 fps * 10 seconds
+        if bytesToSync >= minBytesThreshold {
+            let mbToSync = Double(bytesToSync) / (1024 * 1024)
+            logger.info("Device has \(String(format: "%.1f", mbToSync)) MB of audio data pending sync")
+
+            // Post notification that storage sync is available
+            NotificationCenter.default.post(
+                name: .storageSyncAvailable,
+                object: nil,
+                userInfo: ["bytesToSync": bytesToSync]
+            )
+        }
     }
 
     // MARK: - Firmware Updates
