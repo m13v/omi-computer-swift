@@ -119,14 +119,15 @@ async fn main() {
     let integrations = Arc::new(IntegrationService::new());
 
     // Initialize Redis (optional - for conversation visibility/sharing)
-    let redis = if let Some(redis_url) = config.redis_url() {
-        match RedisService::new(&redis_url) {
+    // Use explicit connection params to avoid URL encoding issues with special characters in password
+    let redis = if let Some(host) = &config.redis_host {
+        match RedisService::new_with_params(host, config.redis_port, config.redis_password.as_deref()) {
             Ok(rs) => {
-                tracing::info!("Redis connected successfully");
+                tracing::info!("Redis client created for {}:{}", host, config.redis_port);
                 Some(Arc::new(rs))
             }
             Err(e) => {
-                tracing::warn!("Failed to connect to Redis: {} - conversation sharing will not work", e);
+                tracing::warn!("Failed to create Redis client: {} - conversation sharing will not work", e);
                 None
             }
         }
