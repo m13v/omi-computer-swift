@@ -32,6 +32,9 @@ struct ConversationsPage: View {
     // Transcript visibility state - hidden by default
     @State private var isTranscriptCollapsed: Bool = true
 
+    // Compact view mode - persisted preference
+    @AppStorage("conversationsCompactView") private var isCompactView = true
+
     // Search state
     @State private var searchQuery: String = ""
     @State private var searchResults: [ServerConversation] = []
@@ -270,6 +273,7 @@ struct ConversationsPage: View {
                         isLoading: appState.isLoadingConversations,
                         error: appState.conversationsError,
                         folders: appState.folders,
+                        isCompactView: isCompactView,
                         onSelect: { conversation in
                             AnalyticsManager.shared.memoryListItemClicked(conversationId: conversation.id)
                             selectedConversation = conversation
@@ -355,6 +359,7 @@ struct ConversationsPage: View {
                                     onMoveToFolder: { conversationId, folderId in
                                         await appState.moveConversationToFolder(conversationId, folderId: folderId)
                                     },
+                                    isCompactView: isCompactView,
                                     isMultiSelectMode: isMultiSelectMode,
                                     isSelected: selectedConversationIds.contains(conversation.id),
                                     onToggleSelection: {
@@ -561,6 +566,25 @@ struct ConversationsPage: View {
             }
 
             Spacer()
+
+            // Compact/Expanded view toggle
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isCompactView.toggle()
+                }
+            }) {
+                Image(systemName: isCompactView ? "list.bullet" : "list.bullet.rectangle")
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(OmiColors.backgroundTertiary.opacity(0.6))
+                    )
+            }
+            .buttonStyle(.plain)
+            .help(isCompactView ? "Show expanded view" : "Show compact view")
 
             // Clear all filters button (only show if any filter is active)
             if appState.showStarredOnly || appState.selectedDateFilter != nil || appState.selectedFolderId != nil {
