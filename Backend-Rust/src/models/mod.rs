@@ -11,6 +11,7 @@ pub mod folder;
 pub mod goal;
 pub mod memory;
 pub mod message;
+pub mod persona;
 pub mod request;
 pub mod user_settings;
 
@@ -57,4 +58,9 @@ pub use chat_session::{
 pub use goal::{
     CreateGoalRequest, DailyScore, DailyScoreQuery, GoalDB, GoalStatusResponse, GoalType,
     GoalsListResponse, UpdateGoalProgressQuery, UpdateGoalRequest,
+};
+pub use persona::{
+    CheckUsernameQuery, CreatePersonaRequest, GeneratePromptRequest, GeneratePromptResponse,
+    PersonaDB, PersonaResponse, PersonaStatusResponse, UpdatePersonaRequest,
+    UsernameAvailableResponse,
 };
