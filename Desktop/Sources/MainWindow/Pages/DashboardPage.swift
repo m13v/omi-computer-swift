@@ -1,13 +1,14 @@
 import SwiftUI
+import Combine
 
 // MARK: - Dashboard View Model
 
 @MainActor
 class DashboardViewModel: ObservableObject {
+    // Observe the shared TasksStore
+    private let tasksStore = TasksStore.shared
+
     @Published var dailyScore: DailyScore?
-    @Published var overdueTasks: [TaskActionItem] = []
-    @Published var todaysTasks: [TaskActionItem] = []
-    @Published var recentTasks: [TaskActionItem] = []  // Tasks without due date
     @Published var goals: [Goal] = []
     @Published var isLoading = false
     @Published var error: String?
@@ -16,13 +17,30 @@ class DashboardViewModel: ObservableObject {
     @Published var showingCreateGoal = false
     @Published var editingGoal: Goal? = nil
 
+    private var cancellables = Set<AnyCancellable>()
+
+    // Computed properties that delegate to TasksStore
+    var overdueTasks: [TaskActionItem] { tasksStore.overdueTasks }
+    var todaysTasks: [TaskActionItem] { tasksStore.todaysTasks }
+    var recentTasks: [TaskActionItem] { tasksStore.tasksWithoutDueDate }
+
+    init() {
+        // Forward TasksStore changes to trigger view updates
+        tasksStore.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
+    }
+
     func loadDashboardData() async {
         isLoading = true
         error = nil
 
         // Load all data in parallel
         async let scoreTask: Void = loadDailyScore()
-        async let tasksTask: Void = loadAllTasks()
+        async let tasksTask: Void = tasksStore.loadTasks()  // Use shared store
         async let goalsTask: Void = loadGoals()
 
         let _ = await (scoreTask, tasksTask, goalsTask)
@@ -38,49 +56,6 @@ class DashboardViewModel: ObservableObject {
         }
     }
 
-    private func loadAllTasks() async {
-        do {
-            let calendar = Calendar.current
-            let startOfToday = calendar.startOfDay(for: Date())
-            let endOfToday = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
-
-            // Load ALL incomplete tasks (high limit to get everything)
-            let response = try await APIClient.shared.getActionItems(
-                limit: 10000,
-                completed: false
-            )
-
-            var overdue: [TaskActionItem] = []
-            var today: [TaskActionItem] = []
-            var noDueDate: [TaskActionItem] = []
-
-            for task in response.items {
-                if let dueAt = task.dueAt {
-                    if dueAt < startOfToday {
-                        // Overdue: due before today
-                        overdue.append(task)
-                    } else if dueAt < endOfToday {
-                        // Today: due today
-                        today.append(task)
-                    }
-                    // Future tasks are not shown in dashboard
-                } else {
-                    // No due date
-                    noDueDate.append(task)
-                }
-            }
-
-            // Sort overdue by due date (oldest first)
-            overdueTasks = overdue.sorted { ($0.dueAt ?? Date.distantPast) < ($1.dueAt ?? Date.distantPast) }
-            // Sort today's by due date
-            todaysTasks = today.sorted { ($0.dueAt ?? Date.distantPast) < ($1.dueAt ?? Date.distantPast) }
-            // Sort recent by created date (newest first) - keep all, widget will limit display
-            recentTasks = noDueDate.sorted { $0.createdAt > $1.createdAt }
-        } catch {
-            logError("Failed to load tasks", error: error)
-        }
-    }
-
     private func loadGoals() async {
         do {
             goals = try await APIClient.shared.getGoals()
@@ -90,24 +65,10 @@ class DashboardViewModel: ObservableObject {
     }
 
     func toggleTaskCompletion(_ task: TaskActionItem) async {
-        do {
-            _ = try await APIClient.shared.updateActionItem(
-                id: task.id,
-                completed: !task.completed
-            )
-            // Remove from the appropriate array (task is now completed)
-            if let index = overdueTasks.firstIndex(where: { $0.id == task.id }) {
-                overdueTasks.remove(at: index)
-            } else if let index = todaysTasks.firstIndex(where: { $0.id == task.id }) {
-                todaysTasks.remove(at: index)
-            } else if let index = recentTasks.firstIndex(where: { $0.id == task.id }) {
-                recentTasks.remove(at: index)
-            }
-            // Reload daily score after task completion change
-            await loadDailyScore()
-        } catch {
-            logError("Failed to toggle task completion", error: error)
-        }
+        // Delegate to shared store - it handles the update
+        await tasksStore.toggleTask(task)
+        // Reload daily score after task completion change
+        await loadDailyScore()
     }
 
     func createGoal(title: String, goalType: GoalType, targetValue: Double, unit: String?) async {
