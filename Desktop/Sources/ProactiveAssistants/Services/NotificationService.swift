@@ -13,9 +13,9 @@ enum NotificationSound {
         case .default:
             return .default
         case .focusLost:
-            return UNNotificationSound(named: UNNotificationSoundName("focus-lost.wav"))
+            return UNNotificationSound(named: UNNotificationSoundName("focus-lost.aiff"))
         case .focusRegained:
-            return UNNotificationSound(named: UNNotificationSoundName("focus-regained.wav"))
+            return UNNotificationSound(named: UNNotificationSoundName("focus-regained.aiff"))
         case .none:
             return nil
         }
