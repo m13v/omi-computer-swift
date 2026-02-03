@@ -95,7 +95,8 @@ struct SettingsContentView: View {
 
     // Transcription settings (from backend)
     @State private var singleLanguageMode: Bool = false
-    @State private var customVocabulary: String = ""
+    @State private var newVocabularyWord: String = ""
+    @State private var vocabularyList: [String] = []
 
     // Language setting
     @State private var userLanguage: String = "en"
@@ -115,23 +116,20 @@ struct SettingsContentView: View {
         (4, "High"),
         (5, "Maximum")
     ]
-    private let languageOptions = [
-        ("en", "English"),
-        ("es", "Spanish"),
-        ("fr", "French"),
-        ("de", "German"),
-        ("it", "Italian"),
-        ("pt", "Portuguese"),
-        ("ja", "Japanese"),
-        ("ko", "Korean"),
-        ("zh", "Chinese"),
-        ("vi", "Vietnamese")
-    ]
+    // Use the full language list from AssistantSettings
+    private var languageOptions: [(String, String)] {
+        AssistantSettings.supportedLanguages.map { ($0.code, $0.name) }
+    }
+
+    // Language auto-detect state (from local settings)
+    @State private var transcriptionAutoDetect: Bool = true
+    @State private var transcriptionLanguage: String = "en"
 
     enum SettingsSection: String, CaseIterable {
         case general = "General"
         case focus = "Focus"
         case rewind = "Rewind"
+        case transcription = "Transcription"
         case notifications = "Notifications"
         case privacy = "Privacy"
         case account = "Account"
@@ -212,6 +210,8 @@ struct SettingsContentView: View {
                     FocusPage()
                 case .rewind:
                     rewindSection
+                case .transcription:
+                    transcriptionSection
                 case .notifications:
                     notificationsSection
                 case .privacy:
@@ -509,6 +509,268 @@ struct SettingsContentView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - Transcription Section
+
+    private var transcriptionSection: some View {
+        VStack(spacing: 20) {
+            // Language Mode
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "globe")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Language Mode")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    // Auto-Detect option
+                    Button(action: {
+                        transcriptionAutoDetect = true
+                        AssistantSettings.shared.transcriptionAutoDetect = true
+                        updateTranscriptionPreferences(singleLanguageMode: false)
+                        restartTranscriptionIfNeeded()
+                    }) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: transcriptionAutoDetect ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(transcriptionAutoDetect ? OmiColors.purplePrimary : OmiColors.textTertiary)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Auto-Detect (Multi-Language)")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(OmiColors.textPrimary)
+
+                                Text("Automatically detects and transcribes:")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+
+                                // List of supported languages
+                                Text("English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian, Dutch")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(transcriptionAutoDetect ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(transcriptionAutoDetect ? OmiColors.purplePrimary.opacity(0.3) : OmiColors.backgroundQuaternary, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Single Language option
+                    Button(action: {
+                        transcriptionAutoDetect = false
+                        AssistantSettings.shared.transcriptionAutoDetect = false
+                        updateTranscriptionPreferences(singleLanguageMode: true)
+                        restartTranscriptionIfNeeded()
+                    }) {
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: !transcriptionAutoDetect ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 20))
+                                .foregroundColor(!transcriptionAutoDetect ? OmiColors.purplePrimary : OmiColors.textTertiary)
+
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("Single Language (Better Accuracy)")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(OmiColors.textPrimary)
+
+                                Text("Best for speaking in one specific language")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+
+                                // Language picker (only shown when single language is selected)
+                                if !transcriptionAutoDetect {
+                                    HStack {
+                                        Text("Language:")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(OmiColors.textTertiary)
+
+                                        Picker("", selection: $transcriptionLanguage) {
+                                            ForEach(languageOptions, id: \.0) { option in
+                                                Text(option.1).tag(option.0)
+                                            }
+                                        }
+                                        .pickerStyle(.menu)
+                                        .frame(width: 180)
+                                        .onChange(of: transcriptionLanguage) { _, newValue in
+                                            AssistantSettings.shared.transcriptionLanguage = newValue
+                                            updateLanguage(newValue)
+                                            restartTranscriptionIfNeeded()
+                                        }
+                                    }
+                                    .padding(.top, 4)
+                                }
+                            }
+
+                            Spacer()
+                        }
+                        .padding(12)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(!transcriptionAutoDetect ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(!transcriptionAutoDetect ? OmiColors.purplePrimary.opacity(0.3) : OmiColors.backgroundQuaternary, lineWidth: 1)
+                                )
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // Info about language support
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Text("Single language mode supports 42 languages including Ukrainian, Russian, and more.")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+            }
+
+            // Custom Vocabulary
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "text.book.closed")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Custom Vocabulary")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Improve recognition of names, brands, and technical terms")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        if !vocabularyList.isEmpty {
+                            Text("\(vocabularyList.count) terms")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                    }
+
+                    // Current vocabulary display with removable tags
+                    if !vocabularyList.isEmpty {
+                        FlowLayout(spacing: 6) {
+                            ForEach(vocabularyList, id: \.self) { term in
+                                HStack(spacing: 4) {
+                                    Text(term)
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textSecondary)
+
+                                    Button(action: {
+                                        removeVocabularyWord(term)
+                                    }) {
+                                        Image(systemName: "xmark")
+                                            .font(.system(size: 9, weight: .medium))
+                                            .foregroundColor(OmiColors.textTertiary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(OmiColors.backgroundQuaternary)
+                                )
+                            }
+                        }
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Add new word input
+                    HStack(spacing: 8) {
+                        TextField("Add a word...", text: $newVocabularyWord)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                addVocabularyWord()
+                            }
+
+                        Button(action: {
+                            addVocabularyWord()
+                        }) {
+                            Image(systemName: "plus.circle.fill")
+                                .font(.system(size: 20))
+                                .foregroundColor(newVocabularyWord.trimmingCharacters(in: .whitespaces).isEmpty ? OmiColors.textTertiary : OmiColors.purplePrimary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(newVocabularyWord.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+
+                    Text("Press Enter or click + to add • Click × to remove")
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+        }
+    }
+
+    /// Add a word to the vocabulary
+    private func addVocabularyWord() {
+        let word = newVocabularyWord.trimmingCharacters(in: .whitespaces)
+        guard !word.isEmpty else { return }
+
+        // Don't add duplicates (case-insensitive check)
+        guard !vocabularyList.contains(where: { $0.lowercased() == word.lowercased() }) else {
+            newVocabularyWord = ""
+            return
+        }
+
+        vocabularyList.append(word)
+        newVocabularyWord = ""
+        saveVocabulary()
+    }
+
+    /// Remove a word from the vocabulary
+    private func removeVocabularyWord(_ word: String) {
+        vocabularyList.removeAll { $0 == word }
+        saveVocabulary()
+    }
+
+    /// Save vocabulary to local settings and backend
+    private func saveVocabulary() {
+        // Save to local settings
+        AssistantSettings.shared.transcriptionVocabulary = vocabularyList
+
+        // Sync to backend
+        updateTranscriptionPreferences(vocabulary: vocabularyList.joined(separator: ", "))
+    }
+
+    /// Restart transcription if currently running to apply new settings
+    private func restartTranscriptionIfNeeded() {
+        guard appState.isTranscribing else { return }
+
+        // Stop and restart to apply new language settings
+        appState.stopTranscription()
+
+        // Wait a moment for cleanup, then restart
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.appState.startTranscription()
         }
     }
 
@@ -869,38 +1131,6 @@ struct SettingsContentView: View {
                                 updateNotificationSettings(frequency: newValue)
                             }
                         }
-                    }
-                }
-            }
-
-            // Language
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "globe")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.purplePrimary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Language")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Preferred language for transcription and summaries")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Picker("", selection: $userLanguage) {
-                        ForEach(languageOptions, id: \.0) { option in
-                            Text(option.1).tag(option.0)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 130)
-                    .onChange(of: userLanguage) { _, newValue in
-                        updateLanguage(newValue)
                     }
                 }
             }
@@ -1288,55 +1518,6 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Transcription Settings
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "waveform")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Transcription")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-                    }
-
-                    Text("Configure how Omi transcribes your conversations")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
-
-                    settingRow(title: "Single Language Mode", subtitle: "Disable automatic language translation") {
-                        Toggle("", isOn: $singleLanguageMode)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: singleLanguageMode) { _, newValue in
-                                updateTranscriptionPreferences(singleLanguageMode: newValue)
-                            }
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Custom Vocabulary")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textSecondary)
-
-                        Text("Add words to improve transcription accuracy (comma-separated)")
-                            .font(.system(size: 12))
-                            .foregroundColor(OmiColors.textTertiary)
-
-                        TextField("e.g., Omi, Claude, API", text: $customVocabulary)
-                            .textFieldStyle(.roundedBorder)
-                            .onSubmit {
-                                updateTranscriptionPreferences(vocabulary: customVocabulary)
-                            }
-                    }
-                }
-            }
-
             // Data Management
             settingsCard {
                 HStack(spacing: 16) {
@@ -1586,6 +1767,27 @@ struct SettingsContentView: View {
         .buttonStyle(.plain)
     }
 
+    // MARK: - Language Helpers
+
+    /// Whether the selected language supports auto-detect mode
+    private var autoDetectSupported: Bool {
+        AssistantSettings.supportsAutoDetect(transcriptionLanguage)
+    }
+
+    /// Subtitle text for auto-detect toggle
+    private var autoDetectSubtitle: String {
+        if autoDetectSupported {
+            return "Automatically detect spoken language"
+        } else {
+            return "Not available for \(languageName(for: transcriptionLanguage))"
+        }
+    }
+
+    /// Get display name for a language code
+    private func languageName(for code: String) -> String {
+        AssistantSettings.supportedLanguages.first { $0.code == code }?.name ?? code
+    }
+
     // MARK: - Slider Index Helpers
 
     private var analysisDelaySliderIndex: Int {
@@ -1744,6 +1946,11 @@ struct SettingsContentView: View {
         guard !isLoadingSettings else { return }
         isLoadingSettings = true
 
+        // Load local transcription settings first (these are used immediately)
+        transcriptionLanguage = AssistantSettings.shared.transcriptionLanguage
+        transcriptionAutoDetect = AssistantSettings.shared.transcriptionAutoDetect
+        vocabularyList = AssistantSettings.shared.transcriptionVocabulary
+
         Task {
             do {
                 // Load all settings in parallel
@@ -1772,7 +1979,24 @@ struct SettingsContentView: View {
                     recordingPermissionEnabled = recording.enabled
                     privateCloudSyncEnabled = cloudSync.enabled
                     singleLanguageMode = transcription.singleLanguageMode
-                    customVocabulary = transcription.vocabulary.joined(separator: ", ")
+                    vocabularyList = transcription.vocabulary
+                    // Sync backend vocabulary to local settings
+                    AssistantSettings.shared.transcriptionVocabulary = transcription.vocabulary
+
+                    // Sync backend language to local if different (backend is source of truth for language)
+                    if !language.language.isEmpty && language.language != transcriptionLanguage {
+                        transcriptionLanguage = language.language
+                        AssistantSettings.shared.transcriptionLanguage = language.language
+                    }
+
+                    // Sync single language mode from backend (inverted to auto-detect)
+                    // Only update if we got a valid response and it differs
+                    let backendAutoDetect = !transcription.singleLanguageMode
+                    if backendAutoDetect != transcriptionAutoDetect {
+                        transcriptionAutoDetect = backendAutoDetect
+                        AssistantSettings.shared.transcriptionAutoDetect = backendAutoDetect
+                    }
+
                     isLoadingSettings = false
                 }
             } catch {
