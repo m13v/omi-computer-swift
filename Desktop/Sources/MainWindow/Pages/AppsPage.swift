@@ -19,23 +19,23 @@ struct SafeDismissButton: View {
             .contentShape(Circle())
             .onTapGesture {
                 let mouseLocation = NSEvent.mouseLocation
-                NSLog("OMI DISMISS: Tap gesture fired at mouse position: \(mouseLocation)")
-                NSLog("OMI DISMISS: Key window: \(String(describing: NSApp.keyWindow))")
-                NSLog("OMI DISMISS: First responder: \(String(describing: NSApp.keyWindow?.firstResponder))")
+                log("DISMISS: Tap gesture fired at mouse position: \(mouseLocation)")
+                log("DISMISS: Key window: \(String(describing: NSApp.keyWindow))")
+                log("DISMISS: First responder: \(String(describing: NSApp.keyWindow?.firstResponder))")
 
                 // Try to consume the click by resigning first responder
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                NSLog("OMI DISMISS: Resigned first responder")
+                log("DISMISS: Resigned first responder")
 
                 // Use async to ensure tap gesture completes before dismiss
                 Task { @MainActor in
-                    NSLog("OMI DISMISS: Starting 100ms delay before dismiss")
+                    log("DISMISS: Starting 100ms delay before dismiss")
                     // Delay to ensure mouse-up event is fully processed
                     try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-                    NSLog("OMI DISMISS: Delay complete, calling dismiss()")
-                    NSLog("OMI DISMISS: Mouse position before dismiss: \(NSEvent.mouseLocation)")
+                    log("DISMISS: Delay complete, calling dismiss()")
+                    log("DISMISS: Mouse position before dismiss: \(NSEvent.mouseLocation)")
                     dismiss()
-                    NSLog("OMI DISMISS: dismiss() called")
+                    log("DISMISS: dismiss() called")
                 }
             }
     }
@@ -47,6 +47,8 @@ struct AppsPage: View {
     @State private var selectedApp: OmiApp?
     @State private var showFilterSheet = false
     @State private var viewAllCategory: OmiAppCategory?
+    @State private var showCreateOptionsSheet = false
+    @State private var showPersonaPage = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -65,6 +67,11 @@ struct AppsPage: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
+                        // Create your own app card (only show when not searching)
+                        if searchText.isEmpty {
+                            CreateYourOwnAppCard(onTap: { showCreateOptionsSheet = true })
+                        }
+
                         // Popular section (horizontal scroll)
                         if !appProvider.popularApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
@@ -145,6 +152,27 @@ struct AppsPage: View {
         }
         .sheet(item: $viewAllCategory) { category in
             CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 })
+        }
+        .sheet(isPresented: $showCreateOptionsSheet) {
+            CreateOptionsSheet(
+                onCreateApp: {
+                    // Open external app creation page
+                    if let url = URL(string: "https://docs.omi.me/docs/developer/apps/Introduction") {
+                        NSWorkspace.shared.open(url)
+                    }
+                },
+                onCreatePersona: {
+                    showCreateOptionsSheet = false
+                    // Small delay to allow sheet dismissal before showing persona
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        showPersonaPage = true
+                    }
+                }
+            )
+        }
+        .sheet(isPresented: $showPersonaPage) {
+            PersonaPage()
+                .frame(width: 500, height: 650)
         }
     }
 
@@ -1420,6 +1448,178 @@ struct FlowLayout: Layout {
 
             self.size.height = y + rowHeight
         }
+    }
+}
+
+// MARK: - Create Your Own App Card
+
+struct CreateYourOwnAppCard: View {
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(LinearGradient(
+                            colors: [OmiColors.purplePrimary, OmiColors.purplePrimary.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        ))
+                        .frame(width: 60, height: 60)
+
+                    Image(systemName: "plus")
+                        .font(.system(size: 24, weight: .medium))
+                        .foregroundColor(.white)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Create your own app")
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Text("Build an app or create your AI clone")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textSecondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 16)
+                    .fill(isHovering ? OmiColors.backgroundSecondary : OmiColors.backgroundPrimary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
+// MARK: - Create Options Sheet
+
+struct CreateOptionsSheet: View {
+    let onCreateApp: () -> Void
+    let onCreatePersona: () -> Void
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Create")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                SafeDismissButton(dismiss: dismiss)
+            }
+            .padding()
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            VStack(spacing: 16) {
+                // Create an App option
+                CreateOptionCard(
+                    icon: "app.badge.fill",
+                    iconColor: OmiColors.purplePrimary,
+                    title: "Create an App",
+                    description: "Build a custom app that processes memories and integrates with external services",
+                    onTap: {
+                        dismiss()
+                        onCreateApp()
+                    }
+                )
+
+                // Create my clone option
+                CreateOptionCard(
+                    icon: "person.crop.circle.fill",
+                    iconColor: .blue,
+                    title: "Create my clone",
+                    description: "Create an AI persona of yourself that friends can chat with",
+                    onTap: {
+                        onCreatePersona()
+                    }
+                )
+            }
+            .padding()
+
+            Spacer()
+        }
+        .frame(width: 400, height: 320)
+        .background(OmiColors.backgroundPrimary)
+    }
+}
+
+// MARK: - Create Option Card
+
+struct CreateOptionCard: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let description: String
+    let onTap: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 16) {
+                // Icon
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(iconColor.opacity(0.15))
+                        .frame(width: 50, height: 50)
+
+                    Image(systemName: icon)
+                        .font(.system(size: 22))
+                        .foregroundColor(iconColor)
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Text(description)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(isHovering ? OmiColors.backgroundSecondary : OmiColors.backgroundPrimary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(OmiColors.backgroundTertiary, lineWidth: 1)
+                    )
+            )
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
     }
 }
 
