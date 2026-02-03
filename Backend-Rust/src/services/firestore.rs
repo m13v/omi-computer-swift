@@ -4908,7 +4908,7 @@ impl FirestoreService {
             .into_iter()
             .filter_map(|doc| {
                 doc.get("document")
-                    .and_then(|d| self.parse_message(d).ok())
+                    .and_then(|d| self.parse_message(d, uid).ok())
             })
             .collect();
 
@@ -5049,17 +5049,32 @@ impl FirestoreService {
     }
 
     /// Parse a Firestore document into a MessageDB
-    fn parse_message(&self, doc: &Value) -> Result<MessageDB, Box<dyn std::error::Error + Send + Sync>> {
+    /// Decrypts text if data_protection_level is "enhanced" and encryption secret is available.
+    fn parse_message(&self, doc: &Value, uid: &str) -> Result<MessageDB, Box<dyn std::error::Error + Send + Sync>> {
         let fields = doc.get("fields").ok_or("Missing fields")?;
         let name = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let id = name.split('/').last().unwrap_or("").to_string();
 
-        let text = fields
+        // Get raw text
+        let mut text = fields
             .get("text")
             .and_then(|v| v.get("stringValue"))
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
+
+        // Check if text is encrypted (data_protection_level = "enhanced")
+        let data_protection_level = self.parse_string(fields, "data_protection_level");
+        if data_protection_level.as_deref() == Some("enhanced") {
+            if let Some(ref secret) = self.encryption_secret {
+                text = encryption::decrypt(&text, uid, secret);
+            } else {
+                tracing::debug!(
+                    "Message {} has enhanced protection but no encryption secret configured",
+                    id
+                );
+            }
+        }
 
         let sender = fields
             .get("sender")
