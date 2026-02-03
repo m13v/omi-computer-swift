@@ -244,7 +244,9 @@ final class ScreenCaptureService: Sendable {
             return (appName, nil, nil)
         }
 
-        // Find the first window belonging to the active app
+        // Collect all windows belonging to the active app
+        var appWindows: [(title: String?, windowID: CGWindowID, area: CGFloat)] = []
+
         for window in windowList {
             guard let windowPID = window[kCGWindowOwnerPID as String] as? Int32,
                   windowPID == activePID else {
@@ -258,11 +260,16 @@ final class ScreenCaptureService: Sendable {
                width > 100 && height > 100,
                let windowNumber = window[kCGWindowNumber as String] as? CGWindowID {
                 let windowTitle = window[kCGWindowName as String] as? String
-                return (appName, windowTitle, windowNumber)
+                appWindows.append((title: windowTitle, windowID: windowNumber, area: width * height))
             }
         }
 
-        return (appName, nil, nil)
+        // Pick the largest window by area (handles apps like Arc with multiple utility windows)
+        guard let largest = appWindows.max(by: { $0.area < $1.area }) else {
+            return (appName, nil, nil)
+        }
+
+        return (appName, largest.title, largest.windowID)
     }
 
     // MARK: - Async Capture (Primary API)
