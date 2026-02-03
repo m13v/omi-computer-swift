@@ -287,7 +287,7 @@ final class AudioSourceManager: ObservableObject {
 
         // Start WAL recording for offline storage
         if let device = deviceProvider.connectedDevice {
-            walService.startRecording(device: device.id, codec: codec.rawValue)
+            walService.startRecording(device: device.id, codec: codec.name)
         }
 
         // Start BLE audio processing with direct audio callback and WAL recording
