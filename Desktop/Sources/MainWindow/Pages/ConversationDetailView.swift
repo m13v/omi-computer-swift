@@ -1,14 +1,35 @@
 import SwiftUI
 
+/// Tab options for conversation detail view
+enum ConversationDetailTab: String, CaseIterable {
+    case summary = "Summary"
+    case transcript = "Transcript"
+}
+
 /// Full detail view for a single conversation
 struct ConversationDetailView: View {
     let conversation: ServerConversation
     let onBack: () -> Void
+    var folders: [Folder] = []
+    var onMoveToFolder: ((String, String?) async -> Void)?
+    var onDelete: (() -> Void)?
+    var onTitleUpdated: ((String) -> Void)?
 
     @StateObject private var appProvider = AppProvider()
     @State private var showAppSelector = false
     @State private var isReprocessing = false
     @State private var selectedAppForReprocess: OmiApp?
+
+    // Tab state
+    @State private var selectedTab: ConversationDetailTab = .summary
+
+    // Action states
+    @State private var showDeleteConfirmation = false
+    @State private var showEditDialog = false
+    @State private var editedTitle = ""
+    @State private var isUpdatingTitle = false
+    @State private var isCopyingLink = false
+    @State private var isDeleting = false
 
     /// The date to display (prefer startedAt, fall back to createdAt)
     private var displayDate: Date {
@@ -34,33 +55,18 @@ struct ConversationDetailView: View {
             // Header with back button
             headerView
 
-            // Scrollable content
+            // Tab picker
+            tabPicker
+
+            // Scrollable content based on selected tab
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    // Overview section
-                    if !conversation.overview.isEmpty {
-                        overviewSection
-                    }
-
-                    // Metadata chips
-                    metadataSection
-
-                    // App Results section
-                    if !conversation.appsResults.isEmpty {
-                        appResultsSection
-                    }
-
-                    // Suggested apps section
-                    suggestedAppsSection
-
-                    // Transcript section
-                    if !conversation.transcriptSegments.isEmpty {
-                        transcriptSection
-                    }
-
-                    // Action items section
-                    if !conversation.structured.actionItems.isEmpty {
-                        actionItemsSection
+                    if selectedTab == .summary {
+                        // Summary tab content
+                        summaryTabContent
+                    } else {
+                        // Transcript tab content
+                        transcriptTabContent
                     }
                 }
                 .padding(24)
@@ -70,7 +76,7 @@ struct ConversationDetailView: View {
             await appProvider.fetchApps()
             AnalyticsManager.shared.conversationDetailOpened(conversationId: conversation.id)
         }
-        .sheet(isPresented: $showAppSelector) {
+        .dismissableSheet(isPresented: $showAppSelector) {
             AppSelectorSheet(
                 apps: appProvider.apps.filter { $0.capabilities.contains("memories") },
                 isLoading: isReprocessing,
@@ -82,6 +88,7 @@ struct ConversationDetailView: View {
                 },
                 onDismiss: { showAppSelector = false }
             )
+            .frame(width: 400, height: 500)
         }
     }
 
@@ -117,10 +124,154 @@ struct ConversationDetailView: View {
             if conversation.status != .completed {
                 statusBadge
             }
+
+            // Action buttons
+            actionButtonsMenu
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
         .background(OmiColors.backgroundTertiary.opacity(0.5))
+        .alert("Edit Conversation Title", isPresented: $showEditDialog) {
+            TextField("Title", text: $editedTitle)
+            Button("Cancel", role: .cancel) { }
+            Button("Save") {
+                Task { await updateTitle() }
+            }
+            .disabled(editedTitle.isEmpty || isUpdatingTitle)
+        } message: {
+            Text("Enter a new title for this conversation")
+        }
+        .alert("Delete Conversation", isPresented: $showDeleteConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete", role: .destructive) {
+                Task { await deleteConversation() }
+            }
+        } message: {
+            Text("Are you sure you want to delete this conversation? This action cannot be undone.")
+        }
+    }
+
+    // MARK: - Action Buttons Menu
+
+    private var actionButtonsMenu: some View {
+        Menu {
+            Button(action: copyTranscript) {
+                Label("Copy Transcript", systemImage: "doc.on.doc")
+            }
+
+            Button(action: { Task { await copyLink() } }) {
+                Label(isCopyingLink ? "Generating Link..." : "Copy Link", systemImage: isCopyingLink ? "arrow.triangle.2.circlepath" : "link")
+            }
+            .disabled(isCopyingLink)
+
+            Divider()
+
+            Button(action: {
+                editedTitle = conversation.title
+                showEditDialog = true
+            }) {
+                Label("Edit Title", systemImage: "pencil")
+            }
+
+            // Move to Folder submenu
+            if !folders.isEmpty {
+                Menu {
+                    if conversation.folderId != nil {
+                        Button(action: {
+                            Task { await onMoveToFolder?(conversation.id, nil) }
+                        }) {
+                            Label("Remove from Folder", systemImage: "folder.badge.minus")
+                        }
+                        Divider()
+                    }
+
+                    ForEach(folders) { folder in
+                        Button(action: {
+                            Task { await onMoveToFolder?(conversation.id, folder.id) }
+                        }) {
+                            HStack {
+                                Text(folder.name)
+                                if conversation.folderId == folder.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        .disabled(conversation.folderId == folder.id)
+                    }
+                } label: {
+                    Label("Move to Folder", systemImage: "folder")
+                }
+            }
+
+            Divider()
+
+            Button(role: .destructive, action: {
+                showDeleteConfirmation = true
+            }) {
+                Label("Delete", systemImage: "trash")
+            }
+        } label: {
+            Image(systemName: "ellipsis.circle")
+                .font(.system(size: 20))
+                .foregroundColor(OmiColors.textSecondary)
+        }
+        .menuStyle(.borderlessButton)
+        .frame(width: 32)
+    }
+
+    // MARK: - Actions
+
+    private func copyTranscript() {
+        let transcript = conversation.transcriptSegments.map { segment in
+            let speaker = segment.isUser ? "You" : "Speaker \(segment.speaker)"
+            return "[\(speaker)]: \(segment.text)"
+        }.joined(separator: "\n\n")
+
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(transcript, forType: .string)
+    }
+
+    private func copyLink() async {
+        isCopyingLink = true
+        defer { isCopyingLink = false }
+
+        do {
+            let shareableUrl = try await APIClient.shared.getConversationShareLink(id: conversation.id)
+            await MainActor.run {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(shareableUrl, forType: .string)
+            }
+        } catch {
+            logError("Failed to get share link", error: error)
+        }
+    }
+
+    private func updateTitle() async {
+        guard !editedTitle.isEmpty else { return }
+        isUpdatingTitle = true
+        defer { isUpdatingTitle = false }
+
+        do {
+            try await APIClient.shared.updateConversationTitle(id: conversation.id, title: editedTitle)
+            onTitleUpdated?(editedTitle)
+        } catch {
+            logError("Failed to update title", error: error)
+        }
+    }
+
+    private func deleteConversation() async {
+        isDeleting = true
+        defer { isDeleting = false }
+
+        do {
+            try await APIClient.shared.deleteConversation(id: conversation.id)
+            await MainActor.run {
+                onDelete?()
+                onBack()
+            }
+        } catch {
+            logError("Failed to delete conversation", error: error)
+        }
     }
 
     private var statusBadge: some View {
@@ -145,6 +296,125 @@ struct ConversationDetailView: View {
             return OmiColors.warning
         case .failed:
             return OmiColors.error
+        }
+    }
+
+    // MARK: - Tab Picker
+
+    private var tabPicker: some View {
+        HStack(spacing: 0) {
+            ForEach(ConversationDetailTab.allCases, id: \.self) { tab in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedTab = tab
+                    }
+                }) {
+                    VStack(spacing: 8) {
+                        HStack(spacing: 6) {
+                            Image(systemName: tab == .summary ? "doc.text" : "text.quote")
+                                .font(.system(size: 12))
+                            Text(tab.rawValue)
+                                .font(.system(size: 13, weight: .medium))
+                            if tab == .transcript {
+                                Text("(\(conversation.transcriptSegments.count))")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                        }
+                        .foregroundColor(selectedTab == tab ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                        .padding(.vertical, 10)
+
+                        // Indicator line
+                        Rectangle()
+                            .fill(selectedTab == tab ? OmiColors.purplePrimary : Color.clear)
+                            .frame(height: 2)
+                    }
+                }
+                .buttonStyle(.plain)
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .background(OmiColors.backgroundTertiary.opacity(0.3))
+    }
+
+    // MARK: - Summary Tab Content
+
+    @ViewBuilder
+    private var summaryTabContent: some View {
+        // Overview section
+        if !conversation.overview.isEmpty {
+            overviewSection
+        }
+
+        // Metadata chips
+        metadataSection
+
+        // App Results section
+        if !conversation.appsResults.isEmpty {
+            appResultsSection
+        }
+
+        // Suggested apps section
+        suggestedAppsSection
+
+        // Action items section
+        if !conversation.structured.actionItems.isEmpty {
+            actionItemsSection
+        }
+    }
+
+    // MARK: - Transcript Tab Content
+
+    @ViewBuilder
+    private var transcriptTabContent: some View {
+        if conversation.transcriptSegments.isEmpty {
+            // Empty state
+            VStack(spacing: 12) {
+                Image(systemName: "text.quote")
+                    .font(.system(size: 40))
+                    .foregroundColor(OmiColors.textTertiary.opacity(0.5))
+
+                Text("No transcript available")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 60)
+        } else {
+            // Transcript header with copy button
+            HStack {
+                Text("\(conversation.transcriptSegments.count) segments")
+                    .font(.system(size: 13))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                Spacer()
+
+                Button(action: copyTranscript) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "doc.on.doc")
+                            .font(.system(size: 11))
+                        Text("Copy")
+                            .font(.system(size: 12))
+                    }
+                    .foregroundColor(OmiColors.purplePrimary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Transcript content
+            VStack(spacing: 12) {
+                ForEach(conversation.transcriptSegments) { segment in
+                    SpeakerBubbleView(
+                        segment: segment,
+                        isUser: segment.isUser
+                    )
+                }
+            }
+            .padding(16)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(OmiColors.backgroundSecondary)
+            )
         }
     }
 
