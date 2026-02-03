@@ -19,12 +19,16 @@ struct OnboardingView: View {
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Welcome", "Name", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Done"]
+    let steps = ["Welcome", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
     @State private var nameError: String = ""
     @FocusState private var isNameFieldFocused: Bool
+
+    // State for language selection
+    @State private var selectedLanguage: String = "en"
+    @State private var autoDetectEnabled: Bool = true
 
 
     var body: some View {
@@ -82,7 +86,7 @@ struct OnboardingView: View {
         // Bring app to front when the CURRENT step's permission is granted
         // Only bring to front if we're on the step that requires this permission
         .onChange(of: appState.hasNotificationPermission) { _, granted in
-            if granted && currentStep == 2 {
+            if granted && currentStep == 3 {
                 log("Notification permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -90,7 +94,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasAutomationPermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Automation permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -98,7 +102,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
-            if granted && currentStep == 4 {
+            if granted && currentStep == 5 {
                 log("Screen recording permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -106,7 +110,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
-            if granted && currentStep == 5 {
+            if granted && currentStep == 6 {
                 log("Microphone permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -114,7 +118,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasSystemAudioPermission) { _, granted in
-            if granted && currentStep == 6 {
+            if granted && currentStep == 7 {
                 log("System audio permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -122,7 +126,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasAccessibilityPermission) { _, granted in
-            if granted && currentStep == 7 {
+            if granted && currentStep == 8 {
                 log("Accessibility permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -165,12 +169,13 @@ struct OnboardingView: View {
     private var currentPermissionGranted: Bool {
         switch currentStep {
         case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
-        case 2: return appState.hasNotificationPermission
-        case 3: return appState.hasAutomationPermission
-        case 4: return appState.hasScreenRecordingPermission
-        case 5: return appState.hasMicrophonePermission
-        case 6: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
-        case 7: return appState.hasAccessibilityPermission
+        case 2: return true // Language step - always valid (has default)
+        case 3: return appState.hasNotificationPermission
+        case 4: return appState.hasAutomationPermission
+        case 5: return appState.hasScreenRecordingPermission
+        case 6: return appState.hasMicrophonePermission
+        case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
+        case 8: return appState.hasAccessibilityPermission
         default: return true
         }
     }
@@ -201,8 +206,8 @@ struct OnboardingView: View {
                 // Buttons
                 buttonSection
             }
-            .frame(width: currentStep == 4 && !appState.hasScreenRecordingPermission ? 500 : 420)
-            .frame(height: currentStep == 4 && !appState.hasScreenRecordingPermission ? 520 : 420)
+            .frame(width: currentStep == 5 && !appState.hasScreenRecordingPermission ? 500 : 420)
+            .frame(height: currentStep == 5 && !appState.hasScreenRecordingPermission ? 520 : 420)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(OmiColors.backgroundSecondary)
@@ -243,13 +248,14 @@ struct OnboardingView: View {
         switch step {
         case 0: return true // Welcome - always "granted"
         case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step
-        case 2: return appState.hasNotificationPermission
-        case 3: return appState.hasAutomationPermission
-        case 4: return appState.hasScreenRecordingPermission
-        case 5: return appState.hasMicrophonePermission
-        case 6: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
-        case 7: return appState.hasAccessibilityPermission // Accessibility
-        case 8: return true // Done - always "granted"
+        case 2: return true // Language step - always "granted" (has default)
+        case 3: return appState.hasNotificationPermission
+        case 4: return appState.hasAutomationPermission
+        case 5: return appState.hasScreenRecordingPermission
+        case 6: return appState.hasMicrophonePermission
+        case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
+        case 8: return appState.hasAccessibilityPermission // Accessibility
+        case 9: return true // Done - always "granted"
         default: return false
         }
     }
@@ -266,6 +272,8 @@ struct OnboardingView: View {
         case 1:
             nameStepView
         case 2:
+            languageStepView
+        case 3:
             stepView(
                 icon: appState.hasNotificationPermission ? "checkmark.circle.fill" : "bell.badge",
                 iconColor: appState.hasNotificationPermission ? .white : OmiColors.purplePrimary,
@@ -274,7 +282,7 @@ struct OnboardingView: View {
                     ? "Notifications are enabled! You'll receive focus alerts from Omi."
                     : "Omi sends you gentle notifications when it detects you're getting distracted from your work."
             )
-        case 3:
+        case 4:
             stepView(
                 icon: appState.hasAutomationPermission ? "checkmark.circle.fill" : "gearshape.2",
                 iconColor: appState.hasAutomationPermission ? .white : OmiColors.purplePrimary,
@@ -283,15 +291,15 @@ struct OnboardingView: View {
                     ? "Automation permission granted! Omi can now detect which app you're using."
                     : "Omi needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
             )
-        case 4:
-            screenRecordingStepView
         case 5:
-            microphoneStepView
+            screenRecordingStepView
         case 6:
-            systemAudioStepView
+            microphoneStepView
         case 7:
-            accessibilityStepView
+            systemAudioStepView
         case 8:
+            accessibilityStepView
+        case 9:
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
@@ -372,6 +380,116 @@ struct OnboardingView: View {
         return trimmed.count >= 2
     }
 
+    // MARK: - Language Step View
+
+    private var languageStepView: some View {
+        VStack(spacing: 16) {
+            Image(systemName: "globe")
+                .font(.system(size: 48))
+                .foregroundColor(OmiColors.purplePrimary)
+
+            Text("Transcription Language")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Choose the language you'll be speaking most often.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+
+            VStack(alignment: .leading, spacing: 16) {
+                // Language picker
+                HStack {
+                    Text("Language")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+
+                    Spacer()
+
+                    Picker("", selection: $selectedLanguage) {
+                        ForEach(AssistantSettings.supportedLanguages, id: \.code) { language in
+                            Text(language.name).tag(language.code)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .frame(width: 180)
+                }
+
+                // Auto-detect toggle
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Auto-Detect")
+                            .font(.system(size: 14))
+                            .foregroundColor(.secondary)
+                        Text(autoDetectSubtitleOnboarding)
+                            .font(.system(size: 11))
+                            .foregroundColor(autoDetectSupportedOnboarding ? .secondary : OmiColors.warning)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $autoDetectEnabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .disabled(!autoDetectSupportedOnboarding)
+                }
+
+                // Info message for languages without auto-detect
+                if !autoDetectSupportedOnboarding {
+                    HStack(spacing: 8) {
+                        Image(systemName: "info.circle.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("\(languageNameOnboarding) works best with single-language mode for accurate transcription.")
+                            .font(.system(size: 12))
+                            .foregroundColor(.secondary)
+
+                        Spacer()
+                    }
+                    .padding(10)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(OmiColors.purplePrimary.opacity(0.1))
+                    )
+                }
+            }
+            .padding(.horizontal, 40)
+            .padding(.top, 8)
+        }
+        .onAppear {
+            // Load existing settings
+            selectedLanguage = AssistantSettings.shared.transcriptionLanguage
+            autoDetectEnabled = AssistantSettings.shared.transcriptionAutoDetect
+        }
+        .onChange(of: selectedLanguage) { _, newValue in
+            // If the new language doesn't support auto-detect, disable it
+            if !AssistantSettings.supportsAutoDetect(newValue) {
+                autoDetectEnabled = false
+            }
+        }
+    }
+
+    /// Whether the selected language supports auto-detect mode (for onboarding)
+    private var autoDetectSupportedOnboarding: Bool {
+        AssistantSettings.supportsAutoDetect(selectedLanguage)
+    }
+
+    /// Subtitle text for auto-detect toggle (for onboarding)
+    private var autoDetectSubtitleOnboarding: String {
+        if autoDetectSupportedOnboarding {
+            return "Automatically detect language"
+        } else {
+            return "Not available for this language"
+        }
+    }
+
+    /// Get display name for selected language (for onboarding)
+    private var languageNameOnboarding: String {
+        AssistantSettings.supportedLanguages.first { $0.code == selectedLanguage }?.name ?? selectedLanguage
+    }
+
     private func stepView(icon: String, iconColor: Color = OmiColors.purplePrimary, title: String, description: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: icon)
@@ -425,18 +543,20 @@ struct OnboardingView: View {
         case 1:
             return "Continue"
         case 2:
-            return appState.hasNotificationPermission ? "Continue" : "Enable Notifications"
+            return "Continue"  // Language step
         case 3:
-            return appState.hasAutomationPermission ? "Continue" : "Grant Automation Access"
+            return appState.hasNotificationPermission ? "Continue" : "Enable Notifications"
         case 4:
-            return appState.hasScreenRecordingPermission ? "Continue" : "Grant Screen Recording"
+            return appState.hasAutomationPermission ? "Continue" : "Grant Automation Access"
         case 5:
-            return appState.hasMicrophonePermission ? "Continue" : "Enable Microphone"
+            return appState.hasScreenRecordingPermission ? "Continue" : "Grant Screen Recording"
         case 6:
-            return systemAudioButtonTitle
+            return appState.hasMicrophonePermission ? "Continue" : "Enable Microphone"
         case 7:
-            return appState.hasAccessibilityPermission ? "Continue" : "Grant Accessibility"
+            return systemAudioButtonTitle
         case 8:
+            return appState.hasAccessibilityPermission ? "Continue" : "Grant Accessibility"
+        case 9:
             return "Start Using Omi"
         default:
             return "Continue"
@@ -898,13 +1018,28 @@ struct OnboardingView: View {
             AnalyticsManager.shared.onboardingStepCompleted(step: 1, stepName: "Name")
             currentStep += 1
         case 2:
+            // Language step - save settings
+            AssistantSettings.shared.transcriptionLanguage = selectedLanguage
+            AssistantSettings.shared.transcriptionAutoDetect = autoDetectEnabled
+            // Also update backend
+            Task {
+                try? await APIClient.shared.updateUserLanguage(selectedLanguage)
+                try? await APIClient.shared.updateTranscriptionPreferences(
+                    singleLanguageMode: !autoDetectEnabled,
+                    vocabulary: nil
+                )
+            }
+            AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Language")
+            AnalyticsManager.shared.languageChanged(language: selectedLanguage)
+            currentStep += 1
+        case 3:
             if appState.hasNotificationPermission {
                 // Permission already granted - send test notification anyway and advance
                 NotificationService.shared.sendNotification(
                     title: "Notifications Enabled",
                     message: "You'll receive focus alerts from Omi."
                 )
-                AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Notifications")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Notifications")
                 AnalyticsManager.shared.permissionGranted(permission: "notifications")
                 currentStep += 1
             } else {
@@ -912,9 +1047,9 @@ struct OnboardingView: View {
                 hasTriggeredNotification = true
                 appState.requestNotificationPermission()
             }
-        case 3:
+        case 4:
             if appState.hasAutomationPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Automation")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Automation")
                 AnalyticsManager.shared.permissionGranted(permission: "automation")
                 currentStep += 1
             } else {
@@ -922,9 +1057,9 @@ struct OnboardingView: View {
                 hasTriggeredAutomation = true
                 appState.triggerAutomationPermission()
             }
-        case 4:
+        case 5:
             if appState.hasScreenRecordingPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Screen Recording")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 5, stepName: "Screen Recording")
                 AnalyticsManager.shared.permissionGranted(permission: "screen_recording")
                 // Trigger proactive monitoring to surface any additional ScreenCaptureKit permission dialogs
                 // (e.g., "allow app to bypass standard screen recording" on macOS Sequoia)
@@ -935,9 +1070,9 @@ struct OnboardingView: View {
                 hasTriggeredScreenRecording = true
                 appState.triggerScreenRecordingPermission()
             }
-        case 5:
+        case 6:
             if appState.hasMicrophonePermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 5, stepName: "Microphone")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 6, stepName: "Microphone")
                 AnalyticsManager.shared.permissionGranted(permission: "microphone")
                 currentStep += 1
             } else {
@@ -946,14 +1081,14 @@ struct OnboardingView: View {
                 hasTriggeredMicrophone = true
                 appState.requestMicrophonePermission()
             }
-        case 6:
+        case 7:
             // System Audio step
             if !appState.isSystemAudioSupported {
                 // Not supported on this macOS version - just continue
-                AnalyticsManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "System Audio")
                 currentStep += 1
             } else if appState.hasSystemAudioPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 6, stepName: "System Audio")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "System Audio")
                 AnalyticsManager.shared.permissionGranted(permission: "system_audio")
                 currentStep += 1
             } else {
@@ -961,10 +1096,10 @@ struct OnboardingView: View {
                 hasTriggeredSystemAudio = true
                 appState.triggerSystemAudioPermission()
             }
-        case 7:
+        case 8:
             // Accessibility step
             if appState.hasAccessibilityPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "Accessibility")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 8, stepName: "Accessibility")
                 AnalyticsManager.shared.permissionGranted(permission: "accessibility")
                 currentStep += 1
             } else {
@@ -972,9 +1107,9 @@ struct OnboardingView: View {
                 hasTriggeredAccessibility = true
                 appState.triggerAccessibilityPermission()
             }
-        case 8:
-            log("OnboardingView: Step 8 - Completing onboarding")
-            AnalyticsManager.shared.onboardingStepCompleted(step: 8, stepName: "Done")
+        case 9:
+            log("OnboardingView: Step 9 - Completing onboarding")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
