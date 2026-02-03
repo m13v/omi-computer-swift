@@ -75,33 +75,76 @@ See `.claude/settings.json` for connection details.
 
 ### Click-Through Prevention for Sheets/Modals
 
-**CRITICAL**: On macOS, when dismissing sheets or modals, click events can "fall through" to underlying views, causing the cursor to jump and trigger unintended clicks. This happens because the dismiss animation and click event complete at different times.
+**CRITICAL**: On macOS, when dismissing sheets or modals, click events can "fall through" to underlying views, causing the cursor to jump and trigger unintended clicks.
 
-**Always use `SafeDismissButton` for sheet dismiss buttons** (defined in `AppsPage.swift`):
+**Root cause (FIXED):** The `ClickThroughView.swift` sidebar wrapper was using `NSEvent.addLocalMonitorForEvents` which captured clicks from ALL windows including sheets. When a sheet was dismissed, the captured click location was replayed using `CGEvent.post()` with `mouseCursorPosition`, which actually moves the cursor. The fix was adding a guard to only capture clicks from the sidebar's own window:
+```swift
+guard event.window == window else { return event }
+```
+
+### Dismiss Button Components (AppsPage.swift)
+
+**`SafeDismissButton`** - For native SwiftUI `.sheet()` modals:
 ```swift
 SafeDismissButton(dismiss: dismiss)
 ```
 
-**For interactive elements that dismiss sheets**, use the async delay pattern:
+**`DismissButton`** - For overlay-based modals with external dismiss control:
 ```swift
-.onTapGesture {
-    // Resign first responder to consume the click
-    NSApp.keyWindow?.makeFirstResponder(nil)
-    Task { @MainActor in
-        try? await Task.sleep(nanoseconds: 100_000_000) // 100ms delay
-        // Then perform action (dismiss, show another sheet, etc.)
-        onTap()
+DismissButton(action: { showModal = false })
+```
+
+Both components:
+- Use `@State private var isPressed` to prevent double-taps
+- Call `NSApp.keyWindow?.makeFirstResponder(nil)` to consume clicks
+- Use async delay before triggering dismiss
+- Log with `DISMISS:` or `DISMISS_BUTTON:` prefix
+
+### Click-Outside-to-Dismiss Sheets
+
+Use `DismissableSheetModifier` for modals that should dismiss when clicking outside (defined in `AppsPage.swift`):
+
+```swift
+.dismissableSheet(isPresented: $showModal) {
+    MyModalContent(onDismiss: { showModal = false })
+        .frame(width: 500, height: 650)
+}
+```
+
+**Key requirements:**
+1. Pass an `onDismiss` callback to the modal content
+2. Modal content should use `DismissButton(action: onDismiss)` for the close button
+3. The modifier adds a dimmed background that dismisses on tap
+
+**Example modal that supports both native sheet and overlay presentation:**
+```swift
+struct MyModal: View {
+    @Environment(\.dismiss) private var environmentDismiss
+    var onDismiss: (() -> Void)? = nil  // Optional for overlay presentation
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
+
+    var body: some View {
+        VStack {
+            HStack {
+                Spacer()
+                DismissButton(action: dismissSheet)
+            }
+            // ... content
+        }
     }
 }
 ```
 
-**Key rules:**
-1. Never use `Button(action:)` for sheet dismiss actions - use `onTapGesture` with async delay
-2. Always call `NSApp.keyWindow?.makeFirstResponder(nil)` before the delay
-3. Use at least 100ms delay before triggering sheet transitions
-4. When transitioning between sheets, dismiss first, then use `DispatchQueue.main.asyncAfter` with 0.3s delay before showing the next sheet
+### Sheet-to-Sheet Transitions
 
-**Example of sheet-to-sheet transition:**
+When transitioning between sheets, dismiss first, then use delay:
 ```swift
 onCreatePersona: {
     showFirstSheet = false
@@ -110,11 +153,3 @@ onCreatePersona: {
     }
 }
 ```
-
-**Current implementation details (SafeDismissButton in AppsPage.swift):**
-- Uses `@State private var isPressed` to prevent double-taps
-- Sends a synthetic `leftMouseUp` event to consume pending clicks
-- Uses 250ms delay before calling `dismiss()`
-- Has extensive logging with `log("DISMISS: ...")` prefix
-
-**Known issue:** Even with these measures, click-through can still occur during the sheet dismissal animation. The root cause is that macOS delivers mouse events to views that become visible during animation. Further investigation may be needed.
