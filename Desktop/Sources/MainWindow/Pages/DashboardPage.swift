@@ -5,7 +5,9 @@ import SwiftUI
 @MainActor
 class DashboardViewModel: ObservableObject {
     @Published var dailyScore: DailyScore?
+    @Published var overdueTasks: [TaskActionItem] = []
     @Published var todaysTasks: [TaskActionItem] = []
+    @Published var recentTasks: [TaskActionItem] = []  // Tasks without due date
     @Published var goals: [Goal] = []
     @Published var isLoading = false
     @Published var error: String?
@@ -19,9 +21,9 @@ class DashboardViewModel: ObservableObject {
         error = nil
 
         // Load all data in parallel
-        async let scoreTask = loadDailyScore()
-        async let tasksTask = loadTodaysTasks()
-        async let goalsTask = loadGoals()
+        async let scoreTask: Void = loadDailyScore()
+        async let tasksTask: Void = loadAllTasks()
+        async let goalsTask: Void = loadGoals()
 
         let _ = await (scoreTask, tasksTask, goalsTask)
 
@@ -36,20 +38,46 @@ class DashboardViewModel: ObservableObject {
         }
     }
 
-    private func loadTodaysTasks() async {
+    private func loadAllTasks() async {
         do {
             let calendar = Calendar.current
-            let startOfDay = calendar.startOfDay(for: Date())
-            let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
+            let startOfToday = calendar.startOfDay(for: Date())
+            let endOfToday = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
 
+            // Load all incomplete tasks (up to 100)
             let response = try await APIClient.shared.getActionItems(
-                limit: 10,
-                dueStartDate: startOfDay,
-                dueEndDate: endOfDay
+                limit: 100,
+                completed: false
             )
-            todaysTasks = response.items
+
+            var overdue: [TaskActionItem] = []
+            var today: [TaskActionItem] = []
+            var noDueDate: [TaskActionItem] = []
+
+            for task in response.items {
+                if let dueAt = task.dueAt {
+                    if dueAt < startOfToday {
+                        // Overdue: due before today
+                        overdue.append(task)
+                    } else if dueAt < endOfToday {
+                        // Today: due today
+                        today.append(task)
+                    }
+                    // Future tasks are not shown
+                } else {
+                    // No due date
+                    noDueDate.append(task)
+                }
+            }
+
+            // Sort overdue by due date (oldest first)
+            overdueTasks = overdue.sorted { ($0.dueAt ?? Date.distantPast) < ($1.dueAt ?? Date.distantPast) }
+            // Sort today's by due date
+            todaysTasks = today.sorted { ($0.dueAt ?? Date.distantPast) < ($1.dueAt ?? Date.distantPast) }
+            // Sort recent by created date (newest first), take first 10
+            recentTasks = Array(noDueDate.sorted { $0.createdAt > $1.createdAt }.prefix(10))
         } catch {
-            logError("Failed to load today's tasks", error: error)
+            logError("Failed to load tasks", error: error)
         }
     }
 
@@ -63,12 +91,17 @@ class DashboardViewModel: ObservableObject {
 
     func toggleTaskCompletion(_ task: TaskActionItem) async {
         do {
-            let updated = try await APIClient.shared.updateActionItem(
+            _ = try await APIClient.shared.updateActionItem(
                 id: task.id,
                 completed: !task.completed
             )
-            if let index = todaysTasks.firstIndex(where: { $0.id == task.id }) {
-                todaysTasks[index] = updated
+            // Remove from the appropriate array (task is now completed)
+            if let index = overdueTasks.firstIndex(where: { $0.id == task.id }) {
+                overdueTasks.remove(at: index)
+            } else if let index = todaysTasks.firstIndex(where: { $0.id == task.id }) {
+                todaysTasks.remove(at: index)
+            } else if let index = recentTasks.firstIndex(where: { $0.id == task.id }) {
+                recentTasks.remove(at: index)
             }
             // Reload daily score after task completion change
             await loadDailyScore()
@@ -164,8 +197,10 @@ struct DashboardPage: View {
                     // Left column: Daily Score + Today's Tasks
                     VStack(spacing: 20) {
                         DailyScoreWidget(dailyScore: viewModel.dailyScore)
-                        TodaysTasksWidget(
-                            tasks: viewModel.todaysTasks,
+                        TasksWidget(
+                            overdueTasks: viewModel.overdueTasks,
+                            todaysTasks: viewModel.todaysTasks,
+                            recentTasks: viewModel.recentTasks,
                             onToggleCompletion: { task in
                                 Task {
                                     await viewModel.toggleTaskCompletion(task)
