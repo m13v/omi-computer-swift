@@ -18,6 +18,7 @@ struct ConversationRowView: View {
 
     @EnvironmentObject var appState: AppState
     @State private var isStarring = false
+    @State private var isHovering = false
 
     // Context menu action states
     @State private var showEditDialog = false
@@ -165,6 +166,81 @@ struct ConversationRowView: View {
         isUpdatingTitle = false
     }
 
+    // MARK: - Inline Action Buttons
+
+    private var inlineActionButtons: some View {
+        HStack(spacing: 4) {
+            // Edit title
+            Button(action: {
+                editedTitle = conversation.title
+                showEditDialog = true
+            }) {
+                Image(systemName: "pencil")
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(OmiColors.backgroundSecondary))
+            }
+            .buttonStyle(.plain)
+            .help("Edit title")
+
+            // Copy link
+            Button(action: { Task { await copyLink() } }) {
+                Image(systemName: isCopyingLink ? "arrow.triangle.2.circlepath" : "link")
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(OmiColors.backgroundSecondary))
+            }
+            .buttonStyle(.plain)
+            .disabled(isCopyingLink)
+            .help("Copy link")
+
+            // Move to folder (if folders exist)
+            if !folders.isEmpty {
+                Menu {
+                    if conversation.folderId != nil {
+                        Button(action: { Task { await onMoveToFolder(conversation.id, nil) } }) {
+                            Label("Remove from Folder", systemImage: "folder.badge.minus")
+                        }
+                        Divider()
+                    }
+                    ForEach(folders) { folder in
+                        Button(action: { Task { await onMoveToFolder(conversation.id, folder.id) } }) {
+                            HStack {
+                                Text(folder.name)
+                                if conversation.folderId == folder.id {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                        .disabled(conversation.folderId == folder.id)
+                    }
+                } label: {
+                    Image(systemName: conversation.folderId != nil ? "folder.fill" : "folder")
+                        .font(.system(size: 11))
+                        .foregroundColor(conversation.folderId != nil ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        .frame(width: 22, height: 22)
+                        .background(Circle().fill(OmiColors.backgroundSecondary))
+                }
+                .menuStyle(.borderlessButton)
+                .frame(width: 22)
+                .help("Move to folder")
+            }
+
+            // Delete
+            Button(action: { showDeleteConfirmation = true }) {
+                Image(systemName: "trash")
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.error.opacity(0.8))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(OmiColors.backgroundSecondary))
+            }
+            .buttonStyle(.plain)
+            .help("Delete")
+        }
+    }
+
     // MARK: - Compact Row (single line)
 
     private var compactRowContent: some View {
@@ -186,6 +262,12 @@ struct ConversationRowView: View {
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
 
+            // Inline action buttons (show on hover)
+            if isHovering && !isMultiSelectMode {
+                inlineActionButtons
+                    .transition(.opacity)
+            }
+
             Spacer()
 
             // Star button
@@ -199,26 +281,30 @@ struct ConversationRowView: View {
             }
             .buttonStyle(.plain)
 
-            // Source label
-            Text(sourceLabel)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundColor(OmiColors.textQuaternary)
+            // Source label (hide on hover to make room)
+            if !isHovering {
+                Text(sourceLabel)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(OmiColors.textQuaternary)
+            }
 
             // Time
             Text(formattedTimestamp)
                 .font(.system(size: 11))
                 .foregroundColor(OmiColors.textTertiary)
 
-            // Duration
-            Text(conversation.formattedDuration)
-                .font(.system(size: 10))
-                .foregroundColor(OmiColors.textQuaternary)
+            // Duration (hide on hover to make room)
+            if !isHovering {
+                Text(conversation.formattedDuration)
+                    .font(.system(size: 10))
+                    .foregroundColor(OmiColors.textQuaternary)
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isHovering ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
@@ -249,7 +335,13 @@ struct ConversationRowView: View {
                         .foregroundColor(OmiColors.textPrimary)
                         .lineLimit(1)
 
-                    if conversation.structured.title.isEmpty {
+                    // Inline action buttons (show on hover)
+                    if isHovering && !isMultiSelectMode {
+                        inlineActionButtons
+                            .transition(.opacity)
+                    }
+
+                    if conversation.structured.title.isEmpty && !isHovering {
                         Text("(\(conversation.id.prefix(8))...)")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundColor(OmiColors.textQuaternary)
@@ -280,24 +372,28 @@ struct ConversationRowView: View {
             // Time, duration, and source
             VStack(alignment: .trailing, spacing: 4) {
                 HStack(spacing: 6) {
-                    Text(sourceLabel)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
+                    if !isHovering {
+                        Text(sourceLabel)
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
 
                     Text(formattedTimestamp)
                         .font(.system(size: 12))
                         .foregroundColor(OmiColors.textTertiary)
                 }
 
-                Text(conversation.formattedDuration)
-                    .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textQuaternary)
+                if !isHovering {
+                    Text(conversation.formattedDuration)
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textQuaternary)
+                }
             }
         }
         .padding(12)
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isHovering ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 10)
@@ -323,6 +419,11 @@ struct ConversationRowView: View {
             }
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
         .contextMenu {
             Button(action: copyTranscript) {
                 Label("Copy Transcript", systemImage: "doc.on.doc")
