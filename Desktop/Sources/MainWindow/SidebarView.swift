@@ -11,8 +11,9 @@ enum SidebarNavItem: Int, CaseIterable {
     case advice = 6
     case rewind = 7
     case apps = 8
-    case settings = 9
-    case permissions = 10
+    case persona = 9
+    case settings = 10
+    case permissions = 11
 
     var title: String {
         switch self {
@@ -25,6 +26,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .advice: return "Advice"
         case .rewind: return "Rewind"
         case .apps: return "Apps"
+        case .persona: return "AI Persona"
         case .settings: return "Settings"
         case .permissions: return "Permissions"
         }
@@ -41,6 +43,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .advice: return "lightbulb.fill"
         case .rewind: return "clock.arrow.circlepath"
         case .apps: return "square.grid.2x2.fill"
+        case .persona: return "person.crop.circle"
         case .settings: return "gearshape.fill"
         case .permissions: return "exclamationmark.triangle.fill"
         }
@@ -48,7 +51,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps]
+        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps, .persona]
     }
 }
 
@@ -855,6 +858,7 @@ struct NavItemView: View {
                       : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
         )
         .onTapGesture {
+            NSLog("OMI SIDEBAR: NavItem '\(label)' tapped at mouse position: \(NSEvent.mouseLocation)")
             onTap()
         }
         .onHover { hovering in
@@ -1017,6 +1021,7 @@ struct BottomNavItemView: View {
                 .fill(isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
         )
         .onTapGesture {
+            NSLog("OMI SIDEBAR: BottomNavItem '\(label)' tapped at mouse position: \(NSEvent.mouseLocation)")
             onTap()
         }
         .onHover { hovering in
