@@ -44,10 +44,11 @@ async fn get_daily_score(
         .await
     {
         Ok((completed_tasks, total_tasks)) => {
+            // Match Flutter behavior: 0 when no tasks, percentage when tasks exist
             let score = if total_tasks > 0 {
                 (completed_tasks as f64 / total_tasks as f64) * 100.0
             } else {
-                100.0 // No tasks = perfect score
+                0.0 // No tasks = 0 score (matches Flutter)
             };
 
             Ok(Json(DailyScore {
