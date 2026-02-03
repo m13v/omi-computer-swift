@@ -1217,6 +1217,20 @@ extension APIClient {
         let _: MemoryStatusResponse = try await post("v3/memories/mark-all-read", body: EmptyBody())
     }
 
+    /// Updates visibility of all memories
+    func updateAllMemoriesVisibility(visibility: String) async throws {
+        struct VisibilityRequest: Encodable {
+            let value: String
+        }
+        let body = VisibilityRequest(value: visibility)
+        let _: MemoryStatusResponse = try await patch("v3/memories/visibility", body: body)
+    }
+
+    /// Deletes all memories
+    func deleteAllMemories() async throws {
+        try await delete("v3/memories")
+    }
+
     // MARK: - PATCH helper
 
     func patch<T: Decodable, B: Encodable>(
@@ -1467,6 +1481,91 @@ struct CreateActionItemRequest: Encodable {
     }
 }
 
+// MARK: - Goals API
+
+extension APIClient {
+
+    /// Fetches all active goals (up to 3)
+    func getGoals() async throws -> [Goal] {
+        let response: GoalsListResponse = try await get("v1/goals/all")
+        return response.goals
+    }
+
+    /// Creates a new goal
+    func createGoal(
+        title: String,
+        goalType: GoalType = .boolean,
+        targetValue: Double = 1.0,
+        currentValue: Double = 0.0,
+        minValue: Double = 0.0,
+        maxValue: Double = 100.0,
+        unit: String? = nil
+    ) async throws -> Goal {
+        struct CreateGoalRequest: Encodable {
+            let title: String
+            let goalType: String
+            let targetValue: Double
+            let currentValue: Double
+            let minValue: Double
+            let maxValue: Double
+            let unit: String?
+
+            enum CodingKeys: String, CodingKey {
+                case title, unit
+                case goalType = "goal_type"
+                case targetValue = "target_value"
+                case currentValue = "current_value"
+                case minValue = "min_value"
+                case maxValue = "max_value"
+            }
+        }
+
+        let request = CreateGoalRequest(
+            title: title,
+            goalType: goalType.rawValue,
+            targetValue: targetValue,
+            currentValue: currentValue,
+            minValue: minValue,
+            maxValue: maxValue,
+            unit: unit
+        )
+
+        return try await post("v1/goals", body: request)
+    }
+
+    /// Updates a goal's progress
+    func updateGoalProgress(goalId: String, currentValue: Double) async throws -> Goal {
+        let url = URL(string: baseURL + "v1/goals/\(goalId)/progress?current_value=\(currentValue)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+
+        return try JSONDecoder().decode(Goal.self, from: data)
+    }
+
+    /// Deletes a goal
+    func deleteGoal(id: String) async throws {
+        try await delete("v1/goals/\(id)")
+    }
+
+    /// Gets the daily score for a specific date (defaults to today)
+    func getDailyScore(date: Date? = nil) async throws -> DailyScore {
+        var endpoint = "v1/daily-score"
+        if let date = date {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            endpoint += "?date=\(formatter.string(from: date))"
+        }
+        return try await get(endpoint)
+    }
+}
+
 // MARK: - Action Item Model (Standalone)
 
 /// Standalone action item stored in Firestore subcollection
@@ -1555,6 +1654,118 @@ struct TaskActionItem: Codable, Identifiable {
         case "manual": return "square.and.pencil"
         default: return "list.bullet"
         }
+    }
+}
+
+// MARK: - Goal Models
+
+/// Type of goal measurement
+enum GoalType: String, Codable, CaseIterable {
+    case boolean = "boolean"
+    case scale = "scale"
+    case numeric = "numeric"
+
+    var displayName: String {
+        switch self {
+        case .boolean: return "Done/Not Done"
+        case .scale: return "Scale"
+        case .numeric: return "Numeric"
+        }
+    }
+}
+
+/// User goal
+struct Goal: Codable, Identifiable {
+    let id: String
+    let title: String
+    let goalType: GoalType
+    let targetValue: Double
+    var currentValue: Double
+    let minValue: Double
+    let maxValue: Double
+    let unit: String?
+    let isActive: Bool
+    let createdAt: Date
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, unit
+        case goalType = "goal_type"
+        case targetValue = "target_value"
+        case currentValue = "current_value"
+        case minValue = "min_value"
+        case maxValue = "max_value"
+        case isActive = "is_active"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        goalType = try container.decodeIfPresent(GoalType.self, forKey: .goalType) ?? .boolean
+        targetValue = try container.decodeIfPresent(Double.self, forKey: .targetValue) ?? 1.0
+        currentValue = try container.decodeIfPresent(Double.self, forKey: .currentValue) ?? 0.0
+        minValue = try container.decodeIfPresent(Double.self, forKey: .minValue) ?? 0.0
+        maxValue = try container.decodeIfPresent(Double.self, forKey: .maxValue) ?? 100.0
+        unit = try container.decodeIfPresent(String.self, forKey: .unit)
+        isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+    }
+
+    /// Progress as a percentage (0-100)
+    var progress: Double {
+        guard maxValue != minValue else { return 0 }
+        return ((currentValue - minValue) / (maxValue - minValue)) * 100.0
+    }
+
+    /// Whether the goal is completed
+    var isCompleted: Bool {
+        currentValue >= targetValue
+    }
+
+    /// Formatted progress text
+    var progressText: String {
+        switch goalType {
+        case .boolean:
+            return isCompleted ? "Done" : "Not Done"
+        case .scale, .numeric:
+            if let unit = unit {
+                return "\(Int(currentValue))/\(Int(targetValue)) \(unit)"
+            }
+            return "\(Int(currentValue))/\(Int(targetValue))"
+        }
+    }
+}
+
+/// Response wrapper for goals list
+struct GoalsListResponse: Codable {
+    let goals: [Goal]
+}
+
+/// Daily score calculation result
+struct DailyScore: Codable {
+    let score: Double
+    let completedTasks: Int
+    let totalTasks: Int
+    let date: String
+
+    enum CodingKeys: String, CodingKey {
+        case score, date
+        case completedTasks = "completed_tasks"
+        case totalTasks = "total_tasks"
+    }
+
+    /// Score formatted as percentage
+    var scorePercentage: String {
+        return "\(Int(score))%"
+    }
+
+    /// Whether this is a perfect score
+    var isPerfect: Bool {
+        return score >= 100
     }
 }
 
