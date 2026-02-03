@@ -14,6 +14,7 @@ pub mod goals;
 pub mod health;
 pub mod memories;
 pub mod messages;
+pub mod personas;
 pub mod updates;
 pub mod users;
 
@@ -31,5 +32,6 @@ pub use goals::goals_routes;
 pub use health::health_routes;
 pub use memories::memories_routes;
 pub use messages::messages_routes;
+pub use personas::personas_routes;
 pub use updates::updates_routes;
 pub use users::users_routes;
