@@ -26,7 +26,8 @@ class AppState: ObservableObject {
     // Transcription state
     @Published var isTranscribing = false
     @Published var isSavingConversation = false
-    @Published var currentTranscript: String = ""
+    // currentTranscript is internal-only (not observed by views), so no @Published needed
+    private var currentTranscript: String = ""
     @Published var hasMicrophonePermission = false
     @Published var hasSystemAudioPermission = false
     @Published var isSystemAudioSupported = false
