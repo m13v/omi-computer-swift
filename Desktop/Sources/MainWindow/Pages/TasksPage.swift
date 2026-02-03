@@ -1417,9 +1417,7 @@ struct DateFilterPopover: View {
 
                 if viewModel.isFiltered {
                     Button {
-                        Task {
-                            await viewModel.clearDateFilter()
-                        }
+                        viewModel.clearDateFilter()
                         dismiss()
                     } label: {
                         Text("Clear")
@@ -1488,12 +1486,10 @@ struct DateFilterPopover: View {
 
             // Apply button
             Button {
-                Task {
-                    await viewModel.applyDateFilter(
-                        startDate: hasStartDate ? startDate : nil,
-                        endDate: hasEndDate ? endDate : nil
-                    )
-                }
+                viewModel.applyDateFilter(
+                    startDate: hasStartDate ? startDate : nil,
+                    endDate: hasEndDate ? endDate : nil
+                )
                 dismiss()
             } label: {
                 Text("Apply Filter")
