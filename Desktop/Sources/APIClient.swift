@@ -1581,6 +1581,17 @@ extension APIClient {
         }
         return try await get(endpoint)
     }
+
+    /// Get all scores (daily, weekly, overall) with default tab selection
+    func getScores(date: Date? = nil) async throws -> ScoreResponse {
+        var endpoint = "v1/scores"
+        if let date = date {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "yyyy-MM-dd"
+            endpoint += "?date=\(formatter.string(from: date))"
+        }
+        return try await get(endpoint)
+    }
 }
 
 // MARK: - Action Item Model (Standalone)
@@ -1783,6 +1794,41 @@ struct DailyScore: Codable {
     /// Whether this is a perfect score
     var isPerfect: Bool {
         return score >= 100
+    }
+}
+
+/// Single score data (used for daily, weekly, overall)
+struct ScoreData: Codable {
+    let score: Double
+    let completedTasks: Int
+    let totalTasks: Int
+
+    enum CodingKeys: String, CodingKey {
+        case score
+        case completedTasks = "completed_tasks"
+        case totalTasks = "total_tasks"
+    }
+
+    var scorePercentage: String {
+        return "\(Int(score))%"
+    }
+
+    var hasTasks: Bool {
+        return totalTasks > 0
+    }
+}
+
+/// Combined score response with all three score types
+struct ScoreResponse: Codable {
+    let daily: ScoreData
+    let weekly: ScoreData
+    let overall: ScoreData
+    let defaultTab: String
+    let date: String
+
+    enum CodingKeys: String, CodingKey {
+        case daily, weekly, overall, date
+        case defaultTab = "default_tab"
     }
 }
 
