@@ -6,6 +6,7 @@ struct ConversationListView: View {
     let isLoading: Bool
     let error: String?
     let folders: [Folder]
+    var isCompactView: Bool = true
     let onSelect: (ServerConversation) -> Void
     let onRefresh: () -> Void
     let onMoveToFolder: (String, String?) async -> Void
@@ -159,6 +160,7 @@ struct ConversationListView: View {
                             onTap: { onSelect(conversation) },
                             folders: folders,
                             onMoveToFolder: onMoveToFolder,
+                            isCompactView: isCompactView,
                             isMultiSelectMode: isMultiSelectMode,
                             isSelected: selectedIds.contains(conversation.id),
                             onToggleSelection: { onToggleSelection?(conversation.id) }
