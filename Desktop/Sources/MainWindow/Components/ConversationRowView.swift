@@ -145,6 +145,147 @@ struct ConversationRowView: View {
         isUpdatingTitle = false
     }
 
+    // MARK: - Compact Row (single line)
+
+    private var compactRowContent: some View {
+        HStack(spacing: 8) {
+            // Checkbox for multi-select mode
+            if isMultiSelectMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18))
+                    .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
+            }
+
+            // Emoji
+            Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
+                .font(.system(size: 13))
+
+            // Title
+            Text(conversation.title)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(OmiColors.textPrimary)
+                .lineLimit(1)
+
+            Spacer()
+
+            // Star button
+            Button(action: {
+                Task { await toggleStar() }
+            }) {
+                Image(systemName: conversation.starred ? "star.fill" : "star")
+                    .font(.system(size: 12))
+                    .foregroundColor(conversation.starred ? OmiColors.amber : OmiColors.textTertiary)
+                    .opacity(isStarring ? 0.5 : 1.0)
+            }
+            .buttonStyle(.plain)
+
+            // Source label
+            Text(sourceLabel)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundColor(OmiColors.textQuaternary)
+
+            // Time
+            Text(formattedTimestamp)
+                .font(.system(size: 11))
+                .foregroundColor(OmiColors.textTertiary)
+
+            // Duration
+            Text(conversation.formattedDuration)
+                .font(.system(size: 10))
+                .foregroundColor(OmiColors.textQuaternary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+    }
+
+    // MARK: - Expanded Row (title + overview)
+
+    private var expandedRowContent: some View {
+        HStack(spacing: 12) {
+            // Checkbox for multi-select mode
+            if isMultiSelectMode {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 20))
+                    .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
+            }
+
+            // Emoji, Title, and overview
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
+                        .font(.system(size: 14))
+
+                    Text(conversation.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .lineLimit(1)
+
+                    if conversation.structured.title.isEmpty {
+                        Text("(\(conversation.id.prefix(8))...)")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(OmiColors.textQuaternary)
+                    }
+                }
+
+                if !conversation.overview.isEmpty {
+                    Text(conversation.overview)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .lineLimit(2)
+                }
+            }
+
+            Spacer()
+
+            // Star button
+            Button(action: {
+                Task { await toggleStar() }
+            }) {
+                Image(systemName: conversation.starred ? "star.fill" : "star")
+                    .font(.system(size: 14))
+                    .foregroundColor(conversation.starred ? OmiColors.amber : OmiColors.textTertiary)
+                    .opacity(isStarring ? 0.5 : 1.0)
+            }
+            .buttonStyle(.plain)
+
+            // Time, duration, and source
+            VStack(alignment: .trailing, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(sourceLabel)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    Text(formattedTimestamp)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Text(conversation.formattedDuration)
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textQuaternary)
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 2)
+        )
+        .contentShape(Rectangle())
+    }
+
     var body: some View {
         Button(action: {
             if isMultiSelectMode {
@@ -153,85 +294,13 @@ struct ConversationRowView: View {
                 onTap()
             }
         }) {
-            HStack(spacing: 12) {
-                // Checkbox for multi-select mode
-                if isMultiSelectMode {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 20))
-                        .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
-                }
-
-                // Emoji, Title, and overview
-                VStack(alignment: .leading, spacing: 4) {
-                    HStack(spacing: 6) {
-                        // Emoji from structured data (fallback to default)
-                        Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
-                            .font(.system(size: 14))
-
-                        Text(conversation.title)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-                            .lineLimit(1)
-
-                        // Show ID for untitled conversations
-                        if conversation.structured.title.isEmpty {
-                            Text("(\(conversation.id.prefix(8))...)")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(OmiColors.textQuaternary)
-                        }
-                    }
-
-                    // Only show overview in expanded mode
-                    if !isCompactView && !conversation.overview.isEmpty {
-                        Text(conversation.overview)
-                            .font(.system(size: 12))
-                            .foregroundColor(OmiColors.textTertiary)
-                            .lineLimit(2)
-                    }
-                }
-
-                Spacer()
-
-                // Star button
-                Button(action: {
-                    Task {
-                        await toggleStar()
-                    }
-                }) {
-                    Image(systemName: conversation.starred ? "star.fill" : "star")
-                        .font(.system(size: 14))
-                        .foregroundColor(conversation.starred ? OmiColors.amber : OmiColors.textTertiary)
-                        .opacity(isStarring ? 0.5 : 1.0)
-                }
-                .buttonStyle(.plain)
-
-                // Time, duration, and source
-                VStack(alignment: .trailing, spacing: 4) {
-                    HStack(spacing: 6) {
-                        Text(sourceLabel)
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(OmiColors.textTertiary)
-
-                        Text(formattedTimestamp)
-                            .font(.system(size: 12))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Text(conversation.formattedDuration)
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textQuaternary)
-                }
+            if isCompactView {
+                // Compact mode: single line with all info
+                compactRowContent
+            } else {
+                // Expanded mode: title + overview with metadata below
+                expandedRowContent
             }
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10)
-                    .stroke(isSelected ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 2)
-            )
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .contextMenu {
