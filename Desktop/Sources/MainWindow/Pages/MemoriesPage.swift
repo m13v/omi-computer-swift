@@ -3,26 +3,54 @@ import AppKit
 
 // MARK: - Safe Dismiss Button
 /// A dismiss button that prevents click-through to underlying views on macOS.
-/// Uses onTapGesture with async delay to ensure the click is fully consumed before dismissing.
-/// Copied from AppsPage.swift for consistency.
+/// Uses onTapGesture with async delay and synthetic mouse-up event to ensure the click is fully consumed.
+/// Copied from AppsPage.swift SafeDismissButton for consistency.
 struct MemorySafeDismissButton: View {
     let dismiss: DismissAction
     var icon: String = "xmark.circle.fill"
     var iconSize: CGFloat = 20
 
+    @State private var isPressed = false
+
     var body: some View {
         Image(systemName: icon)
             .font(.system(size: iconSize))
-            .foregroundColor(OmiColors.textTertiary)
+            .foregroundColor(isPressed ? OmiColors.textQuaternary : OmiColors.textTertiary)
             .contentShape(Circle())
+            .opacity(isPressed ? 0.7 : 1.0)
             .onTapGesture {
-                // Try to consume the click by resigning first responder
+                guard !isPressed else { return } // Prevent double-tap
+                isPressed = true
+
+                log("MEMORY DISMISS: Tap gesture fired at mouse position: \(NSEvent.mouseLocation)")
+
+                // Consume the click by resigning first responder
                 NSApp.keyWindow?.makeFirstResponder(nil)
 
-                // Use async to ensure tap gesture completes before dismiss
+                // Post a mouse-up event to ensure any pending click is consumed
+                if let window = NSApp.keyWindow {
+                    let event = NSEvent.mouseEvent(
+                        with: .leftMouseUp,
+                        location: window.mouseLocationOutsideOfEventStream,
+                        modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber,
+                        context: nil,
+                        eventNumber: 0,
+                        clickCount: 1,
+                        pressure: 0
+                    )
+                    if let event = event {
+                        window.sendEvent(event)
+                        log("MEMORY DISMISS: Sent synthetic mouse-up event")
+                    }
+                }
+
+                // Use async with longer delay to ensure mouse event fully completes
                 Task { @MainActor in
-                    // Delay to ensure mouse-up event is fully processed
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                    log("MEMORY DISMISS: Starting 250ms delay before dismiss")
+                    try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
+                    log("MEMORY DISMISS: Calling dismiss()")
                     dismiss()
                 }
             }
@@ -31,7 +59,11 @@ struct MemorySafeDismissButton: View {
 
 /// All available tags for filtering memories
 enum MemoryTag: String, CaseIterable, Identifiable {
-    // Tips tag (from advice system) - shown first
+    // Focus tags - shown first
+    case focus
+    case focused
+    case distracted
+    // Tips tag (from advice system)
     case tips
     // Memory categories
     case system
@@ -48,6 +80,9 @@ enum MemoryTag: String, CaseIterable, Identifiable {
 
     var displayName: String {
         switch self {
+        case .focus: return "Focus"
+        case .focused: return "Focused"
+        case .distracted: return "Distracted"
         case .tips: return "Tips"
         case .system: return "System"
         case .interesting: return "Interesting"
@@ -62,6 +97,9 @@ enum MemoryTag: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .focus: return "eye"
+        case .focused: return "eye.fill"
+        case .distracted: return "eye.slash.fill"
         case .tips: return "lightbulb.fill"
         case .system: return "gearshape"
         case .interesting: return "sparkles"
@@ -76,6 +114,9 @@ enum MemoryTag: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
+        case .focus: return OmiColors.info
+        case .focused: return Color.green
+        case .distracted: return Color.orange
         case .tips: return OmiColors.warning
         case .system: return OmiColors.info
         case .interesting: return OmiColors.warning
@@ -91,10 +132,17 @@ enum MemoryTag: String, CaseIterable, Identifiable {
     /// Check if a memory matches this tag
     func matches(_ memory: ServerMemory) -> Bool {
         switch self {
+        case .focus:
+            return memory.tags.contains("focus")
+        case .focused:
+            return memory.tags.contains("focused")
+        case .distracted:
+            return memory.tags.contains("distracted")
         case .tips:
             return memory.tags.contains("tips")
         case .system:
-            return memory.category == .system && !memory.tags.contains("tips")
+            // System memories that aren't tips or focus events
+            return memory.category == .system && !memory.tags.contains("tips") && !memory.tags.contains("focus")
         case .interesting:
             return memory.category == .interesting && !memory.tags.contains("tips")
         case .manual:
@@ -1070,6 +1118,7 @@ private struct MemoryCardView: View {
         )
         .contentShape(Rectangle())
         .onHover { hovering in
+            logPerf("HOVER: MemoryCard = \(hovering ? "ENTER" : "EXIT")")
             // No animation wrapper - simple state update for instant response
             isHovered = hovering
             // Change cursor to pointing hand on hover
@@ -1242,13 +1291,13 @@ struct MemoryDetailSheet: View {
                         backgroundColor: OmiColors.backgroundTertiary
                     ) {
                         let memoryToEdit = memory
-                        // Dismiss first, then open edit sheet after delay
+                        // Dismiss first, then open edit sheet after sheet animation completes
                         NSApp.keyWindow?.makeFirstResponder(nil)
                         Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 100_000_000)
+                            try? await Task.sleep(nanoseconds: 150_000_000) // 150ms before dismiss
                             dismiss()
-                            // Small additional delay before opening the new sheet
-                            try? await Task.sleep(nanoseconds: 50_000_000)
+                            // Wait for sheet dismiss animation to complete (~300ms)
+                            try? await Task.sleep(nanoseconds: 350_000_000) // 350ms after dismiss
                             viewModel.editingMemory = memoryToEdit
                             viewModel.editText = memoryToEdit.content
                         }
@@ -1364,6 +1413,7 @@ struct MemoryDetailSheet: View {
 
 // MARK: - Memory Action Row
 /// A row button that prevents click-through when tapped, using the same pattern as SafeDismissButton.
+/// Sends a synthetic mouse-up event before executing the action.
 private struct MemoryActionRow: View {
     let icon: String
     let title: String
@@ -1372,6 +1422,8 @@ private struct MemoryActionRow: View {
     let backgroundColor: Color
     var trailingIcon: String? = nil
     let action: () -> Void
+
+    @State private var isPressed = false
 
     var body: some View {
         HStack {
@@ -1390,8 +1442,37 @@ private struct MemoryActionRow: View {
         .padding(12)
         .background(backgroundColor)
         .cornerRadius(8)
+        .opacity(isPressed ? 0.7 : 1.0)
         .contentShape(Rectangle())
         .onTapGesture {
+            guard !isPressed else { return } // Prevent double-tap
+            isPressed = true
+
+            log("MEMORY ACTION: \(title) tapped at mouse position: \(NSEvent.mouseLocation)")
+
+            // Consume the click by resigning first responder
+            NSApp.keyWindow?.makeFirstResponder(nil)
+
+            // Post a mouse-up event to ensure any pending click is consumed
+            if let window = NSApp.keyWindow {
+                let event = NSEvent.mouseEvent(
+                    with: .leftMouseUp,
+                    location: window.mouseLocationOutsideOfEventStream,
+                    modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: 1,
+                    pressure: 0
+                )
+                if let event = event {
+                    window.sendEvent(event)
+                    log("MEMORY ACTION: Sent synthetic mouse-up event for \(title)")
+                }
+            }
+
+            // Execute the action (which should handle its own delays for dismiss)
             action()
         }
     }
@@ -1402,6 +1483,7 @@ private struct MemoryActionRow: View {
 struct AddMemorySheet: View {
     @ObservedObject var viewModel: MemoriesViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isCancelPressed = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -1422,13 +1504,42 @@ struct AddMemorySheet: View {
                 // Cancel button with safe dismiss
                 Text("Cancel")
                     .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .opacity(isCancelPressed ? 0.7 : 1.0)
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        guard !isCancelPressed else { return }
+                        isCancelPressed = true
+
+                        log("ADD MEMORY: Cancel tapped")
+
+                        // Consume the click by resigning first responder
                         NSApp.keyWindow?.makeFirstResponder(nil)
+
+                        // Post a mouse-up event to ensure any pending click is consumed
+                        if let window = NSApp.keyWindow {
+                            let event = NSEvent.mouseEvent(
+                                with: .leftMouseUp,
+                                location: window.mouseLocationOutsideOfEventStream,
+                                modifierFlags: [],
+                                timestamp: ProcessInfo.processInfo.systemUptime,
+                                windowNumber: window.windowNumber,
+                                context: nil,
+                                eventNumber: 0,
+                                clickCount: 1,
+                                pressure: 0
+                            )
+                            if let event = event {
+                                window.sendEvent(event)
+                                log("ADD MEMORY: Sent synthetic mouse-up event")
+                            }
+                        }
+
                         Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 100_000_000)
-                            viewModel.newMemoryText = ""
+                            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
                             dismiss()
+                            viewModel.newMemoryText = ""
                         }
                     }
 
@@ -1461,6 +1572,7 @@ struct EditMemorySheet: View {
     let memory: ServerMemory
     @ObservedObject var viewModel: MemoriesViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isCancelPressed = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -1481,13 +1593,42 @@ struct EditMemorySheet: View {
                 // Cancel button with safe dismiss
                 Text("Cancel")
                     .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .opacity(isCancelPressed ? 0.7 : 1.0)
                     .contentShape(Rectangle())
                     .onTapGesture {
+                        guard !isCancelPressed else { return }
+                        isCancelPressed = true
+
+                        log("EDIT MEMORY: Cancel tapped")
+
+                        // Consume the click by resigning first responder
                         NSApp.keyWindow?.makeFirstResponder(nil)
+
+                        // Post a mouse-up event to ensure any pending click is consumed
+                        if let window = NSApp.keyWindow {
+                            let event = NSEvent.mouseEvent(
+                                with: .leftMouseUp,
+                                location: window.mouseLocationOutsideOfEventStream,
+                                modifierFlags: [],
+                                timestamp: ProcessInfo.processInfo.systemUptime,
+                                windowNumber: window.windowNumber,
+                                context: nil,
+                                eventNumber: 0,
+                                clickCount: 1,
+                                pressure: 0
+                            )
+                            if let event = event {
+                                window.sendEvent(event)
+                                log("EDIT MEMORY: Sent synthetic mouse-up event")
+                            }
+                        }
+
                         Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 100_000_000)
-                            viewModel.editText = ""
+                            try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
                             dismiss()
+                            viewModel.editText = ""
                         }
                     }
 
