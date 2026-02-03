@@ -88,6 +88,11 @@ struct MemoriesPage: View {
     @State private var editText = ""
     @State private var selectedMemory: ServerMemory? = nil
 
+    // Undo delete state
+    @State private var pendingDeleteMemory: ServerMemory? = nil
+    @State private var deleteTask: Task<Void, Never>? = nil
+    @State private var undoTimeRemaining: Double = 0
+
     private var filteredMemories: [ServerMemory] {
         var result = memories
 
@@ -150,8 +155,68 @@ struct MemoriesPage: View {
         .sheet(item: $selectedMemory) { memory in
             memoryDetailSheet(memory)
         }
+        .overlay(alignment: .bottom) {
+            undoDeleteToast
+        }
         .task {
             await loadMemories()
+        }
+    }
+
+    // MARK: - Undo Delete Toast
+
+    @ViewBuilder
+    private var undoDeleteToast: some View {
+        if pendingDeleteMemory != nil {
+            HStack(spacing: 12) {
+                Image(systemName: "trash")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textSecondary)
+
+                Text("Memory deleted")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                // Progress indicator
+                Text(String(format: "%.0fs", undoTimeRemaining))
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .monospacedDigit()
+
+                Button {
+                    undoDelete()
+                } label: {
+                    Text("Undo")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(OmiColors.purplePrimary)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    // Dismiss immediately and delete now
+                    confirmDelete()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(OmiColors.backgroundTertiary)
+            .cornerRadius(12)
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(OmiColors.textQuaternary.opacity(0.5), lineWidth: 1)
+            )
+            .shadow(color: Color.black.opacity(0.15), radius: 8, x: 0, y: 4)
+            .padding(.horizontal, 24)
+            .padding(.bottom, 24)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: pendingDeleteMemory != nil)
         }
     }
 
@@ -941,12 +1006,90 @@ struct MemoriesPage: View {
     }
 
     private func deleteMemory(_ memory: ServerMemory) async {
+        // Cancel any existing pending delete
+        deleteTask?.cancel()
+        if let existingPending = pendingDeleteMemory {
+            // Immediately delete the previous pending memory
+            await performActualDelete(existingPending)
+        }
+
+        // Remove from UI immediately (optimistic)
+        withAnimation(.easeInOut(duration: 0.2)) {
+            memories.removeAll { $0.id == memory.id }
+            pendingDeleteMemory = memory
+            undoTimeRemaining = 4
+        }
+
+        // Start countdown timer
+        deleteTask = Task {
+            // Update countdown every 100ms
+            for _ in 0..<40 {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                if Task.isCancelled { return }
+                await MainActor.run {
+                    undoTimeRemaining = max(0, undoTimeRemaining - 0.1)
+                }
+            }
+
+            if Task.isCancelled { return }
+
+            // Timer expired, perform actual delete
+            await MainActor.run {
+                Task {
+                    await confirmDelete()
+                }
+            }
+        }
+    }
+
+    private func undoDelete() {
+        guard let memory = pendingDeleteMemory else { return }
+
+        // Cancel the delete timer
+        deleteTask?.cancel()
+        deleteTask = nil
+
+        // Restore the memory to the list
+        withAnimation(.easeInOut(duration: 0.2)) {
+            memories.append(memory)
+            memories.sort { $0.createdAt > $1.createdAt }
+            pendingDeleteMemory = nil
+            undoTimeRemaining = 0
+        }
+    }
+
+    private func confirmDelete() {
+        guard let memory = pendingDeleteMemory else { return }
+
+        // Cancel timer if still running
+        deleteTask?.cancel()
+        deleteTask = nil
+
+        Task {
+            await performActualDelete(memory)
+        }
+
+        withAnimation(.easeInOut(duration: 0.2)) {
+            pendingDeleteMemory = nil
+            undoTimeRemaining = 0
+        }
+    }
+
+    private func performActualDelete(_ memory: ServerMemory) async {
         do {
             try await APIClient.shared.deleteMemory(id: memory.id)
-            memories.removeAll { $0.id == memory.id }
             AnalyticsManager.shared.memoryDeleted(conversationId: memory.id)
         } catch {
             logError("Failed to delete memory", error: error)
+            // Restore on failure
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    if !memories.contains(where: { $0.id == memory.id }) {
+                        memories.append(memory)
+                        memories.sort { $0.createdAt > $1.createdAt }
+                    }
+                }
+            }
         }
     }
 
