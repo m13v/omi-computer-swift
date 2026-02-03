@@ -1,0 +1,142 @@
+// Goal models - user goals stored in Firestore
+// Path: users/{uid}/goals/{goal_id}
+
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+
+/// Type of goal measurement
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum GoalType {
+    /// Boolean goal (done/not done)
+    Boolean,
+    /// Scale goal (e.g., 1-10)
+    Scale,
+    /// Numeric goal (e.g., steps, hours)
+    Numeric,
+}
+
+impl Default for GoalType {
+    fn default() -> Self {
+        GoalType::Boolean
+    }
+}
+
+/// Goal stored in Firestore subcollection
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalDB {
+    /// Document ID
+    pub id: String,
+    /// Goal title/description
+    pub title: String,
+    /// Type of goal measurement
+    #[serde(default)]
+    pub goal_type: GoalType,
+    /// Target value to achieve (for numeric/scale goals)
+    #[serde(default)]
+    pub target_value: f64,
+    /// Current progress value
+    #[serde(default)]
+    pub current_value: f64,
+    /// Minimum value for scale (default 0)
+    #[serde(default)]
+    pub min_value: f64,
+    /// Maximum value for scale (default 100)
+    #[serde(default = "default_max_value")]
+    pub max_value: f64,
+    /// Unit of measurement (e.g., "hours", "steps", "pages")
+    pub unit: Option<String>,
+    /// Whether the goal is active
+    #[serde(default = "default_true")]
+    pub is_active: bool,
+    /// When the goal was created
+    pub created_at: DateTime<Utc>,
+    /// When the goal was last updated
+    pub updated_at: DateTime<Utc>,
+}
+
+fn default_max_value() -> f64 {
+    100.0
+}
+
+fn default_true() -> bool {
+    true
+}
+
+/// Request body for creating a new goal
+#[derive(Debug, Clone, Deserialize)]
+pub struct CreateGoalRequest {
+    /// Goal title/description (required)
+    pub title: String,
+    /// Type of goal measurement (optional, defaults to boolean)
+    #[serde(default)]
+    pub goal_type: GoalType,
+    /// Target value to achieve (optional, defaults to 1.0 for boolean)
+    pub target_value: Option<f64>,
+    /// Current progress value (optional, defaults to 0)
+    pub current_value: Option<f64>,
+    /// Minimum value for scale (optional, defaults to 0)
+    pub min_value: Option<f64>,
+    /// Maximum value for scale (optional, defaults to 100)
+    pub max_value: Option<f64>,
+    /// Unit of measurement (optional)
+    pub unit: Option<String>,
+}
+
+/// Request body for updating an existing goal
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateGoalRequest {
+    /// New title (optional)
+    pub title: Option<String>,
+    /// New target value (optional)
+    pub target_value: Option<f64>,
+    /// New current value (optional)
+    pub current_value: Option<f64>,
+    /// New min value (optional)
+    pub min_value: Option<f64>,
+    /// New max value (optional)
+    pub max_value: Option<f64>,
+    /// New unit (optional)
+    pub unit: Option<String>,
+    /// New active status (optional)
+    pub is_active: Option<bool>,
+}
+
+/// Query parameters for updating goal progress
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateGoalProgressQuery {
+    /// New current value
+    pub current_value: f64,
+}
+
+/// Response for goal status operations
+#[derive(Debug, Clone, Serialize)]
+pub struct GoalStatusResponse {
+    pub status: String,
+}
+
+/// Daily score calculation result
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyScore {
+    /// Score as percentage (0-100)
+    pub score: f64,
+    /// Number of completed tasks
+    pub completed_tasks: i32,
+    /// Total number of tasks due today
+    pub total_tasks: i32,
+    /// Date of the score calculation
+    pub date: String,
+}
+
+/// Query parameters for daily score
+#[derive(Debug, Clone, Deserialize)]
+pub struct DailyScoreQuery {
+    /// Optional date in YYYY-MM-DD format (defaults to today)
+    pub date: Option<String>,
+}
+
+/// Response wrapper for goals list
+#[derive(Debug, Clone, Serialize)]
+pub struct GoalsListResponse {
+    pub goals: Vec<GoalDB>,
+}
