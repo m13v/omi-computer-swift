@@ -138,6 +138,158 @@ struct ScreenshotSearchResult: Identifiable, Equatable {
     }
 }
 
+// MARK: - Search Result Group
+
+/// A group of search results from the same app/window context within a time window
+struct SearchResultGroup: Identifiable, Equatable {
+    /// Unique identifier for the group
+    let id: String
+
+    /// The representative screenshot (first encountered in relevance order)
+    let representativeScreenshot: Screenshot
+
+    /// All screenshots in this group, sorted by timestamp descending
+    let screenshots: [Screenshot]
+
+    /// App name for this group
+    var appName: String { representativeScreenshot.appName }
+
+    /// Window title for this group
+    var windowTitle: String? { representativeScreenshot.windowTitle }
+
+    /// Number of screenshots in the group
+    var count: Int { screenshots.count }
+
+    /// Earliest timestamp in the group
+    var startTime: Date {
+        screenshots.map { $0.timestamp }.min() ?? representativeScreenshot.timestamp
+    }
+
+    /// Latest timestamp in the group
+    var endTime: Date {
+        screenshots.map { $0.timestamp }.max() ?? representativeScreenshot.timestamp
+    }
+
+    /// Formatted time range for display
+    var formattedTimeRange: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        let start = formatter.string(from: startTime)
+
+        // If same minute, just show one time
+        let calendar = Calendar.current
+        if calendar.isDate(startTime, equalTo: endTime, toGranularity: .minute) {
+            return start
+        }
+
+        // If same day, show time range
+        if calendar.isDate(startTime, inSameDayAs: endTime) {
+            let timeFormatter = DateFormatter()
+            timeFormatter.timeStyle = .short
+            return "\(start) - \(timeFormatter.string(from: endTime))"
+        }
+
+        // Different days
+        return "\(start) - \(formatter.string(from: endTime))"
+    }
+
+    static func == (lhs: SearchResultGroup, rhs: SearchResultGroup) -> Bool {
+        lhs.id == rhs.id
+    }
+}
+
+// MARK: - Search Result Grouping
+
+/// Helper struct for tracking screenshot sessions during grouping
+private struct ScreenshotSession {
+    var screenshots: [Screenshot]
+    var minTime: Date
+    var maxTime: Date
+
+    mutating func add(_ screenshot: Screenshot) {
+        screenshots.append(screenshot)
+        if screenshot.timestamp < minTime {
+            minTime = screenshot.timestamp
+        }
+        if screenshot.timestamp > maxTime {
+            maxTime = screenshot.timestamp
+        }
+    }
+
+    func contains(timestamp: Date, within window: TimeInterval) -> Bool {
+        let expandedMin = minTime.addingTimeInterval(-window)
+        let expandedMax = maxTime.addingTimeInterval(window)
+        return timestamp >= expandedMin && timestamp <= expandedMax
+    }
+}
+
+extension Array where Element == Screenshot {
+    /// Group screenshots by app/window context within a time window
+    /// - Parameter timeWindowSeconds: Maximum gap between screenshots to be considered same group
+    /// - Returns: Array of grouped results, preserving relevance order
+    func groupedByContext(timeWindowSeconds: TimeInterval = 30) -> [SearchResultGroup] {
+        guard !isEmpty else { return [] }
+
+        // Track groups by context key
+        // Each context can have multiple sessions (separated by time gaps)
+        var contextSessions: [String: [ScreenshotSession]] = [:]
+        var groupOrder: [(key: String, sessionIndex: Int)] = []
+
+        for screenshot in self {
+            let key = "\(screenshot.appName)|\(screenshot.windowTitle ?? "")"
+
+            if contextSessions[key] == nil {
+                // First screenshot for this context - create new session
+                let session = ScreenshotSession(
+                    screenshots: [screenshot],
+                    minTime: screenshot.timestamp,
+                    maxTime: screenshot.timestamp
+                )
+                contextSessions[key] = [session]
+                groupOrder.append((key: key, sessionIndex: 0))
+            } else {
+                // Check if this screenshot fits in an existing session
+                var foundSession = false
+                for i in 0..<contextSessions[key]!.count {
+                    if contextSessions[key]![i].contains(timestamp: screenshot.timestamp, within: timeWindowSeconds) {
+                        contextSessions[key]![i].add(screenshot)
+                        foundSession = true
+                        break
+                    }
+                }
+
+                if !foundSession {
+                    // Start a new session for this context
+                    let session = ScreenshotSession(
+                        screenshots: [screenshot],
+                        minTime: screenshot.timestamp,
+                        maxTime: screenshot.timestamp
+                    )
+                    let newIndex = contextSessions[key]!.count
+                    contextSessions[key]!.append(session)
+                    groupOrder.append((key: key, sessionIndex: newIndex))
+                }
+            }
+        }
+
+        // Build result groups in the order they were first encountered
+        return groupOrder.compactMap { order -> SearchResultGroup? in
+            guard let session = contextSessions[order.key]?[order.sessionIndex] else { return nil }
+
+            // Sort screenshots by timestamp descending (most recent first)
+            let sortedScreenshots = session.screenshots.sorted { $0.timestamp > $1.timestamp }
+
+            return SearchResultGroup(
+                id: "\(order.key)|\(order.sessionIndex)",
+                representativeScreenshot: sortedScreenshots.first!,
+                screenshots: sortedScreenshots
+            )
+        }
+    }
+}
+
 // MARK: - Rewind Error Types
 
 enum RewindError: LocalizedError {
