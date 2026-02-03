@@ -722,8 +722,9 @@ struct MemoriesPage: View {
             .background(OmiColors.backgroundTertiary)
             .cornerRadius(8)
 
-            // Tag filters (multi-select)
-            ScrollView(.horizontal, showsIndicators: false) {
+            // Tag filters (multi-select) - organized in two rows
+            VStack(alignment: .leading, spacing: 8) {
+                // Row 1: Main filters
                 HStack(spacing: 8) {
                     // All button
                     tagFilterButton(nil, "All", "tray.full", viewModel.memories.count)
@@ -732,12 +733,23 @@ struct MemoriesPage: View {
                     Rectangle()
                         .fill(OmiColors.textQuaternary)
                         .frame(width: 1, height: 20)
-                        .padding(.horizontal, 4)
+                        .padding(.horizontal, 2)
 
-                    // Tags in order: tips first, then categories, then tip subcategories
-                    ForEach(MemoryTag.allCases) { tag in
-                        tagFilterButton(tag, tag.displayName, tag.icon, viewModel.tagCount(tag))
-                    }
+                    // Focus group
+                    tagFilterButton(.focus, "Focus", "eye", viewModel.tagCount(.focus))
+                    tagFilterButton(.focused, "Focused", "eye.fill", viewModel.tagCount(.focused))
+                    tagFilterButton(.distracted, "Distracted", "eye.slash.fill", viewModel.tagCount(.distracted))
+
+                    // Divider
+                    Rectangle()
+                        .fill(OmiColors.textQuaternary)
+                        .frame(width: 1, height: 20)
+                        .padding(.horizontal, 2)
+
+                    // Categories
+                    tagFilterButton(.system, "System", "gearshape", viewModel.tagCount(.system))
+                    tagFilterButton(.interesting, "Interesting", "sparkles", viewModel.tagCount(.interesting))
+                    tagFilterButton(.manual, "Manual", "square.and.pencil", viewModel.tagCount(.manual))
 
                     Spacer()
 
@@ -753,6 +765,18 @@ struct MemoriesPage: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(viewModel.isLoading)
+                }
+
+                // Row 2: Tips and subcategories
+                HStack(spacing: 8) {
+                    tagFilterButton(.tips, "Tips", "lightbulb.fill", viewModel.tagCount(.tips))
+                    tagFilterButton(.productivity, "Productivity", "chart.line.uptrend.xyaxis", viewModel.tagCount(.productivity))
+                    tagFilterButton(.health, "Health", "heart.fill", viewModel.tagCount(.health))
+                    tagFilterButton(.communication, "Communication", "bubble.left.and.bubble.right.fill", viewModel.tagCount(.communication))
+                    tagFilterButton(.learning, "Learning", "book.fill", viewModel.tagCount(.learning))
+                    tagFilterButton(.other, "Other", "ellipsis.circle", viewModel.tagCount(.other))
+
+                    Spacer()
                 }
             }
         }
