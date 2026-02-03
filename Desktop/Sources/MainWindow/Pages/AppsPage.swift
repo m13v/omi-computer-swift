@@ -223,17 +223,20 @@ struct AppsPage: View {
                 }
             }
         }
-        .sheet(item: $selectedApp) { app in
-            AppDetailSheet(app: app, appProvider: appProvider)
+        .dismissableSheet(item: $selectedApp) { app in
+            AppDetailSheet(app: app, appProvider: appProvider, onDismiss: { selectedApp = nil })
+                .frame(width: 500, height: 650)
                 .onAppear {
                     AnalyticsManager.shared.appDetailViewed(appId: app.id, appName: app.name)
                 }
         }
-        .sheet(isPresented: $showFilterSheet) {
-            AppFilterSheet(appProvider: appProvider)
+        .dismissableSheet(isPresented: $showFilterSheet) {
+            AppFilterSheet(appProvider: appProvider, onDismiss: { showFilterSheet = false })
+                .frame(width: 400, height: 500)
         }
-        .sheet(item: $viewAllCategory) { category in
-            CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 })
+        .dismissableSheet(item: $viewAllCategory) { category in
+            CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 }, onDismiss: { viewAllCategory = nil })
+                .frame(width: 500, height: 600)
         }
         .dismissableSheet(isPresented: $showPersonaPage) {
             PersonaPage(onDismiss: {
@@ -718,7 +721,17 @@ struct AppActionButton: View {
 
 struct AppFilterSheet: View {
     @ObservedObject var appProvider: AppProvider
-    @Environment(\.dismiss) private var dismiss
+    var onDismiss: (() -> Void)? = nil
+
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -739,7 +752,7 @@ struct AppFilterSheet: View {
                     .foregroundColor(OmiColors.purplePrimary)
                 }
 
-                SafeDismissButton(dismiss: dismiss)
+                DismissButton(action: dismissSheet)
             }
             .padding()
 
@@ -849,8 +862,17 @@ struct CategoryAppsSheet: View {
     let category: OmiAppCategory
     let appProvider: AppProvider
     let onSelectApp: (OmiApp) -> Void
+    var onDismiss: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var environmentDismiss
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var categoryApps: [OmiApp] {
         appProvider.apps(forCategory: category.id)
@@ -860,7 +882,7 @@ struct CategoryAppsSheet: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                SafeDismissButton(dismiss: dismiss, icon: "chevron.left", showBackground: false)
+                DismissButton(action: dismissSheet, icon: "chevron.left", showBackground: false)
 
                 Text(category.title)
                     .font(.system(size: 18, weight: .semibold))
@@ -899,12 +921,21 @@ struct CategoryAppsSheet: View {
 struct AppDetailSheet: View {
     let app: OmiApp
     let appProvider: AppProvider
+    var onDismiss: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var environmentDismiss
     @State private var reviews: [OmiAppReview] = []
     @State private var isLoadingReviews = false
     @State private var showAddReview = false
     @State private var userReview: OmiAppReview?
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -912,7 +943,7 @@ struct AppDetailSheet: View {
             HStack {
                 Spacer()
 
-                SafeDismissButton(dismiss: dismiss)
+                DismissButton(action: dismissSheet)
             }
             .padding()
 
@@ -1094,7 +1125,7 @@ struct AppDetailSheet: View {
         .task {
             await loadReviews()
         }
-        .sheet(isPresented: $showAddReview) {
+        .dismissableSheet(isPresented: $showAddReview) {
             AddReviewSheet(
                 app: app,
                 existingReview: userReview,
@@ -1102,8 +1133,10 @@ struct AppDetailSheet: View {
                     userReview = review
                     // Refresh reviews to get updated list
                     Task { await loadReviews() }
-                }
+                },
+                onDismiss: { showAddReview = false }
             )
+            .frame(width: 400, height: 500)
         }
     }
 
@@ -1129,8 +1162,9 @@ struct AddReviewSheet: View {
     let app: OmiApp
     let existingReview: OmiAppReview?
     let onReviewSubmitted: (OmiAppReview) -> Void
+    var onDismiss: (() -> Void)? = nil
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dismiss) private var environmentDismiss
     @State private var selectedRating: Int
     @State private var reviewText: String
     @State private var isSubmitting = false
@@ -1138,12 +1172,21 @@ struct AddReviewSheet: View {
 
     private let maxReviewLength = 500
 
-    init(app: OmiApp, existingReview: OmiAppReview?, onReviewSubmitted: @escaping (OmiAppReview) -> Void) {
+    init(app: OmiApp, existingReview: OmiAppReview?, onReviewSubmitted: @escaping (OmiAppReview) -> Void, onDismiss: (() -> Void)? = nil) {
         self.app = app
         self.existingReview = existingReview
         self.onReviewSubmitted = onReviewSubmitted
+        self.onDismiss = onDismiss
         _selectedRating = State(initialValue: existingReview?.score ?? 0)
         _reviewText = State(initialValue: existingReview?.review ?? "")
+    }
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
     }
 
     var isFormValid: Bool {
@@ -1166,7 +1209,7 @@ struct AddReviewSheet: View {
 
                 Spacer()
 
-                SafeDismissButton(dismiss: dismiss)
+                DismissButton(action: dismissSheet)
             }
             .padding()
 
@@ -1311,7 +1354,7 @@ struct AddReviewSheet: View {
                 )
                 await MainActor.run {
                     onReviewSubmitted(review)
-                    dismiss()
+                    dismissSheet()
                 }
             } catch {
                 await MainActor.run {
@@ -1560,6 +1603,46 @@ extension View {
         @ViewBuilder content: @escaping () -> Content
     ) -> some View {
         self.modifier(DismissableSheetModifier(isPresented: isPresented, sheetContent: content))
+    }
+
+    /// Presents an item-based sheet that can be dismissed by clicking outside the content area.
+    func dismissableSheet<Item: Identifiable, Content: View>(
+        item: Binding<Item?>,
+        @ViewBuilder content: @escaping (Item) -> Content
+    ) -> some View {
+        self.modifier(DismissableSheetItemModifier(item: item, sheetContent: content))
+    }
+}
+
+/// Item-based version of DismissableSheetModifier for optional item bindings.
+struct DismissableSheetItemModifier<Item: Identifiable, SheetContent: View>: ViewModifier {
+    @Binding var item: Item?
+    let sheetContent: (Item) -> SheetContent
+
+    func body(content: Content) -> some View {
+        content
+            .overlay {
+                if let presentedItem = item {
+                    // Dimmed background that dismisses on tap
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+                        .onTapGesture {
+                            log("DISMISSABLE_SHEET: Background tapped, dismissing item")
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                item = nil
+                            }
+                        }
+                        .transition(.opacity)
+
+                    // Sheet content centered
+                    sheetContent(presentedItem)
+                        .background(OmiColors.backgroundPrimary)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .shadow(color: .black.opacity(0.3), radius: 20, x: 0, y: 10)
+                        .transition(.scale(scale: 0.95).combined(with: .opacity))
+                }
+            }
+            .animation(.easeOut(duration: 0.2), value: item?.id != nil)
     }
 }
 
