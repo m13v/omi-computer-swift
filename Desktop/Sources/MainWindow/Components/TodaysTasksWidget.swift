@@ -1,78 +1,110 @@
 import SwiftUI
 
-struct TodaysTasksWidget: View {
-    let tasks: [TaskActionItem]
+struct TasksWidget: View {
+    let overdueTasks: [TaskActionItem]
+    let todaysTasks: [TaskActionItem]
+    let recentTasks: [TaskActionItem]
     let onToggleCompletion: (TaskActionItem) -> Void
 
-    private var displayTasks: [TaskActionItem] {
-        // Show max 5 tasks, prioritizing incomplete ones
-        let incomplete = tasks.filter { !$0.completed }
-        let completed = tasks.filter { $0.completed }
-        return Array((incomplete + completed).prefix(5))
+    private var totalTaskCount: Int {
+        overdueTasks.count + todaysTasks.count + recentTasks.count
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
-                Text("Today's Tasks")
+                Text("Tasks")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
                 Spacer()
 
-                if !tasks.isEmpty {
-                    Text("\(tasks.filter { !$0.completed }.count) remaining")
-                        .font(.system(size: 12))
+                if totalTaskCount > 0 {
+                    Text("\(totalTaskCount) incomplete")
+                        .font(.system(size: 12).monospacedDigit())
                         .foregroundColor(OmiColors.textTertiary)
                 }
             }
 
-            if tasks.isEmpty {
+            if totalTaskCount == 0 {
                 // Empty state
                 VStack(spacing: 8) {
                     Image(systemName: "checkmark.circle")
                         .font(.system(size: 28))
                         .foregroundColor(OmiColors.textQuaternary)
-                    Text("No tasks due today")
+                    Text("No incomplete tasks")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 20)
             } else {
-                // Task list
-                VStack(spacing: 8) {
-                    ForEach(displayTasks) { task in
-                        TaskRowView(task: task, onToggle: {
-                            onToggleCompletion(task)
-                        })
-                    }
-                }
+                ScrollView {
+                    VStack(spacing: 16) {
+                        // Overdue section
+                        if !overdueTasks.isEmpty {
+                            TaskSectionView(
+                                title: "Overdue",
+                                titleColor: .red,
+                                icon: "exclamationmark.triangle.fill",
+                                tasks: Array(overdueTasks.prefix(5)),
+                                totalCount: overdueTasks.count,
+                                showDueDate: true,
+                                onToggle: onToggleCompletion
+                            )
+                        }
 
-                // Show all link if more than 5 tasks
-                if tasks.count > 5 {
-                    Button(action: {
-                        // Navigate to Tasks tab
-                        NotificationCenter.default.post(
-                            name: NSNotification.Name("NavigateToTasks"),
-                            object: nil
-                        )
-                    }) {
-                        HStack {
-                            Spacer()
-                            Text("View all \(tasks.count) tasks")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(OmiColors.purplePrimary)
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 10))
-                                .foregroundColor(OmiColors.purplePrimary)
-                            Spacer()
+                        // Today section
+                        if !todaysTasks.isEmpty {
+                            TaskSectionView(
+                                title: "Due Today",
+                                titleColor: .orange,
+                                icon: "calendar",
+                                tasks: Array(todaysTasks.prefix(5)),
+                                totalCount: todaysTasks.count,
+                                showDueDate: false,
+                                onToggle: onToggleCompletion
+                            )
+                        }
+
+                        // Recent tasks without due date
+                        if !recentTasks.isEmpty {
+                            TaskSectionView(
+                                title: "No Due Date",
+                                titleColor: OmiColors.textSecondary,
+                                icon: "tray",
+                                tasks: Array(recentTasks.prefix(5)),
+                                totalCount: recentTasks.count,
+                                showDueDate: false,
+                                onToggle: onToggleCompletion
+                            )
                         }
                     }
-                    .buttonStyle(.plain)
-                    .padding(.top, 4)
                 }
+                .frame(maxHeight: 350)
+
+                // View all link
+                Button(action: {
+                    // Navigate to Tasks tab
+                    NotificationCenter.default.post(
+                        name: NSNotification.Name("NavigateToTasks"),
+                        object: nil
+                    )
+                }) {
+                    HStack {
+                        Spacer()
+                        Text("View all tasks")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(OmiColors.purplePrimary)
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 10))
+                            .foregroundColor(OmiColors.purplePrimary)
+                        Spacer()
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
         }
         .padding(20)
@@ -87,13 +119,65 @@ struct TodaysTasksWidget: View {
     }
 }
 
+// MARK: - Task Section View
+
+struct TaskSectionView: View {
+    let title: String
+    let titleColor: Color
+    let icon: String
+    let tasks: [TaskActionItem]
+    let totalCount: Int
+    let showDueDate: Bool
+    let onToggle: (TaskActionItem) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Section header
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .foregroundColor(titleColor)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(titleColor)
+                if totalCount > tasks.count {
+                    Text("(\(totalCount))")
+                        .font(.system(size: 11).monospacedDigit())
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
+            // Tasks
+            VStack(spacing: 6) {
+                ForEach(tasks) { task in
+                    TaskRowView(
+                        task: task,
+                        showDueDate: showDueDate,
+                        isOverdue: title == "Overdue",
+                        onToggle: { onToggle(task) }
+                    )
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Task Row View
 
 struct TaskRowView: View {
     let task: TaskActionItem
+    let showDueDate: Bool
+    let isOverdue: Bool
     let onToggle: () -> Void
 
     @State private var isToggling = false
+
+    init(task: TaskActionItem, showDueDate: Bool = false, isOverdue: Bool = false, onToggle: @escaping () -> Void) {
+        self.task = task
+        self.showDueDate = showDueDate
+        self.isOverdue = isOverdue
+        self.onToggle = onToggle
+    }
 
     var body: some View {
         HStack(spacing: 10) {
@@ -109,18 +193,27 @@ struct TaskRowView: View {
             }) {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 18))
-                    .foregroundColor(task.completed ? .green : OmiColors.textTertiary)
+                    .foregroundColor(task.completed ? .green : (isOverdue ? .red.opacity(0.7) : OmiColors.textTertiary))
             }
             .buttonStyle(.plain)
             .disabled(isToggling)
             .opacity(isToggling ? 0.5 : 1)
 
             // Task description
-            Text(task.description)
-                .font(.system(size: 13))
-                .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
-                .strikethrough(task.completed)
-                .lineLimit(2)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(task.description)
+                    .font(.system(size: 13))
+                    .foregroundColor(task.completed ? OmiColors.textTertiary : (isOverdue ? .red : OmiColors.textPrimary))
+                    .strikethrough(task.completed)
+                    .lineLimit(2)
+
+                // Due date for overdue tasks
+                if showDueDate, let dueAt = task.dueAt {
+                    Text(formatDueDate(dueAt))
+                        .font(.system(size: 11))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+            }
 
             Spacer()
 
@@ -135,7 +228,7 @@ struct TaskRowView: View {
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(task.completed ? OmiColors.backgroundQuaternary.opacity(0.3) : Color.clear)
+                .fill(isOverdue ? Color.red.opacity(0.08) : (task.completed ? OmiColors.backgroundQuaternary.opacity(0.3) : Color.clear))
         )
     }
 
@@ -147,11 +240,19 @@ struct TaskRowView: View {
         default: return OmiColors.textQuaternary
         }
     }
+
+    private func formatDueDate(_ date: Date) -> String {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter.localizedString(for: date, relativeTo: Date())
+    }
 }
 
 #Preview {
-    TodaysTasksWidget(
-        tasks: [],
+    TasksWidget(
+        overdueTasks: [],
+        todaysTasks: [],
+        recentTasks: [],
         onToggleCompletion: { _ in }
     )
     .frame(width: 350)
