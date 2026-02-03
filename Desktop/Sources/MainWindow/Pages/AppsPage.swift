@@ -4,34 +4,57 @@ import AppKit
 // MARK: - Safe Dismiss Button
 /// A dismiss button that prevents click-through to underlying views on macOS.
 /// Uses onTapGesture with async delay to ensure the click is fully consumed before dismissing.
+/// The key is to wait for the full mouse event cycle to complete before triggering dismiss.
 struct SafeDismissButton: View {
     let dismiss: DismissAction
     var icon: String = "xmark"
     var showBackground: Bool = true
 
+    @State private var isPressed = false
+
     var body: some View {
         Image(systemName: icon)
             .font(.system(size: 14, weight: .medium))
-            .foregroundColor(OmiColors.textSecondary)
+            .foregroundColor(isPressed ? OmiColors.textTertiary : OmiColors.textSecondary)
             .frame(width: 28, height: 28)
             .background(showBackground ? OmiColors.backgroundSecondary : Color.clear)
             .clipShape(Circle())
             .contentShape(Circle())
+            .opacity(isPressed ? 0.7 : 1.0)
             .onTapGesture {
+                guard !isPressed else { return } // Prevent double-tap
+                isPressed = true
+
                 let mouseLocation = NSEvent.mouseLocation
                 log("DISMISS: Tap gesture fired at mouse position: \(mouseLocation)")
-                log("DISMISS: Key window: \(String(describing: NSApp.keyWindow))")
-                log("DISMISS: First responder: \(String(describing: NSApp.keyWindow?.firstResponder))")
 
-                // Try to consume the click by resigning first responder
+                // Consume the click by resigning first responder
                 NSApp.keyWindow?.makeFirstResponder(nil)
-                log("DISMISS: Resigned first responder")
 
-                // Use async to ensure tap gesture completes before dismiss
+                // Post a mouse-up event to ensure any pending click is consumed
+                if let window = NSApp.keyWindow {
+                    let event = NSEvent.mouseEvent(
+                        with: .leftMouseUp,
+                        location: window.mouseLocationOutsideOfEventStream,
+                        modifierFlags: [],
+                        timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber,
+                        context: nil,
+                        eventNumber: 0,
+                        clickCount: 1,
+                        pressure: 0
+                    )
+                    if let event = event {
+                        window.sendEvent(event)
+                        log("DISMISS: Sent synthetic mouse-up event")
+                    }
+                }
+
+                // Use async with longer delay to ensure mouse event fully completes
                 Task { @MainActor in
-                    log("DISMISS: Starting 100ms delay before dismiss")
-                    // Delay to ensure mouse-up event is fully processed
-                    try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
+                    log("DISMISS: Starting 250ms delay before dismiss")
+                    // Longer delay to ensure mouse-up event is fully processed
+                    try? await Task.sleep(nanoseconds: 250_000_000) // 250ms
                     log("DISMISS: Delay complete, calling dismiss()")
                     log("DISMISS: Mouse position before dismiss: \(NSEvent.mouseLocation)")
                     dismiss()
