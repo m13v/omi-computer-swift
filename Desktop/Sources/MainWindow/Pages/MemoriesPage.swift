@@ -93,6 +93,10 @@ struct MemoriesPage: View {
     @State private var deleteTask: Task<Void, Never>? = nil
     @State private var undoTimeRemaining: Double = 0
 
+    // Bulk operations state
+    @State private var showingDeleteAllConfirmation = false
+    @State private var isBulkOperationInProgress = false
+
     private var filteredMemories: [ServerMemory] {
         var result = memories
 
@@ -248,25 +252,81 @@ struct MemoriesPage: View {
 
             Spacer()
 
-            Button {
-                showingAddMemory = true
-            } label: {
-                HStack(spacing: 6) {
-                    Image(systemName: "plus")
-                    Text("Add Memory")
+            HStack(spacing: 8) {
+                Button {
+                    showingAddMemory = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "plus")
+                        Text("Add Memory")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(OmiColors.purplePrimary)
+                    .cornerRadius(8)
                 }
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(OmiColors.purplePrimary)
-                .cornerRadius(8)
+                .buttonStyle(.plain)
+
+                // Management menu
+                Menu {
+                    Section("Visibility") {
+                        Button {
+                            Task { await makeAllMemoriesPrivate() }
+                        } label: {
+                            Label("Make All Private", systemImage: "lock")
+                        }
+                        .disabled(memories.isEmpty || isBulkOperationInProgress)
+
+                        Button {
+                            Task { await makeAllMemoriesPublic() }
+                        } label: {
+                            Label("Make All Public", systemImage: "globe")
+                        }
+                        .disabled(memories.isEmpty || isBulkOperationInProgress)
+                    }
+
+                    Divider()
+
+                    Section {
+                        Button(role: .destructive) {
+                            showingDeleteAllConfirmation = true
+                        } label: {
+                            Label("Delete All Memories", systemImage: "trash")
+                        }
+                        .disabled(memories.isEmpty || isBulkOperationInProgress)
+                    }
+                } label: {
+                    Image(systemName: isBulkOperationInProgress ? "ellipsis.circle" : "ellipsis")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(8)
+                        .overlay(
+                            Group {
+                                if isBulkOperationInProgress {
+                                    ProgressView()
+                                        .scaleEffect(0.5)
+                                }
+                            }
+                        )
+                }
+                .menuStyle(.borderlessButton)
             }
-            .buttonStyle(.plain)
         }
         .padding(.horizontal, 24)
         .padding(.top, 20)
         .padding(.bottom, 16)
+        .alert("Delete All Memories?", isPresented: $showingDeleteAllConfirmation) {
+            Button("Cancel", role: .cancel) { }
+            Button("Delete All", role: .destructive) {
+                Task { await deleteAllMemories() }
+            }
+        } message: {
+            Text("This will permanently delete all \(memories.count) memories. This action cannot be undone.")
+        }
     }
 
     // MARK: - Filter Bar
@@ -518,7 +578,12 @@ struct MemoriesPage: View {
 
                 Spacer()
 
-                // Date + dropdown menu
+                // Date
+                Text(formatDate(memory.createdAt))
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textTertiary)
+
+                // Actions menu
                 Menu {
                     Button {
                         editingMemory = memory
@@ -550,14 +615,10 @@ struct MemoriesPage: View {
                         Label("Delete", systemImage: "trash")
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(formatDate(memory.createdAt))
-                            .font(.system(size: 11))
-                            .foregroundColor(OmiColors.textTertiary)
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 24, height: 24)
                 }
                 .menuStyle(.borderlessButton)
             }
@@ -1123,5 +1184,49 @@ struct MemoriesPage: View {
         } catch {
             logError("Failed to mark memory as read", error: error)
         }
+    }
+
+    // MARK: - Bulk Operations
+
+    private func makeAllMemoriesPrivate() async {
+        isBulkOperationInProgress = true
+        do {
+            try await APIClient.shared.updateAllMemoriesVisibility(visibility: "private")
+            await loadMemories()
+        } catch {
+            logError("Failed to make all memories private", error: error)
+        }
+        isBulkOperationInProgress = false
+    }
+
+    private func makeAllMemoriesPublic() async {
+        isBulkOperationInProgress = true
+        do {
+            try await APIClient.shared.updateAllMemoriesVisibility(visibility: "public")
+            await loadMemories()
+        } catch {
+            logError("Failed to make all memories public", error: error)
+        }
+        isBulkOperationInProgress = false
+    }
+
+    private func deleteAllMemories() async {
+        isBulkOperationInProgress = true
+
+        // Cancel any pending single delete
+        deleteTask?.cancel()
+        pendingDeleteMemory = nil
+
+        do {
+            try await APIClient.shared.deleteAllMemories()
+            withAnimation(.easeInOut(duration: 0.3)) {
+                memories.removeAll()
+            }
+        } catch {
+            logError("Failed to delete all memories", error: error)
+            // Reload to restore state
+            await loadMemories()
+        }
+        isBulkOperationInProgress = false
     }
 }
