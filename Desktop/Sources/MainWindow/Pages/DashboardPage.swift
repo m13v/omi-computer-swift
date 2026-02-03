@@ -118,40 +118,42 @@ struct DashboardPage: View {
     @ObservedObject var viewModel: DashboardViewModel
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Header
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Dashboard")
-                            .font(.system(size: 24, weight: .bold))
-                            .foregroundColor(OmiColors.textPrimary)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Header
+                    HStack {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Dashboard")
+                                .font(.system(size: 24, weight: .bold))
+                                .foregroundColor(OmiColors.textPrimary)
 
-                        Text(formattedDate)
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    if viewModel.isLoading {
-                        ProgressView()
-                            .scaleEffect(0.8)
-                    }
-
-                    Button(action: {
-                        Task {
-                            await viewModel.loadDashboardData()
+                            Text(formattedDate)
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textTertiary)
                         }
-                    }) {
-                        Image(systemName: "arrow.clockwise")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textSecondary)
+
+                        Spacer()
+
+                        if viewModel.isLoading {
+                            ProgressView()
+                                .scaleEffect(0.8)
+                        }
+
+                        Button(action: {
+                            Task {
+                                await viewModel.loadDashboardData()
+                            }
+                        }) {
+                            Image(systemName: "arrow.clockwise")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    .buttonStyle(.plain)
-                }
-                .padding(.horizontal, 24)
-                .padding(.top, 24)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                    .id("dashboard-top")
 
                 // Widgets
                 HStack(alignment: .top, spacing: 20) {
@@ -196,10 +198,14 @@ struct DashboardPage: View {
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
             }
+            .onAppear {
+                // Reset scroll position to top when view appears
+                proxy.scrollTo("dashboard-top", anchor: .top)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .sheet(isPresented: $viewModel.showingCreateGoal) {
+        .dismissableSheet(isPresented: $viewModel.showingCreateGoal) {
             CreateGoalSheet(
                 onSave: { title, goalType, targetValue, unit in
                     Task {
@@ -210,7 +216,8 @@ struct DashboardPage: View {
                             unit: unit
                         )
                     }
-                }
+                },
+                onDismiss: { viewModel.showingCreateGoal = false }
             )
         }
     }
@@ -225,13 +232,23 @@ struct DashboardPage: View {
 // MARK: - Create Goal Sheet
 
 struct CreateGoalSheet: View {
-    @Environment(\.dismiss) private var dismiss
     let onSave: (String, GoalType, Double, String?) -> Void
+    var onDismiss: (() -> Void)? = nil
+
+    @Environment(\.dismiss) private var environmentDismiss
 
     @State private var title = ""
     @State private var goalType: GoalType = .boolean
     @State private var targetValue: Double = 100
     @State private var unit = ""
+
+    private func dismissSheet() {
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            environmentDismiss()
+        }
+    }
 
     var body: some View {
         VStack(spacing: 20) {
@@ -241,12 +258,7 @@ struct CreateGoalSheet: View {
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
                 Spacer()
-                Button(action: { dismiss() }) {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 20))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                .buttonStyle(.plain)
+                DismissButton(action: dismissSheet)
             }
 
             // Title
@@ -307,7 +319,7 @@ struct CreateGoalSheet: View {
             Button(action: {
                 let finalTarget = goalType == .boolean ? 1.0 : targetValue
                 onSave(title, goalType, finalTarget, unit.isEmpty ? nil : unit)
-                dismiss()
+                dismissSheet()
             }) {
                 Text("Create Goal")
                     .font(.system(size: 14, weight: .semibold))
