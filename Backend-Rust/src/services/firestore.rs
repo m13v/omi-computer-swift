@@ -15,7 +15,7 @@ use crate::encryption;
 use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
     ChatSessionDB, Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
-    FocusStats, FocusStatus, Memory, MemoryCategory, MemoryDB, MessageDB,
+    FocusStats, FocusStatus, GoalDB, GoalType, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, Structured, TranscriptSegment, TranscriptionPreferences, UserProfile,
 };
 
@@ -56,6 +56,7 @@ pub const ADVICE_SUBCOLLECTION: &str = "advice";
 pub const MESSAGES_SUBCOLLECTION: &str = "messages";
 pub const FOLDERS_SUBCOLLECTION: &str = "folders";
 pub const CHAT_SESSIONS_SUBCOLLECTION: &str = "chat_sessions";
+pub const GOALS_SUBCOLLECTION: &str = "goals";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -1421,6 +1422,146 @@ impl FirestoreService {
         }
 
         tracing::info!("Marked {} memories as read for user {}", count, uid);
+        Ok(count)
+    }
+
+    /// Update visibility of all memories for a user
+    pub async fn update_all_memories_visibility(
+        &self,
+        uid: &str,
+        visibility: &str,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        // Get all memories
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
+                "limit": 1000
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let memory_ids: Vec<String> = results
+            .iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| d.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.split('/').last().unwrap_or("").to_string())
+            })
+            .filter(|id| !id.is_empty())
+            .collect();
+
+        let count = memory_ids.len();
+
+        // Update each memory's visibility
+        for memory_id in memory_ids {
+            let url = format!(
+                "{}/{}/{}/{}/{}?updateMask.fieldPaths=visibility&updateMask.fieldPaths=updated_at",
+                self.base_url(),
+                USERS_COLLECTION,
+                uid,
+                MEMORIES_SUBCOLLECTION,
+                memory_id
+            );
+
+            let doc = json!({
+                "fields": {
+                    "visibility": {"stringValue": visibility},
+                    "updated_at": {"timestampValue": Utc::now().to_rfc3339()}
+                }
+            });
+
+            let _ = self
+                .build_request(reqwest::Method::PATCH, &url)
+                .await?
+                .json(&doc)
+                .send()
+                .await;
+        }
+
+        tracing::info!(
+            "Updated visibility to '{}' for {} memories for user {}",
+            visibility,
+            count,
+            uid
+        );
+        Ok(count)
+    }
+
+    /// Delete all memories for a user
+    pub async fn delete_all_memories(
+        &self,
+        uid: &str,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        // Get all memories
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
+                "limit": 1000
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let memory_ids: Vec<String> = results
+            .iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| d.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.split('/').last().unwrap_or("").to_string())
+            })
+            .filter(|id| !id.is_empty())
+            .collect();
+
+        let count = memory_ids.len();
+
+        // Delete each memory
+        for memory_id in memory_ids {
+            let url = format!(
+                "{}/{}/{}/{}/{}",
+                self.base_url(),
+                USERS_COLLECTION,
+                uid,
+                MEMORIES_SUBCOLLECTION,
+                memory_id
+            );
+
+            let _ = self
+                .build_request(reqwest::Method::DELETE, &url)
+                .await?
+                .send()
+                .await;
+        }
+
+        tracing::info!("Deleted {} memories for user {}", count, uid);
         Ok(count)
     }
 
@@ -5417,6 +5558,440 @@ impl FirestoreService {
         }
         tracing::info!("Reordered {} folders for user {}", folder_ids.len(), uid);
         Ok(())
+    }
+
+    // ========================================
+    // GOALS METHODS
+    // ========================================
+
+    /// Get all active goals for a user (max 3)
+    pub async fn get_user_goals(
+        &self,
+        uid: &str,
+        limit: usize,
+    ) -> Result<Vec<GoalDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}:runQuery",
+            self.base_url()
+        );
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": GOALS_SUBCOLLECTION}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "is_active"},
+                        "op": "EQUAL",
+                        "value": {"booleanValue": true}
+                    }
+                },
+                "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
+                "limit": limit
+            },
+            "parent": format!("projects/{}/databases/(default)/documents/{}/{}", self.project_id, USERS_COLLECTION, uid)
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut goals = Vec::new();
+
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Ok(goal) = self.parse_goal(doc) {
+                    goals.push(goal);
+                }
+            }
+        }
+
+        tracing::info!("Found {} active goals for user {}", goals.len(), uid);
+        Ok(goals)
+    }
+
+    /// Create a new goal for a user
+    /// If user already has 3 active goals, deactivates the oldest one
+    pub async fn create_goal(
+        &self,
+        uid: &str,
+        title: &str,
+        goal_type: GoalType,
+        target_value: f64,
+        current_value: f64,
+        min_value: f64,
+        max_value: f64,
+        unit: Option<&str>,
+    ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
+        // Check existing active goals
+        let existing_goals = self.get_user_goals(uid, 10).await?;
+
+        // If we have 3 or more active goals, deactivate the oldest one
+        if existing_goals.len() >= 3 {
+            if let Some(oldest) = existing_goals.last() {
+                tracing::info!("Deactivating oldest goal {} to make room for new goal", oldest.id);
+                self.update_goal(uid, &oldest.id, None, None, None, None, None, None, Some(false)).await?;
+            }
+        }
+
+        // Generate a unique ID
+        let now = Utc::now();
+        let goal_id = document_id_from_seed(&format!("{}-{}-{}", uid, title, now.timestamp_millis()));
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            GOALS_SUBCOLLECTION,
+            goal_id
+        );
+
+        let mut fields = json!({
+            "title": {"stringValue": title},
+            "goal_type": {"stringValue": match goal_type {
+                GoalType::Boolean => "boolean",
+                GoalType::Scale => "scale",
+                GoalType::Numeric => "numeric",
+            }},
+            "target_value": {"doubleValue": target_value},
+            "current_value": {"doubleValue": current_value},
+            "min_value": {"doubleValue": min_value},
+            "max_value": {"doubleValue": max_value},
+            "is_active": {"booleanValue": true},
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "updated_at": {"timestampValue": now.to_rfc3339()}
+        });
+
+        if let Some(u) = unit {
+            fields.as_object_mut().unwrap().insert(
+                "unit".to_string(),
+                json!({"stringValue": u}),
+            );
+        }
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore create goal error: {}", error_text).into());
+        }
+
+        let goal = GoalDB {
+            id: goal_id,
+            title: title.to_string(),
+            goal_type,
+            target_value,
+            current_value,
+            min_value,
+            max_value,
+            unit: unit.map(|s| s.to_string()),
+            is_active: true,
+            created_at: now,
+            updated_at: now,
+        };
+
+        tracing::info!("Created goal {} for user {}", goal.id, uid);
+        Ok(goal)
+    }
+
+    /// Update an existing goal
+    pub async fn update_goal(
+        &self,
+        uid: &str,
+        goal_id: &str,
+        title: Option<&str>,
+        target_value: Option<f64>,
+        current_value: Option<f64>,
+        min_value: Option<f64>,
+        max_value: Option<f64>,
+        unit: Option<&str>,
+        is_active: Option<bool>,
+    ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
+        // Build update mask and fields
+        let mut update_fields: Vec<&str> = vec![];
+        let mut fields = serde_json::Map::new();
+        let now = Utc::now();
+
+        if let Some(t) = title {
+            update_fields.push("title");
+            fields.insert("title".to_string(), json!({"stringValue": t}));
+        }
+        if let Some(v) = target_value {
+            update_fields.push("target_value");
+            fields.insert("target_value".to_string(), json!({"doubleValue": v}));
+        }
+        if let Some(v) = current_value {
+            update_fields.push("current_value");
+            fields.insert("current_value".to_string(), json!({"doubleValue": v}));
+        }
+        if let Some(v) = min_value {
+            update_fields.push("min_value");
+            fields.insert("min_value".to_string(), json!({"doubleValue": v}));
+        }
+        if let Some(v) = max_value {
+            update_fields.push("max_value");
+            fields.insert("max_value".to_string(), json!({"doubleValue": v}));
+        }
+        if let Some(u) = unit {
+            update_fields.push("unit");
+            fields.insert("unit".to_string(), json!({"stringValue": u}));
+        }
+        if let Some(active) = is_active {
+            update_fields.push("is_active");
+            fields.insert("is_active".to_string(), json!({"booleanValue": active}));
+        }
+
+        // Always update updated_at
+        update_fields.push("updated_at");
+        fields.insert("updated_at".to_string(), json!({"timestampValue": now.to_rfc3339()}));
+
+        let update_mask = update_fields.iter()
+            .map(|f| format!("updateMask.fieldPaths={}", f))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let url = format!(
+            "{}/{}/{}/{}/{}?{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            GOALS_SUBCOLLECTION,
+            goal_id,
+            update_mask
+        );
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore update goal error: {}", error_text).into());
+        }
+
+        // Fetch the updated goal
+        let goal = self.get_goal(uid, goal_id).await?
+            .ok_or("Goal not found after update")?;
+
+        tracing::info!("Updated goal {} for user {}", goal_id, uid);
+        Ok(goal)
+    }
+
+    /// Update goal progress (current_value)
+    pub async fn update_goal_progress(
+        &self,
+        uid: &str,
+        goal_id: &str,
+        current_value: f64,
+    ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
+        self.update_goal(uid, goal_id, None, None, Some(current_value), None, None, None, None).await
+    }
+
+    /// Delete a goal
+    pub async fn delete_goal(
+        &self,
+        uid: &str,
+        goal_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            GOALS_SUBCOLLECTION,
+            goal_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::DELETE, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore delete goal error: {}", error_text).into());
+        }
+
+        tracing::info!("Deleted goal {} for user {}", goal_id, uid);
+        Ok(())
+    }
+
+    /// Get a single goal by ID
+    pub async fn get_goal(
+        &self,
+        uid: &str,
+        goal_id: &str,
+    ) -> Result<Option<GoalDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            GOALS_SUBCOLLECTION,
+            goal_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore get goal error: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        let goal = self.parse_goal(&doc)?;
+        Ok(Some(goal))
+    }
+
+    /// Get action items for daily score calculation
+    /// Returns (completed_count, total_count) for items due on the given date
+    pub async fn get_action_items_for_daily_score(
+        &self,
+        uid: &str,
+        due_start: &str,
+        due_end: &str,
+    ) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>> {
+        // Query action items due within the date range
+        let url = format!("{}:runQuery", self.base_url());
+
+        // We need to get all items due today, regardless of completion status
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                "where": {
+                    "compositeFilter": {
+                        "op": "AND",
+                        "filters": [
+                            {
+                                "fieldFilter": {
+                                    "field": {"fieldPath": "due_at"},
+                                    "op": "GREATER_THAN_OR_EQUAL",
+                                    "value": {"timestampValue": due_start}
+                                }
+                            },
+                            {
+                                "fieldFilter": {
+                                    "field": {"fieldPath": "due_at"},
+                                    "op": "LESS_THAN",
+                                    "value": {"timestampValue": due_end}
+                                }
+                            }
+                        ]
+                    }
+                },
+                "limit": 100
+            },
+            "parent": format!("projects/{}/databases/(default)/documents/{}/{}", self.project_id, USERS_COLLECTION, uid)
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut completed = 0;
+        let mut total = 0;
+
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Some(fields) = doc.get("fields") {
+                    total += 1;
+                    if self.parse_bool(fields, "completed").unwrap_or(false) {
+                        completed += 1;
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Daily score for user {}: {}/{} tasks completed", uid, completed, total);
+        Ok((completed, total))
+    }
+
+    /// Parse a goal from Firestore document
+    fn parse_goal(&self, doc: &Value) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
+        let fields = doc.get("fields").ok_or("Missing fields")?;
+        let name_path = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
+        let id = name_path.split('/').last().unwrap_or("").to_string();
+
+        let goal_type_str = self.parse_string(fields, "goal_type").unwrap_or_else(|| "boolean".to_string());
+        let goal_type = match goal_type_str.as_str() {
+            "scale" => GoalType::Scale,
+            "numeric" => GoalType::Numeric,
+            _ => GoalType::Boolean,
+        };
+
+        Ok(GoalDB {
+            id,
+            title: self.parse_string(fields, "title").unwrap_or_default(),
+            goal_type,
+            target_value: self.parse_double(fields, "target_value").unwrap_or(1.0),
+            current_value: self.parse_double(fields, "current_value").unwrap_or(0.0),
+            min_value: self.parse_double(fields, "min_value").unwrap_or(0.0),
+            max_value: self.parse_double(fields, "max_value").unwrap_or(100.0),
+            unit: self.parse_string(fields, "unit"),
+            is_active: self.parse_bool(fields, "is_active").unwrap_or(true),
+            created_at: self.parse_timestamp_optional(fields, "created_at").unwrap_or_else(Utc::now),
+            updated_at: self.parse_timestamp_optional(fields, "updated_at").unwrap_or_else(Utc::now),
+        })
+    }
+
+    /// Parse double value from Firestore fields
+    fn parse_double(&self, fields: &Value, key: &str) -> Option<f64> {
+        fields.get(key)
+            .and_then(|v| {
+                // Try doubleValue first
+                if let Some(d) = v.get("doubleValue").and_then(|d| d.as_f64()) {
+                    return Some(d);
+                }
+                // Try integerValue (Firestore sometimes stores numbers as integers)
+                if let Some(i) = v.get("integerValue") {
+                    if let Some(s) = i.as_str() {
+                        return s.parse::<f64>().ok();
+                    }
+                    if let Some(n) = i.as_i64() {
+                        return Some(n as f64);
+                    }
+                }
+                None
+            })
     }
 
     /// Parse a folder from Firestore document
