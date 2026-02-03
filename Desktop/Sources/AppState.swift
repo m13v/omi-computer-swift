@@ -590,8 +590,14 @@ class AppState: ObservableObject {
         }
 
         do {
-            // Initialize transcription service
-            transcriptionService = try TranscriptionService()
+            // Get effective language from settings (handles auto-detect vs single language)
+            let effectiveLanguage = AssistantSettings.shared.effectiveTranscriptionLanguage
+            let vocabulary = AssistantSettings.shared.effectiveVocabulary
+            log("Transcription: Using language=\(effectiveLanguage) (autoDetect=\(AssistantSettings.shared.transcriptionAutoDetect), selected=\(AssistantSettings.shared.transcriptionLanguage))")
+            log("Transcription: Custom vocabulary: \(vocabulary.joined(separator: ", "))")
+
+            // Initialize transcription service with language and vocabulary
+            transcriptionService = try TranscriptionService(language: effectiveLanguage, vocabulary: vocabulary)
 
             // Initialize audio capture service
             audioCaptureService = AudioCaptureService()
