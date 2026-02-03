@@ -210,22 +210,26 @@ struct DashboardPage: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    // Right column: Goals
-                    GoalsWidget(
-                        goals: viewModel.goals,
-                        onAddGoal: { viewModel.showingCreateGoal = true },
-                        onEditGoal: { goal in viewModel.editingGoal = goal },
-                        onUpdateProgress: { goal, value in
-                            Task {
-                                await viewModel.updateGoalProgress(goal, currentValue: value)
+                    // Right column: Focus + Goals
+                    VStack(spacing: 20) {
+                        FocusSummaryWidget(stats: FocusStorage.shared.todayStats)
+
+                        GoalsWidget(
+                            goals: viewModel.goals,
+                            onAddGoal: { viewModel.showingCreateGoal = true },
+                            onEditGoal: { goal in viewModel.editingGoal = goal },
+                            onUpdateProgress: { goal, value in
+                                Task {
+                                    await viewModel.updateGoalProgress(goal, currentValue: value)
+                                }
+                            },
+                            onDeleteGoal: { goal in
+                                Task {
+                                    await viewModel.deleteGoal(goal)
+                                }
                             }
-                        },
-                        onDeleteGoal: { goal in
-                            Task {
-                                await viewModel.deleteGoal(goal)
-                            }
-                        }
-                    )
+                        )
+                    }
                     .frame(maxWidth: .infinity)
                 }
                 .padding(.horizontal, 24)
