@@ -110,3 +110,11 @@ onCreatePersona: {
     }
 }
 ```
+
+**Current implementation details (SafeDismissButton in AppsPage.swift):**
+- Uses `@State private var isPressed` to prevent double-taps
+- Sends a synthetic `leftMouseUp` event to consume pending clicks
+- Uses 250ms delay before calling `dismiss()`
+- Has extensive logging with `log("DISMISS: ...")` prefix
+
+**Known issue:** Even with these measures, click-through can still occur during the sheet dismissal animation. The root cause is that macOS delivers mouse events to views that become visible during animation. Further investigation may be needed.
