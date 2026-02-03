@@ -5924,8 +5924,9 @@ impl FirestoreService {
         due_start: &str,
         due_end: &str,
     ) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>> {
-        // Query action items due within the date range
-        let url = format!("{}:runQuery", self.base_url());
+        // Use same URL pattern as working get_action_items method
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+        let url = format!("{}:runQuery", parent);
 
         // We need to get all items due today, regardless of completion status
         let query = json!({
@@ -5953,8 +5954,7 @@ impl FirestoreService {
                     }
                 },
                 "limit": 100
-            },
-            "parent": format!("projects/{}/databases/(default)/documents/{}/{}", self.project_id, USERS_COLLECTION, uid)
+            }
         });
 
         let response = self
@@ -5985,6 +5985,123 @@ impl FirestoreService {
         }
 
         tracing::info!("Daily score for user {}: {}/{} tasks completed", uid, completed, total);
+        Ok((completed, total))
+    }
+
+    /// Get action items for weekly score calculation (created in date range)
+    pub async fn get_action_items_for_weekly_score(
+        &self,
+        uid: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>> {
+        // Use same URL pattern as working get_action_items method
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+        let url = format!("{}:runQuery", parent);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                "where": {
+                    "compositeFilter": {
+                        "op": "AND",
+                        "filters": [
+                            {
+                                "fieldFilter": {
+                                    "field": {"fieldPath": "created_at"},
+                                    "op": "GREATER_THAN_OR_EQUAL",
+                                    "value": {"timestampValue": start_date}
+                                }
+                            },
+                            {
+                                "fieldFilter": {
+                                    "field": {"fieldPath": "created_at"},
+                                    "op": "LESS_THAN",
+                                    "value": {"timestampValue": end_date}
+                                }
+                            }
+                        ]
+                    }
+                },
+                "limit": 1000
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut completed = 0;
+        let mut total = 0;
+
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Some(fields) = doc.get("fields") {
+                    total += 1;
+                    if self.parse_bool(fields, "completed").unwrap_or(false) {
+                        completed += 1;
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Weekly score for user {}: {}/{} tasks completed", uid, completed, total);
+        Ok((completed, total))
+    }
+
+    /// Get all action items for overall score calculation
+    pub async fn get_action_items_for_overall_score(
+        &self,
+        uid: &str,
+    ) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>> {
+        // Use same URL pattern as working get_action_items method
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+        let url = format!("{}:runQuery", parent);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                "limit": 2000
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut completed = 0;
+        let mut total = 0;
+
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Some(fields) = doc.get("fields") {
+                    total += 1;
+                    if self.parse_bool(fields, "completed").unwrap_or(false) {
+                        completed += 1;
+                    }
+                }
+            }
+        }
+
+        tracing::info!("Overall score for user {}: {}/{} tasks completed", uid, completed, total);
         Ok((completed, total))
     }
 
