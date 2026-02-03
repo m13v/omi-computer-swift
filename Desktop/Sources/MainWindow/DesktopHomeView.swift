@@ -134,17 +134,13 @@ struct DesktopHomeView: View {
                         .opacity(selectedIndex == 8 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 8)
 
-                    PersonaPage()
+                    SettingsPage(appState: appState)
                         .opacity(selectedIndex == 9 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 9)
 
-                    SettingsPage(appState: appState)
+                    PermissionsPage(appState: appState)
                         .opacity(selectedIndex == 10 ? 1 : 0)
                         .allowsHitTesting(selectedIndex == 10)
-
-                    PermissionsPage(appState: appState)
-                        .opacity(selectedIndex == 11 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 11)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
