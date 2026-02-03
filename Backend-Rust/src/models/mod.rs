@@ -57,7 +57,7 @@ pub use chat_session::{
 };
 pub use goal::{
     CreateGoalRequest, DailyScore, DailyScoreQuery, GoalDB, GoalStatusResponse, GoalType,
-    GoalsListResponse, UpdateGoalProgressQuery, UpdateGoalRequest,
+    GoalsListResponse, ScoreData, ScoreResponse, UpdateGoalProgressQuery, UpdateGoalRequest,
 };
 pub use persona::{
     CheckUsernameQuery, CreatePersonaRequest, GeneratePromptRequest, GeneratePromptResponse,
