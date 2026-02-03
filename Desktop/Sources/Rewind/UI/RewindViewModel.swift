@@ -42,6 +42,9 @@ class RewindViewModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var cancellables = Set<AnyCancellable>()
 
+    /// Whether initial data has been loaded (prevents race condition with debounced search)
+    private var isInitialized = false
+
     // MARK: - Initialization
 
     init() {
@@ -70,6 +73,9 @@ class RewindViewModel: ObservableObject {
             // Load available apps for filtering
             availableApps = try await RewindDatabase.shared.getUniqueAppNames()
 
+            // Mark as initialized after successful load
+            isInitialized = true
+
         } catch {
             errorMessage = error.localizedDescription
             logError("RewindViewModel: Failed to load initial data: \(error)")
@@ -95,6 +101,9 @@ class RewindViewModel: ObservableObject {
     @Published var applyDateFilterToSearch: Bool = false
 
     private func performSearch(query: String) async {
+        // Skip if not yet initialized (prevents race condition with debounced publisher)
+        guard isInitialized else { return }
+
         // Cancel any existing search
         searchTask?.cancel()
 
