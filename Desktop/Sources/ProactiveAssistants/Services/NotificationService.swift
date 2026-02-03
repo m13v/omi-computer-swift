@@ -1,6 +1,27 @@
 import Foundation
 import UserNotifications
 
+/// Sound options for notifications
+enum NotificationSound {
+    case `default`
+    case focusLost
+    case focusRegained
+    case none
+
+    var unSound: UNNotificationSound? {
+        switch self {
+        case .default:
+            return .default
+        case .focusLost:
+            return UNNotificationSound(named: UNNotificationSoundName("focus-lost.wav"))
+        case .focusRegained:
+            return UNNotificationSound(named: UNNotificationSoundName("focus-regained.wav"))
+        case .none:
+            return nil
+        }
+    }
+}
+
 @MainActor
 class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationService()
@@ -133,11 +154,11 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         ScreenCaptureService.resetScreenCapturePermissionAndRestart()
     }
 
-    func sendNotification(title: String, message: String, assistantId: String = "default") {
+    func sendNotification(title: String, message: String, assistantId: String = "default", sound: NotificationSound = .default) {
         let content = UNMutableNotificationContent()
         content.title = title
         content.body = message
-        content.sound = .default
+        content.sound = sound.unSound
 
         // Use screen capture reset category for reset notifications (adds "Reset Now" button)
         if title == Self.screenCaptureResetTitle {
