@@ -44,9 +44,9 @@ class DashboardViewModel: ObservableObject {
             let startOfToday = calendar.startOfDay(for: Date())
             let endOfToday = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
 
-            // Load all incomplete tasks (up to 100)
+            // Load ALL incomplete tasks (high limit to get everything)
             let response = try await APIClient.shared.getActionItems(
-                limit: 100,
+                limit: 10000,
                 completed: false
             )
 
@@ -63,7 +63,7 @@ class DashboardViewModel: ObservableObject {
                         // Today: due today
                         today.append(task)
                     }
-                    // Future tasks are not shown
+                    // Future tasks are not shown in dashboard
                 } else {
                     // No due date
                     noDueDate.append(task)
@@ -74,8 +74,8 @@ class DashboardViewModel: ObservableObject {
             overdueTasks = overdue.sorted { ($0.dueAt ?? Date.distantPast) < ($1.dueAt ?? Date.distantPast) }
             // Sort today's by due date
             todaysTasks = today.sorted { ($0.dueAt ?? Date.distantPast) < ($1.dueAt ?? Date.distantPast) }
-            // Sort recent by created date (newest first), take first 10
-            recentTasks = Array(noDueDate.sorted { $0.createdAt > $1.createdAt }.prefix(10))
+            // Sort recent by created date (newest first) - keep all, widget will limit display
+            recentTasks = noDueDate.sorted { $0.createdAt > $1.createdAt }
         } catch {
             logError("Failed to load tasks", error: error)
         }
@@ -154,7 +154,7 @@ class DashboardViewModel: ObservableObject {
 // MARK: - Dashboard Page
 
 struct DashboardPage: View {
-    @StateObject private var viewModel = DashboardViewModel()
+    @ObservedObject var viewModel: DashboardViewModel
 
     var body: some View {
         ScrollView {
@@ -234,11 +234,6 @@ struct DashboardPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .onAppear {
-            Task {
-                await viewModel.loadDashboardData()
-            }
-        }
         .sheet(isPresented: $viewModel.showingCreateGoal) {
             CreateGoalSheet(
                 onSave: { title, goalType, targetValue, unit in
@@ -368,7 +363,7 @@ struct CreateGoalSheet: View {
 }
 
 #Preview {
-    DashboardPage()
+    DashboardPage(viewModel: DashboardViewModel())
         .frame(width: 800, height: 600)
         .background(OmiColors.backgroundPrimary)
 }
