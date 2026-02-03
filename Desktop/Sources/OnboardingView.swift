@@ -15,11 +15,12 @@ struct OnboardingView: View {
     @AppStorage("hasTriggeredMicrophone") private var hasTriggeredMicrophone = false
     @AppStorage("hasTriggeredSystemAudio") private var hasTriggeredSystemAudio = false
     @AppStorage("hasTriggeredAccessibility") private var hasTriggeredAccessibility = false
+    @AppStorage("hasTriggeredBluetooth") private var hasTriggeredBluetooth = false
 
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Welcome", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Done"]
+    let steps = ["Welcome", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -82,6 +83,9 @@ struct OnboardingView: View {
             if hasTriggeredAccessibility {
                 appState.checkAccessibilityPermission()
             }
+            if hasTriggeredBluetooth {
+                appState.checkBluetoothPermission()
+            }
         }
         // Bring app to front when the CURRENT step's permission is granted
         // Only bring to front if we're on the step that requires this permission
@@ -133,6 +137,14 @@ struct OnboardingView: View {
                 log("Accessibility permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
+        .onChange(of: appState.hasBluetoothPermission) { _, granted in
+            if granted && currentStep == 9 {
+                log("Bluetooth permission granted (current step), bringing to front")
+                bringToFront()
+            } else if granted {
+                log("Bluetooth permission granted (not current step \(currentStep), skipping bringToFront)")
+            }
+        }
     }
 
     private func bringToFront() {
@@ -176,6 +188,7 @@ struct OnboardingView: View {
         case 6: return appState.hasMicrophonePermission
         case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
         case 8: return appState.hasAccessibilityPermission
+        case 9: return appState.hasBluetoothPermission
         default: return true
         }
     }
@@ -255,7 +268,8 @@ struct OnboardingView: View {
         case 6: return appState.hasMicrophonePermission
         case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
         case 8: return appState.hasAccessibilityPermission // Accessibility
-        case 9: return true // Done - always "granted"
+        case 9: return appState.hasBluetoothPermission // Bluetooth
+        case 10: return true // Done - always "granted"
         default: return false
         }
     }
@@ -300,6 +314,8 @@ struct OnboardingView: View {
         case 8:
             accessibilityStepView
         case 9:
+            bluetoothStepView
+        case 10:
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
@@ -388,72 +404,101 @@ struct OnboardingView: View {
                 .font(.system(size: 48))
                 .foregroundColor(OmiColors.purplePrimary)
 
-            Text("Transcription Language")
+            Text("Language Mode")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Choose the language you'll be speaking most often.")
+            Text("Choose how Omi transcribes your conversations.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            VStack(alignment: .leading, spacing: 16) {
-                // Language picker
-                HStack {
-                    Text("Language")
-                        .font(.system(size: 14))
-                        .foregroundColor(.secondary)
+            VStack(spacing: 12) {
+                // Auto-Detect option
+                Button(action: {
+                    autoDetectEnabled = true
+                }) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: autoDetectEnabled ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(autoDetectEnabled ? OmiColors.purplePrimary : .secondary)
 
-                    Spacer()
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Auto-Detect (Multi-Language)")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.primary)
 
-                    Picker("", selection: $selectedLanguage) {
-                        ForEach(AssistantSettings.supportedLanguages, id: \.code) { language in
-                            Text(language.name).tag(language.code)
+                            Text("English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian, Dutch")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
-                    }
-                    .pickerStyle(.menu)
-                    .frame(width: 180)
-                }
-
-                // Auto-detect toggle
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Auto-Detect")
-                            .font(.system(size: 14))
-                            .foregroundColor(.secondary)
-                        Text(autoDetectSubtitleOnboarding)
-                            .font(.system(size: 11))
-                            .foregroundColor(autoDetectSupportedOnboarding ? .secondary : OmiColors.warning)
-                    }
-
-                    Spacer()
-
-                    Toggle("", isOn: $autoDetectEnabled)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .disabled(!autoDetectSupportedOnboarding)
-                }
-
-                // Info message for languages without auto-detect
-                if !autoDetectSupportedOnboarding {
-                    HStack(spacing: 8) {
-                        Image(systemName: "info.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("\(languageNameOnboarding) works best with single-language mode for accurate transcription.")
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
 
                         Spacer()
                     }
-                    .padding(10)
+                    .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(OmiColors.purplePrimary.opacity(0.1))
+                            .fill(autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.3) : Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
                     )
                 }
+                .buttonStyle(.plain)
+
+                // Single Language option
+                Button(action: {
+                    autoDetectEnabled = false
+                }) {
+                    HStack(alignment: .top, spacing: 12) {
+                        Image(systemName: !autoDetectEnabled ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 20))
+                            .foregroundColor(!autoDetectEnabled ? OmiColors.purplePrimary : .secondary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Single Language (Better Accuracy)")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(.primary)
+
+                            Text("Best for speaking in one language. Supports 42 languages including Ukrainian.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+
+                            // Language picker (only shown when single language is selected)
+                            if !autoDetectEnabled {
+                                HStack {
+                                    Text("Language:")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(.secondary)
+
+                                    Picker("", selection: $selectedLanguage) {
+                                        ForEach(AssistantSettings.supportedLanguages, id: \.code) { language in
+                                            Text(language.name).tag(language.code)
+                                        }
+                                    }
+                                    .pickerStyle(.menu)
+                                    .frame(width: 160)
+                                }
+                                .padding(.top, 4)
+                            }
+                        }
+
+                        Spacer()
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(!autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(!autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.3) : Color.secondary.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 40)
             .padding(.top, 8)
@@ -463,31 +508,6 @@ struct OnboardingView: View {
             selectedLanguage = AssistantSettings.shared.transcriptionLanguage
             autoDetectEnabled = AssistantSettings.shared.transcriptionAutoDetect
         }
-        .onChange(of: selectedLanguage) { _, newValue in
-            // If the new language doesn't support auto-detect, disable it
-            if !AssistantSettings.supportsAutoDetect(newValue) {
-                autoDetectEnabled = false
-            }
-        }
-    }
-
-    /// Whether the selected language supports auto-detect mode (for onboarding)
-    private var autoDetectSupportedOnboarding: Bool {
-        AssistantSettings.supportsAutoDetect(selectedLanguage)
-    }
-
-    /// Subtitle text for auto-detect toggle (for onboarding)
-    private var autoDetectSubtitleOnboarding: String {
-        if autoDetectSupportedOnboarding {
-            return "Automatically detect language"
-        } else {
-            return "Not available for this language"
-        }
-    }
-
-    /// Get display name for selected language (for onboarding)
-    private var languageNameOnboarding: String {
-        AssistantSettings.supportedLanguages.first { $0.code == selectedLanguage }?.name ?? selectedLanguage
     }
 
     private func stepView(icon: String, iconColor: Color = OmiColors.purplePrimary, title: String, description: String) -> some View {
@@ -557,6 +577,8 @@ struct OnboardingView: View {
         case 8:
             return appState.hasAccessibilityPermission ? "Continue" : "Grant Accessibility"
         case 9:
+            return appState.hasBluetoothPermission ? "Continue" : "Grant Bluetooth Access"
+        case 10:
             return "Start Using Omi"
         default:
             return "Continue"
@@ -998,6 +1020,88 @@ struct OnboardingView: View {
         appState.openAccessibilityPreferences()
     }
 
+    // MARK: - Bluetooth Step View
+
+    private var isBluetoothPermissionDenied: Bool {
+        appState.isBluetoothPermissionDenied()
+    }
+
+    private var bluetoothStepView: some View {
+        VStack(spacing: 16) {
+            if appState.hasBluetoothPermission {
+                // Granted state
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.white)
+
+                Text("Bluetooth")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Bluetooth access granted! Omi can now connect to your wearable device.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+            } else if isBluetoothPermissionDenied {
+                // Denied state - show manual settings option
+                Image(systemName: "antenna.radiowaves.left.and.right.slash")
+                    .font(.system(size: 48))
+                    .foregroundColor(.red)
+
+                Text("Bluetooth Permission Denied")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Permission was previously denied. Please enable Bluetooth access in System Settings:")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                Button(action: bluetoothOpenSystemSettings) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 14))
+                        Text("Open System Settings")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .frame(width: 260)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+
+            } else {
+                // Not determined state - normal flow
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .font(.system(size: 48))
+                    .foregroundColor(OmiColors.purplePrimary)
+
+                Text("Bluetooth")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Omi needs Bluetooth access to connect to your Omi wearable device for audio capture and transcription.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func bluetoothOpenSystemSettings() {
+        appState.openBluetoothPreferences()
+    }
+
     private func handleMainAction() {
         switch currentStep {
         case 0:
@@ -1023,8 +1127,8 @@ struct OnboardingView: View {
             AssistantSettings.shared.transcriptionAutoDetect = autoDetectEnabled
             // Also update backend
             Task {
-                try? await APIClient.shared.updateUserLanguage(selectedLanguage)
-                try? await APIClient.shared.updateTranscriptionPreferences(
+                _ = try? await APIClient.shared.updateUserLanguage(selectedLanguage)
+                _ = try? await APIClient.shared.updateTranscriptionPreferences(
                     singleLanguageMode: !autoDetectEnabled,
                     vocabulary: nil
                 )
@@ -1108,8 +1212,19 @@ struct OnboardingView: View {
                 appState.triggerAccessibilityPermission()
             }
         case 9:
-            log("OnboardingView: Step 9 - Completing onboarding")
-            AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Done")
+            // Bluetooth step
+            if appState.hasBluetoothPermission {
+                AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Bluetooth")
+                AnalyticsManager.shared.permissionGranted(permission: "bluetooth")
+                currentStep += 1
+            } else {
+                AnalyticsManager.shared.permissionRequested(permission: "bluetooth")
+                hasTriggeredBluetooth = true
+                appState.triggerBluetoothPermission()
+            }
+        case 10:
+            log("OnboardingView: Step 10 - Completing onboarding")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 10, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
