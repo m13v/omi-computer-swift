@@ -23,16 +23,17 @@ class ViewModelContainer: ObservableObject {
         guard !isLoading else { return }
         isLoading = true
 
-        log("ViewModelContainer: Starting eager data load for all pages")
+        let timer = PerfTimer("ViewModelContainer.loadAllData", logCPU: true)
+        logPerf("DATA LOAD: Starting eager data load for all pages", cpu: true)
 
         // Load shared stores first (both Dashboard and Tasks use these)
-        async let tasks: Void = tasksStore.loadTasks()
+        async let tasks: Void = measurePerfAsync("DATA LOAD: TasksStore") { await tasksStore.loadTasks() }
 
         // Load page-specific data in parallel
-        async let dashboard: Void = dashboardViewModel.loadDashboardData()
-        async let apps: Void = appProvider.fetchApps()
-        async let memories: Void = memoriesViewModel.loadMemories()
-        async let chat: Void = chatProvider.initialize()
+        async let dashboard: Void = measurePerfAsync("DATA LOAD: Dashboard") { await dashboardViewModel.loadDashboardData() }
+        async let apps: Void = measurePerfAsync("DATA LOAD: Apps") { await appProvider.fetchApps() }
+        async let memories: Void = measurePerfAsync("DATA LOAD: Memories") { await memoriesViewModel.loadMemories() }
+        async let chat: Void = measurePerfAsync("DATA LOAD: Chat") { await chatProvider.initialize() }
 
         // Wait for all to complete
         _ = await (tasks, dashboard, apps, memories, chat)
@@ -40,6 +41,7 @@ class ViewModelContainer: ObservableObject {
         isInitialLoadComplete = true
         isLoading = false
 
-        log("ViewModelContainer: Eager data load complete")
+        timer.stop()
+        logPerf("DATA LOAD: Complete - all pages loaded", cpu: true)
     }
 }
