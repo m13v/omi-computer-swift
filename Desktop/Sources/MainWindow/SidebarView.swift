@@ -2,19 +2,21 @@ import SwiftUI
 
 // MARK: - Navigation Item Model
 enum SidebarNavItem: Int, CaseIterable {
-    case conversations = 0
-    case chat = 1
-    case memories = 2
-    case tasks = 3
-    case focus = 4
-    case advice = 5
-    case rewind = 6
-    case apps = 7
-    case settings = 8
-    case permissions = 9
+    case dashboard = 0
+    case conversations = 1
+    case chat = 2
+    case memories = 3
+    case tasks = 4
+    case focus = 5
+    case advice = 6
+    case rewind = 7
+    case apps = 8
+    case settings = 9
+    case permissions = 10
 
     var title: String {
         switch self {
+        case .dashboard: return "Dashboard"
         case .conversations: return "Conversations"
         case .chat: return "AI chat"
         case .memories: return "Memories"
@@ -30,6 +32,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     var icon: String {
         switch self {
+        case .dashboard: return "square.grid.2x2"
         case .conversations: return "text.bubble.fill"
         case .chat: return "bubble.left.and.bubble.right.fill"
         case .memories: return "brain.head.profile"
@@ -45,7 +48,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.conversations, .chat, .memories, .tasks, .rewind, .apps]
+        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps]
     }
 }
 
