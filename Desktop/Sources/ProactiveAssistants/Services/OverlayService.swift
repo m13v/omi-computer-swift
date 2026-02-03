@@ -118,7 +118,9 @@ class OverlayService {
             return nil
         }
 
-        // Find the first window belonging to the active app
+        // Collect all windows belonging to the active app
+        var appWindows: [(x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat)] = []
+
         for window in windowList {
             guard let windowPID = window[kCGWindowOwnerPID as String] as? Int32,
                   windowPID == activePID else {
@@ -132,17 +134,21 @@ class OverlayService {
                let width = boundsDict["Width"],
                let height = boundsDict["Height"],
                width > 100 && height > 100 {
-
-                // CGWindowList uses top-left origin, but NSWindow uses bottom-left
-                // Convert coordinate system
-                let screenHeight = NSScreen.main?.frame.height ?? 0
-                let flippedY = screenHeight - y - height
-
-                return NSRect(x: x, y: flippedY, width: width, height: height)
+                appWindows.append((x: x, y: y, width: width, height: height))
             }
         }
 
-        return nil
+        // Pick the largest window by area (handles apps like Arc with multiple utility windows)
+        guard let largest = appWindows.max(by: { $0.width * $0.height < $1.width * $1.height }) else {
+            return nil
+        }
+
+        // CGWindowList uses top-left origin, but NSWindow uses bottom-left
+        // Convert coordinate system
+        let screenHeight = NSScreen.main?.frame.height ?? 0
+        let flippedY = screenHeight - largest.y - largest.height
+
+        return NSRect(x: largest.x, y: flippedY, width: largest.width, height: largest.height)
     }
 }
 
