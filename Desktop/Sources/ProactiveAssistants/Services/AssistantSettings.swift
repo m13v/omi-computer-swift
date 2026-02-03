@@ -12,6 +12,9 @@ class AssistantSettings {
     private let analysisDelayKey = "assistantsAnalysisDelay"
     private let screenAnalysisEnabledKey = "screenAnalysisEnabled"
     private let transcriptionEnabledKey = "transcriptionEnabled"
+    private let transcriptionLanguageKey = "transcriptionLanguage"
+    private let transcriptionAutoDetectKey = "transcriptionAutoDetect"
+    private let transcriptionVocabularyKey = "transcriptionVocabulary"
 
     // MARK: - Default Values
 
@@ -20,6 +23,9 @@ class AssistantSettings {
     private let defaultAnalysisDelay = 60 // seconds (1 minute)
     private let defaultScreenAnalysisEnabled = true
     private let defaultTranscriptionEnabled = true
+    private let defaultTranscriptionLanguage = "en"
+    private let defaultTranscriptionAutoDetect = true
+    private let defaultTranscriptionVocabulary: [String] = []
 
     private init() {
         // Register defaults
@@ -29,6 +35,9 @@ class AssistantSettings {
             analysisDelayKey: defaultAnalysisDelay,
             screenAnalysisEnabledKey: defaultScreenAnalysisEnabled,
             transcriptionEnabledKey: defaultTranscriptionEnabled,
+            transcriptionLanguageKey: defaultTranscriptionLanguage,
+            transcriptionAutoDetectKey: defaultTranscriptionAutoDetect,
+            transcriptionVocabularyKey: defaultTranscriptionVocabulary,
         ])
     }
 
@@ -90,6 +99,91 @@ class AssistantSettings {
         }
     }
 
+    /// The language code for transcription (e.g., "en", "uk", "ru")
+    var transcriptionLanguage: String {
+        get {
+            let value = UserDefaults.standard.string(forKey: transcriptionLanguageKey)
+            return value ?? defaultTranscriptionLanguage
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: transcriptionLanguageKey)
+            NotificationCenter.default.post(name: .transcriptionSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether auto-detect (multi-language) mode is enabled
+    /// When true, DeepGram will auto-detect the language
+    /// When false, uses the specific language set in transcriptionLanguage
+    var transcriptionAutoDetect: Bool {
+        get { UserDefaults.standard.bool(forKey: transcriptionAutoDetectKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: transcriptionAutoDetectKey)
+            NotificationCenter.default.post(name: .transcriptionSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Returns the effective language to send to DeepGram
+    /// If auto-detect is enabled and the language supports multi-language mode, returns "multi"
+    /// Otherwise returns the specific language code
+    var effectiveTranscriptionLanguage: String {
+        if transcriptionAutoDetect {
+            // Languages that support multi-language detection in DeepGram Nova-3
+            let multiLanguageSupported: Set<String> = [
+                "en", "en-US", "en-AU", "en-GB", "en-IN", "en-NZ",
+                "es", "es-419",
+                "fr", "fr-CA",
+                "de",
+                "hi",
+                "ru",
+                "pt", "pt-BR", "pt-PT",
+                "ja",
+                "it",
+                "nl"
+            ]
+
+            // If the selected language supports multi-language mode, use "multi"
+            // Otherwise fall back to single language (e.g., Ukrainian doesn't support multi)
+            if multiLanguageSupported.contains(transcriptionLanguage) {
+                return "multi"
+            }
+        }
+        return transcriptionLanguage
+    }
+
+    /// Custom vocabulary for improved transcription accuracy
+    /// Array of words/terms that DeepGram should recognize (Nova-3 limit: 500 tokens total)
+    var transcriptionVocabulary: [String] {
+        get {
+            let value = UserDefaults.standard.stringArray(forKey: transcriptionVocabularyKey)
+            return value ?? defaultTranscriptionVocabulary
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: transcriptionVocabularyKey)
+            NotificationCenter.default.post(name: .transcriptionSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Returns vocabulary as comma-separated string for display
+    var transcriptionVocabularyString: String {
+        get {
+            return transcriptionVocabulary.joined(separator: ", ")
+        }
+        set {
+            let terms = newValue
+                .split(separator: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            transcriptionVocabulary = terms
+        }
+    }
+
+    /// Returns vocabulary with "Omi" always included (for DeepGram)
+    var effectiveVocabulary: [String] {
+        var vocab = Set(transcriptionVocabulary)
+        vocab.insert("Omi")
+        return Array(vocab)
+    }
+
     /// Reset all settings to defaults
     func resetToDefaults() {
         cooldownInterval = defaultCooldownInterval
@@ -97,6 +191,76 @@ class AssistantSettings {
         analysisDelay = defaultAnalysisDelay
         screenAnalysisEnabled = defaultScreenAnalysisEnabled
         transcriptionEnabled = defaultTranscriptionEnabled
+        transcriptionLanguage = defaultTranscriptionLanguage
+        transcriptionAutoDetect = defaultTranscriptionAutoDetect
+        transcriptionVocabulary = defaultTranscriptionVocabulary
+    }
+
+    // MARK: - Supported Languages
+
+    /// All languages supported by DeepGram Nova-3 for single-language transcription
+    static let supportedLanguages: [(code: String, name: String)] = [
+        ("en", "English"),
+        ("en-US", "English (US)"),
+        ("en-GB", "English (UK)"),
+        ("en-AU", "English (Australia)"),
+        ("en-IN", "English (India)"),
+        ("en-NZ", "English (New Zealand)"),
+        ("bg", "Bulgarian"),
+        ("ca", "Catalan"),
+        ("cs", "Czech"),
+        ("da", "Danish"),
+        ("nl", "Dutch"),
+        ("nl-BE", "Dutch (Belgium)"),
+        ("et", "Estonian"),
+        ("fi", "Finnish"),
+        ("fr", "French"),
+        ("fr-CA", "French (Canada)"),
+        ("de", "German"),
+        ("de-CH", "German (Switzerland)"),
+        ("el", "Greek"),
+        ("hi", "Hindi"),
+        ("hu", "Hungarian"),
+        ("id", "Indonesian"),
+        ("it", "Italian"),
+        ("ja", "Japanese"),
+        ("ko", "Korean"),
+        ("lv", "Latvian"),
+        ("lt", "Lithuanian"),
+        ("ms", "Malay"),
+        ("no", "Norwegian"),
+        ("pl", "Polish"),
+        ("pt", "Portuguese"),
+        ("pt-BR", "Portuguese (Brazil)"),
+        ("pt-PT", "Portuguese (Portugal)"),
+        ("ro", "Romanian"),
+        ("ru", "Russian"),
+        ("sk", "Slovak"),
+        ("es", "Spanish"),
+        ("es-419", "Spanish (Latin America)"),
+        ("sv", "Swedish"),
+        ("tr", "Turkish"),
+        ("uk", "Ukrainian"),
+        ("vi", "Vietnamese"),
+    ]
+
+    /// Languages that support multi-language (auto-detect) mode in DeepGram Nova-3
+    static let multiLanguageSupported: Set<String> = [
+        "en", "en-US", "en-AU", "en-GB", "en-IN", "en-NZ",
+        "es", "es-419",
+        "fr", "fr-CA",
+        "de",
+        "hi",
+        "ru",
+        "pt", "pt-BR", "pt-PT",
+        "ja",
+        "it",
+        "nl"
+    ]
+
+    /// Check if a language supports auto-detect mode
+    static func supportsAutoDetect(_ languageCode: String) -> Bool {
+        return multiLanguageSupported.contains(languageCode)
     }
 }
 
