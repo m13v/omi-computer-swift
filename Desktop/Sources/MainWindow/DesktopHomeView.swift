@@ -96,67 +96,36 @@ struct DesktopHomeView: View {
                     )
                     .shadow(color: .black.opacity(0.05), radius: 20, x: 0, y: 4)
 
-                // Page content - ZStack keeps all views alive
-                ZStack {
-                    DashboardPage(viewModel: viewModelContainer.dashboardViewModel, isActive: selectedIndex == 0)
-                        .opacity(selectedIndex == 0 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 0)
-                        .trackRender("DashboardPage")
-
-                    ConversationsPage(appState: appState)
-                        .opacity(selectedIndex == 1 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 1)
-                        .trackRender("ConversationsPage")
-
-                    ChatPage(appProvider: viewModelContainer.appProvider, chatProvider: viewModelContainer.chatProvider)
-                        .opacity(selectedIndex == 2 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 2)
-                        .trackRender("ChatPage")
-
-                    MemoriesPage(viewModel: viewModelContainer.memoriesViewModel)
-                        .opacity(selectedIndex == 3 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 3)
-                        .trackRender("MemoriesPage")
-
-                    TasksPage(viewModel: viewModelContainer.tasksViewModel)
-                        .opacity(selectedIndex == 4 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 4)
-                        .trackRender("TasksPage")
-
-                    FocusPage()
-                        .opacity(selectedIndex == 5 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 5)
-                        .trackRender("FocusPage")
-
-                    AdvicePage()
-                        .opacity(selectedIndex == 6 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 6)
-                        .trackRender("AdvicePage")
-
-                    RewindPage()
-                        .opacity(selectedIndex == 7 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 7)
-                        .trackRender("RewindPage")
-
-                    AppsPage(appProvider: viewModelContainer.appProvider)
-                        .opacity(selectedIndex == 8 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 8)
-                        .trackRender("AppsPage")
-
-                    SettingsPage(appState: appState)
-                        .opacity(selectedIndex == 9 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 9)
-                        .trackRender("SettingsPage")
-
-                    PermissionsPage(appState: appState)
-                        .opacity(selectedIndex == 10 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 10)
-                        .trackRender("PermissionsPage")
-
-                    DeviceSettingsPage()
-                        .opacity(selectedIndex == 11 ? 1 : 0)
-                        .allowsHitTesting(selectedIndex == 11)
-                        .trackRender("DeviceSettingsPage")
+                // Page content - switch recreates views on tab change
+                Group {
+                    switch selectedIndex {
+                    case 0:
+                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
+                    case 1:
+                        ConversationsPage(appState: appState)
+                    case 2:
+                        ChatPage(appProvider: viewModelContainer.appProvider, chatProvider: viewModelContainer.chatProvider)
+                    case 3:
+                        MemoriesPage(viewModel: viewModelContainer.memoriesViewModel)
+                    case 4:
+                        TasksPage(viewModel: viewModelContainer.tasksViewModel)
+                    case 5:
+                        FocusPage()
+                    case 6:
+                        AdvicePage()
+                    case 7:
+                        RewindPage()
+                    case 8:
+                        AppsPage(appProvider: viewModelContainer.appProvider)
+                    case 9:
+                        SettingsPage(appState: appState)
+                    case 10:
+                        PermissionsPage(appState: appState)
+                    case 11:
+                        DeviceSettingsPage()
+                    default:
+                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
+                    }
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
