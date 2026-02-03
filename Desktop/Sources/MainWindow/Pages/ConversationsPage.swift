@@ -69,7 +69,25 @@ struct ConversationsPage: View {
                 // Detail view for selected conversation
                 ConversationDetailView(
                     conversation: selected,
-                    onBack: { selectedConversation = nil }
+                    onBack: { selectedConversation = nil },
+                    folders: appState.folders,
+                    onMoveToFolder: { conversationId, folderId in
+                        await appState.moveConversationToFolder(conversationId, folderId: folderId)
+                    },
+                    onDelete: {
+                        Task {
+                            await appState.refreshConversations()
+                        }
+                    },
+                    onTitleUpdated: { newTitle in
+                        // Update the local conversation object
+                        if let index = appState.conversations.firstIndex(where: { $0.id == selected.id }) {
+                            // Refresh to get updated data
+                            Task {
+                                await appState.refreshConversations()
+                            }
+                        }
+                    }
                 )
             } else {
                 // Main view with recording header and conversation list
