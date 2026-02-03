@@ -90,7 +90,9 @@ impl Config {
     pub fn redis_url(&self) -> Option<String> {
         self.redis_host.as_ref().map(|host| {
             if let Some(password) = &self.redis_password {
-                format!("redis://default:{}@{}:{}", password, host, self.redis_port)
+                // URL-encode the password to handle special characters
+                let encoded_password = urlencoding::encode(password);
+                format!("redis://default:{}@{}:{}", encoded_password, host, self.redis_port)
             } else {
                 format!("redis://{}:{}", host, self.redis_port)
             }
