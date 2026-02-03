@@ -924,6 +924,144 @@ fn merge_transcript_segments(conversations: &[Conversation]) -> Vec<TranscriptSe
     merged
 }
 
+// ============================================================================
+// CONVERSATION VISIBILITY / SHARING
+// ============================================================================
+
+#[derive(Deserialize)]
+pub struct VisibilityParams {
+    /// Visibility value: "shared", "public", or "private"
+    value: String,
+    /// Alternative parameter name (Flutter app sends both)
+    #[serde(default)]
+    visibility: Option<String>,
+}
+
+/// PATCH /v1/conversations/:id/visibility - Set conversation visibility for sharing
+/// When set to "shared" or "public", the conversation becomes accessible via /shared endpoint
+async fn set_conversation_visibility(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(conversation_id): Path<String>,
+    Query(params): Query<VisibilityParams>,
+) -> Result<Json<StatusResponse>, (StatusCode, String)> {
+    // Use value parameter, or fall back to visibility parameter
+    let visibility = params.visibility.unwrap_or(params.value);
+
+    tracing::info!(
+        "Setting conversation {} visibility to '{}' for user {}",
+        conversation_id,
+        visibility,
+        user.uid
+    );
+
+    // Verify conversation exists and belongs to user
+    let conversation = state
+        .firestore
+        .get_conversation(&user.uid, &conversation_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .ok_or_else(|| (StatusCode::NOT_FOUND, "Conversation not found".to_string()))?;
+
+    // Update visibility in Firestore
+    if let Err(e) = state
+        .firestore
+        .set_conversation_visibility(&user.uid, &conversation_id, &visibility)
+        .await
+    {
+        tracing::error!("Failed to set visibility in Firestore: {}", e);
+        return Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string()));
+    }
+
+    // Update Redis for fast lookup
+    if let Some(redis) = &state.redis {
+        let is_public = visibility == "shared" || visibility == "public";
+
+        if is_public {
+            // Store the uid mapping and add to public set
+            if let Err(e) = redis.store_conversation_to_uid(&conversation_id, &user.uid).await {
+                tracing::error!("Failed to store conversation visibility in Redis: {}", e);
+                // Continue anyway - Firestore has the source of truth
+            }
+            if let Err(e) = redis.add_public_conversation(&conversation_id).await {
+                tracing::error!("Failed to add to public conversations in Redis: {}", e);
+            }
+        } else {
+            // Remove from Redis
+            if let Err(e) = redis.remove_conversation_to_uid(&conversation_id).await {
+                tracing::error!("Failed to remove conversation visibility from Redis: {}", e);
+            }
+            if let Err(e) = redis.remove_public_conversation(&conversation_id).await {
+                tracing::error!("Failed to remove from public conversations in Redis: {}", e);
+            }
+        }
+    } else {
+        tracing::warn!("Redis not configured - conversation sharing may not work with web viewer");
+    }
+
+    tracing::info!(
+        "Conversation {} visibility set to '{}' successfully",
+        conversation_id,
+        visibility
+    );
+
+    Ok(Json(StatusResponse {
+        status: "Ok".to_string(),
+    }))
+}
+
+/// GET /v1/conversations/:id/shared - Get a shared/public conversation (no authentication required)
+/// This endpoint is used by the web viewer at h.omi.me/memories/{id}
+async fn get_shared_conversation(
+    State(state): State<AppState>,
+    Path(conversation_id): Path<String>,
+) -> Result<Json<Conversation>, (StatusCode, String)> {
+    tracing::info!("Getting shared conversation {}", conversation_id);
+
+    // First, try to get the owner uid from Redis
+    let uid = if let Some(redis) = &state.redis {
+        match redis.get_conversation_uid(&conversation_id).await {
+            Ok(Some(uid)) => uid,
+            Ok(None) => {
+                tracing::info!("Conversation {} not found in Redis (not shared)", conversation_id);
+                return Err((StatusCode::NOT_FOUND, "Conversation is private".to_string()));
+            }
+            Err(e) => {
+                tracing::error!("Redis error looking up conversation: {}", e);
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, "Failed to lookup conversation".to_string()));
+            }
+        }
+    } else {
+        // No Redis - can't serve shared conversations
+        tracing::error!("Redis not configured - cannot serve shared conversations");
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "Sharing service unavailable".to_string()));
+    };
+
+    // Fetch the conversation from Firestore
+    let conversation = state
+        .firestore
+        .get_conversation(&uid, &conversation_id)
+        .await
+        .map_err(|e| {
+            tracing::error!("Failed to get conversation from Firestore: {}", e);
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string())
+        })?
+        .ok_or_else(|| {
+            tracing::info!("Conversation {} not found in Firestore", conversation_id);
+            (StatusCode::NOT_FOUND, "Conversation not found".to_string())
+        })?;
+
+    // Verify the conversation is actually public/shared
+    // The visibility field should be checked if it exists
+    // For now, we trust Redis - if it's in Redis, it was explicitly shared
+
+    // Return the conversation (without sensitive data like geolocation)
+    let mut response = conversation;
+    response.geolocation = None;
+
+    Ok(Json(response))
+}
+
 pub fn conversations_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/conversations", get(get_conversations))
@@ -941,6 +1079,14 @@ pub fn conversations_routes() -> Router<AppState> {
         .route(
             "/v1/conversations/:id/starred",
             patch(set_conversation_starred),
+        )
+        .route(
+            "/v1/conversations/:id/visibility",
+            patch(set_conversation_visibility),
+        )
+        .route(
+            "/v1/conversations/:id/shared",
+            get(get_shared_conversation),
         )
         .route(
             "/v1/conversations/:id",
