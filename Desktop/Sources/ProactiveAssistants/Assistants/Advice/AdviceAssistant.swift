@@ -56,7 +56,8 @@ actor AdviceAssistant: ProactiveAssistant {
     // MARK: - Initialization
 
     init(apiKey: String? = nil) throws {
-        self.geminiClient = try GeminiClient(apiKey: apiKey)
+        // Use Gemini 3 Pro for better advice quality
+        self.geminiClient = try GeminiClient(apiKey: apiKey, model: "gemini-3-pro-preview")
 
         // Start processing loop
         Task {
