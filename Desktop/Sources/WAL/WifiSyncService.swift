@@ -97,11 +97,11 @@ final class WifiSyncService: ObservableObject {
         }
 
         guard let connection = deviceProvider.activeConnection else {
-            throw WifiSyncError.deviceNotConnected
+            throw WifiSyncServiceError.deviceNotConnected
         }
 
         guard await connection.isWifiSyncSupported() else {
-            throw WifiSyncError.notSupported
+            throw WifiSyncServiceError.notSupported
         }
 
         isSyncing = true
@@ -114,7 +114,7 @@ final class WifiSyncService: ObservableObject {
                 logger.info("Setting up WiFi credentials...")
                 let result = await connection.setupWifiSync(ssid: ssid, password: password)
                 guard result.success else {
-                    throw WifiSyncError.setupFailed(result.errorMessage ?? "Unknown error")
+                    throw WifiSyncServiceError.setupFailed(result.errorMessage ?? "Unknown error")
                 }
             }
 
@@ -122,7 +122,7 @@ final class WifiSyncService: ObservableObject {
             logger.info("Starting WiFi on device...")
             let started = await connection.startWifiSync()
             guard started else {
-                throw WifiSyncError.deviceFailed
+                throw WifiSyncServiceError.deviceFailed
             }
 
             status = .on
@@ -136,7 +136,7 @@ final class WifiSyncService: ObservableObject {
             // Step 5: Get storage info and send read command
             let storageList = await connection.getStorageList()
             guard storageList.count >= 2 else {
-                throw WifiSyncError.noDataToSync
+                throw WifiSyncServiceError.noDataToSync
             }
 
             let totalBytes = Int(storageList[0])
@@ -168,7 +168,7 @@ final class WifiSyncService: ObservableObject {
             )
 
             guard readSuccess else {
-                throw WifiSyncError.commandFailed
+                throw WifiSyncServiceError.commandFailed
             }
 
             // Step 6: Connect to device WiFi AP
@@ -249,7 +249,7 @@ final class WifiSyncService: ObservableObject {
             try await Task.sleep(nanoseconds: 500_000_000) // 0.5 seconds
         }
 
-        throw WifiSyncError.timeout
+        throw WifiSyncServiceError.timeout
     }
 
     private func connectTCP(host: String, port: UInt16) async throws {
@@ -270,7 +270,7 @@ final class WifiSyncService: ObservableObject {
 
                 case .failed(let error):
                     self?.logger.error("TCP connection failed: \(error.localizedDescription)")
-                    continuation.resume(throwing: WifiSyncError.connectionFailed)
+                    continuation.resume(throwing: WifiSyncServiceError.connectionFailed)
 
                 case .cancelled:
                     continuation.resume(throwing: CancellationError())
@@ -286,7 +286,7 @@ final class WifiSyncService: ObservableObject {
 
     private func receiveData() async throws {
         guard let connection = tcpConnection else {
-            throw WifiSyncError.connectionFailed
+            throw WifiSyncServiceError.connectionFailed
         }
 
         downloadedFrames = []
@@ -324,7 +324,7 @@ final class WifiSyncService: ObservableObject {
         let (finalFrames, _) = parseFrames(from: buffer)
         downloadedFrames.append(contentsOf: finalFrames)
 
-        logger.info("Received \(totalBytesDownloaded) bytes, \(downloadedFrames.count) frames")
+        logger.info("Received \(self.totalBytesDownloaded) bytes, \(self.downloadedFrames.count) frames")
     }
 
     private func receiveChunk(connection: NWConnection) async throws -> Data {
@@ -434,7 +434,7 @@ final class WifiSyncService: ObservableObject {
         // Cleanup
         await cleanup()
 
-        logger.info("WiFi sync completed: \(downloadedFrames.count) frames")
+        logger.info("WiFi sync completed: \(self.downloadedFrames.count) frames")
     }
 
     private func cleanup() async {
@@ -461,7 +461,7 @@ final class WifiSyncService: ObservableObject {
 
 // MARK: - WiFi Sync Errors
 
-enum WifiSyncError: LocalizedError {
+enum WifiSyncServiceError: LocalizedError {
     case deviceNotConnected
     case notSupported
     case setupFailed(String)
