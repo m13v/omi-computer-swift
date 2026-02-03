@@ -1,4 +1,20 @@
 import SwiftUI
+import AppKit
+
+// MARK: - Safe Sheet Dismiss Helper
+/// Workaround for SwiftUI macOS bug where dismissing a sheet can cause
+/// the click to propagate to underlying views (cursor jump issue).
+/// This resigns first responder before dismissing to prevent click-through.
+extension View {
+    func safeDismiss(_ dismiss: DismissAction) {
+        // Resign first responder to prevent click-through on underlying views
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        // Small delay to allow the responder change to take effect
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            dismiss()
+        }
+    }
+}
 
 struct AppsPage: View {
     @StateObject private var appProvider = AppProvider()
@@ -399,7 +415,7 @@ struct CompactAppCard: View {
                 }
 
                 // Get/Open button
-                SmallAppButton(app: app, appProvider: appProvider)
+                SmallAppButton(app: app, appProvider: appProvider, onOpen: onSelect)
             }
             .frame(width: 90)
             .padding(.vertical, 8)
@@ -425,10 +441,17 @@ struct CompactAppCard: View {
 struct SmallAppButton: View {
     let app: OmiApp
     let appProvider: AppProvider
+    var onOpen: (() -> Void)? = nil
 
     var body: some View {
         Button(action: {
-            Task { await appProvider.toggleApp(app) }
+            if app.enabled {
+                // If already enabled, open the app detail
+                onOpen?()
+            } else {
+                // If not enabled, enable it
+                Task { await appProvider.toggleApp(app) }
+            }
         }) {
             if appProvider.isAppLoading(app.id) {
                 ProgressView()
@@ -512,7 +535,7 @@ struct AppCard: View {
                     Spacer()
 
                     // Get/Open button
-                    AppActionButton(app: app, appProvider: appProvider)
+                    AppActionButton(app: app, appProvider: appProvider, onOpen: onSelect)
                 }
             }
             .padding(14)
@@ -544,11 +567,16 @@ struct AppCard: View {
 struct AppActionButton: View {
     let app: OmiApp
     let appProvider: AppProvider
+    var onOpen: (() -> Void)? = nil
 
     var body: some View {
         Button(action: {
-            Task {
-                await appProvider.toggleApp(app)
+            if app.enabled {
+                // If already enabled, open the app detail
+                onOpen?()
+            } else {
+                // If not enabled, enable it
+                Task { await appProvider.toggleApp(app) }
             }
         }) {
             if appProvider.isAppLoading(app.id) {
@@ -594,7 +622,7 @@ struct AppFilterSheet: View {
                     .foregroundColor(OmiColors.purplePrimary)
                 }
 
-                Button(action: { dismiss() }) {
+                Button(action: { safeDismiss(dismiss) }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(OmiColors.textSecondary)
@@ -723,7 +751,7 @@ struct CategoryAppsSheet: View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Button(action: { dismiss() }) {
+                Button(action: { safeDismiss(dismiss) }) {
                     Image(systemName: "chevron.left")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(OmiColors.textSecondary)
@@ -771,12 +799,14 @@ struct AppDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var reviews: [OmiAppReview] = []
     @State private var isLoadingReviews = false
+    @State private var showAddReview = false
+    @State private var userReview: OmiAppReview?
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
             HStack {
-                Button(action: { dismiss() }) {
+                Button(action: { safeDismiss(dismiss) }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 14, weight: .medium))
                         .foregroundColor(OmiColors.textSecondary)
@@ -898,29 +928,86 @@ struct AppDetailSheet: View {
                             .foregroundColor(OmiColors.textSecondary)
                     }
 
-                    // Reviews section
-                    if !reviews.isEmpty {
-                        Divider()
-                            .background(OmiColors.backgroundTertiary)
+                    Divider()
+                        .background(OmiColors.backgroundTertiary)
 
-                        VStack(alignment: .leading, spacing: 12) {
+                    // Add Review Section
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
                             Text("Reviews")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(OmiColors.textPrimary)
 
-                            ForEach(reviews.prefix(3)) { review in
+                            Spacer()
+
+                            if userReview == nil {
+                                Button(action: { showAddReview = true }) {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "plus")
+                                            .font(.system(size: 12, weight: .medium))
+                                        Text("Add Review")
+                                            .font(.system(size: 13, weight: .medium))
+                                    }
+                                    .foregroundColor(OmiColors.purplePrimary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+
+                        // User's own review (if exists)
+                        if let userReview = userReview {
+                            VStack(alignment: .leading, spacing: 8) {
+                                HStack {
+                                    Text("Your Review")
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(OmiColors.purplePrimary)
+
+                                    Spacer()
+
+                                    Button(action: { showAddReview = true }) {
+                                        Text("Edit")
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(OmiColors.textTertiary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
+                                ReviewCard(review: userReview)
+                            }
+                        }
+
+                        // Other reviews
+                        let otherReviews = reviews.filter { $0.uid != userReview?.uid }
+                        if !otherReviews.isEmpty {
+                            ForEach(otherReviews.prefix(3)) { review in
                                 ReviewCard(review: review)
                             }
+                        } else if userReview == nil && reviews.isEmpty {
+                            Text("No reviews yet. Be the first to review this app!")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.vertical, 8)
                         }
                     }
                 }
                 .padding()
             }
         }
-        .frame(width: 500, height: 550)
+        .frame(width: 500, height: 600)
         .background(OmiColors.backgroundPrimary)
         .task {
             await loadReviews()
+        }
+        .sheet(isPresented: $showAddReview) {
+            AddReviewSheet(
+                app: app,
+                existingReview: userReview,
+                onReviewSubmitted: { review in
+                    userReview = review
+                    // Refresh reviews to get updated list
+                    Task { await loadReviews() }
+                }
+            )
         }
     }
 
@@ -930,8 +1017,285 @@ struct AppDetailSheet: View {
 
         do {
             reviews = try await APIClient.shared.getAppReviews(appId: app.id)
+            // Check if current user has a review
+            if let currentUserId = AuthState.shared.userId {
+                userReview = reviews.first { $0.uid == currentUserId }
+            }
         } catch {
             // Silently fail - reviews are optional
+        }
+    }
+}
+
+// MARK: - Add Review Sheet
+
+struct AddReviewSheet: View {
+    let app: OmiApp
+    let existingReview: OmiAppReview?
+    let onReviewSubmitted: (OmiAppReview) -> Void
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var selectedRating: Int
+    @State private var reviewText: String
+    @State private var isSubmitting = false
+    @State private var errorMessage: String?
+
+    private let maxReviewLength = 500
+
+    init(app: OmiApp, existingReview: OmiAppReview?, onReviewSubmitted: @escaping (OmiAppReview) -> Void) {
+        self.app = app
+        self.existingReview = existingReview
+        self.onReviewSubmitted = onReviewSubmitted
+        _selectedRating = State(initialValue: existingReview?.score ?? 0)
+        _reviewText = State(initialValue: existingReview?.review ?? "")
+    }
+
+    var isFormValid: Bool {
+        selectedRating > 0 && !reviewText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Button(action: { safeDismiss(dismiss) }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 28, height: 28)
+                        .background(OmiColors.backgroundSecondary)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+
+                Text(existingReview != nil ? "Edit Review" : "Add Review")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                // Placeholder for symmetry
+                Color.clear
+                    .frame(width: 28, height: 28)
+            }
+            .padding()
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // App info
+                    HStack(spacing: 12) {
+                        AsyncImage(url: URL(string: app.image)) { phase in
+                            switch phase {
+                            case .success(let image):
+                                image
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fill)
+                            default:
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(OmiColors.backgroundTertiary)
+                            }
+                        }
+                        .frame(width: 50, height: 50)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(app.name)
+                                .font(.system(size: 16, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text(app.author)
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+                    }
+
+                    // Star Rating Picker
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Your Rating")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        StarRatingPicker(rating: $selectedRating)
+                    }
+
+                    // Review Text
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            Text("Your Review")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Spacer()
+
+                            Text("\(reviewText.count)/\(maxReviewLength)")
+                                .font(.system(size: 12))
+                                .foregroundColor(reviewText.count > maxReviewLength ? OmiColors.error : OmiColors.textTertiary)
+                        }
+
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $reviewText)
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textPrimary)
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 120, maxHeight: 200)
+                                .padding(12)
+                                .background(OmiColors.backgroundSecondary)
+                                .cornerRadius(10)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 10)
+                                        .stroke(OmiColors.backgroundTertiary, lineWidth: 1)
+                                )
+                                .onChange(of: reviewText) { _, newValue in
+                                    if newValue.count > maxReviewLength {
+                                        reviewText = String(newValue.prefix(maxReviewLength))
+                                    }
+                                }
+
+                            if reviewText.isEmpty {
+                                Text("Share your experience with this app...")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .padding(.leading, 17)
+                                    .padding(.top, 20)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+                    }
+
+                    // Error message
+                    if let errorMessage = errorMessage {
+                        HStack(spacing: 8) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .foregroundColor(OmiColors.error)
+                            Text(errorMessage)
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.error)
+                        }
+                    }
+
+                    // Submit button
+                    Button(action: submitReview) {
+                        HStack {
+                            if isSubmitting {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                                    .tint(.white)
+                            } else {
+                                Text(existingReview != nil ? "Update Review" : "Submit Review")
+                                    .font(.system(size: 14, weight: .semibold))
+                            }
+                        }
+                        .foregroundColor(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 44)
+                        .background(isFormValid ? OmiColors.purplePrimary : OmiColors.purplePrimary.opacity(0.5))
+                        .cornerRadius(10)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!isFormValid || isSubmitting)
+                }
+                .padding()
+            }
+        }
+        .frame(width: 400, height: 480)
+        .background(OmiColors.backgroundPrimary)
+    }
+
+    private func submitReview() {
+        guard isFormValid else { return }
+
+        isSubmitting = true
+        errorMessage = nil
+
+        Task {
+            do {
+                let review = try await APIClient.shared.submitAppReview(
+                    appId: app.id,
+                    score: selectedRating,
+                    review: reviewText.trimmingCharacters(in: .whitespacesAndNewlines)
+                )
+                await MainActor.run {
+                    onReviewSubmitted(review)
+                    dismiss()
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = "Failed to submit review. Please try again."
+                    isSubmitting = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Star Rating Picker
+
+struct StarRatingPicker: View {
+    @Binding var rating: Int
+    var maxRating: Int = 5
+    var starSize: CGFloat = 32
+
+    @State private var hoverRating: Int = 0
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(1...maxRating, id: \.self) { star in
+                Image(systemName: starImage(for: star))
+                    .font(.system(size: starSize))
+                    .foregroundColor(starColor(for: star))
+                    .onTapGesture {
+                        withAnimation(.easeInOut(duration: 0.15)) {
+                            rating = star
+                        }
+                    }
+                    .onHover { hovering in
+                        hoverRating = hovering ? star : 0
+                    }
+                    .scaleEffect(scaleEffect(for: star))
+                    .animation(.easeInOut(duration: 0.1), value: hoverRating)
+            }
+
+            if rating > 0 {
+                Text(ratingLabel)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.leading, 8)
+            }
+        }
+    }
+
+    private func starImage(for star: Int) -> String {
+        let effectiveRating = hoverRating > 0 ? hoverRating : rating
+        return star <= effectiveRating ? "star.fill" : "star"
+    }
+
+    private func starColor(for star: Int) -> Color {
+        let effectiveRating = hoverRating > 0 ? hoverRating : rating
+        return star <= effectiveRating ? .yellow : OmiColors.textTertiary.opacity(0.5)
+    }
+
+    private func scaleEffect(for star: Int) -> CGFloat {
+        if hoverRating == star {
+            return 1.15
+        }
+        return 1.0
+    }
+
+    private var ratingLabel: String {
+        switch rating {
+        case 1: return "Poor"
+        case 2: return "Fair"
+        case 3: return "Good"
+        case 4: return "Very Good"
+        case 5: return "Excellent"
+        default: return ""
         }
     }
 }
