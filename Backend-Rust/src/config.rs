@@ -32,6 +32,12 @@ pub struct Config {
     pub google_client_secret: Option<String>,
     /// Encryption secret for decrypting user data with enhanced protection level
     pub encryption_secret: Option<Vec<u8>>,
+    /// Redis host for conversation visibility
+    pub redis_host: Option<String>,
+    /// Redis port
+    pub redis_port: u16,
+    /// Redis password
+    pub redis_password: Option<String>,
 }
 
 impl Config {
@@ -57,6 +63,12 @@ impl Config {
             encryption_secret: env::var("ENCRYPTION_SECRET")
                 .ok()
                 .map(|s| s.into_bytes()),
+            redis_host: env::var("REDIS_DB_HOST").ok(),
+            redis_port: env::var("REDIS_DB_PORT")
+                .ok()
+                .and_then(|p| p.parse().ok())
+                .unwrap_or(6379),
+            redis_password: env::var("REDIS_DB_PASSWORD").ok(),
         }
     }
 
@@ -68,6 +80,20 @@ impl Config {
         if self.gemini_api_key.is_none() {
             tracing::warn!("GEMINI_API_KEY not set - conversation processing will fail");
         }
+        if self.redis_host.is_none() {
+            tracing::warn!("REDIS_DB_HOST not set - conversation visibility/sharing will not work");
+        }
         Ok(())
+    }
+
+    /// Get Redis connection URL
+    pub fn redis_url(&self) -> Option<String> {
+        self.redis_host.as_ref().map(|host| {
+            if let Some(password) = &self.redis_password {
+                format!("redis://default:{}@{}:{}", password, host, self.redis_port)
+            } else {
+                format!("redis://{}:{}", host, self.redis_port)
+            }
+        })
     }
 }
