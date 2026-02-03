@@ -1085,10 +1085,19 @@ extension APIClient {
 
     /// Creates a conversation from transcript segments
     /// Endpoint: POST /v1/conversations/from-segments (local backend)
+    /// - Parameters:
+    ///   - segments: Transcript segments to include
+    ///   - startedAt: When the recording started
+    ///   - finishedAt: When the recording finished
+    ///   - source: Source of the conversation (e.g., "desktop", "omi", "bee")
+    ///   - language: Language code for transcription
+    ///   - timezone: User's timezone
+    ///   - inputDeviceName: Name of the input device (microphone or BLE device)
     func createConversationFromSegments(
         segments: [TranscriptSegmentRequest],
         startedAt: Date,
         finishedAt: Date,
+        source: ConversationSource = .desktop,
         language: String = "en",
         timezone: String = "UTC",
         inputDeviceName: String? = nil
@@ -1098,7 +1107,7 @@ extension APIClient {
 
         let request = CreateConversationFromSegmentsRequest(
             transcriptSegments: segments,
-            source: "desktop",
+            source: source.rawValue,
             startedAt: formatter.string(from: startedAt),
             finishedAt: formatter.string(from: finishedAt),
             language: language,
