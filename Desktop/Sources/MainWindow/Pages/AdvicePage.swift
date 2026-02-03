@@ -98,8 +98,9 @@ struct AdvicePage: View {
             }
         }
         .background(Color.clear)
-        .sheet(item: $selectedAdvice) { advice in
+        .dismissableSheet(item: $selectedAdvice) { advice in
             adviceDetailSheet(advice)
+                .frame(width: 450, height: 500)
         }
         .confirmationDialog(
             "Clear All Advice",
