@@ -481,7 +481,7 @@ struct RewindPage: View {
                     .scaleEffect(1.2)
                     .tint(.white)
                     .frame(width: geometry.size.width, height: geometry.size.height)
-            } else if let image = currentImage {
+            } else if let image = currentImage, image.size.height > 0, image.size.width > 0, geometry.size.height > 0, geometry.size.width > 0 {
                 // Calculate size to fill container while maintaining aspect ratio
                 let imageAspect = image.size.width / image.size.height
                 let containerAspect = geometry.size.width / geometry.size.height
@@ -491,12 +491,12 @@ struct RewindPage: View {
                         // Wide image - fill width
                         let width = geometry.size.width
                         let height = width / imageAspect
-                        return CGSize(width: width, height: height)
+                        return CGSize(width: max(1, width), height: max(1, height))
                     } else {
                         // Tall image - fill height
                         let height = geometry.size.height
                         let width = height * imageAspect
-                        return CGSize(width: width, height: height)
+                        return CGSize(width: max(1, width), height: max(1, height))
                     }
                 }()
 
@@ -955,18 +955,27 @@ struct SearchResultListItem: View {
         let lowercasedSnippet = snippet.lowercased()
 
         if let range = lowercasedSnippet.range(of: lowercasedQuery) {
-            let beforeIndex = snippet.distance(from: snippet.startIndex, to: range.lowerBound)
-            let afterIndex = snippet.distance(from: snippet.startIndex, to: range.upperBound)
+            // Use lowercasedSnippet for distance calculation to avoid String.Index incompatibility
+            let beforeIndex = lowercasedSnippet.distance(from: lowercasedSnippet.startIndex, to: range.lowerBound)
+            let afterIndex = lowercasedSnippet.distance(from: lowercasedSnippet.startIndex, to: range.upperBound)
 
-            let before = String(snippet.prefix(beforeIndex))
-            let match = String(snippet[snippet.index(snippet.startIndex, offsetBy: beforeIndex)..<snippet.index(snippet.startIndex, offsetBy: afterIndex)])
-            let after = String(snippet.suffix(from: snippet.index(snippet.startIndex, offsetBy: afterIndex)))
+            // Bounds check before creating indices
+            if beforeIndex <= snippet.count, afterIndex <= snippet.count, beforeIndex <= afterIndex {
+                let before = String(snippet.prefix(beforeIndex))
+                let match = String(snippet[snippet.index(snippet.startIndex, offsetBy: beforeIndex)..<snippet.index(snippet.startIndex, offsetBy: afterIndex)])
+                let after = String(snippet.suffix(from: snippet.index(snippet.startIndex, offsetBy: afterIndex)))
 
-            (Text(before).foregroundColor(.white.opacity(0.6)) +
-             Text(match).foregroundColor(.white).bold() +
-             Text(after).foregroundColor(.white.opacity(0.6)))
-                .font(.system(size: 12))
-                .lineLimit(3)
+                (Text(before).foregroundColor(.white.opacity(0.6)) +
+                 Text(match).foregroundColor(.white).bold() +
+                 Text(after).foregroundColor(.white.opacity(0.6)))
+                    .font(.system(size: 12))
+                    .lineLimit(3)
+            } else {
+                Text(snippet)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(3)
+            }
         } else {
             Text(snippet)
                 .font(.system(size: 12))
@@ -1107,18 +1116,27 @@ struct SearchResultGroupItem: View {
         let lowercasedSnippet = snippet.lowercased()
 
         if let range = lowercasedSnippet.range(of: lowercasedQuery) {
-            let beforeIndex = snippet.distance(from: snippet.startIndex, to: range.lowerBound)
-            let afterIndex = snippet.distance(from: snippet.startIndex, to: range.upperBound)
+            // Use lowercasedSnippet for distance calculation to avoid String.Index incompatibility
+            let beforeIndex = lowercasedSnippet.distance(from: lowercasedSnippet.startIndex, to: range.lowerBound)
+            let afterIndex = lowercasedSnippet.distance(from: lowercasedSnippet.startIndex, to: range.upperBound)
 
-            let before = String(snippet.prefix(beforeIndex))
-            let match = String(snippet[snippet.index(snippet.startIndex, offsetBy: beforeIndex)..<snippet.index(snippet.startIndex, offsetBy: afterIndex)])
-            let after = String(snippet.suffix(from: snippet.index(snippet.startIndex, offsetBy: afterIndex)))
+            // Bounds check before creating indices
+            if beforeIndex <= snippet.count, afterIndex <= snippet.count, beforeIndex <= afterIndex {
+                let before = String(snippet.prefix(beforeIndex))
+                let match = String(snippet[snippet.index(snippet.startIndex, offsetBy: beforeIndex)..<snippet.index(snippet.startIndex, offsetBy: afterIndex)])
+                let after = String(snippet.suffix(from: snippet.index(snippet.startIndex, offsetBy: afterIndex)))
 
-            (Text(before).foregroundColor(.white.opacity(0.6)) +
-             Text(match).foregroundColor(.white).bold() +
-             Text(after).foregroundColor(.white.opacity(0.6)))
-                .font(.system(size: 12))
-                .lineLimit(3)
+                (Text(before).foregroundColor(.white.opacity(0.6)) +
+                 Text(match).foregroundColor(.white).bold() +
+                 Text(after).foregroundColor(.white.opacity(0.6)))
+                    .font(.system(size: 12))
+                    .lineLimit(3)
+            } else {
+                Text(snippet)
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+                    .lineLimit(3)
+            }
         } else {
             Text(snippet)
                 .font(.system(size: 12))
