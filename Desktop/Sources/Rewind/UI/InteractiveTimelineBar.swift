@@ -1,8 +1,7 @@
 import SwiftUI
 import AppKit
 
-/// Compact timeline bar with frame bars and scroll-to-center navigation
-/// Inspired by Screenpipe's scrollable timeline approach
+/// Full-width timeline bar with moving playhead (video player style)
 struct InteractiveTimelineBar: View {
     let screenshots: [Screenshot]
     let currentIndex: Int
@@ -11,26 +10,17 @@ struct InteractiveTimelineBar: View {
 
     @State private var hoveredIndex: Int? = nil
 
-    // Bar dimensions
-    private let frameWidth: CGFloat = 4
-    private let frameSpacing: CGFloat = 1
     private let barHeight: CGFloat = 32
-
-    // Visible window for performance
-    private let visibleCount = 400
 
     var body: some View {
         VStack(spacing: 4) {
-            // Timeline using NSScrollView for natural scroll behavior
-            ScrollableTimelineView(
+            // Full-width timeline with moving playhead
+            FullWidthTimelineView(
                 screenshots: screenshots,
                 currentIndex: currentIndex,
                 searchResultIndices: searchResultIndices,
                 hoveredIndex: $hoveredIndex,
-                frameWidth: frameWidth,
-                frameSpacing: frameSpacing,
                 barHeight: barHeight,
-                visibleCount: visibleCount,
                 onSelect: onSelect
             )
             .frame(height: barHeight + 40) // Space for tooltip
@@ -69,21 +59,18 @@ struct InteractiveTimelineBar: View {
     }
 }
 
-// MARK: - Scrollable Timeline with NSScrollView
+// MARK: - Full Width Timeline with Moving Playhead
 
-struct ScrollableTimelineView: NSViewRepresentable {
+struct FullWidthTimelineView: NSViewRepresentable {
     let screenshots: [Screenshot]
     let currentIndex: Int
     let searchResultIndices: Set<Int>?
     @Binding var hoveredIndex: Int?
-    let frameWidth: CGFloat
-    let frameSpacing: CGFloat
     let barHeight: CGFloat
-    let visibleCount: Int
     let onSelect: (Int) -> Void
 
-    func makeNSView(context: Context) -> TimelineScrollContainerView {
-        let view = TimelineScrollContainerView()
+    func makeNSView(context: Context) -> FullWidthTimelineNSView {
+        let view = FullWidthTimelineNSView()
         view.onSelect = onSelect
         view.onHover = { index in
             DispatchQueue.main.async {
@@ -93,278 +80,27 @@ struct ScrollableTimelineView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: TimelineScrollContainerView, context: Context) {
-        let indexChanged = nsView.currentIndex != currentIndex
-
+    func updateNSView(_ nsView: FullWidthTimelineNSView, context: Context) {
         nsView.screenshots = screenshots
         nsView.currentIndex = currentIndex
         nsView.searchResultIndices = searchResultIndices
         nsView.hoveredIndex = hoveredIndex
-        nsView.frameWidth = frameWidth
-        nsView.frameSpacing = frameSpacing
         nsView.barHeight = barHeight
-        nsView.visibleCount = visibleCount
         nsView.onSelect = onSelect
-
-        nsView.updateContentSize()
-
-        // Only scroll programmatically if index changed AND user is NOT actively scrolling
-        // This prevents fighting with user's scroll gesture
-        if indexChanged && !nsView.isUserScrolling {
-            nsView.scrollToCurrentIndex(animated: true)
-        }
+        nsView.needsDisplay = true
     }
 }
 
-// MARK: - Container View with NSScrollView
+// MARK: - NSView Implementation
 
-class TimelineScrollContainerView: NSView {
+class FullWidthTimelineNSView: NSView {
     var screenshots: [Screenshot] = []
     var currentIndex: Int = 0
     var searchResultIndices: Set<Int>?
     var hoveredIndex: Int?
-    var frameWidth: CGFloat = 4
-    var frameSpacing: CGFloat = 1
     var barHeight: CGFloat = 32
-    var visibleCount: Int = 400
     var onSelect: ((Int) -> Void)?
     var onHover: ((Int?) -> Void)?
-
-    private var scrollView: NSScrollView!
-    private var contentView: TimelineContentView!
-    private var centerIndicatorView: NSView!
-    private var isScrollingProgrammatically = false
-    var isUserScrolling = false  // Track if user is actively scrolling (public for SwiftUI check)
-    private var userScrollEndTimer: Timer?  // Timer to detect scroll end
-    private var lastManualScrollTime: Date = .distantPast
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setupViews()
-    }
-
-    required init?(coder: NSCoder) {
-        super.init(coder: coder)
-        setupViews()
-    }
-
-    private func setupViews() {
-        // Create scroll view
-        scrollView = NSScrollView(frame: bounds)
-        scrollView.autoresizingMask = [.width, .height]
-        scrollView.hasHorizontalScroller = false
-        scrollView.hasVerticalScroller = false
-        scrollView.horizontalScrollElasticity = .allowed
-        scrollView.verticalScrollElasticity = .none
-        scrollView.drawsBackground = false
-        scrollView.backgroundColor = .clear
-
-        // Create content view
-        contentView = TimelineContentView(frame: NSRect(x: 0, y: 0, width: 1000, height: bounds.height))
-        contentView.parentContainer = self
-
-        scrollView.documentView = contentView
-        addSubview(scrollView)
-
-        // Create center indicator (fixed position)
-        centerIndicatorView = NSView(frame: NSRect(x: 0, y: 0, width: 2, height: barHeight))
-        centerIndicatorView.wantsLayer = true
-        centerIndicatorView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.3).cgColor
-        addSubview(centerIndicatorView)
-
-        // Listen for scroll events
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(scrollViewDidScroll(_:)),
-            name: NSScrollView.didLiveScrollNotification,
-            object: scrollView
-        )
-
-        NotificationCenter.default.addObserver(
-            self,
-            selector: #selector(scrollViewDidEndScroll(_:)),
-            name: NSScrollView.didEndLiveScrollNotification,
-            object: scrollView
-        )
-    }
-
-    deinit {
-        NotificationCenter.default.removeObserver(self)
-    }
-
-    override func layout() {
-        super.layout()
-        scrollView.frame = bounds
-        updateContentSize()
-        positionCenterIndicator()
-    }
-
-    private func positionCenterIndicator() {
-        let centerX = bounds.width / 2 - 1
-        let bottomY = bounds.height - barHeight - 8
-        centerIndicatorView.frame = NSRect(x: centerX, y: bottomY, width: 2, height: barHeight)
-    }
-
-    func updateContentSize() {
-        let totalWidth = CGFloat(screenshots.count) * (frameWidth + frameSpacing)
-        let edgePadding = bounds.width / 2 // Padding so first/last frames can be centered
-        let contentWidth = totalWidth + edgePadding * 2
-
-        contentView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: bounds.height)
-        contentView.edgePadding = edgePadding
-        contentView.screenshots = screenshots
-        contentView.currentIndex = currentIndex
-        contentView.searchResultIndices = searchResultIndices
-        contentView.hoveredIndex = hoveredIndex
-        contentView.frameWidth = frameWidth
-        contentView.frameSpacing = frameSpacing
-        contentView.barHeight = barHeight
-        contentView.visibleCount = visibleCount
-        contentView.needsDisplay = true
-    }
-
-    func scrollToCurrentIndex(animated: Bool) {
-        guard !screenshots.isEmpty else { return }
-
-        let edgePadding = bounds.width / 2
-        let frameX = edgePadding + CGFloat(currentIndex) * (frameWidth + frameSpacing)
-        let targetX = frameX - bounds.width / 2 + frameWidth / 2
-
-        isScrollingProgrammatically = true
-
-        if animated {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.25
-                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-                scrollView.contentView.animator().setBoundsOrigin(NSPoint(x: targetX, y: 0))
-            } completionHandler: { [weak self] in
-                self?.isScrollingProgrammatically = false
-            }
-        } else {
-            scrollView.contentView.setBoundsOrigin(NSPoint(x: targetX, y: 0))
-            isScrollingProgrammatically = false
-        }
-    }
-
-    @objc private func scrollViewDidScroll(_ notification: Notification) {
-        // Update which frame is at center during scroll
-        guard !isScrollingProgrammatically else { return }
-
-        // Mark that user is scrolling - prevents updateNSView from fighting with user
-        isUserScrolling = true
-
-        // Reset the end-scroll timer
-        userScrollEndTimer?.invalidate()
-        userScrollEndTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
-            self?.handleScrollEnd()
-        }
-
-        // Debounce index updates - don't update too frequently
-        let now = Date()
-        guard now.timeIntervalSince(lastManualScrollTime) > 0.05 else { return } // 20fps for index updates
-        lastManualScrollTime = now
-
-        let centerIndex = indexAtCenter()
-        if centerIndex != currentIndex && centerIndex >= 0 && centerIndex < screenshots.count {
-            onSelect?(centerIndex)
-        }
-
-        contentView.needsDisplay = true
-    }
-
-    @objc private func scrollViewDidEndScroll(_ notification: Notification) {
-        // This notification may not fire reliably, so we use timer-based detection too
-        handleScrollEnd()
-    }
-
-    private func handleScrollEnd() {
-        // Cancel any pending timer
-        userScrollEndTimer?.invalidate()
-        userScrollEndTimer = nil
-
-        guard !isScrollingProgrammatically else { return }
-
-        let centerIndex = indexAtCenter()
-        if centerIndex >= 0 && centerIndex < screenshots.count {
-            onSelect?(centerIndex)
-            // Smooth snap to exact center, then mark scrolling as done
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.isScrollingProgrammatically = true
-                self?.scrollToCurrentIndex(animated: true)
-                // Mark user scrolling as done after animation completes
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-                    self?.isUserScrolling = false
-                    self?.isScrollingProgrammatically = false
-                }
-            }
-        } else {
-            isUserScrolling = false
-        }
-    }
-
-    private func indexAtCenter() -> Int {
-        let scrollX = scrollView.contentView.bounds.origin.x
-        let centerX = scrollX + bounds.width / 2
-        let edgePadding = bounds.width / 2
-
-        let frameX = centerX - edgePadding
-        let index = Int(frameX / (frameWidth + frameSpacing))
-        return max(0, min(screenshots.count - 1, index))
-    }
-
-    func handleClick(at point: CGPoint) {
-        let scrollX = scrollView.contentView.bounds.origin.x
-        let contentX = point.x + scrollX
-        let edgePadding = bounds.width / 2
-
-        let frameX = contentX - edgePadding
-        let index = Int(frameX / (frameWidth + frameSpacing))
-
-        if index >= 0 && index < screenshots.count {
-            onSelect?(index)
-        }
-    }
-
-    func handleHover(at point: CGPoint?) {
-        guard let point = point else {
-            onHover?(nil)
-            contentView.hoveredIndex = nil
-            contentView.needsDisplay = true
-            return
-        }
-
-        let scrollX = scrollView.contentView.bounds.origin.x
-        let contentX = point.x + scrollX
-        let edgePadding = bounds.width / 2
-
-        let frameX = contentX - edgePadding
-        let index = Int(frameX / (frameWidth + frameSpacing))
-
-        if index >= 0 && index < screenshots.count {
-            onHover?(index)
-            contentView.hoveredIndex = index
-        } else {
-            onHover?(nil)
-            contentView.hoveredIndex = nil
-        }
-        contentView.needsDisplay = true
-    }
-}
-
-// MARK: - Content View (draws the frames)
-
-class TimelineContentView: NSView {
-    weak var parentContainer: TimelineScrollContainerView?
-
-    var screenshots: [Screenshot] = []
-    var currentIndex: Int = 0
-    var searchResultIndices: Set<Int>?
-    var hoveredIndex: Int?
-    var frameWidth: CGFloat = 4
-    var frameSpacing: CGFloat = 1
-    var barHeight: CGFloat = 32
-    var visibleCount: Int = 400
-    var edgePadding: CGFloat = 0
 
     private var trackingArea: NSTrackingArea?
     private var tooltipWindow: NSWindow?
@@ -395,41 +131,76 @@ class TimelineContentView: NSView {
         setupTrackingArea()
     }
 
-    override func mouseDown(with event: NSEvent) {
-        let location = convert(event.locationInWindow, from: nil)
-        let windowLocation = superview?.convert(location, to: nil) ?? location
+    // Handle scroll wheel - move playhead
+    override func scrollWheel(with event: NSEvent) {
+        guard !screenshots.isEmpty else { return }
 
-        // Convert to parent container's coordinate space
-        if let container = parentContainer {
-            let containerLocation = container.convert(windowLocation, from: nil)
-            container.handleClick(at: containerLocation)
+        let delta = event.scrollingDeltaY + event.scrollingDeltaX
+        let sensitivity: CGFloat = 3.0 // Frames per scroll unit
+        let framesToMove = Int(-delta * sensitivity)
+
+        if framesToMove != 0 {
+            let newIndex = max(0, min(screenshots.count - 1, currentIndex + framesToMove))
+            if newIndex != currentIndex {
+                onSelect?(newIndex)
+            }
         }
     }
 
+    // Handle click - jump to position
+    override func mouseDown(with event: NSEvent) {
+        let location = convert(event.locationInWindow, from: nil)
+        if let index = indexAtPoint(location) {
+            onSelect?(index)
+        }
+    }
+
+    // Handle hover - show tooltip
     override func mouseMoved(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
+        let index = indexAtPoint(location)
+        hoveredIndex = index
+        onHover?(index)
 
-        // Find which frame is at this location
-        let frameX = location.x - edgePadding
-        let index = Int(frameX / (frameWidth + frameSpacing))
-
-        if index >= 0 && index < screenshots.count {
-            hoveredIndex = index
-            showTooltip(for: screenshots[index], at: location)
-            parentContainer?.onHover?(index)
+        if let idx = index, idx < screenshots.count {
+            showTooltip(for: screenshots[idx], at: location)
         } else {
-            hoveredIndex = nil
             hideTooltip()
-            parentContainer?.onHover?(nil)
         }
         needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
         hoveredIndex = nil
+        onHover?(nil)
         hideTooltip()
-        parentContainer?.onHover?(nil)
         needsDisplay = true
+    }
+
+    // Convert x position to frame index
+    private func indexAtPoint(_ point: CGPoint) -> Int? {
+        let timelineRect = timelineRect()
+        guard timelineRect.contains(point), !screenshots.isEmpty else { return nil }
+
+        let relativeX = point.x - timelineRect.minX
+        let ratio = relativeX / timelineRect.width
+        let index = Int(ratio * CGFloat(screenshots.count))
+        return max(0, min(screenshots.count - 1, index))
+    }
+
+    // Get the timeline drawing area
+    private func timelineRect() -> NSRect {
+        let padding: CGFloat = 20
+        let bottomY = bounds.height - barHeight - 8
+        return NSRect(x: padding, y: bottomY, width: bounds.width - padding * 2, height: barHeight)
+    }
+
+    // Convert frame index to x position
+    private func xPositionForIndex(_ index: Int) -> CGFloat {
+        let rect = timelineRect()
+        guard screenshots.count > 1 else { return rect.midX }
+        let ratio = CGFloat(index) / CGFloat(screenshots.count - 1)
+        return rect.minX + ratio * rect.width
     }
 
     private func showTooltip(for screenshot: Screenshot, at point: CGPoint) {
@@ -466,64 +237,124 @@ class TimelineContentView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard !screenshots.isEmpty else { return }
 
-        let context = NSGraphicsContext.current?.cgContext
+        let rect = timelineRect()
 
-        let bottomY = bounds.height - 8 // Leave space at bottom
-        let totalWidth = frameWidth + frameSpacing
+        // Draw background track
+        let trackPath = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+        NSColor(white: 0.2, alpha: 1.0).setFill()
+        trackPath.fill()
 
-        // Calculate visible range based on dirty rect for performance
-        let visibleMinX = dirtyRect.minX
-        let visibleMaxX = dirtyRect.maxX
+        // Draw frame density visualization (activity blocks)
+        drawActivityBlocks(in: rect)
 
-        let startIndex = max(0, Int((visibleMinX - edgePadding) / totalWidth) - 1)
-        let endIndex = min(screenshots.count, Int((visibleMaxX - edgePadding) / totalWidth) + 2)
+        // Draw search result markers
+        if let searchIndices = searchResultIndices, !searchIndices.isEmpty {
+            drawSearchMarkers(indices: searchIndices, in: rect)
+        }
 
-        // Guard against invalid range (startIndex > endIndex can happen with edge padding)
-        guard startIndex < endIndex else {
-            log("TimelineBar: Skipping draw - invalid range startIndex=\(startIndex) endIndex=\(endIndex) screenshots=\(screenshots.count) edgePadding=\(edgePadding) dirtyRect=\(dirtyRect)")
+        // Draw playhead (current position)
+        drawPlayhead(in: rect)
+
+        // Draw hover indicator
+        if let hovered = hoveredIndex, hovered != currentIndex {
+            drawHoverIndicator(at: hovered, in: rect)
+        }
+    }
+
+    private func drawActivityBlocks(in rect: NSRect) {
+        // Group frames by app and draw colored blocks
+        guard screenshots.count > 0 else { return }
+
+        let blockWidth = rect.width / CGFloat(screenshots.count)
+
+        // Only draw if blocks would be visible (at least 0.5px wide)
+        if blockWidth < 0.5 {
+            // Too many frames - draw a gradient or simplified view
+            let gradient = NSGradient(colors: [
+                NSColor(white: 0.3, alpha: 1.0),
+                NSColor(white: 0.4, alpha: 1.0)
+            ])
+            gradient?.draw(in: rect, angle: 0)
             return
         }
 
-        for i in startIndex..<endIndex {
-            let barX = edgePadding + CGFloat(i) * totalWidth
-
-            let isCurrent = i == currentIndex
-            let isHovered = i == hoveredIndex
-            let isSearchResult = searchResultIndices?.contains(i) ?? false
-
-            // Bar height
-            let heightRatio: CGFloat = (isCurrent || isHovered) ? 1.0 : 0.5
-            let height = barHeight * heightRatio
-
-            // Bar color
-            let color: NSColor
-            if isCurrent {
-                color = .white
-            } else if isSearchResult {
-                color = NSColor.yellow.withAlphaComponent(0.8)
-            } else {
-                color = NSColor(white: 0.4, alpha: 1.0)
-            }
-
-            // Draw bar
-            let barRect = NSRect(x: barX, y: bottomY - height, width: frameWidth, height: height)
-            let path = NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5)
-            color.setFill()
-            path.fill()
-
-            // Glow for current
-            if isCurrent {
-                let glowColor = NSColor.white.withAlphaComponent(0.3)
-                glowColor.setFill()
-                let glowRect = barRect.insetBy(dx: -2, dy: -2)
-                let glowPath = NSBezierPath(roundedRect: glowRect, xRadius: 3, yRadius: 3)
-                glowPath.fill()
-
-                // Redraw bar on top
-                color.setFill()
-                path.fill()
-            }
+        for (index, screenshot) in screenshots.enumerated() {
+            let x = rect.minX + CGFloat(index) * blockWidth
+            let blockRect = NSRect(x: x, y: rect.minY, width: max(1, blockWidth - 0.5), height: rect.height)
+            let color = colorForApp(screenshot.appName)
+            color.withAlphaComponent(0.6).setFill()
+            NSBezierPath(rect: blockRect).fill()
         }
+    }
+
+    private func drawSearchMarkers(indices: Set<Int>, in rect: NSRect) {
+        let markerWidth: CGFloat = 3
+
+        for index in indices {
+            let x = xPositionForIndex(index)
+            let markerRect = NSRect(
+                x: x - markerWidth / 2,
+                y: rect.minY - 2,
+                width: markerWidth,
+                height: rect.height + 4
+            )
+            NSColor.yellow.withAlphaComponent(0.8).setFill()
+            NSBezierPath(roundedRect: markerRect, xRadius: 1, yRadius: 1).fill()
+        }
+    }
+
+    private func drawPlayhead(in rect: NSRect) {
+        let x = xPositionForIndex(currentIndex)
+        let playheadWidth: CGFloat = 4
+        let playheadHeight: CGFloat = rect.height + 8
+
+        // Playhead line
+        let playheadRect = NSRect(
+            x: x - playheadWidth / 2,
+            y: rect.minY - 4,
+            width: playheadWidth,
+            height: playheadHeight
+        )
+
+        // Glow effect
+        let glowRect = playheadRect.insetBy(dx: -2, dy: -2)
+        NSColor.white.withAlphaComponent(0.3).setFill()
+        NSBezierPath(roundedRect: glowRect, xRadius: 4, yRadius: 4).fill()
+
+        // Main playhead
+        NSColor.white.setFill()
+        NSBezierPath(roundedRect: playheadRect, xRadius: 2, yRadius: 2).fill()
+
+        // Top triangle indicator
+        let triangleSize: CGFloat = 8
+        let triangle = NSBezierPath()
+        triangle.move(to: NSPoint(x: x, y: rect.minY - 6))
+        triangle.line(to: NSPoint(x: x - triangleSize / 2, y: rect.minY - 6 - triangleSize))
+        triangle.line(to: NSPoint(x: x + triangleSize / 2, y: rect.minY - 6 - triangleSize))
+        triangle.close()
+        NSColor.white.setFill()
+        triangle.fill()
+    }
+
+    private func drawHoverIndicator(at index: Int, in rect: NSRect) {
+        let x = xPositionForIndex(index)
+        let indicatorWidth: CGFloat = 2
+
+        let indicatorRect = NSRect(
+            x: x - indicatorWidth / 2,
+            y: rect.minY,
+            width: indicatorWidth,
+            height: rect.height
+        )
+        NSColor.white.withAlphaComponent(0.5).setFill()
+        NSBezierPath(roundedRect: indicatorRect, xRadius: 1, yRadius: 1).fill()
+    }
+
+    private func colorForApp(_ appName: String) -> NSColor {
+        // Simple hash-based color
+        let hash = abs(appName.hashValue)
+        let hue = CGFloat(hash % 360) / 360.0
+        return NSColor(hue: hue, saturation: 0.3, brightness: 0.5, alpha: 1.0)
     }
 }
 
