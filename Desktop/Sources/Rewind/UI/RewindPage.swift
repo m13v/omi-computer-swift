@@ -521,6 +521,14 @@ struct RewindPage: View {
                 }
                 .frame(width: geometry.size.width, height: geometry.size.height)
             } else {
+                // Log why we're showing "No frame" for debugging
+                let _ = {
+                    if currentImage == nil {
+                        // Normal case - no image loaded yet
+                    } else if let img = currentImage {
+                        logError("RewindPage: Invalid frame dimensions - image=\(img.size) geometry=\(geometry.size)")
+                    }
+                }()
                 VStack(spacing: 6) {
                     Image(systemName: "photo")
                         .font(.system(size: 24))
@@ -672,7 +680,7 @@ struct RewindPage: View {
                     currentImage = image
                     viewModel.selectScreenshot(screenshots[forwardIndex])
                     isLoadingFrame = false
-                    log("RewindPage: Skipped to valid frame at index \(forwardIndex)")
+                    log("RewindPage: Skipped to valid frame at index \(forwardIndex), imageSize=\(image.size), screenshotsCount=\(screenshots.count)")
                     return
                 }
             }
@@ -704,8 +712,18 @@ struct RewindPage: View {
         let screenshot = screenshots[index]
 
         do {
-            return try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+            let image = try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
+            // Validate image dimensions
+            if image.size.width <= 0 || image.size.height <= 0 {
+                logError("RewindPage: Loaded invalid image at index \(index) - size=\(image.size)")
+                return nil
+            }
+            return image
         } catch {
+            // Only log first few failures to avoid spam
+            if index < 3 {
+                logError("RewindPage: Failed to load frame at index \(index): \(error.localizedDescription)")
+            }
             return nil
         }
     }
