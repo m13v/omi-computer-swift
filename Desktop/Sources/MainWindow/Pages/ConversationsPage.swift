@@ -30,10 +30,17 @@ struct ConversationsPage: View {
     @ObservedObject private var audioLevels = AudioLevelMonitor.shared
     @ObservedObject private var recordingTimer = RecordingTimer.shared
     @ObservedObject private var liveTranscript = LiveTranscriptMonitor.shared
+    @ObservedObject private var liveNotes = LiveNotesMonitor.shared
     @State private var selectedConversation: ServerConversation? = nil
 
     // Transcript visibility state - hidden by default
     @State private var isTranscriptCollapsed: Bool = true
+
+    // Notes panel visibility
+    @State private var isNotesPanelVisible: Bool = true
+
+    // Notes panel width ratio (persisted)
+    @AppStorage("transcriptNotesPanelRatio") private var notesPanelRatio: Double = 0.65
 
     // Compact view mode - persisted preference
     @AppStorage("conversationsCompactView") private var isCompactView = true
@@ -140,10 +147,10 @@ struct ConversationsPage: View {
 
     // MARK: - Transcript Views
 
-    /// Expanded state: full-page transcript with back button
+    /// Expanded state: full-page transcript with notes panel
     private var fullPageTranscriptView: some View {
         VStack(spacing: 0) {
-            // Back to conversations button
+            // Header with back button and notes toggle
             HStack {
                 Button(action: {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -161,12 +168,64 @@ struct ConversationsPage: View {
                 .buttonStyle(.plain)
 
                 Spacer()
+
+                // Notes panel toggle
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isNotesPanelVisible.toggle()
+                    }
+                }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "note.text")
+                            .font(.system(size: 12))
+                        Text("Notes")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .foregroundColor(isNotesPanelVisible ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
             .background(OmiColors.backgroundTertiary.opacity(0.5))
 
-            // Full-page transcript
+            // Split view: transcript (left) + notes (right)
+            GeometryReader { geometry in
+                let totalWidth = geometry.size.width
+                let minPanelWidth: CGFloat = 200
+                let transcriptWidth = isNotesPanelVisible
+                    ? max(minPanelWidth, totalWidth * notesPanelRatio)
+                    : totalWidth
+                let notesWidth = isNotesPanelVisible
+                    ? max(minPanelWidth, totalWidth - transcriptWidth - 1)
+                    : 0
+
+                HStack(spacing: 0) {
+                    // Left panel: Transcript
+                    transcriptContentView
+                        .frame(width: transcriptWidth)
+
+                    if isNotesPanelVisible {
+                        // Draggable divider
+                        TranscriptNotesDivider(
+                            panelRatio: $notesPanelRatio,
+                            totalWidth: totalWidth,
+                            minRatio: minPanelWidth / totalWidth,
+                            maxRatio: 1.0 - (minPanelWidth / totalWidth)
+                        )
+
+                        // Right panel: Notes
+                        LiveNotesView()
+                            .frame(width: notesWidth)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Transcript content (empty state or live transcript)
+    private var transcriptContentView: some View {
+        Group {
             if liveTranscript.isEmpty {
                 VStack(spacing: 12) {
                     Image(systemName: "waveform")
@@ -182,6 +241,7 @@ struct ConversationsPage: View {
                 LiveTranscriptView(segments: liveTranscript.segments)
             }
         }
+        .background(OmiColors.backgroundPrimary)
     }
 
     // MARK: - Conversation List Section
@@ -1029,6 +1089,43 @@ struct ConversationsPage: View {
     /// Recording duration formatted - separate from conversation duration
     private var recordingDurationFormatted: String {
         recordingTimer.formattedDuration
+    }
+}
+
+// MARK: - Transcript Notes Divider
+
+/// Draggable divider between transcript and notes panels
+private struct TranscriptNotesDivider: View {
+    @Binding var panelRatio: Double
+    let totalWidth: CGFloat
+    let minRatio: Double
+    let maxRatio: Double
+
+    @State private var isDragging = false
+
+    var body: some View {
+        Rectangle()
+            .fill(isDragging ? OmiColors.purplePrimary : OmiColors.border)
+            .frame(width: 1)
+            .contentShape(Rectangle().inset(by: -4)) // Larger hit area
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        isDragging = true
+                        let newRatio = Double(value.location.x / totalWidth)
+                        panelRatio = min(maxRatio, max(minRatio, newRatio))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
     }
 }
 
