@@ -67,8 +67,9 @@ class RewindViewModel: ObservableObject {
             // Initialize the indexer if needed
             try await RewindIndexer.shared.initialize()
 
-            // Load recent screenshots
-            screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
+            // Load recent screenshots - enough to span several hours and show gaps
+            // With ~1 screenshot/second, 5000 screenshots spans ~1.5 hours
+            screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 5000)
 
             // Load available apps for filtering
             availableApps = try await RewindDatabase.shared.getUniqueAppNames()
