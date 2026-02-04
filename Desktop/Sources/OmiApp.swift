@@ -159,18 +159,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
-        // Initialize Sentry for crash reporting and error tracking (skip in dev builds)
-        if !AnalyticsManager.isDevBuild {
-            SentrySDK.start { options in
-                options.dsn = "https://8f700584deda57b26041ff015539c8c1@o4507617161314304.ingest.us.sentry.io/4510790686277632"
-                options.debug = false
-                options.enableAutoSessionTracking = true
-                options.environment = "production"
-            }
-            log("Sentry initialized")
-        } else {
-            log("Sentry: Skipping initialization (development build)")
+        // Initialize Sentry for crash reporting and error tracking (including dev builds)
+        let isDev = AnalyticsManager.isDevBuild
+        SentrySDK.start { options in
+            options.dsn = "https://8f700584deda57b26041ff015539c8c1@o4507617161314304.ingest.us.sentry.io/4510790686277632"
+            options.debug = false
+            options.enableAutoSessionTracking = true
+            options.environment = isDev ? "development" : "production"
         }
+        log("Sentry initialized (environment: \(isDev ? "development" : "production"))")
 
         // Initialize Firebase
         let plistPath = Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist")
@@ -193,8 +190,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
             AnalyticsManager.shared.identify()
-            // Set Sentry user context (skip in dev builds)
-            if !AnalyticsManager.isDevBuild, let email = AuthState.shared.userEmail {
+            // Set Sentry user context (now enabled for dev builds too)
+            if let email = AuthState.shared.userEmail {
                 let sentryUser = Sentry.User()
                 sentryUser.email = email
                 sentryUser.username = AuthService.shared.displayName.isEmpty ? nil : AuthService.shared.displayName
@@ -242,9 +239,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     /// Start a timer that sends Sentry session snapshots every 5 minutes
     /// This ensures we have breadcrumbs captured even without errors
     private func startSentryHeartbeat() {
-        // Skip heartbeat in dev builds (Sentry not initialized)
-        guard !AnalyticsManager.isDevBuild else { return }
-
+        // Now runs in dev builds too since Sentry is always initialized
         sentryHeartbeatTimer = Timer.scheduledTimer(withTimeInterval: 300, repeats: true) { _ in
             // Capture a session heartbeat event with current breadcrumbs
             SentrySDK.capture(message: "Session Heartbeat") { scope in
@@ -325,12 +320,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         ResourceMonitor.shared.reportResourcesNow(context: "app_terminating")
         ResourceMonitor.shared.stop()
 
-        // Capture final session snapshot before termination (skip in dev builds)
-        if !AnalyticsManager.isDevBuild {
-            SentrySDK.capture(message: "App Terminating") { scope in
-                scope.setLevel(.info)
-                scope.setTag(value: "lifecycle", key: "event_type")
-            }
+        // Capture final session snapshot before termination (now enabled for dev builds too)
+        SentrySDK.capture(message: "App Terminating") { scope in
+            scope.setLevel(.info)
+            scope.setTag(value: "lifecycle", key: "event_type")
         }
     }
 
