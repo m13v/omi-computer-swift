@@ -87,42 +87,6 @@ func measurePerfAsync<T>(_ name: String, logCPU: Bool = false, _ block: () async
     return result
 }
 
-// MARK: - SwiftUI View Debugging
-
-import SwiftUI
-
-/// Track view body evaluations - add .trackRender("ViewName") to any view
-extension View {
-    func trackRender(_ name: String) -> some View {
-        RenderTracker(name: name, content: self)
-    }
-}
-
-private struct RenderTracker<Content: View>: View {
-    let name: String
-    let content: Content
-
-    @State private var renderCount = 0
-
-    var body: some View {
-        // Log every time body is evaluated
-        let _ = {
-            renderCount += 1
-            logPerf("VIEW RENDER: \(name) (#\(renderCount))")
-        }()
-        content
-    }
-}
-
-/// Log hover events for debugging hover lag
-extension View {
-    func trackHover(_ name: String) -> some View {
-        self.onHover { hovering in
-            logPerf("HOVER: \(name) = \(hovering ? "enter" : "exit")")
-        }
-    }
-}
-
 /// Check if this is a development build
 private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.contains(".development") == true
 
