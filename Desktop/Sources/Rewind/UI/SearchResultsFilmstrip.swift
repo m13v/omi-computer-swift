@@ -9,12 +9,14 @@ struct SearchResultsFilmstrip: View {
     let onSelect: (Int) -> Void
 
     @State private var thumbnailCache: [Int64: NSImage] = [:]
+    @State private var thumbnailAccessOrder: [Int64] = []  // Track access order for LRU eviction
     @State private var loadingIds: Set<Int64> = []
     @State private var scrollProxy: ScrollViewProxy?
 
     private let thumbnailWidth: CGFloat = 160
     private let thumbnailHeight: CGFloat = 100
     private let spacing: CGFloat = 12
+    private let maxCachedThumbnails = 50  // Limit cache to prevent memory bloat
 
     var body: some View {
         VStack(spacing: 0) {
@@ -157,13 +159,35 @@ struct SearchResultsFilmstrip: View {
                 let thumbnail = await createThumbnail(from: image)
 
                 await MainActor.run {
-                    thumbnailCache[screenshotId] = thumbnail
+                    cacheThumbnail(thumbnail, for: screenshotId)
                     loadingIds.remove(screenshotId)
                 }
             } catch {
                 await MainActor.run {
                     _ = loadingIds.remove(screenshotId)
                 }
+            }
+        }
+    }
+
+    /// Cache a thumbnail with LRU eviction
+    private func cacheThumbnail(_ thumbnail: NSImage, for screenshotId: Int64) {
+        // Add to cache
+        thumbnailCache[screenshotId] = thumbnail
+
+        // Update access order (move to end = most recently used)
+        if let existingIndex = thumbnailAccessOrder.firstIndex(of: screenshotId) {
+            thumbnailAccessOrder.remove(at: existingIndex)
+        }
+        thumbnailAccessOrder.append(screenshotId)
+
+        // Evict oldest entries if cache is too large
+        while thumbnailCache.count > maxCachedThumbnails {
+            if let oldestId = thumbnailAccessOrder.first {
+                thumbnailAccessOrder.removeFirst()
+                thumbnailCache.removeValue(forKey: oldestId)
+            } else {
+                break
             }
         }
     }
