@@ -85,21 +85,26 @@ actor RewindDatabase {
 
         var config = Configuration()
         config.prepareDatabase { db in
-            // Enable WAL mode for better crash resistance and performance
+            // Try to enable WAL mode for better crash resistance and performance
             // WAL mode keeps writes in a separate file, making corruption much less likely
-            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            // If WAL fails (disk I/O error, permissions), continue with default journal mode
+            do {
+                try db.execute(sql: "PRAGMA journal_mode = WAL")
+                // synchronous = NORMAL is safe with WAL and much faster than FULL
+                try db.execute(sql: "PRAGMA synchronous = NORMAL")
+                // Auto-checkpoint every 1000 pages (~4MB) for WAL
+                try db.execute(sql: "PRAGMA wal_autocheckpoint = 1000")
+            } catch {
+                // WAL mode failed - log but continue with default journal mode
+                // This can happen with disk I/O errors, permission issues, or full disk
+                print("RewindDatabase: WAL mode unavailable (\(error.localizedDescription)), using default journal mode")
+            }
 
-            // synchronous = NORMAL is safe with WAL and much faster than FULL
-            try db.execute(sql: "PRAGMA synchronous = NORMAL")
-
-            // Enable foreign keys
+            // Enable foreign keys (required)
             try db.execute(sql: "PRAGMA foreign_keys = ON")
 
             // Set busy timeout to avoid "database is locked" errors (5 seconds)
             try db.execute(sql: "PRAGMA busy_timeout = 5000")
-
-            // Auto-checkpoint every 1000 pages (~4MB) for WAL
-            try db.execute(sql: "PRAGMA wal_autocheckpoint = 1000")
         }
 
         let queue = try DatabaseQueue(path: dbPath, configuration: config)
@@ -397,9 +402,14 @@ actor RewindDatabase {
                 throw RewindError.databaseCorrupted(message: result ?? "Unknown integrity error")
             }
 
-            // Verify WAL mode is active
+            // Log journal mode (WAL preferred, but may fall back to delete/rollback)
             let journalMode = try String.fetchOne(db, sql: "PRAGMA journal_mode")
             log("RewindDatabase: Journal mode is \(journalMode ?? "unknown")")
+
+            // Log warning if not using WAL (less crash-resistant)
+            if journalMode?.lowercased() != "wal" {
+                log("RewindDatabase: WARNING - Not using WAL mode, database may be less crash-resistant")
+            }
         }
     }
 
