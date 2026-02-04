@@ -250,9 +250,21 @@ async fn get_apps_v2(
         }
     }
 
-    // Sort each group by installs (descending)
-    for apps in grouped.values_mut() {
-        apps.sort_by(|a, b| b.installs.cmp(&a.installs));
+    // Sort each group (matching Python backend behavior)
+    // - Popular group: sort by installs only
+    // - Other groups: sort by computed score (rating + reviews + installs)
+    for (cap_id, apps) in grouped.iter_mut() {
+        if cap_id == "popular" {
+            // Popular apps sorted by installs only
+            apps.sort_by(|a, b| b.installs.cmp(&a.installs));
+        } else {
+            // Other groups sorted by computed score
+            apps.sort_by(|a, b| {
+                let score_a = compute_app_score(a);
+                let score_b = compute_app_score(b);
+                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            });
+        }
     }
 
     // Build response groups in the correct order
@@ -295,6 +307,22 @@ async fn get_apps_v2(
     };
 
     Ok(Json(response))
+}
+
+/// Compute app ranking score (matching Python backend formula)
+/// Formula: ((rating_avg / 5) ** 2) * log(1 + rating_count) * sqrt(log(1 + installs))
+/// - Power of 2 on rating makes ratings below 3.0 fall steeply
+/// - sqrt on installs reduces dependence on install count
+fn compute_app_score(app: &AppSummary) -> f64 {
+    let rating_avg = app.rating_avg.unwrap_or(0.0);
+    let rating_count = app.rating_count as f64;
+    let installs = app.installs as f64;
+
+    let rating_factor = (rating_avg / 5.0).powi(2); // Steep drop for low ratings
+    let score = rating_factor * (1.0 + rating_count).ln() * (1.0 + installs).ln().sqrt();
+
+    // Round to 4 decimal places
+    (score * 10000.0).round() / 10000.0
 }
 
 /// Check if app is a notification/simple integration app (matching Python backend logic)
