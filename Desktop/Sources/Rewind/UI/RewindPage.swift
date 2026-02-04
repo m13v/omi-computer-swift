@@ -246,8 +246,9 @@ struct RewindPage: View {
                 }
             }
 
-            // Search field - always present, shows results count in search mode
+            // Search field + date picker - always present
             searchField(showResultsCount: isInSearchMode)
+            datePickerControls
 
             // Right side controls depend on mode
             if isInSearchMode {
@@ -292,9 +293,6 @@ struct RewindPage: View {
                 .cornerRadius(6)
             } else {
                 // Timeline mode controls
-                // Date picker
-                datePickerControls
-
                 // Stats
                 if let stats = viewModel.stats {
                     Text("\(stats.total) frames • \(RewindStorage.formatBytes(stats.storageSize))")
