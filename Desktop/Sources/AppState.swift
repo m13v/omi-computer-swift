@@ -132,6 +132,9 @@ class AppState: ObservableObject {
     private var maxRecordingTimer: Timer?
     private let maxRecordingDuration: TimeInterval = 4 * 60 * 60  // 4 hours
 
+    // Crash-safe transcription storage
+    private var currentSessionId: Int64?
+
     // Observers for app lifecycle
     private var willTerminateObserver: NSObjectProtocol?
     private var willSleepObserver: NSObjectProtocol?
@@ -745,6 +748,25 @@ class AppState: ObservableObject {
 
             log("Transcription: Using source: \(effectiveSource.rawValue), device: \(recordingInputDeviceName ?? "Unknown")")
 
+            // Create crash-safe DB session for persistence
+            Task {
+                do {
+                    let sessionId = try await TranscriptionStorage.shared.startSession(
+                        source: currentConversationSource.rawValue,
+                        language: effectiveLanguage,
+                        timezone: TimeZone.current.identifier,
+                        inputDeviceName: recordingInputDeviceName
+                    )
+                    await MainActor.run {
+                        self.currentSessionId = sessionId
+                    }
+                    log("Transcription: Created DB session \(sessionId)")
+                } catch {
+                    logError("Transcription: Failed to create DB session", error: error)
+                    // Non-fatal - continue recording even if DB fails
+                }
+            }
+
             // Start 4-hour max recording timer
             maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: maxRecordingDuration, repeats: false) { [weak self] _ in
                 Task { @MainActor in
@@ -1307,6 +1329,26 @@ class AppState: ObservableObject {
 
         // Update display transcript
         updateTranscriptDisplay()
+
+        // Persist new segments to DB for crash safety
+        if let sessionId = currentSessionId {
+            Task {
+                for newSeg in newSegments {
+                    do {
+                        try await TranscriptionStorage.shared.appendSegment(
+                            sessionId: sessionId,
+                            speaker: newSeg.speaker,
+                            text: newSeg.text,
+                            startTime: newSeg.start,
+                            endTime: newSeg.end
+                        )
+                    } catch {
+                        logError("Transcription: Failed to persist segment to DB", error: error)
+                        // Non-fatal - continue recording
+                    }
+                }
+            }
+        }
     }
 
     /// Update the display transcript from speaker segments
