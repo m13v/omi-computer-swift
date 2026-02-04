@@ -63,6 +63,7 @@ struct SidebarView: View {
     @ObservedObject private var adviceStorage = AdviceStorage.shared
     @ObservedObject private var focusStorage = FocusStorage.shared
     @ObservedObject private var deviceProvider = DeviceProvider.shared
+    @ObservedObject private var audioLevels = AudioLevelMonitor.shared
 
     // State for Get Omi Widget (shown when no device is paired, dismissible)
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
@@ -113,39 +114,42 @@ struct SidebarView: View {
                     // Main navigation items
                     ForEach(SidebarNavItem.mainItems, id: \.rawValue) { item in
                         if item == .conversations {
-                            // Conversations with transcription toggle
-                            NavItemWithToggleView(
+                            // Conversations - icon shows audio activity when recording
+                            NavItemWithStatusView(
                                 icon: item.icon,
                                 label: item.title,
                                 isSelected: selectedIndex == item.rawValue,
                                 isCollapsed: isCollapsed,
                                 iconWidth: iconWidth,
-                                isToggleOn: appState.isTranscribing,
+                                isOn: appState.isTranscribing,
                                 isToggling: isTogglingTranscription,
                                 onTap: {
                                     selectedIndex = item.rawValue
                                     AnalyticsManager.shared.tabChanged(tabName: item.title)
                                 },
-                                onToggle: { enabled in
-                                    toggleTranscription(enabled: enabled)
-                                }
+                                onToggle: {
+                                    toggleTranscription(enabled: !appState.isTranscribing)
+                                },
+                                micLevel: audioLevels.microphoneLevel,
+                                systemLevel: audioLevels.systemLevel,
+                                showAudioBars: true
                             )
                         } else if item == .rewind {
-                            // Rewind with screen capture toggle
-                            NavItemWithToggleView(
+                            // Rewind - icon color shows status
+                            NavItemWithStatusView(
                                 icon: item.icon,
                                 label: item.title,
                                 isSelected: selectedIndex == item.rawValue,
                                 isCollapsed: isCollapsed,
                                 iconWidth: iconWidth,
-                                isToggleOn: isMonitoring,
+                                isOn: isMonitoring,
                                 isToggling: isTogglingMonitoring,
                                 onTap: {
                                     selectedIndex = item.rawValue
                                     AnalyticsManager.shared.tabChanged(tabName: item.title)
                                 },
-                                onToggle: { enabled in
-                                    toggleMonitoring(enabled: enabled)
+                                onToggle: {
+                                    toggleMonitoring(enabled: !isMonitoring)
                                 }
                             )
                         } else {
@@ -1009,23 +1013,29 @@ struct NavItemView: View {
     }
 }
 
-// MARK: - Nav Item With Toggle View
-struct NavItemWithToggleView: View {
+// MARK: - Nav Item With Status Icon View
+/// Navigation item that shows status via icon color/animation instead of a toggle
+struct NavItemWithStatusView: View {
     let icon: String
     let label: String
     let isSelected: Bool
     let isCollapsed: Bool
     let iconWidth: CGFloat
-    let isToggleOn: Bool
+    let isOn: Bool
     let isToggling: Bool
     let onTap: () -> Void
-    let onToggle: (Bool) -> Void
+    let onToggle: () -> Void
+
+    // Optional audio levels for conversations
+    var micLevel: Float = 0
+    var systemLevel: Float = 0
+    var showAudioBars: Bool = false
 
     @State private var isHovered = false
 
-    /// Icon color based on toggle state
+    /// Icon color based on state
     private var iconColor: Color {
-        if isToggleOn {
+        if isOn {
             return isSelected ? OmiColors.textPrimary : OmiColors.textTertiary
         } else {
             return OmiColors.error
@@ -1033,57 +1043,64 @@ struct NavItemWithToggleView: View {
     }
 
     var body: some View {
-        HStack(spacing: 0) {
-            // Main nav item - tappable area
-            HStack(spacing: 12) {
-                ZStack(alignment: .topTrailing) {
+        HStack(spacing: 12) {
+            // Icon area - tappable to toggle
+            ZStack(alignment: .topTrailing) {
+                // Show audio bars when active and enabled, otherwise show icon
+                if showAudioBars && isOn {
+                    SidebarAudioLevelIcon(
+                        micLevel: micLevel,
+                        systemLevel: systemLevel,
+                        isActive: true
+                    )
+                    .frame(width: iconWidth)
+                } else {
                     Image(systemName: icon)
                         .font(.system(size: 17))
                         .foregroundColor(iconColor)
                         .frame(width: iconWidth)
-
-                    // Status indicator when collapsed
-                    if isCollapsed {
-                        Circle()
-                            .fill(isToggleOn ? OmiColors.purplePrimary : OmiColors.error)
-                            .frame(width: 8, height: 8)
-                            .offset(x: 4, y: -4)
-                    }
                 }
 
-                if !isCollapsed {
-                    Text(label)
-                        .font(.system(size: 14, weight: isSelected ? .medium : .regular))
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
-                        .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
-
-                    Spacer(minLength: 4)
+                // Status indicator when collapsed and off
+                if isCollapsed && !isOn {
+                    Circle()
+                        .fill(OmiColors.error)
+                        .frame(width: 6, height: 6)
+                        .offset(x: 3, y: -3)
                 }
             }
-            .padding(.leading, 12)
-            .padding(.vertical, 11)
             .contentShape(Rectangle())
             .onTapGesture {
-                onTap()
+                if !isToggling {
+                    onToggle()
+                }
             }
 
-            // Toggle (only when expanded)
             if !isCollapsed {
+                Text(label)
+                    .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        onTap()
+                    }
+
+                Spacer(minLength: 4)
+
+                // Loading indicator when toggling
                 if isToggling {
                     ProgressView()
                         .scaleEffect(0.5)
-                        .frame(width: 40, height: 20)
+                        .frame(width: 20, height: 20)
                         .padding(.trailing, 8)
-                } else {
-                    SidebarToggle(isOn: Binding(
-                        get: { isToggleOn },
-                        set: { onToggle($0) }
-                    ))
-                    .padding(.trailing, 8)
                 }
             }
         }
+        .padding(.leading, 12)
+        .padding(.trailing, isCollapsed ? 12 : 8)
+        .padding(.vertical, 11)
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(isSelected
@@ -1094,7 +1111,7 @@ struct NavItemWithToggleView: View {
             isHovered = hovering
         }
         .padding(.bottom, 2)
-        .help(isCollapsed ? "\(label) (\(isToggleOn ? "On" : "Off"))" : "")
+        .help(isCollapsed ? "\(label) (\(isOn ? "On" : "Off")) - Click icon to toggle" : "Click icon to toggle")
     }
 }
 
@@ -1125,6 +1142,86 @@ struct SidebarToggle: View {
         .onTapGesture {
             isOn.toggle()
         }
+    }
+}
+
+// MARK: - Sidebar Audio Level Icon
+/// Compact audio level indicator that fits in the sidebar icon space
+struct SidebarAudioLevelIcon: View {
+    let micLevel: Float
+    let systemLevel: Float
+    let isActive: Bool
+
+    private let barCount = 4
+    private let iconSize: CGFloat = 17
+
+    /// Combined audio level (max of mic and system)
+    private var combinedLevel: Float {
+        max(micLevel, systemLevel)
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<barCount, id: \.self) { index in
+                SidebarAudioBar(
+                    level: combinedLevel,
+                    index: index,
+                    totalBars: barCount,
+                    isActive: isActive
+                )
+            }
+        }
+        .frame(width: iconSize, height: iconSize)
+    }
+}
+
+private struct SidebarAudioBar: View {
+    let level: Float
+    let index: Int
+    let totalBars: Int
+    let isActive: Bool
+
+    private let minHeight: CGFloat = 4
+    private let maxHeight: CGFloat = 14
+    private let barWidth: CGFloat = 3
+
+    private var barHeight: CGFloat {
+        guard isActive else { return minHeight }
+
+        // Boost low levels for visibility
+        let boostedLevel = pow(CGFloat(level), 0.5) * 2.0
+        let clampedLevel = min(1.0, boostedLevel)
+
+        // Center bars slightly taller
+        let centerOffset = abs(CGFloat(index) - CGFloat(totalBars - 1) / 2.0) / (CGFloat(totalBars) / 2.0)
+        let variation = 1.0 - (centerOffset * 0.3)
+
+        let scaledLevel = clampedLevel * variation
+        let randomVariation = CGFloat.random(in: 0.9...1.1)
+
+        let height = minHeight + (maxHeight - minHeight) * scaledLevel * randomVariation
+        return max(minHeight, min(maxHeight, height))
+    }
+
+    private var barColor: Color {
+        guard isActive else { return OmiColors.textTertiary.opacity(0.5) }
+
+        let boostedLevel = min(1.0, pow(CGFloat(level), 0.5) * 2.0)
+        if boostedLevel > 0.5 {
+            return OmiColors.purplePrimary
+        } else if boostedLevel > 0.15 {
+            return OmiColors.textPrimary
+        } else if boostedLevel > 0.02 {
+            return OmiColors.textSecondary
+        }
+        return OmiColors.textTertiary
+    }
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: 1)
+            .fill(barColor)
+            .frame(width: barWidth, height: barHeight)
+            .animation(.easeOut(duration: 0.08), value: level)
     }
 }
 
