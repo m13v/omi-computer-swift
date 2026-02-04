@@ -216,6 +216,10 @@ pub struct AppSummary {
     pub price: Option<f64>,
     #[serde(default)]
     pub enabled: bool,
+    /// True if app has external_integration with non-empty auth_steps
+    /// Used for categorizing apps into Integrations vs Notifications sections
+    #[serde(default, skip_serializing)]
+    pub has_auth_steps: bool,
 }
 
 impl From<App> for AppSummary {
@@ -236,6 +240,7 @@ impl From<App> for AppSummary {
             is_paid: app.is_paid,
             price: app.price,
             enabled: app.enabled,
+            has_auth_steps: false, // Would need to be set from external_integration if available
         }
     }
 }
