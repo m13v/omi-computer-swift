@@ -67,9 +67,8 @@ class RewindViewModel: ObservableObject {
             // Initialize the indexer if needed
             try await RewindIndexer.shared.initialize()
 
-            // Load recent screenshots - enough to span several hours and show gaps
-            // With ~1 screenshot/second, 5000 screenshots spans ~1.5 hours
-            screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 5000)
+            // Load today's screenshots (date filter is always active)
+            await loadScreenshotsForDate(selectedDate)
 
             // Load available apps for filtering
             availableApps = try await RewindDatabase.shared.getUniqueAppNames()
@@ -98,8 +97,8 @@ class RewindViewModel: ObservableObject {
 
     // MARK: - Search
 
-    /// Whether to apply date filter to search (when user explicitly selected a date)
-    @Published var applyDateFilterToSearch: Bool = false
+    /// Whether to apply date filter to search (always true - date filter is always active)
+    @Published var applyDateFilterToSearch: Bool = true
 
     private func performSearch(query: String) async {
         // Skip if not yet initialized (prevents race condition with debounced publisher)
@@ -111,18 +110,10 @@ class RewindViewModel: ObservableObject {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
 
         if trimmedQuery.isEmpty {
-            // Reset to recent screenshots or date-filtered view
+            // Reset to date-filtered view (date filter is always active)
             isSearching = false
             activeSearchQuery = nil
-            if applyDateFilterToSearch {
-                await loadScreenshotsForDate(selectedDate)
-            } else {
-                do {
-                    screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
-                } catch {
-                    logError("RewindViewModel: Failed to load recent screenshots: \(error)")
-                }
-            }
+            await loadScreenshotsForDate(selectedDate)
             return
         }
 
