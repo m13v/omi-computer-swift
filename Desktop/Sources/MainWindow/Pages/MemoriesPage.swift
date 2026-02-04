@@ -412,6 +412,7 @@ class MemoriesViewModel: ObservableObject {
 
 struct MemoriesPage: View {
     @ObservedObject var viewModel: MemoriesViewModel
+    @State private var showingMemoryGraph = false
 
     var body: some View {
         Group {
@@ -469,6 +470,10 @@ struct MemoriesPage: View {
                 onDismiss: { viewModel.selectedMemory = nil }
             )
             .frame(width: 450, height: 600)
+        }
+        .sheet(isPresented: $showingMemoryGraph) {
+            MemoryGraphPage()
+                .frame(minWidth: 800, minHeight: 600)
         }
         .overlay(alignment: .bottom) {
             undoDeleteToast
@@ -573,6 +578,20 @@ struct MemoriesPage: View {
             Spacer()
 
             HStack(spacing: 8) {
+                // Memory Graph button
+                Button {
+                    showingMemoryGraph = true
+                } label: {
+                    Image(systemName: "brain")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(8)
+                }
+                .buttonStyle(.plain)
+                .help("View Memory Graph")
+
                 Button {
                     viewModel.showingAddMemory = true
                 } label: {
