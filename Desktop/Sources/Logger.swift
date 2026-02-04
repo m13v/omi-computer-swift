@@ -123,7 +123,7 @@ extension View {
     }
 }
 
-/// Check if this is a development build (avoids Sentry calls in dev)
+/// Check if this is a development build
 private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.contains(".development") == true
 
 /// Write to log file, stdout, and Sentry breadcrumbs
@@ -133,12 +133,10 @@ func log(_ message: String) {
     print(line)
     fflush(stdout)
 
-    // Add breadcrumb to Sentry for context in crash reports (skip in dev builds)
-    if !isDevBuild {
-        let breadcrumb = Breadcrumb(level: .info, category: "app")
-        breadcrumb.message = message
-        SentrySDK.addBreadcrumb(breadcrumb)
-    }
+    // Add breadcrumb to Sentry for context in crash reports (now enabled for dev builds too)
+    let breadcrumb = Breadcrumb(level: .info, category: "app")
+    breadcrumb.message = message
+    SentrySDK.addBreadcrumb(breadcrumb)
 
     // Append to log file
     if let data = (line + "\n").data(using: .utf8) {
@@ -163,21 +161,19 @@ func logError(_ message: String, error: Error? = nil) {
     print(line)
     fflush(stdout)
 
-    // Add error breadcrumb and capture in Sentry (skip in dev builds)
-    if !isDevBuild {
-        let breadcrumb = Breadcrumb(level: .error, category: "error")
-        breadcrumb.message = fullMessage
-        SentrySDK.addBreadcrumb(breadcrumb)
+    // Add error breadcrumb and capture in Sentry (now enabled for dev builds too)
+    let breadcrumb = Breadcrumb(level: .error, category: "error")
+    breadcrumb.message = fullMessage
+    SentrySDK.addBreadcrumb(breadcrumb)
 
-        // Capture the error in Sentry
-        if let error = error {
-            SentrySDK.capture(error: error) { scope in
-                scope.setContext(value: ["message": message], key: "app_context")
-            }
-        } else {
-            SentrySDK.capture(message: fullMessage) { scope in
-                scope.setLevel(.error)
-            }
+    // Capture the error in Sentry
+    if let error = error {
+        SentrySDK.capture(error: error) { scope in
+            scope.setContext(value: ["message": message], key: "app_context")
+        }
+    } else {
+        SentrySDK.capture(message: fullMessage) { scope in
+            scope.setLevel(.error)
         }
     }
 
