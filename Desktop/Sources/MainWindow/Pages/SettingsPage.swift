@@ -14,6 +14,9 @@ struct SettingsPage: View {
                     Text(selectedSection.rawValue)
                         .font(.system(size: 28, weight: .bold))
                         .foregroundColor(OmiColors.textPrimary)
+                        .id(selectedSection)
+                        .transition(.opacity)
+                        .animation(.easeInOut(duration: 0.15), value: selectedSection)
 
                     Spacer()
                 }
@@ -39,9 +42,6 @@ struct SettingsPage: View {
 struct SettingsContentView: View {
     // AppState for transcription control
     @ObservedObject var appState: AppState
-
-    // Pending section to navigate to (set by external navigation requests)
-    static var pendingSection: SettingsSection?
 
     // Updater view model
     @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
@@ -180,30 +180,35 @@ struct SettingsContentView: View {
     var body: some View {
         VStack(spacing: 24) {
             // Section content
-            if showingDeveloperSettings {
-                developerSettingsSection
-            } else {
-                switch selectedSection {
-                case .general:
-                    generalSection
-                case .device:
-                    DeviceSettingsPage()
-                case .focus:
-                    FocusPage()
-                case .rewind:
-                    rewindSection
-                case .transcription:
-                    transcriptionSection
-                case .notifications:
-                    notificationsSection
-                case .privacy:
-                    privacySection
-                case .account:
-                    accountSection
-                case .about:
-                    aboutSection
+            Group {
+                if showingDeveloperSettings {
+                    developerSettingsSection
+                } else {
+                    switch selectedSection {
+                    case .general:
+                        generalSection
+                    case .device:
+                        DeviceSettingsPage()
+                    case .focus:
+                        FocusPage()
+                    case .rewind:
+                        rewindSection
+                    case .transcription:
+                        transcriptionSection
+                    case .notifications:
+                        notificationsSection
+                    case .privacy:
+                        privacySection
+                    case .account:
+                        accountSection
+                    case .about:
+                        aboutSection
+                    }
                 }
             }
+            .id(selectedSection)
+            .transition(.opacity)
+            .animation(.easeInOut(duration: 0.15), value: selectedSection)
         }
         .onAppear {
             loadBackendSettings()
