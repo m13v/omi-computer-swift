@@ -132,7 +132,7 @@ if [ -n "$SWIFTPM_PID" ]; then
 fi
 
 step "Building Swift app (swift build -c debug)..."
-swift build -c debug --package-path Desktop
+xcrun swift build -c debug --package-path Desktop
 
 step "Creating app bundle..."
 substep "Creating directories"
