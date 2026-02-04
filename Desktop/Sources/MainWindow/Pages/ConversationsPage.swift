@@ -79,10 +79,9 @@ struct ConversationsPage: View {
                             await appState.refreshConversations()
                         }
                     },
-                    onTitleUpdated: { newTitle in
-                        // Update the local conversation object
-                        if let index = appState.conversations.firstIndex(where: { $0.id == selected.id }) {
-                            // Refresh to get updated data
+                    onTitleUpdated: { _ in
+                        // Refresh to get updated data if conversation still exists
+                        if appState.conversations.contains(where: { $0.id == selected.id }) {
                             Task {
                                 await appState.refreshConversations()
                             }
