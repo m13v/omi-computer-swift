@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Mixpanel
 
 /// Unified analytics manager that sends events to both Mixpanel and PostHog
 /// Use this instead of calling MixpanelManager and PostHogManager directly
@@ -126,19 +127,36 @@ class AnalyticsManager {
 
     // MARK: - Permission Events
 
-    func permissionRequested(permission: String) {
-        MixpanelManager.shared.permissionRequested(permission: permission)
-        PostHogManager.shared.permissionRequested(permission: permission)
+    func permissionRequested(permission: String, extraProperties: [String: Any] = [:]) {
+        let mixpanelProps = extraProperties.compactMapValues { $0 as? MixpanelType }
+        MixpanelManager.shared.permissionRequested(permission: permission, extraProperties: mixpanelProps)
+        PostHogManager.shared.permissionRequested(permission: permission, extraProperties: extraProperties)
     }
 
-    func permissionGranted(permission: String) {
-        MixpanelManager.shared.permissionGranted(permission: permission)
-        PostHogManager.shared.permissionGranted(permission: permission)
+    func permissionGranted(permission: String, extraProperties: [String: Any] = [:]) {
+        let mixpanelProps = extraProperties.compactMapValues { $0 as? MixpanelType }
+        MixpanelManager.shared.permissionGranted(permission: permission, extraProperties: mixpanelProps)
+        PostHogManager.shared.permissionGranted(permission: permission, extraProperties: extraProperties)
     }
 
-    func permissionDenied(permission: String) {
-        MixpanelManager.shared.permissionDenied(permission: permission)
-        PostHogManager.shared.permissionDenied(permission: permission)
+    func permissionDenied(permission: String, extraProperties: [String: Any] = [:]) {
+        let mixpanelProps = extraProperties.compactMapValues { $0 as? MixpanelType }
+        MixpanelManager.shared.permissionDenied(permission: permission, extraProperties: mixpanelProps)
+        PostHogManager.shared.permissionDenied(permission: permission, extraProperties: extraProperties)
+    }
+
+    /// Track Bluetooth state changes for debugging
+    func bluetoothStateChanged(oldState: String, newState: String, oldStateRaw: Int, newStateRaw: Int, authorization: String, authorizationRaw: Int) {
+        let properties: [String: MixpanelType] = [
+            "old_state": oldState,
+            "new_state": newState,
+            "old_state_raw": oldStateRaw,
+            "new_state_raw": newStateRaw,
+            "authorization": authorization,
+            "authorization_raw": authorizationRaw
+        ]
+        MixpanelManager.shared.track("Bluetooth State Changed", properties: properties)
+        PostHogManager.shared.track("Bluetooth State Changed", properties: properties as [String: Any])
     }
 
     /// Track when ScreenCaptureKit broken state is detected (TCC granted but capture failing)
