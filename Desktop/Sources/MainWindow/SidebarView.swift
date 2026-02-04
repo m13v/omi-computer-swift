@@ -51,7 +51,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps]
+        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps, .device]
     }
 }
 
@@ -63,9 +63,6 @@ struct SidebarView: View {
     @ObservedObject private var adviceStorage = AdviceStorage.shared
     @ObservedObject private var focusStorage = FocusStorage.shared
     @ObservedObject private var deviceProvider = DeviceProvider.shared
-
-    // State for Get Omi Widget (shown when no device is paired)
-    @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
 
     // Toggle states for quick controls
     @AppStorage("screenAnalysisEnabled") private var screenAnalysisEnabled = true
@@ -167,11 +164,11 @@ struct SidebarView: View {
                     // Subscription upgrade banner
                     // upgradeToPro
 
-                    // Device status widget or Get Omi widget
+                    // Device status widget or Connect Device widget
                     Spacer().frame(height: 12)
                     if deviceProvider.isConnected || deviceProvider.pairedDevice != nil {
                         deviceStatusWidget
-                    } else if showGetOmiWidget {
+                    } else {
                         getOmiWidget
                     }
 
@@ -394,9 +391,8 @@ struct SidebarView: View {
     // MARK: - Get Omi Widget
     private var getOmiWidget: some View {
         Button(action: {
-            if let url = URL(string: "https://www.omi.me") {
-                NSWorkspace.shared.open(url)
-            }
+            // Navigate to Device Settings page to pair a device
+            selectedIndex = SidebarNavItem.device.rawValue
         }) {
             HStack(spacing: 12) {
                 // Omi device image
@@ -417,11 +413,11 @@ struct SidebarView: View {
                 if !isCollapsed {
                     // Text content
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Get Omi Device")
+                        Text("Connect Device")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(OmiColors.textPrimary)
 
-                        Text("Your wearable AI companion")
+                        Text("Pair your wearable")
                             .font(.system(size: 11))
                             .foregroundColor(OmiColors.textTertiary.opacity(0.8))
                     }
@@ -445,7 +441,7 @@ struct SidebarView: View {
             )
         }
         .buttonStyle(.plain)
-        .help(isCollapsed ? "Get Omi Device" : "")
+        .help(isCollapsed ? "Connect Device" : "")
     }
 
     // MARK: - Device Status Widget
