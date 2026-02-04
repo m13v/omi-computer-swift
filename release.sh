@@ -173,9 +173,9 @@ else
 
     mkdir -p "$FFMPEG_TEMP_DIR"
 
-    # Backup current ffmpeg
+    # Backup current ffmpeg to temp dir (NOT source dir to avoid build cache issues)
     if [ -f "$FFMPEG_RESOURCE" ]; then
-        cp "$FFMPEG_RESOURCE" "$FFMPEG_RESOURCE.backup"
+        cp "$FFMPEG_RESOURCE" "$FFMPEG_TEMP_DIR/ffmpeg.backup"
     fi
 
     # Download arm64 ffmpeg from Martin Riedl
@@ -219,11 +219,10 @@ else
     # Verify it's universal
     if file "$FFMPEG_RESOURCE" | grep -q "universal binary"; then
         echo "  ✓ Universal ffmpeg created successfully"
-        rm -f "$FFMPEG_RESOURCE.backup"
     else
         echo "Error: Failed to create universal ffmpeg"
-        if [ -f "$FFMPEG_RESOURCE.backup" ]; then
-            mv "$FFMPEG_RESOURCE.backup" "$FFMPEG_RESOURCE"
+        if [ -f "$FFMPEG_TEMP_DIR/ffmpeg.backup" ]; then
+            mv "$FFMPEG_TEMP_DIR/ffmpeg.backup" "$FFMPEG_RESOURCE"
         fi
         exit 1
     fi
