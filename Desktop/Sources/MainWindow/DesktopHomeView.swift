@@ -7,6 +7,15 @@ struct DesktopHomeView: View {
     @State private var selectedIndex: Int = 0
     @State private var isSidebarCollapsed: Bool = false
 
+    // Settings sidebar state
+    @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .general
+    @State private var previousIndexBeforeSettings: Int = 0
+
+    /// Whether we're currently viewing the settings page
+    private var isInSettings: Bool {
+        selectedIndex == SidebarNavItem.settings.rawValue
+    }
+
     var body: some View {
         Group {
             if !authState.isSignedIn {
@@ -81,13 +90,25 @@ struct DesktopHomeView: View {
 
     private var mainContent: some View {
         HStack(spacing: 0) {
-            // Sidebar (with click-through so first click activates items even when window is inactive)
-            SidebarView(
-                selectedIndex: $selectedIndex,
-                isCollapsed: $isSidebarCollapsed,
-                appState: appState
-            )
-            .clickThrough()
+            // Show settings sidebar when in settings, otherwise show main sidebar
+            if isInSettings {
+                SettingsSidebar(
+                    selectedSection: $selectedSettingsSection,
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedIndex = previousIndexBeforeSettings
+                        }
+                    }
+                )
+            } else {
+                // Sidebar (with click-through so first click activates items even when window is inactive)
+                SidebarView(
+                    selectedIndex: $selectedIndex,
+                    isCollapsed: $isSidebarCollapsed,
+                    appState: appState
+                )
+                .clickThrough()
+            }
 
             // Main content area with rounded container
             ZStack {
@@ -122,7 +143,7 @@ struct DesktopHomeView: View {
                     case 8:
                         AppsPage(appProvider: viewModelContainer.appProvider)
                     case 9:
-                        SettingsPage(appState: appState)
+                        SettingsPage(appState: appState, selectedSection: $selectedSettingsSection)
                     case 10:
                         PermissionsPage(appState: appState)
                     case 11:
@@ -139,9 +160,8 @@ struct DesktopHomeView: View {
             .padding(12)
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToRewindSettings)) { _ in
-            // Set pending section before navigating
-            SettingsContentView.pendingSection = .rewind
-            // Navigate to Settings page (index 8)
+            // Set the section directly and navigate to settings
+            selectedSettingsSection = .rewind
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedIndex = SidebarNavItem.settings.rawValue
             }
@@ -151,6 +171,12 @@ struct DesktopHomeView: View {
             log("DesktopHomeView: Received navigateToRewind notification, navigating to Rewind (index \(SidebarNavItem.rewind.rawValue))")
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedIndex = SidebarNavItem.rewind.rawValue
+            }
+        }
+        .onChange(of: selectedIndex) { oldValue, newValue in
+            // Track the previous index when navigating to settings
+            if newValue == SidebarNavItem.settings.rawValue && oldValue != SidebarNavItem.settings.rawValue {
+                previousIndexBeforeSettings = oldValue
             }
         }
     }
