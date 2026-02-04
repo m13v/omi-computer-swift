@@ -61,6 +61,10 @@ class TasksViewModel: ObservableObject {
     @Published var sortOption: TaskSortOption = .dueDate {
         didSet { recomputeDisplayCaches() }
     }
+    /// When false (default), hides old incomplete tasks (>7 days) to match Flutter behavior
+    @Published var showAllTasks = false {
+        didSet { recomputeDisplayCaches() }
+    }
     @Published var expandedCategories: Set<TaskCategory> = Set(TaskCategory.allCases)
 
     // Create/Edit task state
@@ -88,6 +92,8 @@ class TasksViewModel: ObservableObject {
     @Published private(set) var categorizedTasks: [TaskCategory: [TaskActionItem]] = [:]
     @Published private(set) var todoCount: Int = 0
     @Published private(set) var doneCount: Int = 0
+    /// Count of old incomplete tasks hidden by the 7-day filter
+    @Published private(set) var hiddenOldTasksCount: Int = 0
 
     // Delegate to store
     var isLoading: Bool { store.isLoading }
@@ -147,10 +153,50 @@ class TasksViewModel: ObservableObject {
     }
 
     private func recomputeDisplayCachesWithFiltered(_ filtered: [TaskActionItem]) {
-        // Compute displayTasks
-        let display = showCompleted
-            ? filtered.filter { $0.completed }
-            : filtered.filter { !$0.completed }
+        // Compute displayTasks with optional 7-day age filter for incomplete tasks
+        let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+
+        let display: [TaskActionItem]
+        if showCompleted {
+            // Show all completed tasks (no age filter)
+            display = filtered.filter { $0.completed }
+            hiddenOldTasksCount = 0
+        } else {
+            // Show incomplete tasks, optionally filtered by age
+            let allIncomplete = filtered.filter { !$0.completed }
+
+            if showAllTasks {
+                // Show all incomplete tasks
+                display = allIncomplete
+                hiddenOldTasksCount = 0
+            } else {
+                // Apply 7-day age filter (matching Flutter behavior):
+                // Hide tasks that are > 7 days old AND don't have a future due date
+                var visibleTasks: [TaskActionItem] = []
+                var hiddenCount = 0
+
+                for task in allIncomplete {
+                    let isOldTask: Bool
+                    if let dueAt = task.dueAt {
+                        // Task has due date: hide if due date is > 7 days in the past
+                        isOldTask = dueAt < sevenDaysAgo
+                    } else {
+                        // Task has no due date: hide if created > 7 days ago
+                        isOldTask = task.createdAt < sevenDaysAgo
+                    }
+
+                    if isOldTask {
+                        hiddenCount += 1
+                    } else {
+                        visibleTasks.append(task)
+                    }
+                }
+
+                display = visibleTasks
+                hiddenOldTasksCount = hiddenCount
+            }
+        }
+
         displayTasks = sortTasks(display)
 
         // Compute categorizedTasks
@@ -193,7 +239,8 @@ class TasksViewModel: ObservableObject {
         switch sortOption {
         case .dueDate:
             return tasks.sorted { a, b in
-                // Tasks with due dates first
+                // Tasks with due dates first, then by due date ascending
+                // Tie-breaker: created_at descending (newest first) - matches backend
                 switch (a.dueAt, b.dueAt) {
                 case (nil, nil):
                     return a.createdAt > b.createdAt
@@ -202,6 +249,10 @@ class TasksViewModel: ObservableObject {
                 case (_, nil):
                     return true
                 case (let aDate?, let bDate?):
+                    if aDate == bDate {
+                        // Tie-breaker: sort by created_at descending (newest first)
+                        return a.createdAt > b.createdAt
+                    }
                     return aDate < bDate
                 }
             }
@@ -370,6 +421,10 @@ struct TasksPage: View {
             if viewModel.isMultiSelectMode {
                 cancelMultiSelectButton
             } else {
+                // Show "Show All" toggle only when viewing To Do (incomplete) tasks
+                if !viewModel.showCompleted {
+                    showAllTasksToggle
+                }
                 dateFilterButton
                 multiSelectToggleButton
                 sortDropdown
@@ -403,6 +458,34 @@ struct TasksPage: View {
         .popover(isPresented: $viewModel.showingDateFilter) {
             DateFilterPopover(viewModel: viewModel)
         }
+    }
+
+    private var showAllTasksToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                viewModel.showAllTasks.toggle()
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: viewModel.showAllTasks ? "eye.fill" : "eye.slash")
+                    .font(.system(size: 12))
+                if viewModel.showAllTasks {
+                    Text("All")
+                        .font(.system(size: 11, weight: .medium))
+                } else if viewModel.hiddenOldTasksCount > 0 {
+                    Text("+\(viewModel.hiddenOldTasksCount)")
+                        .font(.system(size: 11, weight: .medium))
+                }
+            }
+            .foregroundColor(viewModel.showAllTasks ? OmiColors.purplePrimary : OmiColors.textSecondary)
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(viewModel.showAllTasks ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundSecondary)
+            )
+        }
+        .buttonStyle(.plain)
+        .help(viewModel.showAllTasks ? "Showing all tasks" : "Showing recent tasks (7 days). \(viewModel.hiddenOldTasksCount) older tasks hidden.")
     }
 
     private var multiSelectControls: some View {
@@ -664,6 +747,16 @@ struct TasksPage: View {
                 .buttonStyle(.bordered)
                 .tint(OmiColors.textSecondary)
                 .padding(.top, 8)
+            } else if !viewModel.showCompleted && viewModel.hiddenOldTasksCount > 0 {
+                // Show option to view hidden old tasks
+                Button("Show \(viewModel.hiddenOldTasksCount) Older Tasks") {
+                    withAnimation {
+                        viewModel.showAllTasks = true
+                    }
+                }
+                .buttonStyle(.bordered)
+                .tint(OmiColors.textSecondary)
+                .padding(.top, 8)
             } else if !viewModel.showCompleted && viewModel.doneCount > 0 {
                 Button("View Done") {
                     withAnimation {
@@ -690,7 +783,13 @@ struct TasksPage: View {
         if viewModel.tasks.isEmpty {
             return "Tasks from your conversations will appear here"
         }
-        return viewModel.showCompleted ? "Complete a task to see it here" : "You have no pending tasks"
+        if viewModel.showCompleted {
+            return "Complete a task to see it here"
+        }
+        if viewModel.hiddenOldTasksCount > 0 {
+            return "No recent tasks. You have \(viewModel.hiddenOldTasksCount) older tasks hidden."
+        }
+        return "You have no pending tasks"
     }
 
     // MARK: - Tasks List View
