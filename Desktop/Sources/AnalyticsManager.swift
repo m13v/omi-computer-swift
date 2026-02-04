@@ -145,6 +145,12 @@ class AnalyticsManager {
         PostHogManager.shared.permissionDenied(permission: permission, extraProperties: extraProperties)
     }
 
+    func permissionSkipped(permission: String, extraProperties: [String: Any] = [:]) {
+        let mixpanelProps = extraProperties.compactMapValues { $0 as? MixpanelType }
+        MixpanelManager.shared.permissionSkipped(permission: permission, extraProperties: mixpanelProps)
+        PostHogManager.shared.permissionSkipped(permission: permission, extraProperties: extraProperties)
+    }
+
     /// Track Bluetooth state changes for debugging
     func bluetoothStateChanged(oldState: String, newState: String, oldStateRaw: Int, newStateRaw: Int, authorization: String, authorizationRaw: Int) {
         let properties: [String: MixpanelType] = [
