@@ -449,6 +449,9 @@ class TimelineContentView: NSView {
         let startIndex = max(0, Int((visibleMinX - edgePadding) / totalWidth) - 1)
         let endIndex = min(screenshots.count, Int((visibleMaxX - edgePadding) / totalWidth) + 2)
 
+        // Guard against invalid range (startIndex > endIndex can happen with edge padding)
+        guard startIndex < endIndex else { return }
+
         for i in startIndex..<endIndex {
             let barX = edgePadding + CGFloat(i) * totalWidth
 
