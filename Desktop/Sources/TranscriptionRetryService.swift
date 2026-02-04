@@ -47,6 +47,14 @@ class TranscriptionRetryService {
             if !crashedSessions.isEmpty {
                 log("TranscriptionRetryService: Found \(crashedSessions.count) crashed sessions")
                 for session in crashedSessions {
+                    // Skip sessions that are too recent - they might be actively recording
+                    // (race condition: recovery runs before segments arrive)
+                    let sessionAge = Date().timeIntervalSince(session.createdAt)
+                    if sessionAge < 30 {
+                        log("TranscriptionRetryService: Skipping recent session \(session.id!) (age: \(String(format: "%.1f", sessionAge))s)")
+                        continue
+                    }
+
                     // Check if session has segments - if not, delete it
                     let segmentCount = try await TranscriptionStorage.shared.getSegmentCount(sessionId: session.id!)
                     if segmentCount == 0 {
