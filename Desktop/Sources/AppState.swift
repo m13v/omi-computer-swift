@@ -1889,4 +1889,6 @@ extension Notification.Name {
     static let navigateToRewind = Notification.Name("navigateToRewind")
     /// Posted to navigate to Device settings
     static let navigateToDeviceSettings = Notification.Name("navigateToDeviceSettings")
+    /// Posted when a new Rewind frame is captured (for live frame count updates)
+    static let rewindFrameCaptured = Notification.Name("rewindFrameCaptured")
 }
