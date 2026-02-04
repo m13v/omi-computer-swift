@@ -16,18 +16,8 @@
 - `TasksPage.swift` - Add drag/drop to TaskRow and TaskCategorySection
 - `TasksViewModel` - Add order persistence and reorder methods
 
-### 2. Swipe-to-Delete
-**Goal:** Swipe left on a task to reveal delete action
-
-**Implementation:**
-- Add custom `DragGesture` to TaskRow for horizontal swipes
-- Track `@State var swipeOffset: CGFloat`
-- Reveal red delete button underneath when swiped
-- Threshold: -100pt to trigger delete, spring back otherwise
-- Use existing delete confirmation dialog
-
-**Files to modify:**
-- `TasksPage.swift` - Add swipe gesture to TaskRow
+### 2. ~~Swipe-to-Delete~~ (SKIPPED - not suitable for macOS)
+**Reason:** Swipe gestures are designed for touchscreens. On macOS, hover-to-reveal delete button already exists and works better with mouse/trackpad.
 
 ### 3. Task Indentation (Sub-tasks)
 **Goal:** Visual hierarchy with 0-3 indent levels
