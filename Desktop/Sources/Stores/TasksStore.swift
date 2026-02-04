@@ -22,6 +22,11 @@ class TasksStore: ObservableObject {
 
     // MARK: - Computed Properties (for Dashboard)
 
+    /// 7-day cutoff for filtering old tasks (matches Flutter behavior)
+    private var sevenDaysAgo: Date {
+        Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    }
+
     var incompleteTasks: [TaskActionItem] {
         tasks.filter { !$0.completed }
     }
@@ -30,16 +35,25 @@ class TasksStore: ObservableObject {
         tasks.filter { $0.completed }
     }
 
+    /// Overdue tasks (due date in the past but within 7 days)
     var overdueTasks: [TaskActionItem] {
         let startOfToday = Calendar.current.startOfDay(for: Date())
         return incompleteTasks
             .filter { task in
                 guard let dueAt = task.dueAt else { return false }
-                return dueAt < startOfToday
+                // Must be overdue (before today) but within 7 days (not too old)
+                return dueAt < startOfToday && dueAt >= sevenDaysAgo
             }
-            .sorted { ($0.dueAt ?? .distantPast) < ($1.dueAt ?? .distantPast) }
+            .sorted { a, b in
+                // Sort by due date ascending, tie-breaker: created_at descending (matches backend)
+                if a.dueAt == b.dueAt {
+                    return a.createdAt > b.createdAt
+                }
+                return (a.dueAt ?? .distantPast) < (b.dueAt ?? .distantPast)
+            }
     }
 
+    /// Today's tasks (due today)
     var todaysTasks: [TaskActionItem] {
         let calendar = Calendar.current
         let startOfToday = calendar.startOfDay(for: Date())
@@ -49,12 +63,22 @@ class TasksStore: ObservableObject {
                 guard let dueAt = task.dueAt else { return false }
                 return dueAt >= startOfToday && dueAt < endOfToday
             }
-            .sorted { ($0.dueAt ?? .distantPast) < ($1.dueAt ?? .distantPast) }
+            .sorted { a, b in
+                // Sort by due date ascending, tie-breaker: created_at descending (matches backend)
+                if a.dueAt == b.dueAt {
+                    return a.createdAt > b.createdAt
+                }
+                return (a.dueAt ?? .distantPast) < (b.dueAt ?? .distantPast)
+            }
     }
 
+    /// Tasks without due date (created within last 7 days)
     var tasksWithoutDueDate: [TaskActionItem] {
         incompleteTasks
-            .filter { $0.dueAt == nil }
+            .filter { task in
+                // No due date, but created within 7 days
+                task.dueAt == nil && task.createdAt >= sevenDaysAgo
+            }
             .sorted { $0.createdAt > $1.createdAt }
     }
 
