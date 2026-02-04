@@ -104,7 +104,7 @@ actor RewindDatabase {
 
         do {
             let testQueue = try DatabaseQueue(path: path, configuration: config)
-            let result = try testQueue.read { db -> String in
+            let result = try await testQueue.read { db -> String in
                 try String.fetchOne(db, sql: "PRAGMA quick_check(1)") ?? "ok"
             }
             return result.lowercased() != "ok"
