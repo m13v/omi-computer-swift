@@ -46,6 +46,7 @@ class AuthService {
     private let kAuthIdToken = "auth_idToken"
     private let kAuthRefreshToken = "auth_refreshToken"
     private let kAuthTokenExpiry = "auth_tokenExpiry"
+    private let kAuthTokenUserId = "auth_tokenUserId"  // User ID that owns the stored token
 
     // Firebase Web API key (from GoogleService-Info.plist)
     private let firebaseApiKey = "AIzaSyD9dzBdglc7IO9pPDIOvqnCoTis_xKkkC8"
@@ -253,8 +254,8 @@ class AuthService {
             let firebaseTokens = try await exchangeCustomTokenForIdToken(customToken: tokenResult.customToken)
             NSLog("OMI AUTH: Got Firebase ID token via REST API")
 
-            // Store tokens for API calls
-            saveTokens(idToken: firebaseTokens.idToken, refreshToken: firebaseTokens.refreshToken, expiresIn: firebaseTokens.expiresIn)
+            // Store tokens for API calls (include userId to validate token ownership on retrieval)
+            saveTokens(idToken: firebaseTokens.idToken, refreshToken: firebaseTokens.refreshToken, expiresIn: firebaseTokens.expiresIn, userId: firebaseTokens.localId)
 
             // Also try Firebase SDK sign-in (best effort for other Firebase features)
             do {
@@ -529,19 +530,23 @@ class AuthService {
 
     // MARK: - Token Storage
 
-    private func saveTokens(idToken: String, refreshToken: String, expiresIn: Int) {
+    private func saveTokens(idToken: String, refreshToken: String, expiresIn: Int, userId: String) {
         UserDefaults.standard.set(idToken, forKey: kAuthIdToken)
         UserDefaults.standard.set(refreshToken, forKey: kAuthRefreshToken)
         // Store expiry time (current time + expiresIn seconds, minus 5 min buffer)
         let expiryTime = Date().addingTimeInterval(TimeInterval(expiresIn - 300))
         UserDefaults.standard.set(expiryTime.timeIntervalSince1970, forKey: kAuthTokenExpiry)
-        NSLog("OMI AUTH: Saved tokens, expires at %@", expiryTime.description)
+        // Store the user ID that owns these tokens (for validation on retrieval)
+        UserDefaults.standard.set(userId, forKey: kAuthTokenUserId)
+        NSLog("OMI AUTH: Saved tokens for user %@, expires at %@", userId, expiryTime.description)
     }
 
     private func clearTokens() {
         UserDefaults.standard.removeObject(forKey: kAuthIdToken)
         UserDefaults.standard.removeObject(forKey: kAuthRefreshToken)
         UserDefaults.standard.removeObject(forKey: kAuthTokenExpiry)
+        UserDefaults.standard.removeObject(forKey: kAuthTokenUserId)
+        NSLog("OMI AUTH: Cleared all tokens")
     }
 
     private var storedIdToken: String? {
@@ -550,6 +555,10 @@ class AuthService {
 
     private var storedRefreshToken: String? {
         UserDefaults.standard.string(forKey: kAuthRefreshToken)
+    }
+
+    private var storedTokenUserId: String? {
+        UserDefaults.standard.string(forKey: kAuthTokenUserId)
     }
 
     private var isTokenExpired: Bool {
@@ -661,9 +670,13 @@ class AuthService {
             throw AuthError.invalidResponse
         }
 
-        // Save new tokens
-        saveTokens(idToken: newIdToken, refreshToken: newRefreshToken, expiresIn: Int(expiresIn) ?? 3600)
-        NSLog("OMI AUTH: Refreshed ID token successfully")
+        // Get user ID from response (Firebase returns it as "user_id")
+        // Fall back to existing stored token user ID if not in response
+        let userId = (json["user_id"] as? String) ?? storedTokenUserId ?? ""
+
+        // Save new tokens with user ID
+        saveTokens(idToken: newIdToken, refreshToken: newRefreshToken, expiresIn: Int(expiresIn) ?? 3600, userId: userId)
+        NSLog("OMI AUTH: Refreshed ID token successfully for user %@", userId)
 
         return newIdToken
     }
@@ -671,13 +684,24 @@ class AuthService {
     // MARK: - Get ID Token (for API calls)
 
     func getIdToken(forceRefresh: Bool = false) async throws -> String {
-        // First try: Use stored token if valid
+        // Get the expected user ID (the currently signed-in user)
+        let expectedUserId = UserDefaults.standard.string(forKey: kAuthUserId)
+
+        // First try: Use stored token if valid AND belongs to the current user
         if !forceRefresh, let token = storedIdToken, !isTokenExpired {
-            return token
+            // Validate token belongs to current user to prevent using stale tokens after account switch
+            if let tokenUserId = storedTokenUserId, let expected = expectedUserId, tokenUserId == expected {
+                return token
+            } else {
+                NSLog("OMI AUTH: Stored token user mismatch (token: %@, expected: %@) - clearing stale token",
+                      storedTokenUserId ?? "nil", expectedUserId ?? "nil")
+                clearTokens()
+            }
         }
 
-        // Second try: Refresh using stored refresh token
-        if let _ = storedRefreshToken {
+        // Second try: Refresh using stored refresh token (only if it belongs to current user)
+        if let _ = storedRefreshToken, let tokenUserId = storedTokenUserId,
+           let expected = expectedUserId, tokenUserId == expected {
             do {
                 return try await refreshIdToken()
             } catch {
@@ -685,10 +709,16 @@ class AuthService {
             }
         }
 
-        // Third try: Use Firebase SDK (might work if keychain persisted)
+        // Third try: Use Firebase SDK (only if user matches expected user)
+        // This prevents returning a stale user's token during sign-out race conditions
         if let user = Auth.auth().currentUser {
-            let tokenResult = try await user.getIDTokenResult(forcingRefresh: forceRefresh)
-            return tokenResult.token
+            if let expected = expectedUserId, user.uid == expected {
+                let tokenResult = try await user.getIDTokenResult(forcingRefresh: forceRefresh)
+                return tokenResult.token
+            } else {
+                NSLog("OMI AUTH: Firebase SDK user mismatch (firebase: %@, expected: %@) - not using",
+                      user.uid, expectedUserId ?? "nil")
+            }
         }
 
         throw AuthError.notSignedIn
