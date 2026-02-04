@@ -193,6 +193,20 @@ class AppState: ObservableObject {
             isSystemAudioSupported = true
         }
 
+        // Note: Bluetooth subscription is initialized lazily via initializeBluetoothIfNeeded()
+        // to avoid triggering the permission dialog before the user reaches the Bluetooth step
+    }
+
+    /// Initialize Bluetooth manager and subscribe to state changes
+    /// Call this only when the user reaches the Bluetooth onboarding step
+    func initializeBluetoothIfNeeded() {
+        guard bluetoothStateCancellable == nil else {
+            log("Bluetooth already initialized, skipping")
+            return
+        }
+
+        log("Initializing Bluetooth manager...")
+
         // Subscribe to Bluetooth state changes for reactive permission updates
         bluetoothStateCancellable = BluetoothManager.shared.$bluetoothState
             .receive(on: DispatchQueue.main)
@@ -473,6 +487,11 @@ class AppState: ObservableObject {
     /// Check if Bluetooth permission was explicitly denied
     func isBluetoothPermissionDenied() -> Bool {
         return BluetoothManager.shared.bluetoothState == .unauthorized
+    }
+
+    /// Check if Bluetooth is reported as unsupported (may be macOS version issue)
+    func isBluetoothUnsupported() -> Bool {
+        return BluetoothManager.shared.bluetoothState == .unsupported
     }
 
     /// Open Bluetooth preferences in System Settings
