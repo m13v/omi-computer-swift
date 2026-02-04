@@ -150,8 +150,16 @@ struct RewindPage: View {
 
     // Handle scroll wheel to move playhead
     private func handleScrollWheel(delta: CGFloat) {
-        guard !activeScreenshots.isEmpty else { return }
-        guard searchViewMode != .results else { return } // Don't scroll in results list view
+        log("RewindPage: Scroll wheel delta=\(delta), currentIndex=\(currentIndex), screenshots=\(activeScreenshots.count)")
+
+        guard !activeScreenshots.isEmpty else {
+            log("RewindPage: Scroll ignored - no screenshots")
+            return
+        }
+        guard searchViewMode != .results else {
+            log("RewindPage: Scroll ignored - in results view")
+            return
+        }
 
         let sensitivity: CGFloat = 3.0
         let framesToMove = Int(-delta * sensitivity)
@@ -159,6 +167,7 @@ struct RewindPage: View {
         if framesToMove != 0 {
             let newIndex = max(0, min(activeScreenshots.count - 1, currentIndex + framesToMove))
             if newIndex != currentIndex {
+                log("RewindPage: Scroll moving from \(currentIndex) to \(newIndex)")
                 seekToIndex(newIndex)
             }
         }
