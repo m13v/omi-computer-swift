@@ -444,4 +444,42 @@ actor RewindStorage {
         formatter.countStyle = .file
         return formatter.string(fromByteCount: bytes)
     }
+
+    // MARK: - Video Chunk Discovery
+
+    /// Get all video chunk files for database rebuild
+    /// Returns info about each video chunk including path and filename
+    func getAllVideoChunks() async throws -> [VideoChunkInfo] {
+        guard let videosDirectory = videosDirectory else {
+            throw RewindError.storageError("Storage not initialized")
+        }
+
+        var chunks: [VideoChunkInfo] = []
+
+        // Enumerate all .hevc files in videos directory (including subdirectories)
+        let enumerator = fileManager.enumerator(
+            at: videosDirectory,
+            includingPropertiesForKeys: [.isRegularFileKey, .creationDateKey],
+            options: .skipsHiddenFiles
+        )
+
+        while let fileURL = enumerator?.nextObject() as? URL {
+            guard fileURL.pathExtension == "hevc" else { continue }
+
+            // Get relative path from videos directory
+            let relativePath = fileURL.path.replacingOccurrences(of: videosDirectory.path + "/", with: "")
+
+            chunks.append(VideoChunkInfo(
+                filename: fileURL.lastPathComponent,
+                relativePath: relativePath,
+                fullPath: fileURL
+            ))
+        }
+
+        // Sort by filename (which contains timestamp)
+        chunks.sort { $0.filename < $1.filename }
+
+        log("RewindStorage: Found \(chunks.count) video chunks")
+        return chunks
+    }
 }
