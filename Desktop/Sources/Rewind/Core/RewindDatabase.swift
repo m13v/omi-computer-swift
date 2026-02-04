@@ -22,6 +22,9 @@ actor RewindDatabase {
     /// Track if we recovered from corruption (for UI notification)
     private(set) var didRecoverFromCorruption = false
 
+    /// Track initialization state to prevent concurrent init attempts
+    private var initializationTask: Task<Void, Error>?
+
     // MARK: - Initialization
 
     private init() {}
@@ -32,7 +35,33 @@ actor RewindDatabase {
     }
 
     /// Initialize the database with migrations
+    /// Uses a shared task to prevent concurrent initialization attempts during recovery
     func initialize() async throws {
+        // Already initialized
+        guard dbQueue == nil else { return }
+
+        // If initialization is in progress, wait for it
+        if let task = initializationTask {
+            return try await task.value
+        }
+
+        // Start initialization
+        let task = Task {
+            try await performInitialization()
+        }
+        initializationTask = task
+
+        do {
+            try await task.value
+        } catch {
+            // Clear task on failure so retry is possible
+            initializationTask = nil
+            throw error
+        }
+    }
+
+    /// Actual initialization logic (called only once at a time)
+    private func performInitialization() async throws {
         guard dbQueue == nil else { return }
 
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
@@ -115,7 +144,10 @@ actor RewindDatabase {
         }
     }
 
-    /// Handle corrupted database: backup and recreate
+    /// Number of records recovered from corrupted database (0 if none)
+    private(set) var recoveredRecordCount: Int = 0
+
+    /// Handle corrupted database: attempt recovery, backup, and recreate
     private func handleCorruptedDatabase(at dbPath: String, in omiDir: URL) async throws {
         let fileManager = FileManager.default
 
@@ -133,18 +165,48 @@ actor RewindDatabase {
         log("RewindDatabase: Backing up corrupted database to \(backupPath.path)")
         try fileManager.copyItem(atPath: dbPath, toPath: backupPath.path)
 
-        // Remove corrupted database and associated WAL/SHM files
-        let filesToRemove = [
-            dbPath,
-            dbPath + "-wal",
-            dbPath + "-shm",
-            dbPath + "-journal"
-        ]
+        // Attempt to recover data from corrupted database
+        let recoveredPath = omiDir.appendingPathComponent("omi_recovered.db").path
+        let recoveredCount = await attemptDataRecovery(from: dbPath, to: recoveredPath)
+        recoveredRecordCount = recoveredCount
 
-        for file in filesToRemove {
-            if fileManager.fileExists(atPath: file) {
-                try fileManager.removeItem(atPath: file)
-                log("RewindDatabase: Removed \(file)")
+        if recoveredCount > 0 {
+            log("RewindDatabase: Recovered \(recoveredCount) screenshot records from corrupted database")
+            // Use recovered database instead of creating fresh one
+            try fileManager.removeItem(atPath: dbPath)
+            try fileManager.moveItem(atPath: recoveredPath, toPath: dbPath)
+
+            // Remove WAL/SHM files from corrupted database
+            for ext in ["-wal", "-shm", "-journal"] {
+                let file = dbPath + ext
+                if fileManager.fileExists(atPath: file) {
+                    try? fileManager.removeItem(atPath: file)
+                }
+            }
+
+            log("RewindDatabase: Using recovered database with \(recoveredCount) records")
+        } else {
+            // No data recovered, remove corrupted database and start fresh
+            log("RewindDatabase: No data could be recovered, creating fresh database")
+
+            // Clean up recovery attempt if it exists
+            if fileManager.fileExists(atPath: recoveredPath) {
+                try? fileManager.removeItem(atPath: recoveredPath)
+            }
+
+            // Remove corrupted database and associated WAL/SHM files
+            let filesToRemove = [
+                dbPath,
+                dbPath + "-wal",
+                dbPath + "-shm",
+                dbPath + "-journal"
+            ]
+
+            for file in filesToRemove {
+                if fileManager.fileExists(atPath: file) {
+                    try fileManager.removeItem(atPath: file)
+                    log("RewindDatabase: Removed \(file)")
+                }
             }
         }
 
@@ -152,6 +214,154 @@ actor RewindDatabase {
 
         // Clean up old backups (keep only last 5)
         try await cleanupOldBackups(in: backupDir, keepCount: 5)
+    }
+
+    /// Attempt to recover data from a corrupted database using sqlite3 .recover
+    /// Returns the number of screenshot records recovered
+    private func attemptDataRecovery(from corruptedPath: String, to recoveredPath: String) async -> Int {
+        let fileManager = FileManager.default
+
+        // Remove any existing recovered database
+        if fileManager.fileExists(atPath: recoveredPath) {
+            try? fileManager.removeItem(atPath: recoveredPath)
+        }
+
+        // Try using sqlite3 .recover command (available in SQLite 3.29+)
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process.arguments = [corruptedPath, ".recover"]
+
+        let outputPipe = Pipe()
+        process.standardOutput = outputPipe
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+
+            if process.terminationStatus == 0 {
+                // .recover outputs SQL statements, pipe them into new database
+                let recoveredSQL = outputPipe.fileHandleForReading.readDataToEndOfFile()
+
+                if !recoveredSQL.isEmpty {
+                    // Create recovered database from SQL dump
+                    let importProcess = Process()
+                    importProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+                    importProcess.arguments = [recoveredPath]
+
+                    let inputPipe = Pipe()
+                    importProcess.standardInput = inputPipe
+                    importProcess.standardOutput = FileHandle.nullDevice
+                    importProcess.standardError = FileHandle.nullDevice
+
+                    try importProcess.run()
+                    inputPipe.fileHandleForWriting.write(recoveredSQL)
+                    inputPipe.fileHandleForWriting.closeFile()
+                    importProcess.waitUntilExit()
+
+                    // Count recovered screenshots
+                    if fileManager.fileExists(atPath: recoveredPath) {
+                        return countRecoveredScreenshots(at: recoveredPath)
+                    }
+                }
+            }
+        } catch {
+            log("RewindDatabase: Recovery attempt failed: \(error)")
+        }
+
+        // Fallback: Try to read screenshots table directly
+        return await attemptDirectTableRecovery(from: corruptedPath, to: recoveredPath)
+    }
+
+    /// Fallback recovery: try to read the screenshots table directly
+    private func attemptDirectTableRecovery(from corruptedPath: String, to recoveredPath: String) async -> Int {
+        var config = Configuration()
+        config.readonly = true
+
+        do {
+            let corruptedQueue = try DatabaseQueue(path: corruptedPath, configuration: config)
+
+            // Try to read screenshot records
+            let screenshots: [(timestamp: Date, appName: String, windowTitle: String?, videoChunkPath: String?, frameOffset: Int?)] = try corruptedQueue.read { db in
+                var results: [(Date, String, String?, String?, Int?)] = []
+
+                // Try to fetch what we can from screenshots table
+                let rows = try? Row.fetchAll(db, sql: """
+                    SELECT timestamp, appName, windowTitle, videoChunkPath, frameOffset
+                    FROM screenshots
+                    ORDER BY timestamp DESC
+                    LIMIT 100000
+                """)
+
+                for row in rows ?? [] {
+                    if let timestamp: Date = row["timestamp"],
+                       let appName: String = row["appName"] {
+                        results.append((
+                            timestamp,
+                            appName,
+                            row["windowTitle"] as String?,
+                            row["videoChunkPath"] as String?,
+                            row["frameOffset"] as Int?
+                        ))
+                    }
+                }
+                return results
+            }
+
+            if screenshots.isEmpty {
+                return 0
+            }
+
+            // Create new database with recovered data
+            let recoveredQueue = try DatabaseQueue(path: recoveredPath)
+
+            try recoveredQueue.write { db in
+                // Create minimal screenshots table
+                try db.execute(sql: """
+                    CREATE TABLE IF NOT EXISTS screenshots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        timestamp DATETIME NOT NULL,
+                        appName TEXT NOT NULL,
+                        windowTitle TEXT,
+                        imagePath TEXT NOT NULL DEFAULT '',
+                        videoChunkPath TEXT,
+                        frameOffset INTEGER,
+                        ocrText TEXT,
+                        ocrDataJson TEXT,
+                        isIndexed INTEGER NOT NULL DEFAULT 0,
+                        focusStatus TEXT,
+                        extractedTasksJson TEXT,
+                        adviceJson TEXT
+                    )
+                """)
+
+                // Insert recovered records
+                for screenshot in screenshots {
+                    try db.execute(sql: """
+                        INSERT INTO screenshots (timestamp, appName, windowTitle, imagePath, videoChunkPath, frameOffset, isIndexed)
+                        VALUES (?, ?, ?, '', ?, ?, 0)
+                    """, arguments: [screenshot.timestamp, screenshot.appName, screenshot.windowTitle, screenshot.videoChunkPath, screenshot.frameOffset])
+                }
+            }
+
+            return screenshots.count
+
+        } catch {
+            log("RewindDatabase: Direct table recovery failed: \(error)")
+            return 0
+        }
+    }
+
+    /// Count screenshots in recovered database
+    private func countRecoveredScreenshots(at path: String) -> Int {
+        do {
+            let queue = try DatabaseQueue(path: path)
+            return try queue.read { db in
+                try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM screenshots") ?? 0
+            }
+        } catch {
+            return 0
+        }
     }
 
     /// Clean up old database backups, keeping only the most recent ones
@@ -532,6 +742,25 @@ actor RewindDatabase {
             try db.create(index: "idx_sessions_status", on: "transcription_sessions", columns: ["status"])
             try db.create(index: "idx_sessions_synced", on: "transcription_sessions", columns: ["backendSynced"])
             try db.create(index: "idx_segments_session", on: "transcription_segments", columns: ["sessionId"])
+        }
+
+        // Migration 11: Create live_notes table for AI-generated notes during recording
+        migrator.registerMigration("createLiveNotes") { db in
+            try db.create(table: "live_notes") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("sessionId", .integer).notNull()
+                    .references("transcription_sessions", onDelete: .cascade)
+                t.column("text", .text).notNull()
+                t.column("timestamp", .datetime).notNull()
+                t.column("isAiGenerated", .boolean).notNull().defaults(to: true)
+                t.column("segmentStartOrder", .integer)  // Which segment triggered this note
+                t.column("segmentEndOrder", .integer)    // End segment for context range
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // Index for fetching notes by session
+            try db.create(index: "idx_live_notes_session", on: "live_notes", columns: ["sessionId"])
         }
 
         try migrator.migrate(queue)
