@@ -145,6 +145,13 @@ struct OnboardingView: View {
                 log("Bluetooth permission granted (not current step \(currentStep), skipping bringToFront)")
             }
         }
+        .onChange(of: currentStep) { _, newStep in
+            // Initialize Bluetooth when reaching step 9 so the state is shown correctly
+            if newStep == 9 {
+                log("Reached Bluetooth step, initializing Bluetooth manager")
+                appState.initializeBluetoothIfNeeded()
+            }
+        }
     }
 
     private func bringToFront() {
