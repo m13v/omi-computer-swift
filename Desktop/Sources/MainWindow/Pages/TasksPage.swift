@@ -1082,10 +1082,6 @@ struct TaskRow: View {
     @State private var rowOpacity: Double = 1.0
     @State private var rowOffset: CGFloat = 0
 
-    // Swipe-to-delete state
-    @State private var swipeOffset: CGFloat = 0
-    @State private var isDragging = false
-
     private var isSelected: Bool {
         viewModel.selectedTaskIds.contains(task.id)
     }
@@ -1101,77 +1097,21 @@ struct TaskRow: View {
     }
 
     var body: some View {
-        ZStack(alignment: .trailing) {
-            // Delete button revealed on swipe
-            if swipeOffset < -30 {
-                HStack {
-                    Spacer()
-                    Button {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                            swipeOffset = 0
-                        }
-                        showDeleteConfirmation = true
-                    } label: {
-                        Image(systemName: "trash.fill")
-                            .font(.system(size: 18))
-                            .foregroundColor(.white)
-                            .frame(width: 60, height: 50)
-                            .background(Color.red)
-                            .cornerRadius(8)
+        taskRowContent
+            .confirmationDialog(
+                "Delete Task",
+                isPresented: $showDeleteConfirmation,
+                titleVisibility: .visible
+            ) {
+                Button("Delete", role: .destructive) {
+                    Task {
+                        await viewModel.deleteTask(task)
                     }
-                    .buttonStyle(.plain)
                 }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Are you sure you want to delete this task? This action cannot be undone.")
             }
-
-            // Main row content
-            taskRowContent
-                .offset(x: swipeOffset)
-                .gesture(
-                    DragGesture(minimumDistance: 10)
-                        .onChanged { value in
-                            // Only allow horizontal swipes to the left (negative translation)
-                            guard !viewModel.isMultiSelectMode else { return }
-                            isDragging = true
-                            let translation = value.translation.width
-                            if translation < 0 {
-                                // Limit swipe to -100pt with resistance
-                                swipeOffset = max(translation, -100)
-                            } else if swipeOffset < 0 {
-                                // Allow swiping back to original position
-                                swipeOffset = min(0, swipeOffset + translation)
-                            }
-                        }
-                        .onEnded { value in
-                            isDragging = false
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                                // If swiped past threshold, keep showing delete button
-                                if swipeOffset < -60 {
-                                    swipeOffset = -70
-                                } else {
-                                    swipeOffset = 0
-                                }
-                            }
-                        }
-                )
-        }
-        .confirmationDialog(
-            "Delete Task",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Task {
-                    await viewModel.deleteTask(task)
-                }
-            }
-            Button("Cancel", role: .cancel) {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    swipeOffset = 0
-                }
-            }
-        } message: {
-            Text("Are you sure you want to delete this task? This action cannot be undone.")
-        }
     }
 
     private var taskRowContent: some View {
