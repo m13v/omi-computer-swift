@@ -1,4 +1,13 @@
 import SwiftUI
+import Combine
+
+// MARK: - UserDefaults Extension for KVO
+
+extension UserDefaults {
+    @objc dynamic var multiChatEnabled: Bool {
+        return bool(forKey: "multiChatEnabled")
+    }
+}
 
 // MARK: - Chat Session Model
 
@@ -124,8 +133,16 @@ class ChatProvider: ObservableObject {
     @Published var showStarredOnly = false
     @Published var searchQuery = ""
 
+    /// Whether the user is currently viewing the default chat (syncs with Flutter app)
+    @Published var isInDefaultChat = true
+
+    /// Multi-chat mode setting - when false, only default chat is shown (syncs with Flutter)
+    /// When true, user can create multiple chat sessions
+    @AppStorage("multiChatEnabled") var multiChatEnabled = false
+
     private var geminiClient: GeminiClient?
     private let messagesPageSize = 50
+    private var multiChatObserver: AnyCancellable?
 
     // MARK: - Filtered Sessions
     var filteredSessions: [ChatSession] {
@@ -174,6 +191,16 @@ class ChatProvider: ObservableObject {
             logError("Failed to initialize Gemini client", error: error)
             self.errorMessage = "AI not available: \(error.localizedDescription)"
         }
+
+        // Observe changes to multiChatEnabled setting
+        multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
+            .dropFirst() // Skip initial value
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    await self?.reinitialize()
+                }
+            }
     }
 
     // MARK: - Session Management
@@ -267,9 +294,10 @@ class ChatProvider: ObservableObject {
 
     /// Select a session and load its messages
     func selectSession(_ session: ChatSession) async {
-        guard currentSession?.id != session.id else { return }
+        guard currentSession?.id != session.id || isInDefaultChat else { return }
 
         currentSession = session
+        isInDefaultChat = false
         isLoading = true
         errorMessage = nil
         hasMoreMessages = false
@@ -589,8 +617,66 @@ class ChatProvider: ObservableObject {
 
     /// Initialize chat: fetch sessions and load messages
     func initialize() async {
-        await fetchSessions()
+        if multiChatEnabled {
+            // Multi-chat mode: load sessions, default to default chat
+            await fetchSessions()
+            // Start in default chat mode
+            await switchToDefaultChat()
+        } else {
+            // Single chat mode: just load default chat messages (syncs with Flutter)
+            isLoadingSessions = false
+            await loadDefaultChatMessages()
+        }
         await loadMemoriesIfNeeded()
+    }
+
+    /// Reinitialize after settings change
+    func reinitialize() async {
+        sessions = []
+        messages = []
+        currentSession = nil
+        isInDefaultChat = true
+        await initialize()
+    }
+
+    /// Switch to the default chat (messages without session_id, syncs with Flutter app)
+    func switchToDefaultChat() async {
+        currentSession = nil
+        isInDefaultChat = true
+        await loadDefaultChatMessages()
+        log("Switched to default chat")
+    }
+
+    /// Load messages for the default chat (no session filter - compatible with Flutter)
+    private func loadDefaultChatMessages() async {
+        isLoading = true
+        errorMessage = nil
+        hasMoreMessages = false
+
+        do {
+            let persistedMessages = try await APIClient.shared.getMessages(
+                appId: selectedAppId,
+                limit: messagesPageSize
+            )
+            messages = persistedMessages.map { dbMessage in
+                ChatMessage(
+                    id: dbMessage.id,
+                    text: dbMessage.text,
+                    createdAt: dbMessage.createdAt,
+                    sender: dbMessage.sender == "human" ? .user : .ai,
+                    isStreaming: false,
+                    rating: dbMessage.rating,
+                    isSynced: true
+                )
+            }
+            hasMoreMessages = persistedMessages.count == messagesPageSize
+            log("ChatProvider loaded \(messages.count) default chat messages, hasMore: \(hasMoreMessages)")
+        } catch {
+            logError("Failed to load default chat messages", error: error)
+            messages = []
+        }
+
+        isLoading = false
     }
 
     // MARK: - Send Message
@@ -606,14 +692,20 @@ class ChatProvider: ObservableObject {
             return
         }
 
-        // If no session exists, create one first
-        if currentSession == nil {
-            _ = await createNewSession()
-        }
-
-        guard let sessionId = currentSessionId else {
-            errorMessage = "Failed to create chat session"
-            return
+        // Determine session ID based on mode
+        // In default chat mode (isInDefaultChat=true): no session ID (compatible with Flutter)
+        // In session mode: require session ID
+        var sessionId: String? = nil
+        if !isInDefaultChat {
+            // Session mode - require a session
+            if currentSession == nil {
+                _ = await createNewSession()
+            }
+            guard let sid = currentSessionId else {
+                errorMessage = "Failed to create chat session"
+                return
+            }
+            sessionId = sid
         }
 
         isSending = true
@@ -622,13 +714,14 @@ class ChatProvider: ObservableObject {
         // Save user message to backend (fire and forget - don't block UI)
         let userMessageId = UUID().uuidString
         let isFirstMessage = messages.isEmpty
+        let capturedSessionId = sessionId
         Task { [weak self] in
             do {
                 let response = try await APIClient.shared.saveMessage(
                     text: trimmedText,
                     sender: "human",
                     appId: self?.selectedAppId,
-                    sessionId: sessionId
+                    sessionId: capturedSessionId
                 )
                 // Sync local message ID with server ID
                 await MainActor.run {
@@ -723,7 +816,7 @@ class ChatProvider: ObservableObject {
                             text: finalResponse,  // Save original with citation markers
                             sender: "ai",
                             appId: selectedAppId,
-                            sessionId: sessionId
+                            sessionId: capturedSessionId
                         )
                         // Sync local message with server response (like Flutter does)
                         if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
@@ -739,8 +832,9 @@ class ChatProvider: ObservableObject {
             }
 
             // Auto-generate title after first exchange (user message + AI response)
-            if isFirstMessage {
-                await generateSessionTitle(sessionId: sessionId)
+            // Only for session mode, not default chat
+            if isFirstMessage, let sid = capturedSessionId {
+                await generateSessionTitle(sessionId: sid)
             }
 
             log("Chat response complete")
@@ -854,13 +948,23 @@ class ChatProvider: ObservableObject {
 
     /// Clear current session messages (delete and create new)
     func clearChat() async {
-        // If we have a current session, delete it and create a new one
-        if let session = currentSession {
-            await deleteSession(session)
+        if isInDefaultChat {
+            // Default chat mode: delete messages without session (compatible with Flutter)
+            do {
+                _ = try await APIClient.shared.deleteMessages(appId: selectedAppId)
+                messages = []
+                log("Cleared default chat messages")
+            } catch {
+                logError("Failed to clear default chat messages", error: error)
+            }
+        } else {
+            // Session mode: delete session and create new
+            if let session = currentSession {
+                await deleteSession(session)
+            }
+            // Create a fresh session
+            _ = await createNewSession()
         }
-
-        // Create a fresh session
-        _ = await createNewSession()
 
         log("Chat cleared")
         AnalyticsManager.shared.chatCleared()
@@ -876,9 +980,16 @@ class ChatProvider: ObservableObject {
         messages = []
         sessions = []
         errorMessage = nil
+        isInDefaultChat = true
 
-        // Load sessions for the selected app
-        await fetchSessions()
+        if multiChatEnabled {
+            // Multi-chat mode: load sessions, then switch to default chat
+            await fetchSessions()
+            await switchToDefaultChat()
+        } else {
+            // Single chat mode: just load default chat messages
+            await loadDefaultChatMessages()
+        }
     }
 
     // MARK: - Session Grouping Helpers
