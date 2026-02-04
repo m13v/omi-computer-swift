@@ -3,8 +3,21 @@
 ## Project Overview
 OMI Desktop App for macOS (Swift)
 
-## Logs
+## Logs & Debugging
+
+### Local App Logs
 - **App log file**: `/private/tmp/omi.log`
+
+### User Issue Investigation
+When debugging issues for a specific user (crashes, errors, behavior), use the **user-logs skill**:
+```bash
+# Sentry (crashes, errors, breadcrumbs)
+./scripts/sentry-logs.sh <email>
+
+# PostHog (events, feature usage, app version)
+./scripts/posthog_query.py <email>
+```
+See `.claude/skills/user-logs/SKILL.md` for full documentation and API queries.
 
 ## Related Repositories
 - **OMI Main Repo**: `/Users/matthewdi/omi`
