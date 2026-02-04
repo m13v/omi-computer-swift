@@ -11,6 +11,11 @@ struct GoalsWidget: View {
     @State private var editingGoal: Goal? = nil
     @State private var showingCreateSheet = false
 
+    // AI Features
+    @State private var showingSuggestionSheet = false
+    @State private var showingAdviceSheet = false
+    @State private var selectedGoalForAdvice: Goal? = nil
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
