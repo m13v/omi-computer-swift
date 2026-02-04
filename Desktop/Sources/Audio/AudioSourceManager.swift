@@ -241,7 +241,7 @@ final class AudioSourceManager: ObservableObject {
 
         // Start system audio capture if available
         if #available(macOS 14.4, *), let systemCapture = systemAudioCaptureService as? SystemAudioCaptureService {
-            try await systemCapture.startCapture(
+            try systemCapture.startCapture(
                 onAudioChunk: { [weak self] audioData in
                     self?.audioMixer?.setSystemAudio(audioData)
                 },
@@ -354,7 +354,7 @@ final class AudioSourceManager: ObservableObject {
         buttonStreamTask = Task { [weak self] in
             do {
                 for try await buttonState in buttonStream {
-                    await self?.handleButtonEvent(buttonState)
+                    self?.handleButtonEvent(buttonState)
                 }
             } catch {
                 self?.logger.debug("Button stream ended: \(error.localizedDescription)")
