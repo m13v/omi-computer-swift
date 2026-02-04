@@ -31,14 +31,22 @@ struct AppIconView: View {
 }
 
 /// Cache for app icons to avoid repeated lookups
+/// Uses NSCache for automatic memory management under pressure
 actor AppIconCache {
     static let shared = AppIconCache()
 
-    private var cache: [String: NSImage] = [:]
+    private let cache: NSCache<NSString, NSImage> = {
+        let cache = NSCache<NSString, NSImage>()
+        cache.countLimit = 100  // Max 100 app icons cached
+        cache.totalCostLimit = 50 * 1024 * 1024  // 50MB limit
+        return cache
+    }()
 
     func getIcon(for appName: String, size: CGFloat) async -> NSImage? {
+        let cacheKey = appName as NSString
+
         // Check cache first
-        if let cached = cache[appName] {
+        if let cached = cache.object(forKey: cacheKey) {
             return cached
         }
 
@@ -48,7 +56,7 @@ actor AppIconCache {
         if let icon = icon {
             // Resize to requested size
             let resized = resizeIcon(icon, to: CGFloat(size * 2)) // 2x for retina
-            cache[appName] = resized
+            cache.setObject(resized, forKey: cacheKey)
             return resized
         }
 
