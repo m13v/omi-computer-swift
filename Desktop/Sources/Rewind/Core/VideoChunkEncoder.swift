@@ -256,6 +256,7 @@ actor VideoChunkEncoder {
         currentChunkPath = nil
         frameOffsetInChunk = 0
         currentOutputSize = nil
+        currentChunkInputSize = nil
     }
 
     // MARK: - Helpers
@@ -270,6 +271,19 @@ actor VideoChunkEncoder {
         let timeString = timeFormatter.string(from: timestamp)
 
         return "\(dayString)/chunk_\(timeString).mp4"
+    }
+
+    /// Check if aspect ratio changed significantly between two sizes
+    private func hasSignificantAspectRatioChange(from oldSize: CGSize, to newSize: CGSize) -> Bool {
+        guard oldSize.height > 0 && newSize.height > 0 else { return true }
+
+        let oldAspect = oldSize.width / oldSize.height
+        let newAspect = newSize.width / newSize.height
+
+        // Calculate the relative difference in aspect ratio
+        let aspectDiff = abs(oldAspect - newAspect) / max(oldAspect, newAspect)
+
+        return aspectDiff > aspectRatioChangeThreshold
     }
 
     private func calculateOutputSize(for size: CGSize) -> CGSize {
@@ -376,5 +390,6 @@ actor VideoChunkEncoder {
         currentChunkPath = nil
         frameOffsetInChunk = 0
         currentOutputSize = nil
+        currentChunkInputSize = nil
     }
 }
