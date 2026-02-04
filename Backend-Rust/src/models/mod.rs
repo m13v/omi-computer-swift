@@ -18,9 +18,10 @@ pub mod user_settings;
 pub use action_item::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, CreateActionItemRequest, UpdateActionItemRequest};
 pub use advice::{AdviceCategory, AdviceDB, AdviceStatusResponse, CreateAdviceRequest, GetAdviceQuery, UpdateAdviceRequest};
 pub use app::{
-    App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ListAppsQuery, SearchAppsQuery,
+    App, AppCapabilityDef, AppCategory, AppGroup, AppReview, AppSummary, AppsV2Meta, AppsV2Query,
+    AppsV2Response, CapabilityInfo, ListAppsQuery, PaginationMeta, SearchAppsQuery,
     SubmitReviewRequest, ToggleAppRequest, ToggleAppResponse, TriggerEvent, get_app_capabilities,
-    get_app_categories,
+    get_app_categories, get_v2_capabilities,
 };
 pub use category::{Category, MemoryCategory};
 pub use conversation::{
