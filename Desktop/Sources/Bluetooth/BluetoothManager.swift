@@ -145,13 +145,27 @@ final class BluetoothManager: NSObject, ObservableObject {
     /// Trigger the Bluetooth permission dialog by attempting to scan
     /// This bypasses the poweredOn guard because we need to trigger the system prompt
     func triggerPermissionPrompt() {
-        logger.info("Triggering Bluetooth permission prompt (state: \(self.bluetoothStateDescription))")
+        let authStatus = CBCentralManager.authorization
+        logger.info("Triggering Bluetooth permission prompt (state: \(self.bluetoothStateDescription), auth: \(self.authorizationDescription))")
+        log("BLUETOOTH_TRIGGER: state=\(bluetoothStateDescription), stateRaw=\(bluetoothState.rawValue), auth=\(authorizationDescription), authRaw=\(authStatus.rawValue)")
         // Attempting to scan triggers the permission dialog on macOS
         // even if Bluetooth is not yet authorized
         centralManager.scanForPeripherals(withServices: nil, options: nil)
         // Stop immediately - we just want to trigger the prompt
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             self.centralManager.stopScan()
+            log("BLUETOOTH_TRIGGER_DONE: state=\(self.bluetoothStateDescription), auth=\(self.authorizationDescription)")
+        }
+    }
+
+    /// Human-readable CBManagerAuthorization description
+    var authorizationDescription: String {
+        switch CBCentralManager.authorization {
+        case .notDetermined: return "Not Determined"
+        case .restricted: return "Restricted"
+        case .denied: return "Denied"
+        case .allowedAlways: return "Allowed Always"
+        @unknown default: return "Unknown"
         }
     }
 
@@ -175,8 +189,24 @@ extension BluetoothManager: CBCentralManagerDelegate {
 
     nonisolated func centralManagerDidUpdateState(_ central: CBCentralManager) {
         Task { @MainActor in
+            let oldState = self.bluetoothState
+            let oldStateDesc = self.bluetoothStateDescription
             self.bluetoothState = central.state
-            self.logger.info("Bluetooth state updated: \(self.bluetoothStateDescription)")
+            let newStateDesc = self.bluetoothStateDescription
+            self.logger.info("Bluetooth state updated: \(oldStateDesc) -> \(newStateDesc) (raw: \(oldState.rawValue) -> \(central.state.rawValue))")
+
+            // Log detailed state info for debugging
+            log("BLUETOOTH_STATE: \(oldStateDesc) -> \(newStateDesc), raw=\(central.state.rawValue), authorization=\(self.authorizationDescription) (\(CBCentralManager.authorization.rawValue))")
+
+            // Track state change in analytics
+            AnalyticsManager.shared.bluetoothStateChanged(
+                oldState: oldStateDesc,
+                newState: newStateDesc,
+                oldStateRaw: oldState.rawValue,
+                newStateRaw: central.state.rawValue,
+                authorization: self.authorizationDescription,
+                authorizationRaw: CBCentralManager.authorization.rawValue
+            )
 
             // Stop scanning if Bluetooth becomes unavailable
             if central.state != .poweredOn && self.isScanning {
