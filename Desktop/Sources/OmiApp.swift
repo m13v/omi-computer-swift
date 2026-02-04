@@ -5,6 +5,24 @@ import Mixpanel
 import Sentry
 import Sparkle
 
+// MARK: - Launch Mode
+/// Determines which UI to show based on command-line arguments
+enum LaunchMode: String {
+    case full = "full"       // Normal app with full sidebar
+    case rewind = "rewind"   // Rewind-only mode (no sidebar)
+
+    static func fromCommandLine() -> LaunchMode {
+        // Check for --mode=rewind argument
+        for arg in CommandLine.arguments {
+            if arg == "--mode=rewind" {
+                NSLog("OMI LaunchMode: Detected rewind mode from command line")
+                return .rewind
+            }
+        }
+        return .full
+    }
+}
+
 // Simple observable state without Firebase types
 @MainActor
 class AuthState: ObservableObject {
@@ -48,30 +66,86 @@ struct OMIApp: App {
     @StateObject private var authState = AuthState.shared
     @Environment(\.openWindow) private var openWindow
 
-    /// Window title with version number
+    /// Launch mode determined at startup from command-line arguments
+    static let launchMode = LaunchMode.fromCommandLine()
+
+    /// Window title with version number (different for rewind mode)
     private var windowTitle: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        return version.isEmpty ? "Omi" : "Omi v\(version)"
+        let baseName = Self.launchMode == .rewind ? "Omi Rewind" : "Omi"
+        return version.isEmpty ? baseName : "\(baseName) v\(version)"
+    }
+
+    /// Window size based on launch mode
+    private var defaultWindowSize: CGSize {
+        Self.launchMode == .rewind ? CGSize(width: 1000, height: 700) : CGSize(width: 1200, height: 800)
     }
 
     var body: some Scene {
-        // Main desktop window - handles sign in, onboarding, and main content
+        // Main desktop window - shows different content based on launch mode
         Window(windowTitle, id: "main") {
-            DesktopHomeView()
-                .onAppear {
-                    log("OmiApp: Main window content appeared")
+            Group {
+                if Self.launchMode == .rewind {
+                    RewindOnlyView()
+                } else {
+                    DesktopHomeView()
                 }
+            }
+            .onAppear {
+                log("OmiApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
+            }
         }
         .windowStyle(.titleBar)
-        .defaultSize(width: 1200, height: 800)
+        .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
 
-        // Menu bar
+        // Menu bar - simplified in rewind mode
         MenuBarExtra {
-            MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
+            if Self.launchMode == .rewind {
+                RewindMenuBarView(openMain: { openWindow(id: "main") })
+            } else {
+                MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
+            }
         } label: {
-            Text("Omi")
+            Text(Self.launchMode == .rewind ? "Rewind" : "Omi")
         }
         .menuBarExtraStyle(.menu)
+    }
+}
+
+// MARK: - Rewind Mode Menu Bar
+/// Simplified menu bar for rewind-only mode
+struct RewindMenuBarView: View {
+    var openMain: () -> Void = {}
+
+    var body: some View {
+        Button("Open Rewind") {
+            AnalyticsManager.shared.menuBarActionClicked(action: "open_rewind")
+            openMain()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                NSApp.activate(ignoringOtherApps: true)
+                for window in NSApp.windows {
+                    if window.title.contains("Rewind") || window.title.hasPrefix("Omi") {
+                        window.makeKeyAndOrderFront(nil)
+                        window.appearance = NSAppearance(named: .darkAqua)
+                    }
+                }
+            }
+        }
+        .keyboardShortcut("o", modifiers: .command)
+
+        Divider()
+
+        Button("Quit") {
+            AnalyticsManager.shared.menuBarActionClicked(action: "quit")
+            NSApplication.shared.terminate(nil)
+        }
+        .keyboardShortcut("q", modifiers: .command)
+
+        // Track when menu bar is opened (this view appears)
+        Color.clear.frame(height: 0)
+            .onAppear {
+                AnalyticsManager.shared.menuBarOpened()
+            }
     }
 }
 
@@ -81,7 +155,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var localHotkeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        log("AppDelegate: applicationDidFinishLaunching started")
+        let isRewindMode = OMIApp.launchMode == .rewind
+        log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
         // Initialize Sentry for crash reporting and error tracking (skip in dev builds)
@@ -109,6 +184,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize analytics (MixPanel + PostHog)
         AnalyticsManager.shared.initialize()
         AnalyticsManager.shared.appLaunched()
+        AnalyticsManager.shared.trackDisplayInfo()
         AnalyticsManager.shared.trackFirstLaunchIfNeeded()
 
         // Start resource monitoring (memory, CPU, disk)
@@ -288,6 +364,7 @@ struct MenuBarView: View {
 
     var body: some View {
         Button("Open Omi") {
+            AnalyticsManager.shared.menuBarActionClicked(action: "open_omi")
             openMain()
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 NSApp.activate(ignoringOtherApps: true)
@@ -304,6 +381,7 @@ struct MenuBarView: View {
         Divider()
 
         Button("Check for Updates...") {
+            AnalyticsManager.shared.menuBarActionClicked(action: "check_updates")
             updaterViewModel.checkForUpdates()
         }
         .disabled(!updaterViewModel.canCheckForUpdates)
@@ -320,18 +398,21 @@ struct MenuBarView: View {
             Divider()
 
             Button("Reset Onboarding...") {
+                AnalyticsManager.shared.menuBarActionClicked(action: "reset_onboarding")
                 appState.resetOnboardingAndRestart()
             }
 
             Divider()
 
             Button("Report Issue...") {
+                AnalyticsManager.shared.menuBarActionClicked(action: "report_issue")
                 FeedbackWindow.show(userEmail: authState.userEmail)
             }
 
             Divider()
 
             Button("Sign Out") {
+                AnalyticsManager.shared.menuBarActionClicked(action: "sign_out")
                 // Stop monitoring if running
                 ProactiveAssistantsPlugin.shared.stopMonitoring()
                 // Sign out
@@ -346,8 +427,15 @@ struct MenuBarView: View {
         Divider()
 
         Button("Quit") {
+            AnalyticsManager.shared.menuBarActionClicked(action: "quit")
             NSApplication.shared.terminate(nil)
         }
         .keyboardShortcut("q", modifiers: .command)
+
+        // Track when menu bar is opened (this view appears)
+        Color.clear.frame(height: 0)
+            .onAppear {
+                AnalyticsManager.shared.menuBarOpened()
+            }
     }
 }
