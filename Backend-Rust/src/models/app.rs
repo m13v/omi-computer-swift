@@ -454,6 +454,10 @@ pub struct AppsV2Query {
     pub include_reviews: bool,
 }
 
+fn default_offset() -> usize {
+    0
+}
+
 fn default_v2_limit() -> usize {
     20
 }
