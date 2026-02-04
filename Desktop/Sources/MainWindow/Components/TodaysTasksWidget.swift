@@ -10,6 +10,16 @@ struct TasksWidget: View {
         overdueTasks.count + todaysTasks.count + recentTasks.count
     }
 
+    /// Combine overdue + today tasks into one "Today" section (like Flutter)
+    private var combinedTodayTasks: [TaskActionItem] {
+        // Sort: overdue first (by due date), then today's tasks (by due date)
+        let sorted = (overdueTasks + todaysTasks).sorted { a, b in
+            guard let aDate = a.dueAt, let bDate = b.dueAt else { return a.dueAt != nil }
+            return aDate < bDate
+        }
+        return sorted
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
@@ -42,28 +52,15 @@ struct TasksWidget: View {
             } else {
                 ScrollView {
                     VStack(spacing: 16) {
-                        // Overdue section
-                        if !overdueTasks.isEmpty {
+                        // Today section (includes overdue tasks, like Flutter)
+                        if !combinedTodayTasks.isEmpty {
                             TaskSectionView(
-                                title: "Overdue",
-                                titleColor: .red,
-                                icon: "exclamationmark.triangle.fill",
-                                tasks: Array(overdueTasks.prefix(5)),
-                                totalCount: overdueTasks.count,
-                                showDueDate: true,
-                                onToggle: onToggleCompletion
-                            )
-                        }
-
-                        // Today section
-                        if !todaysTasks.isEmpty {
-                            TaskSectionView(
-                                title: "Due Today",
-                                titleColor: .orange,
+                                title: "Today",
+                                titleColor: OmiColors.textSecondary,
                                 icon: "calendar",
-                                tasks: Array(todaysTasks.prefix(5)),
-                                totalCount: todaysTasks.count,
-                                showDueDate: false,
+                                tasks: Array(combinedTodayTasks.prefix(5)),
+                                totalCount: combinedTodayTasks.count,
+                                showDueDate: true,
                                 onToggle: onToggleCompletion
                             )
                         }
@@ -153,7 +150,6 @@ struct TaskSectionView: View {
                     TaskRowView(
                         task: task,
                         showDueDate: showDueDate,
-                        isOverdue: title == "Overdue",
                         onToggle: { onToggle(task) }
                     )
                 }
@@ -171,6 +167,12 @@ struct TaskRowView: View {
     let onToggle: () -> Void
 
     @State private var isToggling = false
+
+    /// Check if the task's due date is in the past
+    private var taskIsOverdue: Bool {
+        guard let dueAt = task.dueAt else { return false }
+        return dueAt < Calendar.current.startOfDay(for: Date())
+    }
 
     init(task: TaskActionItem, showDueDate: Bool = false, isOverdue: Bool = false, onToggle: @escaping () -> Void) {
         self.task = task
@@ -193,7 +195,7 @@ struct TaskRowView: View {
             }) {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 18))
-                    .foregroundColor(task.completed ? .green : (isOverdue ? .red.opacity(0.7) : OmiColors.textTertiary))
+                    .foregroundColor(task.completed ? .green : OmiColors.textTertiary)
             }
             .buttonStyle(.plain)
             .disabled(isToggling)
@@ -203,15 +205,21 @@ struct TaskRowView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(task.description)
                     .font(.system(size: 13))
-                    .foregroundColor(task.completed ? OmiColors.textTertiary : (isOverdue ? .red : OmiColors.textPrimary))
+                    .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                     .strikethrough(task.completed)
                     .lineLimit(2)
 
-                // Due date for overdue tasks
+                // Due date chip (subtle red tint if overdue, like Flutter)
                 if showDueDate, let dueAt = task.dueAt {
                     Text(formatDueDate(dueAt))
-                        .font(.system(size: 11))
-                        .foregroundColor(.red.opacity(0.8))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(taskIsOverdue ? Color.red.opacity(0.8) : OmiColors.textTertiary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(
+                            Capsule()
+                                .fill(taskIsOverdue ? Color.red.opacity(0.12) : OmiColors.backgroundQuaternary.opacity(0.5))
+                        )
                 }
             }
 
@@ -228,7 +236,7 @@ struct TaskRowView: View {
         .padding(.horizontal, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isOverdue ? Color.red.opacity(0.08) : (task.completed ? OmiColors.backgroundQuaternary.opacity(0.3) : Color.clear))
+                .fill(task.completed ? OmiColors.backgroundQuaternary.opacity(0.3) : Color.clear)
         )
     }
 
