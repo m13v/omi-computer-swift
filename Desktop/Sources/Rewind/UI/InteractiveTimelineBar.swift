@@ -1,7 +1,8 @@
 import SwiftUI
 import AppKit
 
-/// Compact timeline bar with frame bars and mouse scroll navigation
+/// Compact timeline bar with frame bars and scroll-to-center navigation
+/// Inspired by Screenpipe's scrollable timeline approach
 struct InteractiveTimelineBar: View {
     let screenshots: [Screenshot]
     let currentIndex: Int
@@ -16,12 +17,12 @@ struct InteractiveTimelineBar: View {
     private let barHeight: CGFloat = 32
 
     // Visible window for performance
-    private let visibleCount = 150
+    private let visibleCount = 400
 
     var body: some View {
         VStack(spacing: 4) {
-            // Timeline using NSViewRepresentable for proper scroll handling
-            TimelineScrollView(
+            // Timeline using NSScrollView for natural scroll behavior
+            ScrollableTimelineView(
                 screenshots: screenshots,
                 currentIndex: currentIndex,
                 searchResultIndices: searchResultIndices,
@@ -68,9 +69,9 @@ struct InteractiveTimelineBar: View {
     }
 }
 
-// MARK: - NSView-based Timeline for proper scroll handling
+// MARK: - Scrollable Timeline with NSScrollView
 
-struct TimelineScrollView: NSViewRepresentable {
+struct ScrollableTimelineView: NSViewRepresentable {
     let screenshots: [Screenshot]
     let currentIndex: Int
     let searchResultIndices: Set<Int>?
@@ -81,8 +82,8 @@ struct TimelineScrollView: NSViewRepresentable {
     let visibleCount: Int
     let onSelect: (Int) -> Void
 
-    func makeNSView(context: Context) -> TimelineNSView {
-        let view = TimelineNSView()
+    func makeNSView(context: Context) -> TimelineScrollContainerView {
+        let view = TimelineScrollContainerView()
         view.onSelect = onSelect
         view.onHover = { index in
             DispatchQueue.main.async {
@@ -92,7 +93,9 @@ struct TimelineScrollView: NSViewRepresentable {
         return view
     }
 
-    func updateNSView(_ nsView: TimelineNSView, context: Context) {
+    func updateNSView(_ nsView: TimelineScrollContainerView, context: Context) {
+        let needsScroll = nsView.currentIndex != currentIndex
+
         nsView.screenshots = screenshots
         nsView.currentIndex = currentIndex
         nsView.searchResultIndices = searchResultIndices
@@ -102,11 +105,18 @@ struct TimelineScrollView: NSViewRepresentable {
         nsView.barHeight = barHeight
         nsView.visibleCount = visibleCount
         nsView.onSelect = onSelect
-        nsView.needsDisplay = true
+
+        nsView.updateContentSize()
+
+        if needsScroll {
+            nsView.scrollToCurrentIndex(animated: true)
+        }
     }
 }
 
-class TimelineNSView: NSView {
+// MARK: - Container View with NSScrollView
+
+class TimelineScrollContainerView: NSView {
     var screenshots: [Screenshot] = []
     var currentIndex: Int = 0
     var searchResultIndices: Set<Int>?
@@ -114,9 +124,218 @@ class TimelineNSView: NSView {
     var frameWidth: CGFloat = 4
     var frameSpacing: CGFloat = 1
     var barHeight: CGFloat = 32
-    var visibleCount: Int = 150
+    var visibleCount: Int = 400
     var onSelect: ((Int) -> Void)?
     var onHover: ((Int?) -> Void)?
+
+    private var scrollView: NSScrollView!
+    private var contentView: TimelineContentView!
+    private var centerIndicatorView: NSView!
+    private var isScrollingProgrammatically = false
+    private var lastManualScrollTime: Date = .distantPast
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupViews()
+    }
+
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupViews()
+    }
+
+    private func setupViews() {
+        // Create scroll view
+        scrollView = NSScrollView(frame: bounds)
+        scrollView.autoresizingMask = [.width, .height]
+        scrollView.hasHorizontalScroller = false
+        scrollView.hasVerticalScroller = false
+        scrollView.horizontalScrollElasticity = .allowed
+        scrollView.verticalScrollElasticity = .none
+        scrollView.drawsBackground = false
+        scrollView.backgroundColor = .clear
+
+        // Create content view
+        contentView = TimelineContentView(frame: NSRect(x: 0, y: 0, width: 1000, height: bounds.height))
+        contentView.parentContainer = self
+
+        scrollView.documentView = contentView
+        addSubview(scrollView)
+
+        // Create center indicator (fixed position)
+        centerIndicatorView = NSView(frame: NSRect(x: 0, y: 0, width: 2, height: barHeight))
+        centerIndicatorView.wantsLayer = true
+        centerIndicatorView.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.3).cgColor
+        addSubview(centerIndicatorView)
+
+        // Listen for scroll events
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewDidScroll(_:)),
+            name: NSScrollView.didLiveScrollNotification,
+            object: scrollView
+        )
+
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(scrollViewDidEndScroll(_:)),
+            name: NSScrollView.didEndLiveScrollNotification,
+            object: scrollView
+        )
+    }
+
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+
+    override func layout() {
+        super.layout()
+        scrollView.frame = bounds
+        updateContentSize()
+        positionCenterIndicator()
+    }
+
+    private func positionCenterIndicator() {
+        let centerX = bounds.width / 2 - 1
+        let bottomY = bounds.height - barHeight - 8
+        centerIndicatorView.frame = NSRect(x: centerX, y: bottomY, width: 2, height: barHeight)
+    }
+
+    func updateContentSize() {
+        let totalWidth = CGFloat(screenshots.count) * (frameWidth + frameSpacing)
+        let edgePadding = bounds.width / 2 // Padding so first/last frames can be centered
+        let contentWidth = totalWidth + edgePadding * 2
+
+        contentView.frame = NSRect(x: 0, y: 0, width: contentWidth, height: bounds.height)
+        contentView.edgePadding = edgePadding
+        contentView.screenshots = screenshots
+        contentView.currentIndex = currentIndex
+        contentView.searchResultIndices = searchResultIndices
+        contentView.hoveredIndex = hoveredIndex
+        contentView.frameWidth = frameWidth
+        contentView.frameSpacing = frameSpacing
+        contentView.barHeight = barHeight
+        contentView.visibleCount = visibleCount
+        contentView.needsDisplay = true
+    }
+
+    func scrollToCurrentIndex(animated: Bool) {
+        guard !screenshots.isEmpty else { return }
+
+        let edgePadding = bounds.width / 2
+        let frameX = edgePadding + CGFloat(currentIndex) * (frameWidth + frameSpacing)
+        let targetX = frameX - bounds.width / 2 + frameWidth / 2
+
+        isScrollingProgrammatically = true
+
+        if animated {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                scrollView.contentView.animator().setBoundsOrigin(NSPoint(x: targetX, y: 0))
+            } completionHandler: { [weak self] in
+                self?.isScrollingProgrammatically = false
+            }
+        } else {
+            scrollView.contentView.setBoundsOrigin(NSPoint(x: targetX, y: 0))
+            isScrollingProgrammatically = false
+        }
+    }
+
+    @objc private func scrollViewDidScroll(_ notification: Notification) {
+        // Update which frame is at center during scroll
+        guard !isScrollingProgrammatically else { return }
+
+        // Debounce - don't update too frequently
+        let now = Date()
+        guard now.timeIntervalSince(lastManualScrollTime) > 0.016 else { return } // ~60fps
+        lastManualScrollTime = now
+
+        let centerIndex = indexAtCenter()
+        if centerIndex != currentIndex && centerIndex >= 0 && centerIndex < screenshots.count {
+            onSelect?(centerIndex)
+        }
+
+        contentView.needsDisplay = true
+    }
+
+    @objc private func scrollViewDidEndScroll(_ notification: Notification) {
+        // Snap to nearest frame when scroll ends
+        guard !isScrollingProgrammatically else { return }
+
+        let centerIndex = indexAtCenter()
+        if centerIndex >= 0 && centerIndex < screenshots.count {
+            onSelect?(centerIndex)
+            // Smooth snap to exact center
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.scrollToCurrentIndex(animated: true)
+            }
+        }
+    }
+
+    private func indexAtCenter() -> Int {
+        let scrollX = scrollView.contentView.bounds.origin.x
+        let centerX = scrollX + bounds.width / 2
+        let edgePadding = bounds.width / 2
+
+        let frameX = centerX - edgePadding
+        let index = Int(frameX / (frameWidth + frameSpacing))
+        return max(0, min(screenshots.count - 1, index))
+    }
+
+    func handleClick(at point: CGPoint) {
+        let scrollX = scrollView.contentView.bounds.origin.x
+        let contentX = point.x + scrollX
+        let edgePadding = bounds.width / 2
+
+        let frameX = contentX - edgePadding
+        let index = Int(frameX / (frameWidth + frameSpacing))
+
+        if index >= 0 && index < screenshots.count {
+            onSelect?(index)
+        }
+    }
+
+    func handleHover(at point: CGPoint?) {
+        guard let point = point else {
+            onHover?(nil)
+            contentView.hoveredIndex = nil
+            contentView.needsDisplay = true
+            return
+        }
+
+        let scrollX = scrollView.contentView.bounds.origin.x
+        let contentX = point.x + scrollX
+        let edgePadding = bounds.width / 2
+
+        let frameX = contentX - edgePadding
+        let index = Int(frameX / (frameWidth + frameSpacing))
+
+        if index >= 0 && index < screenshots.count {
+            onHover?(index)
+            contentView.hoveredIndex = index
+        } else {
+            onHover?(nil)
+            contentView.hoveredIndex = nil
+        }
+        contentView.needsDisplay = true
+    }
+}
+
+// MARK: - Content View (draws the frames)
+
+class TimelineContentView: NSView {
+    weak var parentContainer: TimelineScrollContainerView?
+
+    var screenshots: [Screenshot] = []
+    var currentIndex: Int = 0
+    var searchResultIndices: Set<Int>?
+    var hoveredIndex: Int?
+    var frameWidth: CGFloat = 4
+    var frameSpacing: CGFloat = 1
+    var barHeight: CGFloat = 32
+    var visibleCount: Int = 400
+    var edgePadding: CGFloat = 0
 
     private var trackingArea: NSTrackingArea?
     private var tooltipWindow: NSWindow?
@@ -147,65 +366,41 @@ class TimelineNSView: NSView {
         setupTrackingArea()
     }
 
-    // Handle scroll wheel - this is the key fix
-    override func scrollWheel(with event: NSEvent) {
-        let delta = event.scrollingDeltaY + event.scrollingDeltaX
-        let framesToSkip = Int(delta * 2)
-
-        if framesToSkip != 0 {
-            let newIndex = max(0, min(screenshots.count - 1, currentIndex - framesToSkip))
-            if newIndex != currentIndex {
-                onSelect?(newIndex)
-            }
-        }
-    }
-
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
-        if let index = indexAtPoint(location) {
-            onSelect?(index)
+        let windowLocation = superview?.convert(location, to: nil) ?? location
+
+        // Convert to parent container's coordinate space
+        if let container = parentContainer {
+            let containerLocation = container.convert(windowLocation, from: nil)
+            container.handleClick(at: containerLocation)
         }
     }
 
     override func mouseMoved(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
-        let index = indexAtPoint(location)
-        onHover?(index)
 
-        if let idx = index, idx < screenshots.count {
-            showTooltip(for: screenshots[idx], at: location)
+        // Find which frame is at this location
+        let frameX = location.x - edgePadding
+        let index = Int(frameX / (frameWidth + frameSpacing))
+
+        if index >= 0 && index < screenshots.count {
+            hoveredIndex = index
+            showTooltip(for: screenshots[index], at: location)
+            parentContainer?.onHover?(index)
         } else {
+            hoveredIndex = nil
             hideTooltip()
+            parentContainer?.onHover?(nil)
         }
         needsDisplay = true
     }
 
     override func mouseExited(with event: NSEvent) {
-        onHover?(nil)
+        hoveredIndex = nil
         hideTooltip()
+        parentContainer?.onHover?(nil)
         needsDisplay = true
-    }
-
-    private func indexAtPoint(_ point: CGPoint) -> Int? {
-        let centerX = bounds.width / 2
-        let totalWidth = frameWidth + frameSpacing
-
-        // Calculate visible range
-        let halfWindow = visibleCount / 2
-        let startIndex = max(0, currentIndex - halfWindow)
-        let endIndex = min(screenshots.count, currentIndex + halfWindow)
-
-        // Calculate offset from center
-        let currentBarX = centerX - frameWidth / 2
-
-        for i in startIndex..<endIndex {
-            let offset = CGFloat(i - currentIndex)
-            let barX = currentBarX + offset * totalWidth
-            if point.x >= barX && point.x < barX + frameWidth {
-                return i
-            }
-        }
-        return nil
     }
 
     private func showTooltip(for screenshot: Screenshot, at point: CGPoint) {
@@ -243,20 +438,19 @@ class TimelineNSView: NSView {
         guard !screenshots.isEmpty else { return }
 
         let context = NSGraphicsContext.current?.cgContext
-        context?.clear(bounds)
 
-        let centerX = bounds.width / 2
-        let totalWidth = frameWidth + frameSpacing
         let bottomY = bounds.height - 8 // Leave space at bottom
+        let totalWidth = frameWidth + frameSpacing
 
-        // Calculate visible range
-        let halfWindow = visibleCount / 2
-        let startIndex = max(0, currentIndex - halfWindow)
-        let endIndex = min(screenshots.count, currentIndex + halfWindow)
+        // Calculate visible range based on dirty rect for performance
+        let visibleMinX = dirtyRect.minX
+        let visibleMaxX = dirtyRect.maxX
+
+        let startIndex = max(0, Int((visibleMinX - edgePadding) / totalWidth) - 1)
+        let endIndex = min(screenshots.count, Int((visibleMaxX - edgePadding) / totalWidth) + 2)
 
         for i in startIndex..<endIndex {
-            let offset = CGFloat(i - currentIndex)
-            let barX = centerX - frameWidth / 2 + offset * totalWidth
+            let barX = edgePadding + CGFloat(i) * totalWidth
 
             let isCurrent = i == currentIndex
             let isHovered = i == hoveredIndex
@@ -264,7 +458,7 @@ class TimelineNSView: NSView {
 
             // Bar height
             let heightRatio: CGFloat = (isCurrent || isHovered) ? 1.0 : 0.5
-            let barHeight = self.barHeight * heightRatio
+            let height = barHeight * heightRatio
 
             // Bar color
             let color: NSColor
@@ -277,7 +471,7 @@ class TimelineNSView: NSView {
             }
 
             // Draw bar
-            let barRect = NSRect(x: barX, y: bottomY - barHeight, width: frameWidth, height: barHeight)
+            let barRect = NSRect(x: barX, y: bottomY - height, width: frameWidth, height: height)
             let path = NSBezierPath(roundedRect: barRect, xRadius: 1.5, yRadius: 1.5)
             color.setFill()
             path.fill()
