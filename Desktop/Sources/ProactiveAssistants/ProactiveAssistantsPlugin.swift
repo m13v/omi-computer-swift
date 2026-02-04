@@ -471,6 +471,11 @@ public class ProactiveAssistantsPlugin: NSObject {
             consecutiveFailures += 1
             lastCaptureSucceeded = false
 
+            // Log first failure and every 5th failure to avoid spam
+            if consecutiveFailures == 1 || consecutiveFailures % 5 == 0 {
+                log("ProactiveAssistantsPlugin: Capture failed (\(consecutiveFailures) consecutive), frontmost: \(getFrontmostAppInfo())")
+            }
+
             if consecutiveFailures >= maxConsecutiveFailures {
                 handleRepeatedCaptureFailures()
             }
@@ -659,12 +664,13 @@ public class ProactiveAssistantsPlugin: NSObject {
 
     /// Handle repeated capture failures (likely permission issue)
     private func handleRepeatedCaptureFailures() {
-        log("ProactiveAssistantsPlugin: Detected \(consecutiveFailures) consecutive capture failures")
+        let frontApp = getFrontmostAppInfo()
+        log("ProactiveAssistantsPlugin: Detected \(consecutiveFailures) consecutive capture failures (frontmost: \(frontApp))")
 
         // Check if we're in a special system mode (Exposé, Mission Control, etc.)
         // These modes temporarily block screen capture but aren't permission issues
         if isInSpecialSystemMode() {
-            log("ProactiveAssistantsPlugin: System is in special mode (Exposé/Mission Control), entering recovery mode")
+            log("ProactiveAssistantsPlugin: System is in special mode, entering recovery mode instead of stopping")
             enterRecoveryMode()
             return
         }
@@ -712,6 +718,7 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Check if Dock is the frontmost app (indicates Exposé/Mission Control)
         if let frontApp = NSWorkspace.shared.frontmostApplication {
             if frontApp.bundleIdentifier == "com.apple.dock" {
+                log("SpecialModeDetection: Dock is frontmost app (Exposé/Mission Control active)")
                 return true
             }
         }
@@ -736,6 +743,7 @@ public class ProactiveAssistantsPlugin: NSObject {
                        let width = bounds["Width"],
                        let height = bounds["Height"],
                        width > 500 && height > 300 {
+                        log("SpecialModeDetection: Dock overlay window detected (\(Int(width))x\(Int(height))) - Mission Control/Exposé")
                         return true
                     }
                 }
@@ -743,11 +751,20 @@ public class ProactiveAssistantsPlugin: NSObject {
 
             // Notification Center active
             if ownerName == "NotificationCenter" {
+                log("SpecialModeDetection: Notification Center is active")
                 return true
             }
         }
 
         return false
+    }
+
+    /// Get the current frontmost app for logging
+    private func getFrontmostAppInfo() -> String {
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            return "\(frontApp.localizedName ?? "unknown") (\(frontApp.bundleIdentifier ?? "no-bundle-id"))"
+        }
+        return "none"
     }
 
     // MARK: - Recovery Mode
@@ -801,7 +818,7 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         if let _ = await screenCaptureService.captureActiveWindowAsync() {
             // Success! Exit recovery mode
-            log("ProactiveAssistantsPlugin: Recovery successful, resuming normal capture")
+            log("ProactiveAssistantsPlugin: Recovery successful after \(recoveryRetryCount)s, resuming normal capture (frontmost: \(getFrontmostAppInfo()))")
             exitRecoveryMode(success: true)
         } else {
             // Still failing
