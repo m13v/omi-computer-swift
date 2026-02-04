@@ -9,6 +9,7 @@ pub mod conversation;
 pub mod focus_session;
 pub mod folder;
 pub mod goal;
+pub mod knowledge_graph;
 pub mod memory;
 pub mod message;
 pub mod persona;
@@ -64,4 +65,9 @@ pub use persona::{
     CheckUsernameQuery, CreatePersonaRequest, GeneratePromptRequest, GeneratePromptResponse,
     PersonaDB, PersonaResponse, PersonaStatusResponse, UpdatePersonaRequest,
     UsernameAvailableResponse,
+};
+pub use knowledge_graph::{
+    ExtractedEntity, ExtractedKnowledge, ExtractedRelationship, KnowledgeGraphEdge,
+    KnowledgeGraphNode, KnowledgeGraphResponse, KnowledgeGraphStatusResponse, NodeType,
+    RebuildGraphRequest, RebuildGraphResponse,
 };
