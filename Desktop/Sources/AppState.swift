@@ -148,6 +148,9 @@ class AppState: ObservableObject {
     // BLE device button handling
     private var buttonStreamTask: Task<Void, Never>?
 
+    // Combine subscriptions
+    private var bluetoothStateCancellable: AnyCancellable?
+
     init() {
         // Load API key from environment or .env file
         loadEnvironment()
@@ -186,6 +189,20 @@ class AppState: ObservableObject {
         if #available(macOS 14.4, *) {
             isSystemAudioSupported = true
         }
+
+        // Subscribe to Bluetooth state changes for reactive permission updates
+        bluetoothStateCancellable = BluetoothManager.shared.$bluetoothState
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state in
+                guard let self = self else { return }
+                let oldValue = self.hasBluetoothPermission
+                // poweredOn = ready to use, poweredOff = allowed but BT is off
+                let newValue = state == .poweredOn || state == .poweredOff
+                if newValue != oldValue {
+                    log("Bluetooth permission changed via subscription: \(oldValue) -> \(newValue), state=\(BluetoothManager.shared.bluetoothStateDescription)")
+                    self.hasBluetoothPermission = newValue
+                }
+            }
     }
 
     /// Setup observers for app quit and system sleep to finalize conversations
@@ -419,19 +436,26 @@ class AppState: ObservableObject {
     /// Bluetooth is considered "granted" if state is poweredOn or poweredOff (allowed but BT off)
     func checkBluetoothPermission() {
         let state = BluetoothManager.shared.bluetoothState
+        let oldValue = hasBluetoothPermission
         // poweredOn = ready to use, poweredOff = allowed but BT is off
         // unauthorized = denied
-        hasBluetoothPermission = state == .poweredOn || state == .poweredOff
+        let newValue = state == .poweredOn || state == .poweredOff
+        if newValue != oldValue {
+            log("Bluetooth permission changed: \(oldValue) -> \(newValue), state=\(BluetoothManager.shared.bluetoothStateDescription)")
+        }
+        hasBluetoothPermission = newValue
     }
 
     /// Trigger Bluetooth permission by attempting to scan
     /// On macOS, the permission dialog only appears when actually using Bluetooth
     func triggerBluetoothPermission() {
+        log("triggerBluetoothPermission: Starting, current state=\(BluetoothManager.shared.bluetoothStateDescription)")
         // Trigger the permission prompt by attempting to scan
         // This bypasses state checks because we specifically want the system dialog
         BluetoothManager.shared.triggerPermissionPrompt()
         // Check permission state after a delay to allow user to respond
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            log("triggerBluetoothPermission: Checking after 1s delay, state=\(BluetoothManager.shared.bluetoothStateDescription)")
             self.checkBluetoothPermission()
         }
     }
