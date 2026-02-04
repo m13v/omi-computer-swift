@@ -161,7 +161,7 @@ struct RewindPage: View {
             return
         }
 
-        let sensitivity: CGFloat = 3.0
+        let sensitivity: CGFloat = 0.5  // Reduced from 3.0 - was too fast
         let framesToMove = Int(-delta * sensitivity)
 
         if framesToMove != 0 {
@@ -745,15 +745,12 @@ struct RewindPage: View {
             let image = try await RewindStorage.shared.loadScreenshotImage(for: screenshot)
             // Validate image dimensions
             if image.size.width <= 0 || image.size.height <= 0 {
-                logError("RewindPage: Loaded invalid image at index \(index) - size=\(image.size)")
+                logError("RewindPage: Loaded invalid image at index \(index) - size=\(image.size), videoChunk=\(screenshot.videoChunkPath ?? "nil"), frameOffset=\(screenshot.frameOffset ?? -1)")
                 return nil
             }
             return image
         } catch {
-            // Only log first few failures to avoid spam
-            if index < 3 {
-                logError("RewindPage: Failed to load frame at index \(index): \(error.localizedDescription)")
-            }
+            logError("RewindPage: Failed to load frame at index \(index): \(error.localizedDescription), videoChunk=\(screenshot.videoChunkPath ?? "nil"), frameOffset=\(screenshot.frameOffset ?? -1)")
             return nil
         }
     }
