@@ -127,6 +127,9 @@ struct DesktopHomeView: View {
                         DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
                     }
                 }
+                .id(selectedIndex)
+                .transition(.opacity.combined(with: .move(edge: .trailing)))
+                .animation(.easeInOut(duration: 0.2), value: selectedIndex)
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .padding(12)
