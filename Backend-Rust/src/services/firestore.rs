@@ -432,7 +432,7 @@ impl FirestoreService {
             .into_iter()
             .filter_map(|doc| {
                 doc.get("document")
-                    .and_then(|d| match self.parse_conversation(d) {
+                    .and_then(|d| match self.parse_conversation(d, uid) {
                         Ok(conv) => Some(conv),
                         Err(e) => {
                             tracing::warn!("Failed to parse conversation: {}", e);
@@ -580,7 +580,7 @@ impl FirestoreService {
         }
 
         let doc: Value = response.json().await?;
-        let conversation = self.parse_conversation(&doc)?;
+        let conversation = self.parse_conversation(&doc, uid)?;
         Ok(Some(conversation))
     }
 
@@ -2296,31 +2296,82 @@ impl FirestoreService {
         self.get_apps(uid, limit, offset, None, None).await
     }
 
-    /// Get popular apps (sorted by installs and rating)
+    /// Get popular apps (apps marked with is_popular=true, matching Python backend behavior)
     pub async fn get_popular_apps(
         &self,
         uid: &str,
         limit: usize,
     ) -> Result<Vec<AppSummary>, Box<dyn std::error::Error + Send + Sync>> {
-        let mut apps = self.get_apps(uid, limit * 2, 0, None, None).await?;
+        let parent = self.base_url();
 
-        // Sort by popularity score: ((rating_avg / 5)^2) * log(1 + rating_count) * sqrt(log(1 + installs))
-        apps.sort_by(|a, b| {
-            let score_a = Self::calculate_popularity_score(a);
-            let score_b = Self::calculate_popularity_score(b);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+        // Query for apps where approved=true AND is_popular=true (matching Python backend)
+        let filters = vec![
+            json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "approved"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": true}
+                }
+            }),
+            json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "is_popular"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": true}
+                }
+            }),
+        ];
+
+        let where_clause = json!({
+            "compositeFilter": {
+                "op": "AND",
+                "filters": filters
+            }
         });
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": APPS_COLLECTION}],
+                "where": where_clause
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            tracing::error!("Firestore query error for popular apps: {}", error_text);
+            return Ok(vec![]);
+        }
+
+        let results: Vec<Value> = response.json().await?;
+
+        // Get user's enabled apps to mark them
+        let enabled_app_ids = self.get_enabled_app_ids(uid).await.unwrap_or_default();
+
+        let mut apps: Vec<AppSummary> = results
+            .into_iter()
+            .filter_map(|doc| {
+                doc.get("document")
+                    .and_then(|d| self.parse_app_summary(d).ok())
+            })
+            .collect();
+
+        // Mark enabled apps
+        for app in &mut apps {
+            app.enabled = enabled_app_ids.contains(&app.id);
+        }
+
+        // Sort by installs descending (matching Python backend behavior)
+        apps.sort_by(|a, b| b.installs.cmp(&a.installs));
 
         apps.truncate(limit);
         Ok(apps)
-    }
-
-    fn calculate_popularity_score(app: &AppSummary) -> f64 {
-        let rating = app.rating_avg.unwrap_or(3.0);
-        let rating_factor = (rating / 5.0).powi(2);
-        let count_factor = (1.0 + app.rating_count as f64).ln();
-        let installs_factor = (1.0 + app.installs as f64).ln().sqrt();
-        rating_factor * count_factor * installs_factor
     }
 
     /// Search apps with filters
@@ -2832,9 +2883,11 @@ impl FirestoreService {
     // =========================================================================
 
     /// Parse Firestore document to Conversation
+    /// Decrypts transcript_segments and photos if data_protection_level is "enhanced"
     fn parse_conversation(
         &self,
         doc: &Value,
+        uid: &str,
     ) -> Result<Conversation, Box<dyn std::error::Error + Send + Sync>> {
         let fields = doc
             .get("fields")
@@ -2871,10 +2924,10 @@ impl FirestoreService {
             is_locked: self.parse_bool(fields, "is_locked").unwrap_or(false),
             folder_id: self.parse_string(fields, "folder_id"),
             structured: self.parse_structured(fields)?,
-            transcript_segments: self.parse_transcript_segments(fields)?,
+            transcript_segments: self.parse_transcript_segments(fields, uid)?,
             apps_results,
             geolocation: self.parse_geolocation(fields),
-            photos: self.parse_photos(fields),
+            photos: self.parse_photos(fields, uid),
             input_device_name: self.parse_string(fields, "input_device_name"),
         })
     }
@@ -3066,7 +3119,8 @@ impl FirestoreService {
     }
 
     /// Parse photos array from conversation fields
-    fn parse_photos(&self, fields: &Value) -> Vec<crate::models::ConversationPhoto> {
+    /// Decrypts base64 field if data_protection_level is "enhanced"
+    fn parse_photos(&self, fields: &Value, uid: &str) -> Vec<crate::models::ConversationPhoto> {
         let array = match fields.get("photos")
             .and_then(|a| a.get("arrayValue"))
             .and_then(|a| a.get("values"))
@@ -3079,27 +3133,152 @@ impl FirestoreService {
         array.iter().filter_map(|item| {
             let map_fields = item.get("mapValue")?.get("fields")?;
             let id = self.parse_string(map_fields, "id");
-            let base64 = self.parse_string(map_fields, "base64").unwrap_or_default();
+            let mut base64 = self.parse_string(map_fields, "base64").unwrap_or_default();
             let description = self.parse_string(map_fields, "description");
             let created_at = self.parse_timestamp_optional(map_fields, "created_at").unwrap_or_else(Utc::now);
             let discarded = self.parse_bool(map_fields, "discarded").unwrap_or(false);
+
+            // Check if photo is encrypted (data_protection_level = "enhanced")
+            let data_protection_level = self.parse_string(map_fields, "data_protection_level");
+            if data_protection_level.as_deref() == Some("enhanced") {
+                if let Some(ref secret) = self.encryption_secret {
+                    base64 = encryption::decrypt(&base64, uid, secret);
+                }
+            }
+
             Some(crate::models::ConversationPhoto { id, base64, description, created_at, discarded })
         }).collect()
     }
 
     /// Parse transcript segments
-    /// Handles both plain arrays and zlib-compressed bytes (from OMI device).
-    /// Encrypted segments (enhanced protection) return empty vec - not yet supported.
+    /// Handles plain arrays, zlib-compressed bytes (from OMI device), and encrypted segments.
+    /// For encrypted segments (data_protection_level = "enhanced"):
+    ///   - Decrypts the base64 string → hex string
+    ///   - Converts hex to bytes
+    ///   - Decompresses with zlib
+    ///   - Parses JSON array
     fn parse_transcript_segments(
         &self,
         fields: &Value,
+        uid: &str,
     ) -> Result<Vec<TranscriptSegment>, Box<dyn std::error::Error + Send + Sync>> {
+        use flate2::read::ZlibDecoder;
+        use std::io::Read;
+
         let transcript_field = fields.get("transcript_segments");
 
-        // Check if transcript is a string (encrypted) - not yet supported
-        if let Some(_string_val) = transcript_field.and_then(|t| t.get("stringValue")) {
-            tracing::debug!("Transcript segments are encrypted (string format), returning empty");
-            return Ok(vec![]);
+        // Check if transcript is a string (encrypted for enhanced protection)
+        if let Some(string_val) = transcript_field.and_then(|t| t.get("stringValue")).and_then(|s| s.as_str()) {
+            let data_protection_level = self.parse_string(fields, "data_protection_level");
+            if data_protection_level.as_deref() == Some("enhanced") {
+                if let Some(ref secret) = self.encryption_secret {
+                    // Decrypt the encrypted string
+                    let decrypted_payload = encryption::decrypt(string_val, uid, secret);
+
+                    // Check if compression is used (should always be true for enhanced)
+                    let is_compressed = self.parse_bool(fields, "transcript_segments_compressed").unwrap_or(false);
+
+                    if is_compressed {
+                        // Decrypted payload is a hex string, convert to bytes
+                        match hex::decode(&decrypted_payload) {
+                            Ok(compressed_bytes) => {
+                                // Decompress with zlib
+                                let mut decoder = ZlibDecoder::new(&compressed_bytes[..]);
+                                let mut decompressed = String::new();
+                                if let Err(e) = decoder.read_to_string(&mut decompressed) {
+                                    tracing::warn!("Failed to decompress encrypted transcript segments: {}", e);
+                                    return Ok(vec![]);
+                                }
+
+                                // Parse JSON array of segments
+                                match serde_json::from_str::<Vec<serde_json::Value>>(&decompressed) {
+                                    Ok(segments) => {
+                                        let result: Vec<TranscriptSegment> = segments
+                                            .iter()
+                                            .filter_map(|seg| {
+                                                Some(TranscriptSegment {
+                                                    text: seg.get("text")?.as_str()?.to_string(),
+                                                    speaker: seg.get("speaker")
+                                                        .and_then(|s| s.as_str())
+                                                        .unwrap_or("SPEAKER_00")
+                                                        .to_string(),
+                                                    speaker_id: seg.get("speaker_id")
+                                                        .and_then(|s| s.as_i64())
+                                                        .unwrap_or(0) as i32,
+                                                    is_user: seg.get("is_user")
+                                                        .and_then(|s| s.as_bool())
+                                                        .unwrap_or(false),
+                                                    start: seg.get("start")
+                                                        .and_then(|s| s.as_f64())
+                                                        .unwrap_or(0.0),
+                                                    end: seg.get("end")
+                                                        .and_then(|s| s.as_f64())
+                                                        .unwrap_or(0.0),
+                                                })
+                                            })
+                                            .collect();
+                                        tracing::debug!("Decrypted and decompressed {} transcript segments for user {}", result.len(), uid);
+                                        return Ok(result);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!("Failed to parse decrypted transcript segments JSON: {}", e);
+                                        return Ok(vec![]);
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to decode hex from decrypted transcript: {}", e);
+                                return Ok(vec![]);
+                            }
+                        }
+                    } else {
+                        // Old format: decrypted payload is JSON directly (backward compatibility)
+                        match serde_json::from_str::<Vec<serde_json::Value>>(&decrypted_payload) {
+                            Ok(segments) => {
+                                let result: Vec<TranscriptSegment> = segments
+                                    .iter()
+                                    .filter_map(|seg| {
+                                        Some(TranscriptSegment {
+                                            text: seg.get("text")?.as_str()?.to_string(),
+                                            speaker: seg.get("speaker")
+                                                .and_then(|s| s.as_str())
+                                                .unwrap_or("SPEAKER_00")
+                                                .to_string(),
+                                            speaker_id: seg.get("speaker_id")
+                                                .and_then(|s| s.as_i64())
+                                                .unwrap_or(0) as i32,
+                                            is_user: seg.get("is_user")
+                                                .and_then(|s| s.as_bool())
+                                                .unwrap_or(false),
+                                            start: seg.get("start")
+                                                .and_then(|s| s.as_f64())
+                                                .unwrap_or(0.0),
+                                            end: seg.get("end")
+                                                .and_then(|s| s.as_f64())
+                                                .unwrap_or(0.0),
+                                        })
+                                    })
+                                    .collect();
+                                tracing::debug!("Decrypted {} transcript segments (uncompressed) for user {}", result.len(), uid);
+                                return Ok(result);
+                            }
+                            Err(e) => {
+                                tracing::warn!("Failed to parse decrypted transcript segments JSON: {}", e);
+                                return Ok(vec![]);
+                            }
+                        }
+                    }
+                } else {
+                    tracing::debug!(
+                        "Transcript segments have enhanced protection but no encryption secret configured"
+                    );
+                    return Ok(vec![]);
+                }
+            } else {
+                // String but not enhanced - shouldn't happen, but return empty
+                tracing::debug!("Transcript segments are string format but not enhanced protection");
+                return Ok(vec![]);
+            }
         }
 
         // Check if transcript is bytes (zlib compressed) - decompress it
@@ -3128,14 +3307,14 @@ impl FirestoreService {
             Ok(segs
                 .iter()
                 .filter_map(|seg| {
-                    let fields = seg.get("mapValue")?.get("fields")?;
+                    let seg_fields = seg.get("mapValue")?.get("fields")?;
                     Some(TranscriptSegment {
-                        text: self.parse_string(fields, "text").unwrap_or_default(),
-                        speaker: self.parse_string(fields, "speaker").unwrap_or_else(|| "SPEAKER_00".to_string()),
-                        speaker_id: self.parse_int(fields, "speaker_id").unwrap_or(0),
-                        is_user: self.parse_bool(fields, "is_user").unwrap_or(false),
-                        start: self.parse_float(fields, "start").unwrap_or(0.0),
-                        end: self.parse_float(fields, "end").unwrap_or(0.0),
+                        text: self.parse_string(seg_fields, "text").unwrap_or_default(),
+                        speaker: self.parse_string(seg_fields, "speaker").unwrap_or_else(|| "SPEAKER_00".to_string()),
+                        speaker_id: self.parse_int(seg_fields, "speaker_id").unwrap_or(0),
+                        is_user: self.parse_bool(seg_fields, "is_user").unwrap_or(false),
+                        start: self.parse_float(seg_fields, "start").unwrap_or(0.0),
+                        end: self.parse_float(seg_fields, "end").unwrap_or(0.0),
                     })
                 })
                 .collect())
@@ -4461,18 +4640,31 @@ impl FirestoreService {
                 .unwrap_or(0)
         });
 
+        // For app_id: fallback to plugin_id (old Flutter format)
+        let app_id = self
+            .parse_string(fields, "app_id")
+            .or_else(|| self.parse_string(fields, "plugin_id"));
+
+        // For title: use explicit title, or "Omi" for main chat (app_id=null), or "New Chat"
+        // This helps users recognize their main Omi chat from old Flutter sessions
+        let title = self.parse_string(fields, "title").unwrap_or_else(|| {
+            if app_id.is_none() {
+                "Omi".to_string()
+            } else {
+                "New Chat".to_string()
+            }
+        });
+
         Ok(ChatSessionDB {
             id,
-            title: self.parse_string(fields, "title").unwrap_or_else(|| "New Chat".to_string()),
+            title,
             preview: self.parse_string(fields, "preview"),
             created_at,
             // For updated_at: fallback to created_at (old sessions don't have updated_at)
             updated_at: self
                 .parse_timestamp_optional(fields, "updated_at")
                 .unwrap_or(created_at),
-            // For app_id: fallback to plugin_id (old Flutter format)
-            app_id: self.parse_string(fields, "app_id")
-                .or_else(|| self.parse_string(fields, "plugin_id")),
+            app_id,
             message_count,
             starred: self.parse_bool(fields, "starred").unwrap_or(false),
         })
@@ -5058,10 +5250,11 @@ impl FirestoreService {
             }))
         };
 
-        // Build structured query - order by created_at ascending for chat history
+        // Build structured query - order by created_at descending to get most recent messages first
+        // The UI will reverse to display in chronological order
         let mut structured_query = json!({
             "from": [{"collectionId": MESSAGES_SUBCOLLECTION}],
-            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "ASCENDING"}],
+            "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
             "limit": limit,
             "offset": offset
         });
@@ -5613,11 +5806,16 @@ impl FirestoreService {
         uid: &str,
         limit: usize,
     ) -> Result<Vec<GoalDB>, Box<dyn std::error::Error + Send + Sync>> {
+        // Query the user's goals subcollection directly
         let url = format!(
-            "{}:runQuery",
-            self.base_url()
+            "{}/{}/{}:runQuery",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid
         );
 
+        // Note: Don't use orderBy with where filter on different fields - requires composite index
+        // Instead, we sort in Rust after fetching (like Python backend does)
         let query = json!({
             "structuredQuery": {
                 "from": [{"collectionId": GOALS_SUBCOLLECTION}],
@@ -5627,11 +5825,8 @@ impl FirestoreService {
                         "op": "EQUAL",
                         "value": {"booleanValue": true}
                     }
-                },
-                "orderBy": [{"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}],
-                "limit": limit
-            },
-            "parent": format!("projects/{}/databases/(default)/documents/{}/{}", self.project_id, USERS_COLLECTION, uid)
+                }
+            }
         });
 
         let response = self
@@ -5656,6 +5851,10 @@ impl FirestoreService {
                 }
             }
         }
+
+        // Sort by created_at descending (newest first) and apply limit
+        goals.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        goals.truncate(limit);
 
         tracing::info!("Found {} active goals for user {}", goals.len(), uid);
         Ok(goals)
