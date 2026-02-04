@@ -153,6 +153,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sentryHeartbeatTimer: Timer?
     private var globalHotkeyMonitor: Any?
     private var localHotkeyMonitor: Any?
+    private var windowObservers: [NSObjectProtocol] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
@@ -217,6 +218,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Register global hotkey for Rewind (Cmd+Shift+Space)
         setupGlobalHotkeys()
 
+        // Set up dock icon visibility based on window state
+        setupDockIconObservers()
+
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
 
@@ -231,6 +235,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     foundOmiWindow = true
                     window.makeKeyAndOrderFront(nil)
                     window.appearance = NSAppearance(named: .darkAqua)
+                    // Show dock icon when main window is visible
+                    NSApp.setActivationPolicy(.regular)
+                    log("AppDelegate: Dock icon shown on launch")
                 }
             }
             if !foundOmiWindow {
@@ -306,7 +313,89 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate: Hotkey is Ctrl+Option+R (⌃⌥R)")
     }
 
+    /// Set up observers to show/hide dock icon when main window appears/disappears
+    private func setupDockIconObservers() {
+        // Show dock icon when a window becomes visible
+        let showObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didBecomeKeyNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let window = notification.object as? NSWindow,
+                  window.title.hasPrefix("Omi") else { return }
+            self?.showDockIcon()
+        }
+        windowObservers.append(showObserver)
+
+        // Hide dock icon when window closes (check if any Omi windows remain)
+        let closeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let window = notification.object as? NSWindow,
+                  window.title.hasPrefix("Omi") else { return }
+            // Delay check to allow window to fully close
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self?.checkAndHideDockIconIfNeeded()
+            }
+        }
+        windowObservers.append(closeObserver)
+
+        // Also hide dock icon when window is minimized
+        let minimizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didMiniaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let window = notification.object as? NSWindow,
+                  window.title.hasPrefix("Omi") else { return }
+            self?.checkAndHideDockIconIfNeeded()
+        }
+        windowObservers.append(minimizeObserver)
+
+        // Show dock icon when window is restored from minimize
+        let deminiaturizeObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didDeminiaturizeNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let window = notification.object as? NSWindow,
+                  window.title.hasPrefix("Omi") else { return }
+            self?.showDockIcon()
+        }
+        windowObservers.append(deminiaturizeObserver)
+
+        log("AppDelegate: Dock icon observers set up")
+    }
+
+    /// Show the app icon in the Dock
+    private func showDockIcon() {
+        if NSApp.activationPolicy() != .regular {
+            NSApp.setActivationPolicy(.regular)
+            log("AppDelegate: Dock icon shown")
+        }
+    }
+
+    /// Hide the app icon from the Dock (if no Omi windows are visible)
+    private func checkAndHideDockIconIfNeeded() {
+        // Check if any Omi windows are still visible (not minimized, not closed)
+        let hasVisibleOmiWindow = NSApp.windows.contains { window in
+            window.title.hasPrefix("Omi") && window.isVisible && !window.isMiniaturized
+        }
+
+        if !hasVisibleOmiWindow && NSApp.activationPolicy() != .accessory {
+            NSApp.setActivationPolicy(.accessory)
+            log("AppDelegate: Dock icon hidden (no visible Omi windows)")
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
+        // Remove window observers
+        for observer in windowObservers {
+            NotificationCenter.default.removeObserver(observer)
+        }
+        windowObservers.removeAll()
         // Remove hotkey monitors
         if let monitor = globalHotkeyMonitor {
             NSEvent.removeMonitor(monitor)
