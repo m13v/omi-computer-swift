@@ -54,7 +54,11 @@ struct DesktopHomeView: View {
                     }
                     .task {
                         // Trigger eager data loading when main content appears
-                        await viewModelContainer.loadAllData()
+                        // Load conversations/folders in parallel with other data
+                        async let vmLoad: Void = viewModelContainer.loadAllData()
+                        async let conversations: Void = appState.loadConversations()
+                        async let folders: Void = appState.loadFolders()
+                        _ = await (vmLoad, conversations, folders)
                     }
             }
         }
