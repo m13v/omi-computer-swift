@@ -51,7 +51,7 @@ enum SidebarNavItem: Int, CaseIterable {
 
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
-        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps, .device]
+        [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps]
     }
 }
 
@@ -63,6 +63,9 @@ struct SidebarView: View {
     @ObservedObject private var adviceStorage = AdviceStorage.shared
     @ObservedObject private var focusStorage = FocusStorage.shared
     @ObservedObject private var deviceProvider = DeviceProvider.shared
+
+    // State for Get Omi Widget (shown when no device is paired, dismissible)
+    @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
 
     // Toggle states for quick controls
     @AppStorage("screenAnalysisEnabled") private var screenAnalysisEnabled = true
@@ -164,11 +167,15 @@ struct SidebarView: View {
                     // Subscription upgrade banner
                     // upgradeToPro
 
-                    // Device status widget or Connect Device widget
-                    Spacer().frame(height: 12)
+                    // Device status widget (when device paired/connected)
                     if deviceProvider.isConnected || deviceProvider.pairedDevice != nil {
+                        Spacer().frame(height: 12)
                         deviceStatusWidget
-                    } else {
+                    }
+
+                    // Get Omi promo widget (dismissible sales link)
+                    if showGetOmiWidget && deviceProvider.pairedDevice == nil {
+                        Spacer().frame(height: 12)
                         getOmiWidget
                     }
 
@@ -388,12 +395,14 @@ struct SidebarView: View {
 //        .help("Upgrade to Pro")
 //    }
 
-    // MARK: - Get Omi Widget
+    // MARK: - Get Omi Widget (Sales link to omi.me)
     private var getOmiWidget: some View {
-        Button(action: {
-            // Navigate to Device Settings page to pair a device
-            selectedIndex = SidebarNavItem.device.rawValue
-        }) {
+        HStack(spacing: 0) {
+            Button(action: {
+                if let url = URL(string: "https://www.omi.me") {
+                    NSWorkspace.shared.open(url)
+                }
+            }) {
             HStack(spacing: 12) {
                 // Omi device image
                 if let deviceUrl = Bundle.resourceBundle.url(forResource: "omi-with-rope-no-padding", withExtension: "webp"),
@@ -413,11 +422,11 @@ struct SidebarView: View {
                 if !isCollapsed {
                     // Text content
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Connect Device")
+                        Text("Get Omi Device")
                             .font(.system(size: 13, weight: .semibold))
                             .foregroundColor(OmiColors.textPrimary)
 
-                        Text("Pair your wearable")
+                        Text("Your wearable AI companion")
                             .font(.system(size: 11))
                             .foregroundColor(OmiColors.textTertiary.opacity(0.8))
                     }
@@ -439,15 +448,34 @@ struct SidebarView: View {
                             .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
                     )
             )
+            }
+            .buttonStyle(.plain)
+            .help(isCollapsed ? "Get Omi Device" : "")
+
+            // Dismiss button
+            if !isCollapsed {
+                Button(action: {
+                    withAnimation {
+                        showGetOmiWidget = false
+                    }
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+                .help("Dismiss")
+            }
         }
-        .buttonStyle(.plain)
-        .help(isCollapsed ? "Connect Device" : "")
     }
 
     // MARK: - Device Status Widget
     private var deviceStatusWidget: some View {
         Button(action: {
-            selectedIndex = SidebarNavItem.device.rawValue
+            // Navigate to Settings > Device tab
+            SettingsContentView.pendingSection = SettingsContentView.SettingsSection.device
+            selectedIndex = SidebarNavItem.settings.rawValue
         }) {
             HStack(spacing: 12) {
                 // Device icon with status indicator
