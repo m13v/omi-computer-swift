@@ -1215,10 +1215,16 @@ struct OnboardingView: View {
             // Bluetooth step
             if appState.hasBluetoothPermission {
                 AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Bluetooth")
-                AnalyticsManager.shared.permissionGranted(permission: "bluetooth")
+                AnalyticsManager.shared.permissionGranted(permission: "bluetooth", extraProperties: [
+                    "bluetooth_state": BluetoothManager.shared.bluetoothStateDescription,
+                    "bluetooth_state_raw": BluetoothManager.shared.bluetoothState.rawValue
+                ])
                 currentStep += 1
             } else {
-                AnalyticsManager.shared.permissionRequested(permission: "bluetooth")
+                AnalyticsManager.shared.permissionRequested(permission: "bluetooth", extraProperties: [
+                    "bluetooth_state": BluetoothManager.shared.bluetoothStateDescription,
+                    "bluetooth_state_raw": BluetoothManager.shared.bluetoothState.rawValue
+                ])
                 hasTriggeredBluetooth = true
                 appState.triggerBluetoothPermission()
             }
