@@ -4,6 +4,9 @@ set -e
 # Clear system OPENAI_API_KEY so .env takes precedence
 unset OPENAI_API_KEY
 
+# Use Xcode's default toolchain to match the SDK version
+unset TOOLCHAINS
+
 # Timing utilities
 SCRIPT_START_TIME=$(date +%s.%N)
 STEP_START_TIME=$SCRIPT_START_TIME
