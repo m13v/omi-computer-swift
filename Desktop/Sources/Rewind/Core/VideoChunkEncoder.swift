@@ -14,7 +14,7 @@ actor VideoChunkEncoder {
 
     private let chunkDuration: TimeInterval = 60.0 // 60-second chunks
     private let frameRate: Double = 1.0 // 1 FPS (matching current capture rate)
-    private let maxResolution: CGFloat = 1024 // Maximum dimension
+    private let maxResolution: CGFloat = 3000 // Maximum dimension
 
     // MARK: - State
 
@@ -137,7 +137,7 @@ actor VideoChunkEncoder {
 
         let fullPath = videosDir.appendingPathComponent(relativePath)
 
-        // Calculate output size (maintain aspect ratio, max 1024)
+        // Calculate output size (maintain aspect ratio, max 3000)
         let outputSize = calculateOutputSize(for: imageSize)
         currentOutputSize = outputSize
 
