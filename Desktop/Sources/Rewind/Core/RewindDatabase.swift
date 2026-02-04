@@ -19,6 +19,9 @@ actor RewindDatabase {
 
     private var dbQueue: DatabaseQueue?
 
+    /// Track if we recovered from corruption (for UI notification)
+    private(set) var didRecoverFromCorruption = false
+
     // MARK: - Initialization
 
     private init() {}
@@ -41,16 +44,43 @@ actor RewindDatabase {
         let dbPath = omiDir.appendingPathComponent("omi.db").path
         log("RewindDatabase: Opening database at \(dbPath)")
 
+        // Check for and handle database corruption before opening
+        if FileManager.default.fileExists(atPath: dbPath) {
+            let isCorrupted = await checkDatabaseCorruption(at: dbPath)
+            if isCorrupted {
+                log("RewindDatabase: Database corruption detected, attempting recovery...")
+                try await handleCorruptedDatabase(at: dbPath, in: omiDir)
+                didRecoverFromCorruption = true
+            }
+        }
+
         var config = Configuration()
         config.prepareDatabase { db in
+            // Enable WAL mode for better crash resistance and performance
+            // WAL mode keeps writes in a separate file, making corruption much less likely
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+
+            // synchronous = NORMAL is safe with WAL and much faster than FULL
+            try db.execute(sql: "PRAGMA synchronous = NORMAL")
+
             // Enable foreign keys
             try db.execute(sql: "PRAGMA foreign_keys = ON")
+
+            // Set busy timeout to avoid "database is locked" errors (5 seconds)
+            try db.execute(sql: "PRAGMA busy_timeout = 5000")
+
+            // Auto-checkpoint every 1000 pages (~4MB) for WAL
+            try db.execute(sql: "PRAGMA wal_autocheckpoint = 1000")
         }
 
         let queue = try DatabaseQueue(path: dbPath, configuration: config)
         dbQueue = queue
 
         try migrate(queue)
+
+        // Verify database integrity after migration
+        try verifyDatabaseIntegrity(queue)
+
         log("RewindDatabase: Initialized successfully")
 
         // Run data migrations in background (non-blocking)
@@ -60,6 +90,106 @@ actor RewindDatabase {
             } catch {
                 log("RewindDatabase: OCR data migration failed: \(error)")
             }
+        }
+    }
+
+    // MARK: - Corruption Detection & Recovery
+
+    /// Check if database file is corrupted using quick_check
+    /// Returns true if corrupted, false if OK
+    private func checkDatabaseCorruption(at path: String) async -> Bool {
+        // Try to open database with minimal config just for integrity check
+        var config = Configuration()
+        config.readonly = true
+
+        do {
+            let testQueue = try DatabaseQueue(path: path, configuration: config)
+            let result = try testQueue.read { db -> String in
+                try String.fetchOne(db, sql: "PRAGMA quick_check(1)") ?? "ok"
+            }
+            return result.lowercased() != "ok"
+        } catch {
+            // If we can't even open the database, it's definitely corrupted
+            log("RewindDatabase: Database failed to open for integrity check: \(error)")
+            return true
+        }
+    }
+
+    /// Handle corrupted database: backup and recreate
+    private func handleCorruptedDatabase(at dbPath: String, in omiDir: URL) async throws {
+        let fileManager = FileManager.default
+
+        // Create backup directory
+        let backupDir = omiDir.appendingPathComponent("backups", isDirectory: true)
+        try fileManager.createDirectory(at: backupDir, withIntermediateDirectories: true)
+
+        // Generate backup filename with timestamp
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd_HHmmss"
+        let timestamp = formatter.string(from: Date())
+        let backupPath = backupDir.appendingPathComponent("omi_corrupted_\(timestamp).db")
+
+        // Backup the corrupted database (for potential manual recovery)
+        log("RewindDatabase: Backing up corrupted database to \(backupPath.path)")
+        try fileManager.copyItem(atPath: dbPath, toPath: backupPath.path)
+
+        // Remove corrupted database and associated WAL/SHM files
+        let filesToRemove = [
+            dbPath,
+            dbPath + "-wal",
+            dbPath + "-shm",
+            dbPath + "-journal"
+        ]
+
+        for file in filesToRemove {
+            if fileManager.fileExists(atPath: file) {
+                try fileManager.removeItem(atPath: file)
+                log("RewindDatabase: Removed \(file)")
+            }
+        }
+
+        logError("RewindDatabase: Corrupted database backed up and removed. A fresh database will be created.")
+
+        // Clean up old backups (keep only last 5)
+        try await cleanupOldBackups(in: backupDir, keepCount: 5)
+    }
+
+    /// Clean up old database backups, keeping only the most recent ones
+    private func cleanupOldBackups(in backupDir: URL, keepCount: Int) async throws {
+        let fileManager = FileManager.default
+
+        let files = try fileManager.contentsOfDirectory(
+            at: backupDir,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles]
+        ).filter { $0.pathExtension == "db" }
+
+        // Sort by creation date, newest first
+        let sortedFiles = files.sorted { file1, file2 in
+            let date1 = (try? file1.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+            let date2 = (try? file2.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date.distantPast
+            return date1 > date2
+        }
+
+        // Remove files beyond keepCount
+        for file in sortedFiles.dropFirst(keepCount) {
+            try fileManager.removeItem(at: file)
+            log("RewindDatabase: Removed old backup \(file.lastPathComponent)")
+        }
+    }
+
+    /// Verify database integrity after successful initialization
+    private func verifyDatabaseIntegrity(_ queue: DatabaseQueue) throws {
+        try queue.read { db in
+            // Quick integrity check on first page
+            let result = try String.fetchOne(db, sql: "PRAGMA quick_check(1)")
+            if result?.lowercased() != "ok" {
+                throw RewindError.databaseCorrupted(message: result ?? "Unknown integrity error")
+            }
+
+            // Verify WAL mode is active
+            let journalMode = try String.fetchOne(db, sql: "PRAGMA journal_mode")
+            log("RewindDatabase: Journal mode is \(journalMode ?? "unknown")")
         }
     }
 
