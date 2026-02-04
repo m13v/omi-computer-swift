@@ -67,18 +67,67 @@ struct ChatPage: View {
 
     private var chatHeader: some View {
         HStack {
-            // New chat button
-            Button(action: {
-                Task {
-                    _ = await chatProvider.createNewSession()
+            // Multi-chat mode controls
+            if chatProvider.multiChatEnabled {
+                // Default Chat indicator or button
+                if chatProvider.isInDefaultChat {
+                    // Show indicator that we're in default chat
+                    HStack(spacing: 6) {
+                        Image(systemName: "icloud")
+                            .font(.system(size: 11))
+                        Text("Synced Chat")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(OmiColors.success)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(OmiColors.success.opacity(0.15))
+                    .cornerRadius(6)
+                    .help("This chat syncs with your mobile app")
+                } else {
+                    // Show button to switch back to default chat
+                    Button(action: {
+                        Task {
+                            await chatProvider.switchToDefaultChat()
+                        }
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "icloud")
+                                .font(.system(size: 11))
+                            Text("Synced")
+                                .font(.system(size: 11, weight: .medium))
+                        }
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Switch to synced chat (shares messages with mobile)")
+
+                    // Current session indicator
+                    if let session = chatProvider.currentSession {
+                        Text(session.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .lineLimit(1)
+                    }
                 }
-            }) {
-                Image(systemName: "plus")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(OmiColors.textTertiary)
+
+                // New chat button
+                Button(action: {
+                    Task {
+                        _ = await chatProvider.createNewSession()
+                    }
+                }) {
+                    Image(systemName: "plus")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("New chat session")
             }
-            .buttonStyle(.plain)
-            .help("New chat")
 
             // App selector
             Button(action: { showAppPicker.toggle() }) {
@@ -183,19 +232,21 @@ struct ChatPage: View {
                 .disabled(chatProvider.isLoading)
             }
 
-            // History button
-            Button(action: { showHistoryPopover.toggle() }) {
-                Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 14))
-                    .foregroundColor(OmiColors.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .help("Chat history")
-            .popover(isPresented: $showHistoryPopover, arrowEdge: .bottom) {
-                ChatHistoryPopover(
-                    chatProvider: chatProvider,
-                    onSelect: { showHistoryPopover = false }
-                )
+            // History button (only in multi-chat mode)
+            if chatProvider.multiChatEnabled {
+                Button(action: { showHistoryPopover.toggle() }) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Chat history")
+                .popover(isPresented: $showHistoryPopover, arrowEdge: .bottom) {
+                    ChatHistoryPopover(
+                        chatProvider: chatProvider,
+                        onSelect: { showHistoryPopover = false }
+                    )
+                }
             }
         }
     }
