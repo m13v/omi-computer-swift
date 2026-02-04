@@ -1288,20 +1288,57 @@ struct TaskRow: View {
 
             Spacer(minLength: 0)
 
-            // Delete button (visible on hover)
-            if isHovering {
-                Button(action: {
-                    showDeleteConfirmation = true
-                }) {
-                    Image(systemName: "trash")
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.textTertiary)
+            // Hover actions: indent controls and delete
+            if isHovering && !viewModel.isMultiSelectMode {
+                HStack(spacing: 4) {
+                    // Outdent button (decrease indent)
+                    if indentLevel > 0 {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                viewModel.decrementIndent(for: task.id)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.left.to.line")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Decrease indent")
+                    }
+
+                    // Indent button (increase indent)
+                    if indentLevel < 3 {
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                viewModel.incrementIndent(for: task.id)
+                            }
+                        } label: {
+                            Image(systemName: "arrow.right.to.line")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Increase indent")
+                    }
+
+                    // Delete button
+                    Button {
+                        showDeleteConfirmation = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
                 .transition(.opacity)
             }
         }
-        .padding(.horizontal, 12)
+        .padding(.leading, indentPadding > 0 ? 0 : 12)
+        .padding(.trailing, 12)
         .padding(.vertical, 10)
         .background(
             RoundedRectangle(cornerRadius: 8)
