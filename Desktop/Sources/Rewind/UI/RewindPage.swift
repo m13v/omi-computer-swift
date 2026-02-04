@@ -143,11 +143,9 @@ struct RewindPage: View {
             return .handled
         }
         // Global scroll wheel handler - works anywhere on the page
-        .background(
-            ScrollWheelCaptureView { delta in
-                handleScrollWheel(delta: delta)
-            }
-        )
+        .onScrollWheel { delta in
+            handleScrollWheel(delta: delta)
+        }
     }
 
     // Handle scroll wheel to move playhead
@@ -1272,34 +1270,37 @@ struct SearchResultRow: View {
     }
 }
 
-// MARK: - Scroll Wheel Capture View
+// MARK: - Scroll Wheel Event Monitor
 
-/// NSViewRepresentable that captures scroll wheel events and forwards them to a handler
-struct ScrollWheelCaptureView: NSViewRepresentable {
+/// View modifier that monitors scroll wheel events globally when the view is visible
+struct ScrollWheelMonitor: ViewModifier {
     let onScroll: (CGFloat) -> Void
+    @State private var monitor: Any?
 
-    func makeNSView(context: Context) -> PageScrollWheelNSView {
-        let view = PageScrollWheelNSView()
-        view.onScroll = onScroll
-        return view
-    }
-
-    func updateNSView(_ nsView: PageScrollWheelNSView, context: Context) {
-        nsView.onScroll = onScroll
+    func body(content: Content) -> some View {
+        content
+            .onAppear {
+                // Add local monitor for scroll wheel events
+                monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                    let delta = event.scrollingDeltaY + event.scrollingDeltaX
+                    if delta != 0 {
+                        onScroll(delta)
+                    }
+                    return event // Pass event through
+                }
+            }
+            .onDisappear {
+                if let monitor = monitor {
+                    NSEvent.removeMonitor(monitor)
+                }
+                monitor = nil
+            }
     }
 }
 
-class PageScrollWheelNSView: NSView {
-    var onScroll: ((CGFloat) -> Void)?
-
-    override var acceptsFirstResponder: Bool { true }
-
-    override func scrollWheel(with event: NSEvent) {
-        // Use both deltaY (vertical scroll) and deltaX (horizontal scroll)
-        let delta = event.scrollingDeltaY + event.scrollingDeltaX
-        if delta != 0 {
-            onScroll?(delta)
-        }
+extension View {
+    func onScrollWheel(_ handler: @escaping (CGFloat) -> Void) -> some View {
+        modifier(ScrollWheelMonitor(onScroll: handler))
     }
 }
 
