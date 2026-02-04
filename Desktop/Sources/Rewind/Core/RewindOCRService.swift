@@ -51,6 +51,8 @@ struct OCRResult: Codable, Equatable {
 
         // Safely create indices with bounds checking
         guard contextStart <= fullText.count, contextEnd <= fullText.count, contextStart <= contextEnd else {
+            // Log for debugging - this indicates a Unicode edge case
+            print("[OCR] contextSnippet bounds check failed: start=\(contextStart) end=\(contextEnd) textLen=\(fullText.count) query='\(query.prefix(20))'")
             return nil
         }
 
