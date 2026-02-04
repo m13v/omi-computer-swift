@@ -13,7 +13,6 @@ struct GoalsWidget: View {
 
     // AI Features
     @State private var showingSuggestionSheet = false
-    @State private var showingAdviceSheet = false
     @State private var selectedGoalForAdvice: Goal? = nil
 
     var body: some View {
@@ -25,6 +24,16 @@ struct GoalsWidget: View {
                     .foregroundColor(OmiColors.textPrimary)
 
                 Spacer()
+
+                // AI suggestion button (when there are goals but room for more)
+                if goals.count > 0 && goals.count < 3 {
+                    Button(action: { showingSuggestionSheet = true }) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(OmiColors.purplePrimary.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                }
 
                 // Add goal button (only if less than 3 goals)
                 if goals.count < 3 {
@@ -86,7 +95,6 @@ struct GoalsWidget: View {
                             onDelete: { onDeleteGoal(goal) },
                             onGetAdvice: {
                                 selectedGoalForAdvice = goal
-                                showingAdviceSheet = true
                             }
                         )
                     }
@@ -629,6 +637,387 @@ struct GoalEditSheet: View {
                 targetValue = goal.targetValue == goal.targetValue.rounded()
                     ? String(format: "%.0f", goal.targetValue)
                     : String(format: "%.1f", goal.targetValue)
+            }
+        }
+    }
+}
+
+// MARK: - Goal Suggestion Sheet
+
+struct GoalSuggestionSheet: View {
+    let onAccept: (GoalSuggestion) -> Void
+    let onDismiss: () -> Void
+
+    @State private var isLoading = true
+    @State private var suggestion: GoalSuggestion? = nil
+    @State private var errorMessage: String? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.purplePrimary)
+                    Text("AI Goal Suggestion")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(OmiColors.textPrimary)
+                }
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 28, height: 28)
+                        .background(OmiColors.backgroundTertiary.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Content
+            VStack(spacing: 20) {
+                if isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Analyzing your memories...")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 32))
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let suggestion = suggestion {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Suggested goal
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Suggested Goal")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+
+                            Text(suggestion.suggestedTitle)
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+                        }
+
+                        // Details
+                        HStack(spacing: 24) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Type")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Text(suggestion.suggestedType.capitalized)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                            }
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Target")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Text(formatNumber(suggestion.suggestedTarget))
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                            }
+                        }
+
+                        // Reasoning
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Why this goal?")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+
+                            Text(suggestion.reasoning)
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    .padding(20)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Actions
+            HStack(spacing: 12) {
+                // Retry button
+                Button(action: loadSuggestion) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
+                        Text("Try Another")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+
+                Spacer()
+
+                // Cancel button
+                Button(action: onDismiss) {
+                    Text("Cancel")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+
+                // Accept button
+                Button(action: {
+                    if let suggestion = suggestion {
+                        onAccept(suggestion)
+                        onDismiss()
+                    }
+                }) {
+                    Text("Accept")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(OmiColors.purplePrimary)
+                        )
+                }
+                .buttonStyle(.plain)
+                .disabled(suggestion == nil || isLoading)
+                .opacity(suggestion == nil || isLoading ? 0.5 : 1)
+            }
+            .padding(20)
+        }
+        .frame(width: 400, height: 380)
+        .background(OmiColors.backgroundSecondary)
+        .onAppear {
+            loadSuggestion()
+        }
+    }
+
+    private func loadSuggestion() {
+        isLoading = true
+        errorMessage = nil
+
+        Task {
+            do {
+                let result = try await GoalsAIService.shared.suggestGoal()
+                await MainActor.run {
+                    suggestion = result
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isLoading = false
+                }
+            }
+        }
+    }
+
+    private func formatNumber(_ value: Double) -> String {
+        if value >= 1_000_000 {
+            return String(format: "%.1fM", value / 1_000_000)
+        } else if value >= 1_000 {
+            return String(format: "%.1fK", value / 1_000)
+        } else if value == value.rounded() {
+            return String(format: "%.0f", value)
+        } else {
+            return String(format: "%.1f", value)
+        }
+    }
+}
+
+// MARK: - Goal Advice Sheet
+
+struct GoalAdviceSheet: View {
+    let goal: Goal
+    let onDismiss: () -> Void
+
+    @State private var isLoading = true
+    @State private var advice: String? = nil
+    @State private var errorMessage: String? = nil
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                HStack(spacing: 8) {
+                    Image(systemName: "lightbulb.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(.yellow)
+                    Text("Goal Advice")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundColor(OmiColors.textPrimary)
+                }
+
+                Spacer()
+
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 28, height: 28)
+                        .background(OmiColors.backgroundTertiary.opacity(0.5))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Goal info
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(goal.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .lineLimit(1)
+
+                    Text("\(Int(goal.currentValue))/\(Int(goal.targetValue)) (\(Int(goal.progress))%)")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+
+                // Progress indicator
+                ZStack {
+                    Circle()
+                        .stroke(OmiColors.backgroundTertiary, lineWidth: 3)
+                    Circle()
+                        .trim(from: 0, to: min(goal.progress / 100, 1.0))
+                        .stroke(OmiColors.purplePrimary, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                }
+                .frame(width: 36, height: 36)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            .background(OmiColors.backgroundTertiary.opacity(0.3))
+
+            // Content
+            VStack(spacing: 16) {
+                if isLoading {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                        Text("Getting personalized advice...")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let error = errorMessage {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle")
+                            .font(.system(size: 32))
+                            .foregroundColor(.orange)
+                        Text(error)
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if let advice = advice {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("This week's action:")
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Text(advice)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(20)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Actions
+            HStack(spacing: 12) {
+                // Refresh button
+                Button(action: loadAdvice) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 12))
+                        Text("Refresh")
+                    }
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .disabled(isLoading)
+
+                Spacer()
+
+                // Done button
+                Button(action: onDismiss) {
+                    Text("Done")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 10)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(OmiColors.purplePrimary)
+                        )
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+        }
+        .frame(width: 400, height: 380)
+        .background(OmiColors.backgroundSecondary)
+        .onAppear {
+            loadAdvice()
+        }
+    }
+
+    private func loadAdvice() {
+        isLoading = true
+        errorMessage = nil
+
+        Task {
+            do {
+                let result = try await GoalsAIService.shared.getGoalAdvice(goal: goal)
+                await MainActor.run {
+                    advice = result
+                    isLoading = false
+                }
+            } catch {
+                await MainActor.run {
+                    errorMessage = error.localizedDescription
+                    isLoading = false
+                }
             }
         }
     }
