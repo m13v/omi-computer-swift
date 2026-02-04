@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// Main Rewind page - Timeline-first view with integrated search
 /// The timeline is the primary interface, with search results highlighted inline
@@ -140,6 +141,28 @@ struct RewindPage: View {
         .onKeyPress(.space) {
             togglePlayback()
             return .handled
+        }
+        // Global scroll wheel handler - works anywhere on the page
+        .background(
+            ScrollWheelCaptureView { delta in
+                handleScrollWheel(delta: delta)
+            }
+        )
+    }
+
+    // Handle scroll wheel to move playhead
+    private func handleScrollWheel(delta: CGFloat) {
+        guard !activeScreenshots.isEmpty else { return }
+        guard searchViewMode != .results else { return } // Don't scroll in results list view
+
+        let sensitivity: CGFloat = 3.0
+        let framesToMove = Int(-delta * sensitivity)
+
+        if framesToMove != 0 {
+            let newIndex = max(0, min(activeScreenshots.count - 1, currentIndex + framesToMove))
+            if newIndex != currentIndex {
+                seekToIndex(newIndex)
+            }
         }
     }
 
@@ -1245,6 +1268,37 @@ struct SearchResultRow: View {
         .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
+        }
+    }
+}
+
+// MARK: - Scroll Wheel Capture View
+
+/// NSViewRepresentable that captures scroll wheel events and forwards them to a handler
+struct ScrollWheelCaptureView: NSViewRepresentable {
+    let onScroll: (CGFloat) -> Void
+
+    func makeNSView(context: Context) -> ScrollWheelNSView {
+        let view = ScrollWheelNSView()
+        view.onScroll = onScroll
+        return view
+    }
+
+    func updateNSView(_ nsView: ScrollWheelNSView, context: Context) {
+        nsView.onScroll = onScroll
+    }
+}
+
+class ScrollWheelNSView: NSView {
+    var onScroll: ((CGFloat) -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func scrollWheel(with event: NSEvent) {
+        // Use both deltaY (vertical scroll) and deltaX (horizontal scroll)
+        let delta = event.scrollingDeltaY + event.scrollingDeltaX
+        if delta != 0 {
+            onScroll?(delta)
         }
     }
 }
