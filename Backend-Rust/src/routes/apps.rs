@@ -8,11 +8,14 @@ use axum::{
     Json, Router,
 };
 
+use std::collections::HashMap;
+
 use crate::auth::AuthUser;
 use crate::models::{
-    App, AppCapabilityDef, AppCategory, AppReview, AppSummary, ListAppsQuery, SearchAppsQuery,
+    App, AppCapabilityDef, AppCategory, AppGroup, AppReview, AppSummary, AppsV2Meta, AppsV2Query,
+    AppsV2Response, CapabilityInfo, ListAppsQuery, PaginationMeta, SearchAppsQuery,
     SubmitReviewRequest, ToggleAppRequest, ToggleAppResponse, get_app_capabilities,
-    get_app_categories,
+    get_app_categories, get_v2_capabilities,
 };
 use crate::AppState;
 
@@ -120,6 +123,154 @@ async fn search_apps(
             Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to search apps: {}", e)))
         }
     }
+}
+
+/// GET /v2/apps - Get apps grouped by capability (matching Python backend)
+/// Groups: Featured, Integrations, Chat Assistants, Summary Apps, Realtime Notifications
+async fn get_apps_v2(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Query(query): Query<AppsV2Query>,
+) -> Result<Json<AppsV2Response>, (StatusCode, String)> {
+    tracing::info!(
+        "Getting v2 apps for user {} with capability={:?}, offset={}, limit={}",
+        user.uid,
+        query.capability,
+        query.offset,
+        query.limit
+    );
+
+    // Get all approved apps
+    let all_apps = match state
+        .firestore
+        .get_apps(&user.uid, 500, 0, None, None)
+        .await
+    {
+        Ok(apps) => apps,
+        Err(e) => {
+            tracing::error!("Failed to get apps for v2: {}", e);
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get apps: {}", e)));
+        }
+    };
+
+    // Get popular apps separately (they have is_popular=true)
+    let popular_apps = match state.firestore.get_popular_apps(&user.uid, 20).await {
+        Ok(apps) => apps,
+        Err(e) => {
+            tracing::warn!("Failed to get popular apps: {}", e);
+            vec![]
+        }
+    };
+    let popular_ids: std::collections::HashSet<_> = popular_apps.iter().map(|a| a.id.clone()).collect();
+
+    // Get capabilities for grouping
+    let capabilities = get_v2_capabilities();
+
+    // Group apps by capability
+    let mut grouped: HashMap<String, Vec<AppSummary>> = HashMap::new();
+
+    // Add popular apps first
+    if !popular_apps.is_empty() {
+        grouped.insert("popular".to_string(), popular_apps);
+    }
+
+    // Group remaining apps by capability (excluding popular and persona apps)
+    for app in &all_apps {
+        // Skip popular apps (they're already in their own section)
+        if popular_ids.contains(&app.id) {
+            continue;
+        }
+
+        // Skip persona apps (matching Python backend behavior)
+        if app.capabilities.contains(&"persona".to_string()) {
+            continue;
+        }
+
+        // Determine primary capability for this app
+        let primary_capability = get_primary_capability(&app.capabilities);
+        if let Some(cap) = primary_capability {
+            grouped.entry(cap).or_insert_with(Vec::new).push(app.clone());
+        }
+    }
+
+    // Sort each group by installs (descending)
+    for apps in grouped.values_mut() {
+        apps.sort_by(|a, b| b.installs.cmp(&a.installs));
+    }
+
+    // Build response groups in the correct order
+    let mut groups: Vec<AppGroup> = Vec::new();
+    for cap_info in &capabilities {
+        if let Some(apps) = grouped.get(&cap_info.id) {
+            if apps.is_empty() {
+                continue;
+            }
+
+            let total = apps.len();
+            let start = query.offset.min(total);
+            let end = (query.offset + query.limit).min(total);
+            let page: Vec<AppSummary> = apps[start..end].to_vec();
+
+            groups.push(AppGroup {
+                capability: CapabilityInfo {
+                    id: cap_info.id.clone(),
+                    title: cap_info.title.clone(),
+                },
+                data: page,
+                pagination: PaginationMeta {
+                    total,
+                    count: end - start,
+                    offset: query.offset,
+                    limit: query.limit,
+                },
+            });
+        }
+    }
+
+    let response = AppsV2Response {
+        groups,
+        meta: AppsV2Meta {
+            capabilities: capabilities.clone(),
+            group_count: grouped.len(),
+            limit: query.limit,
+            offset: query.offset,
+        },
+    };
+
+    Ok(Json(response))
+}
+
+/// Determine the primary capability for an app (matching Python backend logic)
+fn get_primary_capability(capabilities: &[String]) -> Option<String> {
+    // Priority order for capability assignment
+    // If app has proactive_notification AND is primarily a notification app, put in notifications
+    if capabilities.contains(&"proactive_notification".to_string()) {
+        // Check if this is primarily a notification app (has proactive_notification but not complex capabilities)
+        let has_external = capabilities.contains(&"external_integration".to_string());
+        let has_chat = capabilities.contains(&"chat".to_string());
+        let has_memories = capabilities.contains(&"memories".to_string());
+
+        // Simple notification apps go to notifications section
+        if !has_external && !has_chat && !has_memories {
+            return Some("proactive_notification".to_string());
+        }
+    }
+
+    // Check capabilities in priority order
+    if capabilities.contains(&"external_integration".to_string()) {
+        return Some("external_integration".to_string());
+    }
+    if capabilities.contains(&"chat".to_string()) {
+        return Some("chat".to_string());
+    }
+    if capabilities.contains(&"memories".to_string()) {
+        return Some("memories".to_string());
+    }
+    if capabilities.contains(&"proactive_notification".to_string()) {
+        return Some("proactive_notification".to_string());
+    }
+
+    None
 }
 
 // ============================================================================
@@ -284,6 +435,7 @@ pub fn apps_routes() -> Router<AppState> {
         .route("/v1/apps", get(list_apps))
         .route("/v1/approved-apps", get(list_approved_apps))
         .route("/v1/apps/popular", get(list_popular_apps))
+        .route("/v2/apps", get(get_apps_v2))
         .route("/v2/apps/search", get(search_apps))
         // Details
         .route("/v1/apps/:app_id", get(get_app_details))
