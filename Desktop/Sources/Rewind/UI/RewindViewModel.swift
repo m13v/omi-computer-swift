@@ -72,6 +72,21 @@ class RewindViewModel: ObservableObject {
                 Task { await self?.performSearch(query: query) }
             }
             .store(in: &cancellables)
+
+        // Listen for new frame captures to update stats live
+        NotificationCenter.default.publisher(for: .rewindFrameCaptured)
+            .throttle(for: .seconds(2), scheduler: DispatchQueue.main, latest: true)
+            .sink { [weak self] _ in
+                Task { await self?.updateStatsOnly() }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Update only the stats (for live frame count updates)
+    private func updateStatsOnly() async {
+        if let indexerStats = await RewindIndexer.shared.getStats() {
+            stats = indexerStats
+        }
     }
 
     // MARK: - Loading
