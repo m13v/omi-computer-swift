@@ -38,22 +38,43 @@ struct GoalsWidget: View {
             }
 
             if goals.isEmpty {
-                // Empty state - clickable to add
-                Button(action: { showingCreateSheet = true }) {
-                    HStack {
-                        Spacer()
-                        Image(systemName: "plus")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textTertiary)
-                        Text("Tap to add goal")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                        Spacer()
+                // Empty state with AI suggestion
+                VStack(spacing: 16) {
+                    Button(action: { showingCreateSheet = true }) {
+                        HStack {
+                            Spacer()
+                            Image(systemName: "plus")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textTertiary)
+                            Text("Tap to add goal")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 20)
                     }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 40)
+                    .buttonStyle(.plain)
+
+                    // AI Suggestion button
+                    Button(action: { showingSuggestionSheet = true }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 12))
+                            Text("Get AI Suggestion")
+                                .font(.system(size: 12, weight: .medium))
+                        }
+                        .foregroundColor(OmiColors.purplePrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(OmiColors.purplePrimary.opacity(0.1))
+                        )
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                .padding(.vertical, 12)
             } else {
                 // Goals list
                 VStack(spacing: 12) {
@@ -62,7 +83,11 @@ struct GoalsWidget: View {
                             goal: goal,
                             onTap: { editingGoal = goal },
                             onUpdateProgress: { value in onUpdateProgress(goal, value) },
-                            onDelete: { onDeleteGoal(goal) }
+                            onDelete: { onDeleteGoal(goal) },
+                            onGetAdvice: {
+                                selectedGoalForAdvice = goal
+                                showingAdviceSheet = true
+                            }
                         )
                     }
                 }
@@ -99,6 +124,24 @@ struct GoalsWidget: View {
                 onDismiss: { editingGoal = nil }
             )
         }
+        .sheet(isPresented: $showingSuggestionSheet) {
+            GoalSuggestionSheet(
+                onAccept: { suggestion in
+                    onCreateGoal(
+                        suggestion.suggestedTitle,
+                        0,  // Start at 0
+                        suggestion.suggestedTarget
+                    )
+                },
+                onDismiss: { showingSuggestionSheet = false }
+            )
+        }
+        .sheet(item: $selectedGoalForAdvice) { goal in
+            GoalAdviceSheet(
+                goal: goal,
+                onDismiss: { selectedGoalForAdvice = nil }
+            )
+        }
     }
 
 }
@@ -110,6 +153,9 @@ struct GoalRowView: View {
     let onTap: () -> Void
     let onUpdateProgress: (Double) -> Void
     let onDelete: () -> Void
+    var onGetAdvice: (() -> Void)? = nil
+
+    @State private var isHovering = false
 
     private var progressColor: Color {
         let progress = goal.progress / 100.0  // Convert to 0-1 range
@@ -158,6 +204,17 @@ struct GoalRowView: View {
 
                         Spacer()
 
+                        // Advice button (shown on hover)
+                        if isHovering, let onGetAdvice = onGetAdvice {
+                            Button(action: onGetAdvice) {
+                                Image(systemName: "lightbulb.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.yellow)
+                            }
+                            .buttonStyle(.plain)
+                            .transition(.opacity)
+                        }
+
                         // Progress value (current/target)
                         Text(progressText)
                             .font(.system(size: 11))
@@ -185,10 +242,15 @@ struct GoalRowView: View {
             .padding(.horizontal, 12)
             .background(
                 RoundedRectangle(cornerRadius: 10)
-                    .fill(OmiColors.backgroundTertiary.opacity(0.3))
+                    .fill(OmiColors.backgroundTertiary.opacity(isHovering ? 0.5 : 0.3))
             )
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovering = hovering
+            }
+        }
     }
 
     private var goalEmoji: String {
