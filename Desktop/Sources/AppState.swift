@@ -1003,6 +1003,7 @@ class AppState: ObservableObject {
         speakerSegments = []
         LiveTranscriptMonitor.shared.clear()
         recordingStartTime = nil
+        currentSessionId = nil
 
         // Track transcription stopped
         AnalyticsManager.shared.transcriptionStopped(wordCount: wordCount)
@@ -1183,17 +1184,57 @@ class AppState: ObservableObject {
     }
 
     /// Finalize and save the current conversation to the backend
+    /// Uses DB as source of truth for crash safety
     private func finalizeConversation() async -> FinishConversationResult {
-        guard !speakerSegments.isEmpty, let startTime = recordingStartTime else {
-            log("Transcription: No segments to save")
+        guard let startTime = recordingStartTime else {
+            log("Transcription: No recording start time")
             return .discarded
         }
 
         let endTime = Date()
-        log("Transcription: Finalizing conversation with \(speakerSegments.count) segments")
+        let sessionId = currentSessionId
+
+        // Try to load segments from DB if we have a session, fall back to in-memory
+        var segmentsToUpload: [SpeakerSegment] = speakerSegments
+
+        if let sessionId = sessionId {
+            do {
+                // Mark session as finished in DB first
+                try await TranscriptionStorage.shared.finishSession(id: sessionId)
+
+                // Load segments from DB (source of truth for crash recovery)
+                let dbSegments = try await TranscriptionStorage.shared.getSegments(sessionId: sessionId)
+                if !dbSegments.isEmpty {
+                    // Convert DB segments to SpeakerSegment format
+                    segmentsToUpload = dbSegments.map { dbSeg in
+                        SpeakerSegment(
+                            speaker: dbSeg.speaker,
+                            text: dbSeg.text,
+                            start: dbSeg.startTime,
+                            end: dbSeg.endTime
+                        )
+                    }
+                    log("Transcription: Loaded \(segmentsToUpload.count) segments from DB")
+                }
+            } catch {
+                logError("Transcription: Failed to load segments from DB, using in-memory", error: error)
+                // Fall through to use in-memory segments
+            }
+        }
+
+        guard !segmentsToUpload.isEmpty else {
+            log("Transcription: No segments to save")
+            // Clean up empty session
+            if let sessionId = sessionId {
+                try? await TranscriptionStorage.shared.deleteSession(id: sessionId)
+            }
+            return .discarded
+        }
+
+        log("Transcription: Finalizing conversation with \(segmentsToUpload.count) segments")
 
         // Convert SpeakerSegment to API request format
-        let apiSegments = speakerSegments.map { segment in
+        let apiSegments = segmentsToUpload.map { segment in
             APIClient.TranscriptSegmentRequest(
                 text: segment.text,
                 speaker: "SPEAKER_\(String(format: "%02d", segment.speaker))",
@@ -1202,6 +1243,11 @@ class AppState: ObservableObject {
                 start: segment.start,
                 end: segment.end
             )
+        }
+
+        // Mark session as uploading
+        if let sessionId = sessionId {
+            try? await TranscriptionStorage.shared.markSessionUploading(id: sessionId)
         }
 
         do {
@@ -1213,6 +1259,11 @@ class AppState: ObservableObject {
                 inputDeviceName: recordingInputDeviceName
             )
             log("Transcription: Conversation saved - id=\(response.id), status=\(response.status), discarded=\(response.discarded), source=\(currentConversationSource.rawValue), device=\(recordingInputDeviceName ?? "Unknown")")
+
+            // Mark session as completed in DB
+            if let sessionId = sessionId {
+                try? await TranscriptionStorage.shared.markSessionCompleted(id: sessionId, backendId: response.id)
+            }
 
             if response.discarded {
                 return .discarded
@@ -1230,6 +1281,12 @@ class AppState: ObservableObject {
         } catch {
             logError("Transcription: Failed to save conversation", error: error)
             AnalyticsManager.shared.recordingError(error: "Failed to save: \(error.localizedDescription)")
+
+            // Mark session as failed in DB for later retry
+            if let sessionId = sessionId {
+                try? await TranscriptionStorage.shared.markSessionFailed(id: sessionId, error: error.localizedDescription)
+            }
+
             return .error(error.localizedDescription)
         }
     }
