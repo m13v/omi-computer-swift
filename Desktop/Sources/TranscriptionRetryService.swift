@@ -182,7 +182,7 @@ class TranscriptionRetryService {
 
             // Track analytics
             let durationSeconds = Int(session.finishedAt?.timeIntervalSince(session.startedAt) ?? 0)
-            AnalyticsManager.shared.conversationCreated(
+            await AnalyticsManager.shared.conversationCreated(
                 conversationId: response.id,
                 source: session.source,
                 durationSeconds: durationSeconds
