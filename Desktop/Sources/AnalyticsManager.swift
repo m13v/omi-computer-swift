@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Unified analytics manager that sends events to both Mixpanel and PostHog
 /// Use this instead of calling MixpanelManager and PostHogManager directly
@@ -546,5 +547,49 @@ class AnalyticsManager {
     func notificationDismissed(notificationId: String, title: String, assistantId: String) {
         MixpanelManager.shared.notificationDismissed(notificationId: notificationId, title: title, assistantId: assistantId)
         PostHogManager.shared.notificationDismissed(notificationId: notificationId, title: title, assistantId: assistantId)
+    }
+
+    // MARK: - Menu Bar Events
+
+    /// Track when user opens the menu bar dropdown
+    func menuBarOpened() {
+        MixpanelManager.shared.menuBarOpened()
+        PostHogManager.shared.menuBarOpened()
+    }
+
+    /// Track when user clicks an action in the menu bar
+    func menuBarActionClicked(action: String) {
+        MixpanelManager.shared.menuBarActionClicked(action: action)
+        PostHogManager.shared.menuBarActionClicked(action: action)
+    }
+
+    // MARK: - Display Info
+
+    /// Track display characteristics (notch, screen size, etc.)
+    /// Called at app launch to help diagnose menu bar visibility issues
+    func trackDisplayInfo() {
+        guard let screen = NSScreen.main else { return }
+
+        let frame = screen.frame
+        let visibleFrame = screen.visibleFrame
+        let safeAreaInsets = screen.safeAreaInsets
+
+        // Detect notch: MacBooks with notch have safeAreaInsets.top > 0
+        let hasNotch = safeAreaInsets.top > 0
+
+        // Calculate menu bar height (difference between frame and visible frame at top)
+        let menuBarHeight = frame.height - visibleFrame.height - visibleFrame.origin.y
+
+        let displayInfo: [String: Any] = [
+            "screen_width": Int(frame.width),
+            "screen_height": Int(frame.height),
+            "has_notch": hasNotch,
+            "safe_area_top": Int(safeAreaInsets.top),
+            "menu_bar_height": Int(menuBarHeight),
+            "scale_factor": screen.backingScaleFactor
+        ]
+
+        MixpanelManager.shared.displayInfoTracked(info: displayInfo)
+        PostHogManager.shared.displayInfoTracked(info: displayInfo)
     }
 }
