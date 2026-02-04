@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.2.3",
+      "date": "2026-02-03",
+      "changes": [
+        "Transcription crash recovery: sessions saved locally and uploaded after restart",
+        "Multi-chat support with default chat mode",
+        "Rewind-only mode with simplified menu bar UI",
+        "Task drag-and-drop reordering and indent/outdent buttons",
+        "Apps grouped by capability and sorted by popularity",
+        "Timeline navigation with scroll wheel support",
+        "Fixed OCR context bounds and image display issues"
+      ]
+    },
+    {
       "version": "0.2.2",
       "date": "2026-02-03",
       "changes": [
