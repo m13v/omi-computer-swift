@@ -292,6 +292,9 @@ struct RewindPage: View {
                 .cornerRadius(6)
             } else {
                 // Timeline mode controls
+                // Date picker
+                datePickerControls
+
                 // Stats
                 if let stats = viewModel.stats {
                     Text("\(stats.total) frames • \(RewindStorage.formatBytes(stats.storageSize))")
@@ -499,6 +502,48 @@ struct RewindPage: View {
                         .stroke(isSearchFocused ? OmiColors.purplePrimary.opacity(0.5) : Color.clear, lineWidth: 1)
                 )
         )
+    }
+
+    // MARK: - Date Picker Controls
+
+    private var datePickerControls: some View {
+        HStack(spacing: 8) {
+            // Date picker
+            DatePicker(
+                "",
+                selection: Binding(
+                    get: { viewModel.selectedDate },
+                    set: { newDate in
+                        Task { await viewModel.filterByDate(newDate) }
+                    }
+                ),
+                displayedComponents: [.date]
+            )
+            .datePickerStyle(.compact)
+            .labelsHidden()
+            .colorScheme(.dark)
+
+            // Quick date buttons
+            quickDateButton("Today", date: Date())
+            quickDateButton("Yesterday", date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
+        }
+    }
+
+    private func quickDateButton(_ title: String, date: Date) -> some View {
+        let isSelected = Calendar.current.isDate(viewModel.selectedDate, inSameDayAs: date)
+
+        return Button {
+            Task { await viewModel.filterByDate(date) }
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
+                .foregroundColor(isSelected ? OmiColors.purplePrimary : .white.opacity(0.6))
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(isSelected ? OmiColors.purplePrimary.opacity(0.2) : Color.white.opacity(0.1))
+                .cornerRadius(4)
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Frame Display
