@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.2.6",
+      "date": "2026-02-04",
+      "changes": [
+        "New settings sidebar for easier navigation",
+        "Database corruption detection and automatic recovery",
+        "Reduced video file size with optimized compression",
+        "Disabled auto-detect transcription language by default for reliability",
+        "Improved Rewind date filtering consistency"
+      ]
+    },
+    {
       "version": "0.2.4",
       "date": "2026-02-04",
       "changes": [
