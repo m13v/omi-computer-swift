@@ -187,6 +187,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start resource monitoring (memory, CPU, disk)
         ResourceMonitor.shared.start()
 
+        // Recover any pending/failed transcription sessions from previous runs
+        Task {
+            await TranscriptionRetryService.shared.recoverPendingTranscriptions()
+            TranscriptionRetryService.shared.start()
+        }
+
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
             AnalyticsManager.shared.identify()
@@ -315,6 +321,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Stop heartbeat timer
         sentryHeartbeatTimer?.invalidate()
         sentryHeartbeatTimer = nil
+
+        // Stop transcription retry service
+        TranscriptionRetryService.shared.stop()
 
         // Report final resources before termination
         ResourceMonitor.shared.reportResourcesNow(context: "app_terminating")
