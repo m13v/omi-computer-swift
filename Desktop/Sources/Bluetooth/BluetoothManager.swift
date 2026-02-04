@@ -142,6 +142,19 @@ final class BluetoothManager: NSObject, ObservableObject {
         bluetoothState == .poweredOn
     }
 
+    /// Trigger the Bluetooth permission dialog by attempting to scan
+    /// This bypasses the poweredOn guard because we need to trigger the system prompt
+    func triggerPermissionPrompt() {
+        logger.info("Triggering Bluetooth permission prompt (state: \(self.bluetoothStateDescription))")
+        // Attempting to scan triggers the permission dialog on macOS
+        // even if Bluetooth is not yet authorized
+        centralManager.scanForPeripherals(withServices: nil, options: nil)
+        // Stop immediately - we just want to trigger the prompt
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.centralManager.stopScan()
+        }
+    }
+
     /// Human-readable Bluetooth state description
     var bluetoothStateDescription: String {
         switch bluetoothState {
