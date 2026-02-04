@@ -44,9 +44,15 @@ struct OCRResult: Codable, Equatable {
             return nil
         }
 
-        let matchStart = fullText.distance(from: fullText.startIndex, to: range.lowerBound)
+        // Use the lowercased string for distance calculation to avoid String.Index incompatibility crash
+        let matchStart = lowercasedText.distance(from: lowercasedText.startIndex, to: range.lowerBound)
         let contextStart = max(0, matchStart - 50)
         let contextEnd = min(fullText.count, matchStart + query.count + 100)
+
+        // Safely create indices with bounds checking
+        guard contextStart <= fullText.count, contextEnd <= fullText.count, contextStart <= contextEnd else {
+            return nil
+        }
 
         let startIndex = fullText.index(fullText.startIndex, offsetBy: contextStart)
         let endIndex = fullText.index(fullText.startIndex, offsetBy: contextEnd)
