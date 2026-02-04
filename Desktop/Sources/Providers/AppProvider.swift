@@ -4,7 +4,9 @@ import SwiftUI
 @MainActor
 class AppProvider: ObservableObject {
     @Published var apps: [OmiApp] = []
-    @Published var popularApps: [OmiApp] = []
+    @Published var popularApps: [OmiApp] = []  // Featured apps (is_popular=true)
+    @Published var integrationApps: [OmiApp] = []  // Apps with external_integration capability
+    @Published var notificationApps: [OmiApp] = []  // Apps with proactive_notification capability
     @Published var enabledApps: [OmiApp] = []
     @Published var chatApps: [OmiApp] = []
     @Published var categories: [OmiAppCategory] = []
@@ -25,34 +27,44 @@ class AppProvider: ObservableObject {
 
     // MARK: - Fetch Methods
 
-    /// Fetch all apps data (popular, categories, etc.)
+    /// Fetch all apps data (popular, integrations, notifications, categories, etc.)
     func fetchApps() async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
         do {
-            // Fetch in parallel
+            // Fetch in parallel - matching Flutter app sections
             async let appsTask = apiClient.getApps()
             async let popularTask = apiClient.getPopularApps()
+            async let integrationsTask = apiClient.getApps(capability: "external_integration")
+            async let notificationsTask = apiClient.getApps(capability: "proactive_notification")
             async let categoriesTask = apiClient.getAppCategories()
             async let capabilitiesTask = apiClient.getAppCapabilities()
 
-            let (fetchedApps, fetchedPopular, fetchedCategories, fetchedCapabilities) = try await (
+            let (fetchedApps, fetchedPopular, fetchedIntegrations, fetchedNotifications, fetchedCategories, fetchedCapabilities) = try await (
                 appsTask,
                 popularTask,
+                integrationsTask,
+                notificationsTask,
                 categoriesTask,
                 capabilitiesTask
             )
 
             apps = fetchedApps
             popularApps = fetchedPopular
+
+            // Filter out popular apps from integrations/notifications to avoid duplicates
+            let popularIds = Set(popularApps.map { $0.id })
+            integrationApps = fetchedIntegrations.filter { !popularIds.contains($0.id) }
+            notificationApps = fetchedNotifications.filter { !popularIds.contains($0.id) }
+
             categories = fetchedCategories
             capabilities = fetchedCapabilities
 
             updateDerivedLists()
 
-            log("Fetched \(apps.count) apps, \(popularApps.count) popular")
+            log("Fetched \(apps.count) apps, \(popularApps.count) featured, \(integrationApps.count) integrations, \(notificationApps.count) notifications")
         } catch {
             logError("Failed to fetch apps", error: error)
             errorMessage = "Failed to load apps: \(error.localizedDescription)"
@@ -119,6 +131,12 @@ class AppProvider: ObservableObject {
             }
             if let index = popularApps.firstIndex(where: { $0.id == app.id }) {
                 popularApps[index].enabled.toggle()
+            }
+            if let index = integrationApps.firstIndex(where: { $0.id == app.id }) {
+                integrationApps[index].enabled.toggle()
+            }
+            if let index = notificationApps.firstIndex(where: { $0.id == app.id }) {
+                notificationApps[index].enabled.toggle()
             }
 
             updateDerivedLists()
