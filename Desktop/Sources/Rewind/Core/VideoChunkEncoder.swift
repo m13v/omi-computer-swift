@@ -173,7 +173,7 @@ actor VideoChunkEncoder {
             "-vcodec", "libx265",
             "-tag:v", "hvc1",
             "-preset", "ultrafast",
-            "-crf", "0",  // Lossless quality
+            "-crf", "15",  // Visually lossless quality
             // Fragmented MP4 - allows reading while writing
             "-movflags", "frag_keyframe+empty_moov+default_base_moof",
             "-pix_fmt", "yuv420p",
@@ -203,7 +203,7 @@ actor VideoChunkEncoder {
             "input_height": Int(imageSize.height),
             "output_width": Int(outputSize.width),
             "output_height": Int(outputSize.height),
-            "crf": 0,
+            "crf": 15,
             "max_resolution": Int(maxResolution)
         ]
         SentrySDK.addBreadcrumb(breadcrumb)
