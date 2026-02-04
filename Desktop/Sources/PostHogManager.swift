@@ -264,6 +264,14 @@ extension PostHogManager {
         track("Permission Denied", properties: props)
     }
 
+    func permissionSkipped(permission: String, extraProperties: [String: Any] = [:]) {
+        var props: [String: Any] = ["permission": permission]
+        for (key, value) in extraProperties {
+            props[key] = value
+        }
+        track("Permission Skipped", properties: props)
+    }
+
     /// Track when ScreenCaptureKit broken state is detected
     func screenCaptureBrokenDetected() {
         track("Screen Capture Broken Detected", properties: [:])
