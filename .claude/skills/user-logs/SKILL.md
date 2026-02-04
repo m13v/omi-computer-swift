@@ -1,6 +1,16 @@
+---
+name: user-logs
+description: Look up user errors, crashes, and analytics in Sentry and PostHog. Use when debugging issues for a specific user.
+allowed-tools: Bash, Read
+disable-model-invocation: false
+argument-hint: "<email>"
+---
+
 # User Logs Lookup Skill
 
 Look up user activity, errors, and analytics across Sentry and PostHog.
+
+**Default email:** `i@m13v.com` (use unless user specifies otherwise)
 
 ## Prerequisites
 
