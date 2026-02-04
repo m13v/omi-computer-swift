@@ -4,7 +4,6 @@ import Combine
 // MARK: - Task Category (by due date)
 
 enum TaskCategory: String, CaseIterable {
-    case overdue = "Overdue"
     case today = "Today"
     case tomorrow = "Tomorrow"
     case later = "Later"
@@ -12,7 +11,6 @@ enum TaskCategory: String, CaseIterable {
 
     var icon: String {
         switch self {
-        case .overdue: return "exclamationmark.circle.fill"
         case .today: return "sun.max.fill"
         case .tomorrow: return "sunrise.fill"
         case .later: return "calendar"
@@ -22,7 +20,6 @@ enum TaskCategory: String, CaseIterable {
 
     var color: Color {
         switch self {
-        case .overdue: return .red
         case .today: return .yellow
         case .tomorrow: return .blue
         case .later: return OmiColors.purplePrimary
@@ -224,9 +221,8 @@ class TasksViewModel: ObservableObject {
         let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
         let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
 
-        if dueAt < startOfToday {
-            return .overdue
-        } else if dueAt < startOfTomorrow {
+        // Overdue and today's tasks go into "Today" category (like Flutter)
+        if dueAt < startOfTomorrow {
             return .today
         } else if dueAt < startOfDayAfterTomorrow {
             return .tomorrow
@@ -1136,7 +1132,10 @@ struct DueDateBadge: View {
         }
 
         if dueAt < startOfToday {
-            return ("Overdue", .red)
+            // Show relative date for overdue tasks with subtle red (like Flutter)
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            return (formatter.localizedString(for: dueAt, relativeTo: now), Color.red.opacity(0.8))
         } else if dueAt < startOfTomorrow {
             return ("Today", .yellow)
         } else if dueAt < startOfDayAfterTomorrow {
