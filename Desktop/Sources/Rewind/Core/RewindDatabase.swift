@@ -365,6 +365,45 @@ actor RewindDatabase {
             """)
         }
 
+        // Migration 10: Create transcription storage tables for crash-safe recording
+        migrator.registerMigration("createTranscriptionStorage") { db in
+            // Recording sessions (parent)
+            try db.create(table: "transcription_sessions") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("startedAt", .datetime).notNull()
+                t.column("finishedAt", .datetime)
+                t.column("source", .text).notNull()              // 'desktop', 'omi', etc.
+                t.column("language", .text).notNull().defaults(to: "en")
+                t.column("timezone", .text).notNull().defaults(to: "UTC")
+                t.column("inputDeviceName", .text)
+                t.column("status", .text).notNull().defaults(to: "recording")  // recording|pending_upload|uploading|completed|failed
+                t.column("retryCount", .integer).notNull().defaults(to: 0)
+                t.column("lastError", .text)
+                t.column("backendId", .text)                     // Server conversation ID
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // Transcript segments (child)
+            try db.create(table: "transcription_segments") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("sessionId", .integer).notNull()
+                    .references("transcription_sessions", onDelete: .cascade)
+                t.column("speaker", .integer).notNull()
+                t.column("text", .text).notNull()
+                t.column("startTime", .double).notNull()
+                t.column("endTime", .double).notNull()
+                t.column("segmentOrder", .integer).notNull()
+                t.column("createdAt", .datetime).notNull()
+            }
+
+            // Indexes for common queries
+            try db.create(index: "idx_sessions_status", on: "transcription_sessions", columns: ["status"])
+            try db.create(index: "idx_sessions_synced", on: "transcription_sessions", columns: ["backendSynced"])
+            try db.create(index: "idx_segments_session", on: "transcription_segments", columns: ["sessionId"])
+        }
+
         try migrator.migrate(queue)
     }
 
