@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import Sentry
 
 /// Encodes screenshot frames into H.265 video chunks using ffmpeg for efficient storage.
 /// Uses fragmented MP4 format so frames can be read while the file is still being written.
@@ -157,7 +158,7 @@ actor VideoChunkEncoder {
             "-vcodec", "libx265",
             "-tag:v", "hvc1",
             "-preset", "ultrafast",
-            "-crf", "23",
+            "-crf", "0",  // Lossless quality
             // Fragmented MP4 - allows reading while writing
             "-movflags", "frag_keyframe+empty_moov+default_base_moof",
             "-pix_fmt", "yuv420p",
@@ -177,6 +178,20 @@ actor VideoChunkEncoder {
         ffmpegStdin = stdinPipe.fileHandleForWriting
 
         log("VideoChunkEncoder: Started ffmpeg for chunk at \(relativePath)")
+
+        // Log frame dimensions to Sentry for debugging user quality issues
+        let breadcrumb = Breadcrumb(level: .info, category: "video_encoder")
+        breadcrumb.message = "Started video chunk encoding"
+        breadcrumb.data = [
+            "chunk_path": relativePath,
+            "input_width": Int(imageSize.width),
+            "input_height": Int(imageSize.height),
+            "output_width": Int(outputSize.width),
+            "output_height": Int(outputSize.height),
+            "crf": 0,
+            "max_resolution": Int(maxResolution)
+        ]
+        SentrySDK.addBreadcrumb(breadcrumb)
     }
 
     private func writeFrame(image: CGImage) async throws {
