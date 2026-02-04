@@ -201,6 +201,7 @@ class AppState: ObservableObject {
                 let oldValue = self.hasBluetoothPermission
                 // poweredOn = ready to use, poweredOff = allowed but BT is off
                 let newValue = state == .poweredOn || state == .poweredOff
+                log("BLUETOOTH_SUBSCRIPTION: state=\(BluetoothManager.shared.bluetoothStateDescription), stateRaw=\(state.rawValue), auth=\(BluetoothManager.shared.authorizationDescription), granted=\(newValue)")
                 if newValue != oldValue {
                     log("Bluetooth permission changed via subscription: \(oldValue) -> \(newValue), state=\(BluetoothManager.shared.bluetoothStateDescription)")
                     self.hasBluetoothPermission = newValue
@@ -443,6 +444,7 @@ class AppState: ObservableObject {
         // poweredOn = ready to use, poweredOff = allowed but BT is off
         // unauthorized = denied
         let newValue = state == .poweredOn || state == .poweredOff
+        log("BLUETOOTH_CHECK: state=\(BluetoothManager.shared.bluetoothStateDescription), stateRaw=\(state.rawValue), auth=\(BluetoothManager.shared.authorizationDescription), granted=\(newValue)")
         if newValue != oldValue {
             log("Bluetooth permission changed: \(oldValue) -> \(newValue), state=\(BluetoothManager.shared.bluetoothStateDescription)")
         }
@@ -452,13 +454,18 @@ class AppState: ObservableObject {
     /// Trigger Bluetooth permission by attempting to scan
     /// On macOS, the permission dialog only appears when actually using Bluetooth
     func triggerBluetoothPermission() {
-        log("triggerBluetoothPermission: Starting, current state=\(BluetoothManager.shared.bluetoothStateDescription)")
+        log("triggerBluetoothPermission: Starting, state=\(BluetoothManager.shared.bluetoothStateDescription), auth=\(BluetoothManager.shared.authorizationDescription)")
         // Trigger the permission prompt by attempting to scan
         // This bypasses state checks because we specifically want the system dialog
         BluetoothManager.shared.triggerPermissionPrompt()
         // Check permission state after a delay to allow user to respond
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            log("triggerBluetoothPermission: Checking after 1s delay, state=\(BluetoothManager.shared.bluetoothStateDescription)")
+            log("triggerBluetoothPermission: After 1s delay, state=\(BluetoothManager.shared.bluetoothStateDescription), auth=\(BluetoothManager.shared.authorizationDescription)")
+            self.checkBluetoothPermission()
+        }
+        // Also check again after 3 seconds in case state updates slowly
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
+            log("triggerBluetoothPermission: After 3s delay, state=\(BluetoothManager.shared.bluetoothStateDescription), auth=\(BluetoothManager.shared.authorizationDescription)")
             self.checkBluetoothPermission()
         }
     }
@@ -867,7 +874,7 @@ class AppState: ObservableObject {
         await BleAudioService.shared.startProcessing(
             from: connection,
             transcriptionService: transcriptionService,
-            audioDataHandler: { [weak self] _ in
+            audioDataHandler: { _ in
                 // Audio level is updated by BleAudioService
                 Task { @MainActor in
                     AudioLevelMonitor.shared.updateMicrophoneLevel(BleAudioService.shared.audioLevel)
@@ -892,7 +899,7 @@ class AppState: ObservableObject {
         buttonStreamTask = Task { [weak self] in
             do {
                 for try await buttonState in buttonStream {
-                    await self?.handleButtonEvent(buttonState)
+                    self?.handleButtonEvent(buttonState)
                 }
             } catch {
                 log("Transcription: Button stream ended: \(error.localizedDescription)")
