@@ -6,7 +6,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 
 use super::prompts::*;
-use crate::models::{ActionItem, Category, Event, Memory, MemoryCategory, MemoryDB, Structured, TranscriptSegment};
+use crate::models::{ActionItem, Category, Event, ExtractedKnowledge, KnowledgeGraphNode, Memory, MemoryCategory, MemoryDB, Structured, TranscriptSegment};
 
 /// Calendar participant for meeting context
 #[derive(Debug, Clone, Default)]
@@ -926,5 +926,105 @@ Return ONLY the title text, nothing else."#,
         } else {
             Ok(cleaned)
         }
+    }
+
+    // =========================================================================
+    // KNOWLEDGE GRAPH - Entity extraction for memory graph
+    // =========================================================================
+
+    /// Extract entities and relationships from a memory for the knowledge graph
+    pub async fn extract_knowledge_graph_entities(
+        &self,
+        memory_content: &str,
+        existing_nodes: &[KnowledgeGraphNode],
+    ) -> Result<ExtractedKnowledge, Box<dyn std::error::Error + Send + Sync>> {
+        if memory_content.is_empty() || memory_content.trim().is_empty() {
+            return Ok(ExtractedKnowledge {
+                entities: vec![],
+                relationships: vec![],
+            });
+        }
+
+        // Build existing nodes context for deduplication
+        let existing_nodes_str = if existing_nodes.is_empty() {
+            "(No existing entities)".to_string()
+        } else {
+            existing_nodes
+                .iter()
+                .take(100)
+                .map(|n| format!("- {} ({})", n.label, n.node_type))
+                .collect::<Vec<_>>()
+                .join("\n")
+        };
+
+        let prompt = format!(
+            r#"Extract named entities and their relationships from this memory/fact about a user.
+
+MEMORY:
+{memory_content}
+
+EXISTING ENTITIES IN GRAPH (use these exact names if referring to same entity):
+{existing_nodes_str}
+
+INSTRUCTIONS:
+1. Extract ONLY specific, named entities - people, places, organizations, concrete things, or abstract concepts
+2. DO NOT extract:
+   - Generic terms (e.g., "work", "home", "weekend")
+   - Dates or times
+   - Actions or verbs
+   - Pronouns (he, she, they)
+   - Common words without specific meaning
+3. For each entity, determine its type: person, place, organization, thing, or concept
+4. If an entity matches one in EXISTING ENTITIES, use the EXACT same name
+5. Extract relationships between entities (e.g., "Alice" -> "works at" -> "Google")
+6. Relationship labels should be short verb phrases (2-3 words max)
+
+Return entities with their types and any aliases (alternative names for the same entity).
+Return relationships as source -> relationship -> target triples."#,
+            memory_content = memory_content,
+            existing_nodes_str = existing_nodes_str
+        );
+
+        let schema = serde_json::json!({
+            "type": "object",
+            "properties": {
+                "entities": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "The entity name"},
+                            "type": {"type": "string", "enum": ["person", "place", "organization", "thing", "concept"]},
+                            "aliases": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Alternative names for this entity"
+                            }
+                        },
+                        "required": ["name", "type"]
+                    }
+                },
+                "relationships": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "source": {"type": "string", "description": "Source entity name"},
+                            "target": {"type": "string", "description": "Target entity name"},
+                            "relationship": {"type": "string", "description": "Relationship verb/phrase"}
+                        },
+                        "required": ["source", "target", "relationship"]
+                    }
+                }
+            },
+            "required": ["entities", "relationships"]
+        });
+
+        let response = self.call_with_schema(&prompt, Some(0.3), Some(1000), Some(schema)).await?;
+
+        let result: ExtractedKnowledge = serde_json::from_str(&response)
+            .map_err(|e| format!("Failed to parse knowledge graph extraction: {} - {}", e, response))?;
+
+        Ok(result)
     }
 }
