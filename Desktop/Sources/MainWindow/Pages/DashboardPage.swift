@@ -13,10 +13,6 @@ class DashboardViewModel: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
-    // Goal editing state
-    @Published var showingCreateGoal = false
-    @Published var editingGoal: Goal? = nil
-
     private var cancellables = Set<AnyCancellable>()
 
     // Computed properties that delegate to TasksStore
@@ -177,8 +173,16 @@ struct DashboardPage: View {
 
                         GoalsWidget(
                             goals: viewModel.goals,
-                            onAddGoal: { viewModel.showingCreateGoal = true },
-                            onEditGoal: { goal in viewModel.editingGoal = goal },
+                            onCreateGoal: { title, current, target in
+                                Task {
+                                    await viewModel.createGoal(
+                                        title: title,
+                                        goalType: .numeric,
+                                        targetValue: target,
+                                        unit: nil
+                                    )
+                                }
+                            },
                             onUpdateProgress: { goal, value in
                                 Task {
                                     await viewModel.updateGoalProgress(goal, currentValue: value)
@@ -199,137 +203,12 @@ struct DashboardPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .dismissableSheet(isPresented: $viewModel.showingCreateGoal) {
-            CreateGoalSheet(
-                onSave: { title, goalType, targetValue, unit in
-                    Task {
-                        await viewModel.createGoal(
-                            title: title,
-                            goalType: goalType,
-                            targetValue: targetValue,
-                            unit: unit
-                        )
-                    }
-                },
-                onDismiss: { viewModel.showingCreateGoal = false }
-            )
-        }
     }
 
     private var formattedDate: String {
         let formatter = DateFormatter()
         formatter.dateFormat = "EEEE, MMMM d"
         return formatter.string(from: Date())
-    }
-}
-
-// MARK: - Create Goal Sheet
-
-struct CreateGoalSheet: View {
-    let onSave: (String, GoalType, Double, String?) -> Void
-    var onDismiss: (() -> Void)? = nil
-
-    @Environment(\.dismiss) private var environmentDismiss
-
-    @State private var title = ""
-    @State private var goalType: GoalType = .boolean
-    @State private var targetValue: Double = 100
-    @State private var unit = ""
-
-    private func dismissSheet() {
-        if let onDismiss = onDismiss {
-            onDismiss()
-        } else {
-            environmentDismiss()
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 20) {
-            // Header
-            HStack {
-                Text("Create Goal")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-                Spacer()
-                DismissButton(action: dismissSheet)
-            }
-
-            // Title
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Title")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(OmiColors.textSecondary)
-                TextField("e.g., Exercise 3 times this week", text: $title)
-                    .textFieldStyle(.plain)
-                    .padding(10)
-                    .background(OmiColors.backgroundTertiary)
-                    .cornerRadius(8)
-            }
-
-            // Goal Type
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Type")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(OmiColors.textSecondary)
-                Picker("", selection: $goalType) {
-                    ForEach(GoalType.allCases, id: \.self) { type in
-                        Text(type.displayName).tag(type)
-                    }
-                }
-                .pickerStyle(.segmented)
-            }
-
-            // Target Value (for non-boolean)
-            if goalType != .boolean {
-                HStack(spacing: 16) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Target")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                        TextField("100", value: $targetValue, format: .number)
-                            .textFieldStyle(.plain)
-                            .padding(10)
-                            .background(OmiColors.backgroundTertiary)
-                            .cornerRadius(8)
-                    }
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Unit (optional)")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                        TextField("e.g., hours, pages", text: $unit)
-                            .textFieldStyle(.plain)
-                            .padding(10)
-                            .background(OmiColors.backgroundTertiary)
-                            .cornerRadius(8)
-                    }
-                }
-            }
-
-            Spacer()
-
-            // Save button
-            Button(action: {
-                let finalTarget = goalType == .boolean ? 1.0 : targetValue
-                onSave(title, goalType, finalTarget, unit.isEmpty ? nil : unit)
-                dismissSheet()
-            }) {
-                Text("Create Goal")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
-                    .background(OmiColors.purplePrimary)
-                    .cornerRadius(10)
-            }
-            .buttonStyle(.plain)
-            .disabled(title.isEmpty)
-            .opacity(title.isEmpty ? 0.5 : 1)
-        }
-        .padding(24)
-        .frame(width: 400, height: 350)
-        .background(OmiColors.backgroundSecondary)
     }
 }
 
