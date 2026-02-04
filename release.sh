@@ -158,45 +158,82 @@ gcloud run services update "$CLOUD_RUN_SERVICE" \
 echo "  ✓ Backend deployed"
 
 # -----------------------------------------------------------------------------
-# Step 1.5: Prepare Universal ffmpeg
+# Step 1.5: Prepare Universal ffmpeg (arm64 + x86_64)
 # -----------------------------------------------------------------------------
 echo "[1.5/12] Preparing universal ffmpeg binary..."
 
 FFMPEG_RESOURCE="Desktop/Sources/Resources/ffmpeg"
-FFMPEG_UNIVERSAL_URL="https://github.com/ColorsWind/FFmpeg-macOS/releases/download/8.0.1/ffmpeg"
+FFMPEG_TEMP_DIR="/tmp/ffmpeg-universal-$$"
 
 # Check if current ffmpeg is already universal
-if file "$FFMPEG_RESOURCE" | grep -q "universal binary"; then
+if file "$FFMPEG_RESOURCE" 2>/dev/null | grep -q "universal binary"; then
     echo "  ffmpeg is already universal, skipping download"
 else
-    echo "  Current ffmpeg is single-arch, downloading universal binary..."
+    echo "  Current ffmpeg is single-arch, creating universal binary..."
+
+    mkdir -p "$FFMPEG_TEMP_DIR"
 
     # Backup current ffmpeg
     if [ -f "$FFMPEG_RESOURCE" ]; then
-        mv "$FFMPEG_RESOURCE" "$FFMPEG_RESOURCE.backup"
+        cp "$FFMPEG_RESOURCE" "$FFMPEG_RESOURCE.backup"
     fi
 
-    # Download universal ffmpeg from ColorsWind/FFmpeg-macOS
-    curl -L -o "$FFMPEG_RESOURCE" "$FFMPEG_UNIVERSAL_URL" || {
-        echo "  Warning: Failed to download universal ffmpeg, restoring backup"
-        mv "$FFMPEG_RESOURCE.backup" "$FFMPEG_RESOURCE"
+    # Download arm64 ffmpeg from Martin Riedl
+    echo "  Downloading arm64 ffmpeg..."
+    curl -L -o "$FFMPEG_TEMP_DIR/ffmpeg-arm64.zip" \
+        "https://ffmpeg.martin-riedl.de/redirect/latest/macos/arm64/release/ffmpeg.zip" || {
+        echo "Error: Failed to download arm64 ffmpeg"
+        exit 1
     }
+    unzip -q -o "$FFMPEG_TEMP_DIR/ffmpeg-arm64.zip" -d "$FFMPEG_TEMP_DIR/arm64/"
 
-    # Make executable
+    # Download x86_64 ffmpeg from Martin Riedl (or use evermeet.cx backup)
+    echo "  Downloading x86_64 ffmpeg..."
+    curl -L -o "$FFMPEG_TEMP_DIR/ffmpeg-x86_64.zip" \
+        "https://ffmpeg.martin-riedl.de/redirect/latest/macos/amd64/release/ffmpeg.zip" || {
+        echo "Error: Failed to download x86_64 ffmpeg"
+        exit 1
+    }
+    unzip -q -o "$FFMPEG_TEMP_DIR/ffmpeg-x86_64.zip" -d "$FFMPEG_TEMP_DIR/x86_64/"
+
+    # Find the ffmpeg binaries
+    ARM64_FFMPEG=$(find "$FFMPEG_TEMP_DIR/arm64" -name "ffmpeg" -type f | head -1)
+    X86_64_FFMPEG=$(find "$FFMPEG_TEMP_DIR/x86_64" -name "ffmpeg" -type f | head -1)
+
+    if [ -z "$ARM64_FFMPEG" ] || [ -z "$X86_64_FFMPEG" ]; then
+        echo "Error: Could not find ffmpeg binaries in downloaded archives"
+        echo "  arm64: $ARM64_FFMPEG"
+        echo "  x86_64: $X86_64_FFMPEG"
+        exit 1
+    fi
+
+    # Create universal binary with lipo
+    echo "  Creating universal ffmpeg with lipo..."
+    lipo -create "$ARM64_FFMPEG" "$X86_64_FFMPEG" -output "$FFMPEG_RESOURCE"
+
+    # Make executable and ad-hoc sign (required for Apple Silicon)
     chmod +x "$FFMPEG_RESOURCE"
+    xattr -cr "$FFMPEG_RESOURCE"
+    codesign -s - "$FFMPEG_RESOURCE"
 
     # Verify it's universal
     if file "$FFMPEG_RESOURCE" | grep -q "universal binary"; then
-        echo "  ✓ Universal ffmpeg ready"
+        echo "  ✓ Universal ffmpeg created successfully"
         rm -f "$FFMPEG_RESOURCE.backup"
     else
-        echo "  Warning: Downloaded ffmpeg is not universal, restoring backup"
-        mv "$FFMPEG_RESOURCE.backup" "$FFMPEG_RESOURCE"
+        echo "Error: Failed to create universal ffmpeg"
+        if [ -f "$FFMPEG_RESOURCE.backup" ]; then
+            mv "$FFMPEG_RESOURCE.backup" "$FFMPEG_RESOURCE"
+        fi
+        exit 1
     fi
+
+    # Cleanup temp files
+    rm -rf "$FFMPEG_TEMP_DIR"
 fi
 
 # Show ffmpeg architectures
-echo "  ffmpeg architectures: $(file "$FFMPEG_RESOURCE" | sed 's/.*: //')"
+echo "  ffmpeg: $(file "$FFMPEG_RESOURCE" | sed 's/.*: //')"
 
 # -----------------------------------------------------------------------------
 # Step 2: Build Desktop App (Universal Binary: arm64 + x86_64)
