@@ -188,7 +188,7 @@ struct OnboardingView: View {
         case 6: return appState.hasMicrophonePermission
         case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
         case 8: return appState.hasAccessibilityPermission
-        case 9: return appState.hasBluetoothPermission
+        case 9: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied
         default: return true
         }
     }
@@ -268,7 +268,7 @@ struct OnboardingView: View {
         case 6: return appState.hasMicrophonePermission
         case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
         case 8: return appState.hasAccessibilityPermission // Accessibility
-        case 9: return appState.hasBluetoothPermission // Bluetooth
+        case 9: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied // Bluetooth (allow skip if unsupported/denied)
         case 10: return true // Done - always "granted"
         default: return false
         }
@@ -577,7 +577,13 @@ struct OnboardingView: View {
         case 8:
             return appState.hasAccessibilityPermission ? "Continue" : "Grant Accessibility"
         case 9:
-            return appState.hasBluetoothPermission ? "Continue" : "Grant Bluetooth Access"
+            if appState.hasBluetoothPermission {
+                return "Continue"
+            } else if isBluetoothUnsupported || isBluetoothPermissionDenied {
+                return "Skip"
+            } else {
+                return "Grant Bluetooth Access"
+            }
         case 10:
             return "Start Using Omi"
         default:
@@ -1026,6 +1032,10 @@ struct OnboardingView: View {
         appState.isBluetoothPermissionDenied()
     }
 
+    private var isBluetoothUnsupported: Bool {
+        appState.isBluetoothUnsupported()
+    }
+
     private var bluetoothStepView: some View {
         VStack(spacing: 16) {
             if appState.hasBluetoothPermission {
@@ -1057,6 +1067,47 @@ struct OnboardingView: View {
                 Text("Permission was previously denied. Please enable Bluetooth access in System Settings:")
                     .font(.body)
                     .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                Button(action: bluetoothOpenSystemSettings) {
+                    HStack(spacing: 8) {
+                        Image(systemName: "gear")
+                            .font(.system(size: 14))
+                        Text("Open System Settings")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.primary)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                    .frame(width: 260)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.secondary.opacity(0.5), lineWidth: 1)
+                    )
+                }
+                .buttonStyle(.plain)
+
+            } else if isBluetoothUnsupported {
+                // Unsupported state - allow skip with explanation
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 48))
+                    .foregroundColor(.orange)
+
+                Text("Bluetooth Unavailable")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Bluetooth appears unavailable on this Mac. This can happen on newer macOS versions. You can skip this step and Omi will work without wearable device support.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                Text("You can try enabling Bluetooth in System Settings if you have an Omi wearable.")
+                    .font(.caption)
+                    .foregroundColor(.secondary.opacity(0.8))
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 32)
 
@@ -1213,11 +1264,23 @@ struct OnboardingView: View {
             }
         case 9:
             // Bluetooth step
+            // Initialize Bluetooth if not already done
+            appState.initializeBluetoothIfNeeded()
+
             if appState.hasBluetoothPermission {
                 AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Bluetooth")
                 AnalyticsManager.shared.permissionGranted(permission: "bluetooth", extraProperties: [
                     "bluetooth_state": BluetoothManager.shared.bluetoothStateDescription,
                     "bluetooth_state_raw": BluetoothManager.shared.bluetoothState.rawValue
+                ])
+                currentStep += 1
+            } else if isBluetoothUnsupported || isBluetoothPermissionDenied {
+                // Allow skipping when Bluetooth is unsupported or denied
+                AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Bluetooth")
+                AnalyticsManager.shared.permissionSkipped(permission: "bluetooth", extraProperties: [
+                    "bluetooth_state": BluetoothManager.shared.bluetoothStateDescription,
+                    "bluetooth_state_raw": BluetoothManager.shared.bluetoothState.rawValue,
+                    "reason": isBluetoothUnsupported ? "unsupported" : "denied"
                 ])
                 currentStep += 1
             } else {
