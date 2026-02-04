@@ -294,6 +294,7 @@ extension Array where Element == Screenshot {
 
 enum RewindError: LocalizedError {
     case databaseNotInitialized
+    case databaseCorrupted(message: String)
     case invalidImage
     case storageError(String)
     case ocrFailed(String)
@@ -303,6 +304,8 @@ enum RewindError: LocalizedError {
         switch self {
         case .databaseNotInitialized:
             return "Rewind database is not initialized"
+        case .databaseCorrupted(let message):
+            return "Database corrupted: \(message)"
         case .invalidImage:
             return "Invalid image data"
         case .storageError(let message):
