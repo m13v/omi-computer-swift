@@ -137,8 +137,14 @@ class FullWidthTimelineNSView: NSView {
     // Handle click - jump to position
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
+        let rect = timelineRect()
+        log("TimelineBar: Click at \(location), timelineRect=\(rect), bounds=\(bounds), screenshots=\(screenshots.count)")
+
         if let index = indexAtPoint(location) {
+            log("TimelineBar: Click resolved to index \(index)")
             onSelect?(index)
+        } else {
+            log("TimelineBar: Click outside timeline rect or no screenshots")
         }
     }
 
