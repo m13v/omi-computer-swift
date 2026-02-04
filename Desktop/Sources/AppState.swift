@@ -424,14 +424,14 @@ class AppState: ObservableObject {
         hasBluetoothPermission = state == .poweredOn || state == .poweredOff
     }
 
-    /// Trigger Bluetooth permission by accessing BluetoothManager
-    /// The CBCentralManager will prompt for permission when first accessed
+    /// Trigger Bluetooth permission by attempting to scan
+    /// On macOS, the permission dialog only appears when actually using Bluetooth
     func triggerBluetoothPermission() {
-        // Accessing BluetoothManager.shared triggers CBCentralManager creation
-        // which prompts for Bluetooth permission if not yet determined
-        _ = BluetoothManager.shared.bluetoothState
-        // Check permission state after a brief delay to allow the system to update
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // Trigger the permission prompt by attempting to scan
+        // This bypasses state checks because we specifically want the system dialog
+        BluetoothManager.shared.triggerPermissionPrompt()
+        // Check permission state after a delay to allow user to respond
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
             self.checkBluetoothPermission()
         }
     }
