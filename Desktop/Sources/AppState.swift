@@ -450,12 +450,21 @@ class AppState: ObservableObject {
         checkMicrophonePermission()
         checkSystemAudioPermission()
         checkAccessibilityPermission()
-        checkBluetoothPermission()
+        // Only check Bluetooth if already initialized (to avoid triggering permission prompt early)
+        if bluetoothStateCancellable != nil {
+            checkBluetoothPermission()
+        }
     }
 
     /// Check Bluetooth permission status
     /// Bluetooth is considered "granted" if state is poweredOn or poweredOff (allowed but BT off)
+    /// IMPORTANT: Only call this after initializeBluetoothIfNeeded() has been called
     func checkBluetoothPermission() {
+        // Guard: Only check if Bluetooth has been initialized (to avoid triggering permission prompt early)
+        guard bluetoothStateCancellable != nil else {
+            log("BLUETOOTH_CHECK: Skipping - Bluetooth not initialized yet")
+            return
+        }
         let state = BluetoothManager.shared.bluetoothState
         let oldValue = hasBluetoothPermission
         // poweredOn = ready to use, poweredOff = allowed but BT is off
@@ -471,6 +480,9 @@ class AppState: ObservableObject {
     /// Trigger Bluetooth permission by attempting to scan
     /// On macOS, the permission dialog only appears when actually using Bluetooth
     func triggerBluetoothPermission() {
+        // Ensure Bluetooth is initialized first (this is expected to be called from the Bluetooth onboarding step)
+        initializeBluetoothIfNeeded()
+
         log("triggerBluetoothPermission: Starting, state=\(BluetoothManager.shared.bluetoothStateDescription), auth=\(BluetoothManager.shared.authorizationDescription)")
         // Trigger the permission prompt by attempting to scan
         // This bypasses state checks because we specifically want the system dialog
@@ -488,12 +500,22 @@ class AppState: ObservableObject {
     }
 
     /// Check if Bluetooth permission was explicitly denied
+    /// Returns false if Bluetooth hasn't been initialized yet (to avoid triggering permission prompt)
     func isBluetoothPermissionDenied() -> Bool {
+        // Guard: Only check if Bluetooth has been initialized
+        guard bluetoothStateCancellable != nil else {
+            return false
+        }
         return BluetoothManager.shared.bluetoothState == .unauthorized
     }
 
     /// Check if Bluetooth is reported as unsupported (may be macOS version issue)
+    /// Returns false if Bluetooth hasn't been initialized yet (to avoid triggering permission prompt)
     func isBluetoothUnsupported() -> Bool {
+        // Guard: Only check if Bluetooth has been initialized
+        guard bluetoothStateCancellable != nil else {
+            return false
+        }
         return BluetoothManager.shared.bluetoothState == .unsupported
     }
 
@@ -788,6 +810,8 @@ class AppState: ObservableObject {
                     )
                     await MainActor.run {
                         self.currentSessionId = sessionId
+                        // Start live notes session
+                        LiveNotesMonitor.shared.startSession(sessionId: sessionId)
                     }
                     log("Transcription: Created DB session \(sessionId)")
                 } catch {
@@ -1028,9 +1052,13 @@ class AppState: ObservableObject {
 
         log("Transcription: Final segments count: \(speakerSegments.count)")
 
+        // End live notes session
+        LiveNotesMonitor.shared.endSession()
+
         // Clear segments after finalization
         speakerSegments = []
         LiveTranscriptMonitor.shared.clear()
+        LiveNotesMonitor.shared.clear()
         recordingStartTime = nil
         currentSessionId = nil
 
