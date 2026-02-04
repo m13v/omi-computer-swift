@@ -141,7 +141,7 @@ async fn get_apps_v2(
     );
 
     // Get all approved apps (high limit to match Python backend which fetches all from cache)
-    let all_apps = match state
+    let mut all_apps = match state
         .firestore
         .get_apps(&user.uid, 5000, 0, None, None)
         .await
@@ -154,13 +154,50 @@ async fn get_apps_v2(
     };
 
     // Get popular apps separately (they have is_popular=true)
-    let popular_apps = match state.firestore.get_popular_apps(&user.uid, 20).await {
+    let mut popular_apps = match state.firestore.get_popular_apps(&user.uid, 20).await {
         Ok(apps) => apps,
         Err(e) => {
             tracing::warn!("Failed to get popular apps: {}", e);
             vec![]
         }
     };
+
+    // Fetch installs counts from Redis (matching Python backend behavior)
+    // The Python backend stores installs in Redis, not Firestore
+    if let Some(redis) = &state.redis {
+        // Collect all app IDs
+        let mut all_app_ids: Vec<String> = all_apps.iter().map(|a| a.id.clone()).collect();
+        for app in &popular_apps {
+            if !all_app_ids.contains(&app.id) {
+                all_app_ids.push(app.id.clone());
+            }
+        }
+
+        // Fetch installs from Redis
+        match redis.get_apps_installs_count(&all_app_ids).await {
+            Ok(installs_map) => {
+                // Update all_apps with installs
+                for app in &mut all_apps {
+                    if let Some(&installs) = installs_map.get(&app.id) {
+                        app.installs = installs;
+                    }
+                }
+                // Update popular_apps with installs
+                for app in &mut popular_apps {
+                    if let Some(&installs) = installs_map.get(&app.id) {
+                        app.installs = installs;
+                    }
+                }
+                tracing::debug!("Updated {} apps with installs from Redis", installs_map.len());
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch installs from Redis: {} - using Firestore values", e);
+            }
+        }
+    } else {
+        tracing::debug!("Redis not configured - using installs from Firestore");
+    }
+
     let popular_ids: std::collections::HashSet<_> = popular_apps.iter().map(|a| a.id.clone()).collect();
 
     // Get capabilities for grouping
