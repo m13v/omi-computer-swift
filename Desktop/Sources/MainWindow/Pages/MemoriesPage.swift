@@ -1186,7 +1186,6 @@ private struct MemoryCardView: View {
         )
         .contentShape(Rectangle())
         .onHover { hovering in
-            logPerf("HOVER: MemoryCard = \(hovering ? "ENTER" : "EXIT")")
             // No animation wrapper - simple state update for instant response
             isHovered = hovering
             // Change cursor to pointing hand on hover
