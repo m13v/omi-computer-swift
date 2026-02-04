@@ -2833,6 +2833,19 @@ impl FirestoreService {
         let name = doc.get("name").and_then(|n| n.as_str()).unwrap_or("");
         let id = name.split('/').last().unwrap_or("").to_string();
 
+        // Parse has_auth_steps from external_integration.auth_steps
+        // Structure: external_integration: { mapValue: { fields: { auth_steps: { arrayValue: { values: [...] } } } } }
+        let has_auth_steps = fields
+            .get("external_integration")
+            .and_then(|ei| ei.get("mapValue"))
+            .and_then(|mv| mv.get("fields"))
+            .and_then(|f| f.get("auth_steps"))
+            .and_then(|as_| as_.get("arrayValue"))
+            .and_then(|av| av.get("values"))
+            .and_then(|v| v.as_array())
+            .map(|arr| !arr.is_empty())
+            .unwrap_or(false);
+
         Ok(AppSummary {
             id,
             name: self.parse_string(fields, "name").unwrap_or_default(),
@@ -2849,6 +2862,7 @@ impl FirestoreService {
             is_paid: self.parse_bool(fields, "is_paid").unwrap_or(false),
             price: self.parse_float(fields, "price"),
             enabled: false, // Will be set by caller
+            has_auth_steps,
         })
     }
 
