@@ -19,7 +19,7 @@ impl RedisService {
             addr: ConnectionAddr::Tcp(host.to_string(), port),
             redis: RedisConnectionInfo {
                 db: 0,
-                username: None,
+                username: Some("default".to_string()),
                 password: password.map(|p| p.to_string()),
             },
         };
