@@ -1278,18 +1278,18 @@ struct SearchResultRow: View {
 struct ScrollWheelCaptureView: NSViewRepresentable {
     let onScroll: (CGFloat) -> Void
 
-    func makeNSView(context: Context) -> ScrollWheelNSView {
-        let view = ScrollWheelNSView()
+    func makeNSView(context: Context) -> PageScrollWheelNSView {
+        let view = PageScrollWheelNSView()
         view.onScroll = onScroll
         return view
     }
 
-    func updateNSView(_ nsView: ScrollWheelNSView, context: Context) {
+    func updateNSView(_ nsView: PageScrollWheelNSView, context: Context) {
         nsView.onScroll = onScroll
     }
 }
 
-class ScrollWheelNSView: NSView {
+class PageScrollWheelNSView: NSView {
     var onScroll: ((CGFloat) -> Void)?
 
     override var acceptsFirstResponder: Bool { true }
