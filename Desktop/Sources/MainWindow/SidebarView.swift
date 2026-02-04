@@ -480,9 +480,8 @@ struct SidebarView: View {
     // MARK: - Device Status Widget
     private var deviceStatusWidget: some View {
         Button(action: {
-            // Navigate to Settings > Device tab
-            SettingsContentView.pendingSection = SettingsContentView.SettingsSection.device
-            selectedIndex = SidebarNavItem.settings.rawValue
+            // Navigate to Settings > Device tab via notification
+            NotificationCenter.default.post(name: .navigateToDeviceSettings, object: nil)
         }) {
             HStack(spacing: 12) {
                 // Device icon with status indicator
