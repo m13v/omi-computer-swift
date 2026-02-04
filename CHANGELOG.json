@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.2.4",
+      "date": "2026-02-04",
+      "changes": [
+        "Improved analytics for permission and Bluetooth state tracking",
+        "Code cleanup and stability improvements"
+      ]
+    },
+    {
       "version": "0.2.3",
       "date": "2026-02-03",
       "changes": [
