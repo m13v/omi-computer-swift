@@ -2041,6 +2041,43 @@ struct OmiAppReview: Codable, Identifiable {
     }
 }
 
+// MARK: - V2 Apps Response Types
+
+/// Capability info in v2/apps response
+struct OmiCapabilityInfo: Codable {
+    let id: String
+    let title: String
+}
+
+/// Pagination metadata in v2/apps response
+struct OmiPaginationMeta: Codable {
+    let total: Int
+    let count: Int
+    let offset: Int
+    let limit: Int
+}
+
+/// A single group in the v2/apps response
+struct OmiAppGroup: Codable {
+    let capability: OmiCapabilityInfo
+    let data: [OmiApp]
+    let pagination: OmiPaginationMeta
+}
+
+/// Metadata in v2/apps response
+struct OmiAppsV2Meta: Codable {
+    let capabilities: [OmiCapabilityInfo]
+    let groupCount: Int
+    let limit: Int
+    let offset: Int
+}
+
+/// Full v2/apps grouped response
+struct OmiAppsV2Response: Codable {
+    let groups: [OmiAppGroup]
+    let meta: OmiAppsV2Meta
+}
+
 // MARK: - Apps API
 
 extension APIClient {
@@ -2072,6 +2109,13 @@ extension APIClient {
     /// Fetches popular apps
     func getPopularApps() async throws -> [OmiApp] {
         return try await get("v1/apps/popular")
+    }
+
+    /// Fetches apps grouped by capability (v2 API - matches Flutter/Python backend)
+    /// Returns groups: Featured, Integrations, Chat Assistants, Summary Apps, Realtime Notifications
+    func getAppsV2(offset: Int = 0, limit: Int = 20) async throws -> OmiAppsV2Response {
+        let endpoint = "v2/apps?offset=\(offset)&limit=\(limit)"
+        return try await get(endpoint)
     }
 
     /// Fetches approved public apps
