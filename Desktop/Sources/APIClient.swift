@@ -2508,6 +2508,113 @@ extension APIClient {
     func getUserProfile() async throws -> UserProfileResponse {
         return try await get("v1/users/profile")
     }
+
+    // MARK: - Knowledge Graph API
+
+    /// Get the full knowledge graph (nodes and edges)
+    func getKnowledgeGraph() async throws -> KnowledgeGraphResponse {
+        return try await get("v1/knowledge-graph")
+    }
+
+    /// Rebuild the knowledge graph from memories
+    func rebuildKnowledgeGraph(limit: Int = 500) async throws -> RebuildGraphResponse {
+        return try await post("v1/knowledge-graph/rebuild?limit=\(limit)", body: EmptyBody())
+    }
+
+    /// Delete the knowledge graph
+    func deleteKnowledgeGraph() async throws {
+        let url = URL(string: baseURL + "v1/knowledge-graph")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+
+        let (_, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+    }
+}
+
+// MARK: - Knowledge Graph Models
+
+/// Node type in the knowledge graph
+enum KnowledgeGraphNodeType: String, Codable {
+    case person
+    case place
+    case organization
+    case thing
+    case concept
+}
+
+/// A node in the knowledge graph representing an entity
+struct KnowledgeGraphNode: Codable, Identifiable {
+    let id: String
+    let label: String
+    let nodeType: KnowledgeGraphNodeType
+    let aliases: [String]
+    let memoryIds: [String]
+    let createdAt: Date
+    let updatedAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, label, aliases
+        case nodeType = "node_type"
+        case memoryIds = "memory_ids"
+        case createdAt = "created_at"
+        case updatedAt = "updated_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        label = try container.decode(String.self, forKey: .label)
+        nodeType = try container.decodeIfPresent(KnowledgeGraphNodeType.self, forKey: .nodeType) ?? .concept
+        aliases = try container.decodeIfPresent([String].self, forKey: .aliases) ?? []
+        memoryIds = try container.decodeIfPresent([String].self, forKey: .memoryIds) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+    }
+}
+
+/// An edge in the knowledge graph representing a relationship
+struct KnowledgeGraphEdge: Codable, Identifiable {
+    let id: String
+    let sourceId: String
+    let targetId: String
+    let label: String
+    let memoryIds: [String]
+    let createdAt: Date
+
+    enum CodingKeys: String, CodingKey {
+        case id, label
+        case sourceId = "source_id"
+        case targetId = "target_id"
+        case memoryIds = "memory_ids"
+        case createdAt = "created_at"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        sourceId = try container.decode(String.self, forKey: .sourceId)
+        targetId = try container.decode(String.self, forKey: .targetId)
+        label = try container.decode(String.self, forKey: .label)
+        memoryIds = try container.decodeIfPresent([String].self, forKey: .memoryIds) ?? []
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+    }
+}
+
+/// Response containing the full knowledge graph
+struct KnowledgeGraphResponse: Codable {
+    let nodes: [KnowledgeGraphNode]
+    let edges: [KnowledgeGraphEdge]
+}
+
+/// Response for rebuild operation
+struct RebuildGraphResponse: Codable {
+    let status: String
+    let message: String
 }
 
 // MARK: - User Settings Models
