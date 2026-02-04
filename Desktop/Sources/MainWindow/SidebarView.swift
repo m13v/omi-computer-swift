@@ -135,7 +135,7 @@ struct SidebarView: View {
                                 showAudioBars: true
                             )
                         } else if item == .rewind {
-                            // Rewind - icon color shows status
+                            // Rewind - shows pulsing recording icon when active
                             NavItemWithStatusView(
                                 icon: item.icon,
                                 label: item.title,
@@ -150,7 +150,8 @@ struct SidebarView: View {
                                 },
                                 onToggle: {
                                     toggleMonitoring(enabled: !isMonitoring)
-                                }
+                                },
+                                showRewindIcon: true
                             )
                         } else {
                             NavItemView(
@@ -1031,6 +1032,9 @@ struct NavItemWithStatusView: View {
     var systemLevel: Float = 0
     var showAudioBars: Bool = false
 
+    // Optional Rewind pulsing icon
+    var showRewindIcon: Bool = false
+
     @State private var isHovered = false
 
     /// Icon color based on state
@@ -1046,7 +1050,7 @@ struct NavItemWithStatusView: View {
         HStack(spacing: 12) {
             // Icon area - tappable to toggle
             ZStack(alignment: .topTrailing) {
-                // Show audio bars when active and enabled, otherwise show icon
+                // Show audio bars when active and enabled for conversations
                 if showAudioBars && isOn {
                     SidebarAudioLevelIcon(
                         micLevel: micLevel,
@@ -1054,6 +1058,10 @@ struct NavItemWithStatusView: View {
                         isActive: true
                     )
                     .frame(width: iconWidth)
+                } else if showRewindIcon {
+                    // Show pulsing Rewind icon
+                    SidebarRewindIcon(isActive: isOn)
+                        .frame(width: iconWidth)
                 } else {
                     Image(systemName: icon)
                         .font(.system(size: 17))
@@ -1222,6 +1230,53 @@ private struct SidebarAudioBar: View {
             .fill(barColor)
             .frame(width: barWidth, height: barHeight)
             .animation(.easeOut(duration: 0.08), value: level)
+    }
+}
+
+// MARK: - Sidebar Rewind Icon
+/// Animated recording indicator for Rewind when capturing
+struct SidebarRewindIcon: View {
+    let isActive: Bool
+
+    private let iconSize: CGFloat = 17
+
+    @State private var isPulsing = false
+
+    var body: some View {
+        ZStack {
+            // Outer pulsing ring when active
+            if isActive {
+                Circle()
+                    .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 2)
+                    .frame(width: iconSize, height: iconSize)
+                    .scaleEffect(isPulsing ? 1.4 : 1.0)
+                    .opacity(isPulsing ? 0 : 0.8)
+            }
+
+            // Inner recording dot
+            Circle()
+                .fill(isActive ? OmiColors.purplePrimary : OmiColors.error)
+                .frame(width: isActive ? 10 : 8, height: isActive ? 10 : 8)
+        }
+        .frame(width: iconSize, height: iconSize)
+        .onAppear {
+            if isActive {
+                startPulsing()
+            }
+        }
+        .onChange(of: isActive) { _, newValue in
+            if newValue {
+                startPulsing()
+            } else {
+                isPulsing = false
+            }
+        }
+    }
+
+    private func startPulsing() {
+        withAnimation(.easeOut(duration: 1.0).repeatForever(autoreverses: false)) {
+            isPulsing = true
+        }
     }
 }
 
