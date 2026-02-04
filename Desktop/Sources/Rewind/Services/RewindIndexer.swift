@@ -1,4 +1,5 @@
 import AppKit
+import AVFoundation
 import Foundation
 
 /// Coordinates the capture → storage → database → OCR pipeline for Rewind
@@ -226,4 +227,132 @@ actor RewindIndexer {
             return nil
         }
     }
+
+    // MARK: - Database Rebuild
+
+    /// Rebuild database from existing video files
+    /// This scans all video chunks and recreates database entries
+    /// - Parameter progressCallback: Called with progress (0.0 to 1.0) as rebuild proceeds
+    func rebuildFromVideoFiles(progressCallback: @escaping (Double) -> Void) async throws {
+        log("RewindIndexer: Starting database rebuild from video files...")
+
+        // Ensure initialized
+        if !isInitialized {
+            try await initialize()
+        }
+
+        // Get all video chunk files
+        let videoChunks = try await RewindStorage.shared.getAllVideoChunks()
+        let totalChunks = videoChunks.count
+
+        if totalChunks == 0 {
+            log("RewindIndexer: No video chunks found to rebuild from")
+            progressCallback(1.0)
+            return
+        }
+
+        log("RewindIndexer: Found \(totalChunks) video chunks to process")
+
+        var processedChunks = 0
+        var totalFrames = 0
+
+        for chunkInfo in videoChunks {
+            // Extract frames from video chunk
+            do {
+                let frames = try await extractFramesFromChunk(chunkInfo)
+                totalFrames += frames.count
+
+                // Insert each frame into database
+                for frame in frames {
+                    let screenshot = Screenshot(
+                        timestamp: frame.timestamp,
+                        appName: frame.appName ?? "Unknown",
+                        windowTitle: frame.windowTitle,
+                        imagePath: "",
+                        videoChunkPath: chunkInfo.relativePath,
+                        frameOffset: frame.frameOffset,
+                        ocrText: nil,
+                        ocrDataJson: nil,
+                        isIndexed: false  // Will need re-OCR
+                    )
+
+                    try await RewindDatabase.shared.insertScreenshot(screenshot)
+                }
+            } catch {
+                logError("RewindIndexer: Failed to process chunk \(chunkInfo.relativePath): \(error)")
+            }
+
+            processedChunks += 1
+            progressCallback(Double(processedChunks) / Double(totalChunks))
+        }
+
+        log("RewindIndexer: Rebuild complete - processed \(totalChunks) chunks, \(totalFrames) frames")
+        progressCallback(1.0)
+    }
+
+    /// Extract frame metadata from a video chunk
+    private func extractFramesFromChunk(_ chunkInfo: VideoChunkInfo) async throws -> [FrameMetadata] {
+        // Parse the chunk filename to extract timestamp info
+        // Format: chunk_YYYYMMDD_HHMMSS.hevc
+        guard let timestamp = parseChunkTimestamp(chunkInfo.filename) else {
+            return []
+        }
+
+        // Get frame count from video file
+        let frameCount = try await getVideoFrameCount(at: chunkInfo.fullPath)
+
+        // Create frame metadata for each frame (assuming 1 fps capture rate)
+        var frames: [FrameMetadata] = []
+        for i in 0..<frameCount {
+            let frameTimestamp = timestamp.addingTimeInterval(Double(i))
+            frames.append(FrameMetadata(
+                timestamp: frameTimestamp,
+                frameOffset: i,
+                appName: nil,  // Can't recover app name from video
+                windowTitle: nil
+            ))
+        }
+
+        return frames
+    }
+
+    /// Parse timestamp from chunk filename
+    private func parseChunkTimestamp(_ filename: String) -> Date? {
+        // Expected format: chunk_YYYYMMDD_HHMMSS.hevc
+        let pattern = /chunk_(\d{8})_(\d{6})\.hevc/
+        guard let match = filename.firstMatch(of: pattern) else { return nil }
+
+        let dateStr = String(match.1)
+        let timeStr = String(match.2)
+
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMddHHmmss"
+        return formatter.date(from: dateStr + timeStr)
+    }
+
+    /// Get frame count from video file using AVFoundation
+    private func getVideoFrameCount(at path: URL) async throws -> Int {
+        let asset = AVAsset(url: path)
+        guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else {
+            return 0
+        }
+
+        let duration = try await asset.load(.duration)
+        let frameRate = try await videoTrack.load(.nominalFrameRate)
+
+        if frameRate > 0 {
+            return Int(CMTimeGetSeconds(duration) * Double(frameRate))
+        }
+
+        // Fallback: assume 1 fps
+        return Int(CMTimeGetSeconds(duration))
+    }
+}
+
+/// Metadata for a frame extracted from video
+private struct FrameMetadata {
+    let timestamp: Date
+    let frameOffset: Int
+    let appName: String?
+    let windowTitle: String?
 }
