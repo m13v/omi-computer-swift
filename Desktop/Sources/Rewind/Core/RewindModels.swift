@@ -318,6 +318,15 @@ enum RewindError: LocalizedError {
     }
 }
 
+// MARK: - Video Chunk Info
+
+/// Info about a video chunk file for database rebuild
+struct VideoChunkInfo {
+    let filename: String
+    let relativePath: String
+    let fullPath: URL
+}
+
 // MARK: - Rewind Settings
 
 /// Settings for the Rewind feature
@@ -401,6 +410,13 @@ extension Screenshot {
         let formatter = DateFormatter()
         formatter.dateStyle = .medium
         formatter.timeStyle = .short
+        return formatter.string(from: timestamp)
+    }
+
+    /// Compact formatted date for bottom controls (shorter format)
+    var formattedDateCompact: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, h:mm a"
         return formatter.string(from: timestamp)
     }
 
