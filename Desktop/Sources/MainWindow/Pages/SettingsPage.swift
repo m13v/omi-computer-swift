@@ -129,6 +129,9 @@ struct SettingsContentView: View {
     // Multi-chat mode setting
     @AppStorage("multiChatEnabled") private var multiChatEnabled = false
 
+    // Launch at login manager
+    @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
+
     enum SettingsSection: String, CaseIterable {
         case general = "General"
         case device = "Device"
@@ -402,6 +405,35 @@ struct SettingsContentView: View {
                     Spacer()
 
                     Toggle("", isOn: $multiChatEnabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+
+            // Launch at Login toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "power")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Launch at Login")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(launchAtLoginManager.statusDescription)
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { launchAtLoginManager.isEnabled },
+                        set: { launchAtLoginManager.setEnabled($0) }
+                    ))
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
