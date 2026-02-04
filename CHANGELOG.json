@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.2.1",
+      "date": "2026-02-03",
+      "changes": [
+        "Universal binary support for Intel and Apple Silicon Macs",
+        "Improved screen capture quality with higher JPEG compression",
+        "Added Device connect widget to sidebar",
+        "Better memory management with LRU thumbnail and icon caches",
+        "Increased video chunk resolution to 3000px"
+      ]
+    },
+    {
       "version": "0.2.0",
       "date": "2026-02-03",
       "changes": [
