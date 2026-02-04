@@ -39,6 +39,11 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var wasMonitoringBeforeLock = false
     private var systemEventObservers: [NSObjectProtocol] = []
 
+    // Auto-retry state for transient failures (Exposé, Mission Control, etc.)
+    private var isInRecoveryMode = false
+    private var recoveryRetryCount = 0
+    private let maxRecoveryRetries = 30  // Try for 30 seconds before giving up
+
     // MARK: - Initialization
 
     private override init() {
@@ -656,6 +661,14 @@ public class ProactiveAssistantsPlugin: NSObject {
     private func handleRepeatedCaptureFailures() {
         log("ProactiveAssistantsPlugin: Detected \(consecutiveFailures) consecutive capture failures")
 
+        // Check if we're in a special system mode (Exposé, Mission Control, etc.)
+        // These modes temporarily block screen capture but aren't permission issues
+        if isInSpecialSystemMode() {
+            log("ProactiveAssistantsPlugin: System is in special mode (Exposé/Mission Control), entering recovery mode")
+            enterRecoveryMode()
+            return
+        }
+
         // Refresh permission state
         refreshScreenRecordingPermission()
 
@@ -675,21 +688,156 @@ public class ProactiveAssistantsPlugin: NSObject {
                 message: "Omi needs screen recording permission to continue monitoring. Please re-enable it in System Settings."
             )
         } else {
-            // Permission appears granted (CGPreflight says yes) but capture is failing
-            // This is the "broken ScreenCaptureKit" state - TCC granted but SCK declined
+            // Permission appears granted but capture is failing
+            // This could be a transient issue - enter recovery mode instead of stopping
+            log("ProactiveAssistantsPlugin: Capture failing with permission granted, entering recovery mode")
+            enterRecoveryMode()
+        }
+    }
+
+    // MARK: - Special System Mode Detection
+
+    /// Check if the system is in a special mode that blocks screen capture.
+    ///
+    /// Known modes that block ScreenCaptureKit:
+    /// - **Exposé / Mission Control** (F3 or swipe up): Dock owns all windows
+    /// - **App Exposé** (swipe down on app): Shows all windows of one app
+    /// - **Notification Center**: Slide-in panel
+    /// - **Lock Screen**: Captured separately via screenDidLock notification
+    /// - **Screen Saver**: Similar to lock screen
+    ///
+    /// When in these modes, ScreenCaptureKit returns "user declined TCCs" error
+    /// even though permission is actually granted. This is a transient state.
+    private func isInSpecialSystemMode() -> Bool {
+        // Check if Dock is the frontmost app (indicates Exposé/Mission Control)
+        if let frontApp = NSWorkspace.shared.frontmostApplication {
+            if frontApp.bundleIdentifier == "com.apple.dock" {
+                return true
+            }
+        }
+
+        // Check for Mission Control windows using CGWindowList
+        // When Mission Control is active, Dock creates a window with no name
+        guard let windowList = CGWindowListCopyWindowInfo([.optionOnScreenOnly], kCGNullWindowID) as? [[String: Any]] else {
+            return false
+        }
+
+        for window in windowList {
+            guard let ownerName = window[kCGWindowOwnerName as String] as? String else {
+                continue
+            }
+
+            // Dock window with no name indicates Mission Control/Exposé
+            if ownerName == "Dock" {
+                let windowName = window[kCGWindowName as String] as? String
+                if windowName == nil || windowName?.isEmpty == true {
+                    // Check if it's a large window (Mission Control overlay)
+                    if let bounds = window[kCGWindowBounds as String] as? [String: CGFloat],
+                       let width = bounds["Width"],
+                       let height = bounds["Height"],
+                       width > 500 && height > 300 {
+                        return true
+                    }
+                }
+            }
+
+            // Notification Center active
+            if ownerName == "NotificationCenter" {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    // MARK: - Recovery Mode
+
+    /// Enter recovery mode - pause capture temporarily and retry
+    private func enterRecoveryMode() {
+        guard !isInRecoveryMode else { return }
+
+        isInRecoveryMode = true
+        recoveryRetryCount = 0
+
+        log("ProactiveAssistantsPlugin: Entering recovery mode, will retry capture periodically")
+
+        // Pause the normal capture timer
+        captureTimer?.invalidate()
+        captureTimer = nil
+
+        // Start recovery timer - check every 1 second if we can capture again
+        captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.attemptRecovery()
+            }
+        }
+    }
+
+    /// Attempt to recover from transient capture failure
+    private func attemptRecovery() async {
+        recoveryRetryCount += 1
+
+        // Check if system is still in special mode
+        if isInSpecialSystemMode() {
+            // Still in Exposé/Mission Control, keep waiting
+            if recoveryRetryCount % 5 == 0 {
+                log("ProactiveAssistantsPlugin: Still in special system mode, waiting... (\(recoveryRetryCount)s)")
+            }
+
+            // Give up after max retries (likely a real issue)
+            if recoveryRetryCount >= maxRecoveryRetries {
+                log("ProactiveAssistantsPlugin: Recovery timeout in special mode, continuing to wait")
+                // Reset counter but keep trying - user might be in Exposé for a while
+                recoveryRetryCount = 0
+            }
+            return
+        }
+
+        // Try to capture a frame
+        guard let screenCaptureService = screenCaptureService else {
+            exitRecoveryMode(success: false)
+            return
+        }
+
+        if let _ = await screenCaptureService.captureActiveWindowAsync() {
+            // Success! Exit recovery mode
+            log("ProactiveAssistantsPlugin: Recovery successful, resuming normal capture")
+            exitRecoveryMode(success: true)
+        } else {
+            // Still failing
+            if recoveryRetryCount >= maxRecoveryRetries {
+                // Give up and show the reset notification
+                log("ProactiveAssistantsPlugin: Recovery failed after \(maxRecoveryRetries) attempts")
+                exitRecoveryMode(success: false)
+            }
+        }
+    }
+
+    /// Exit recovery mode
+    private func exitRecoveryMode(success: Bool) {
+        isInRecoveryMode = false
+        recoveryRetryCount = 0
+
+        if success {
+            // Reset failure counter and resume normal operation
+            consecutiveFailures = 0
+            lastCaptureSucceeded = true
+
+            // Restart normal capture timer
+            captureTimer?.invalidate()
+            captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    await self?.captureFrame()
+                }
+            }
+        } else {
+            // Recovery failed - now show the reset notification
             log("ProactiveAssistantsPlugin: ScreenCaptureKit broken - TCC granted but capture failing")
 
-            // Track broken state detection
             AnalyticsManager.shared.screenCaptureBrokenDetected()
-
-            // Post notification for AppState to show "Reset" button
             NotificationCenter.default.post(name: .screenCaptureKitBroken, object: nil)
-
-            // Stop monitoring since we can't capture
             stopMonitoring()
 
-            // Send user notification with "Reset Now" action button
-            // Clicking the notification or the action button will trigger reset
             NotificationService.shared.sendNotification(
                 title: NotificationService.screenCaptureResetTitle,
                 message: "Permission appears granted but capture is failing. Click to reset and fix this issue."
