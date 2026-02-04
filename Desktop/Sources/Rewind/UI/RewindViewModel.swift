@@ -97,8 +97,6 @@ class RewindViewModel: ObservableObject {
 
     // MARK: - Search
 
-    /// Whether to apply date filter to search (always true - date filter is always active)
-    @Published var applyDateFilterToSearch: Bool = true
 
     private func performSearch(query: String) async {
         // Skip if not yet initialized (prevents race condition with debounced publisher)
@@ -123,14 +121,10 @@ class RewindViewModel: ObservableObject {
         // Track rewind search
         AnalyticsManager.shared.rewindSearchPerformed(queryLength: trimmedQuery.count)
 
-        // Calculate date range if date filter is applied
-        var startDate: Date? = nil
-        var endDate: Date? = nil
-        if applyDateFilterToSearch {
-            let calendar = Calendar.current
-            startDate = calendar.startOfDay(for: selectedDate)
-            endDate = calendar.date(byAdding: .day, value: 1, to: startDate!)
-        }
+        // Calculate date range (date filter is always active)
+        let calendar = Calendar.current
+        let startDate = calendar.startOfDay(for: selectedDate)
+        let endDate = calendar.date(byAdding: .day, value: 1, to: startDate)!
 
         searchTask = Task {
             do {
@@ -171,26 +165,11 @@ class RewindViewModel: ObservableObject {
 
     func filterByDate(_ date: Date) async {
         selectedDate = date
-        applyDateFilterToSearch = true
 
         if !searchQuery.isEmpty {
             await performSearch(query: searchQuery)
         } else {
             await loadScreenshotsForDate(date)
-        }
-    }
-
-    /// Clear date filter to search all time
-    func clearDateFilter() async {
-        applyDateFilterToSearch = false
-        if !searchQuery.isEmpty {
-            await performSearch(query: searchQuery)
-        } else {
-            do {
-                screenshots = try await RewindDatabase.shared.getRecentScreenshots(limit: 100)
-            } catch {
-                logError("RewindViewModel: Failed to load recent screenshots: \(error)")
-            }
         }
     }
 
