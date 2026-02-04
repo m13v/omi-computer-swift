@@ -14,50 +14,17 @@ struct InteractiveTimelineBar: View {
     private let barHeight: CGFloat = 32
 
     var body: some View {
-        VStack(spacing: 4) {
-            // Full-width timeline with moving playhead
-            TimeBasedTimelineView(
-                screenshots: screenshots,
-                currentIndex: currentIndex,
-                searchResultIndices: searchResultIndices,
-                hoveredIndex: $hoveredIndex,
-                hoveredGapIndex: $hoveredGapIndex,
-                barHeight: barHeight,
-                onSelect: onSelect
-            )
-            .frame(height: barHeight + 40) // Space for tooltip
-
-            // Compact legend
-            HStack(spacing: 16) {
-                // Current indicator
-                HStack(spacing: 4) {
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Color.white)
-                        .frame(width: 8, height: 8)
-                    Text("current")
-                        .font(.system(size: 9))
-                        .foregroundColor(.white.opacity(0.4))
-                }
-
-                if searchResultIndices != nil && !(searchResultIndices?.isEmpty ?? true) {
-                    HStack(spacing: 4) {
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Color.yellow.opacity(0.8))
-                            .frame(width: 8, height: 8)
-                        Text("match")
-                            .font(.system(size: 9))
-                            .foregroundColor(.white.opacity(0.4))
-                    }
-                }
-
-                Spacer()
-
-                Text("scroll to navigate")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.3))
-            }
-            .padding(.horizontal, 20)
-        }
+        // Full-width timeline with moving playhead
+        TimeBasedTimelineView(
+            screenshots: screenshots,
+            currentIndex: currentIndex,
+            searchResultIndices: searchResultIndices,
+            hoveredIndex: $hoveredIndex,
+            hoveredGapIndex: $hoveredGapIndex,
+            barHeight: barHeight,
+            onSelect: onSelect
+        )
+        .frame(height: barHeight + 40) // Space for tooltip
     }
 }
 
