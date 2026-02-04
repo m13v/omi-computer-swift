@@ -166,18 +166,36 @@ async fn get_apps_v2(
     // Get capabilities for grouping
     let capabilities = get_v2_capabilities();
 
-    // Group apps by capability
+    // Multi-pass grouping (matching Python backend behavior)
     let mut grouped: HashMap<String, Vec<AppSummary>> = HashMap::new();
 
-    // Add popular apps first
+    // Pass 1: Add popular apps
     if !popular_apps.is_empty() {
         grouped.insert("popular".to_string(), popular_apps);
     }
 
-    // Group remaining apps by capability (excluding popular and persona apps)
+    // Pass 2: Collect notification apps (exclusive - they only appear in notifications section)
+    // This includes apps with proactive_notification OR simple integrations without auth_steps
+    let mut notification_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
     for app in &all_apps {
-        // Skip popular apps (they're already in their own section)
+        if is_notification_app(app) {
+            notification_ids.insert(app.id.clone());
+            grouped
+                .entry("proactive_notification".to_string())
+                .or_insert_with(Vec::new)
+                .push(app.clone());
+        }
+    }
+
+    // Pass 3: Group remaining apps by capability
+    for app in &all_apps {
+        // Skip popular apps (they're in their own section)
         if popular_ids.contains(&app.id) {
+            continue;
+        }
+
+        // Skip notification apps (already processed in pass 2)
+        if notification_ids.contains(&app.id) {
             continue;
         }
 
@@ -187,9 +205,11 @@ async fn get_apps_v2(
         }
 
         // Determine primary capability for this app
-        let primary_capability = get_primary_capability(&app.capabilities);
-        if let Some(cap) = primary_capability {
-            grouped.entry(cap).or_insert_with(Vec::new).push(app.clone());
+        if let Some(cap) = get_app_capability(app) {
+            // Skip proactive_notification here (handled in pass 2)
+            if cap != "proactive_notification" {
+                grouped.entry(cap).or_insert_with(Vec::new).push(app.clone());
+            }
         }
     }
 
@@ -240,34 +260,53 @@ async fn get_apps_v2(
     Ok(Json(response))
 }
 
-/// Determine the primary capability for an app (matching Python backend logic)
-fn get_primary_capability(capabilities: &[String]) -> Option<String> {
-    // Priority order for capability assignment
-    // If app has proactive_notification AND is primarily a notification app, put in notifications
-    if capabilities.contains(&"proactive_notification".to_string()) {
-        // Check if this is primarily a notification app (has proactive_notification but not complex capabilities)
-        let has_external = capabilities.contains(&"external_integration".to_string());
-        let has_chat = capabilities.contains(&"chat".to_string());
-        let has_memories = capabilities.contains(&"memories".to_string());
+/// Check if app is a notification/simple integration app (matching Python backend logic)
+/// Returns true for:
+/// - Apps with proactive_notification capability
+/// - Simple integrations (external_integration WITHOUT auth_steps, chat, or memories)
+fn is_notification_app(app: &AppSummary) -> bool {
+    // Case 1: Has proactive_notification capability
+    if app.capabilities.contains(&"proactive_notification".to_string()) {
+        return true;
+    }
 
-        // Simple notification apps go to notifications section
-        if !has_external && !has_chat && !has_memories {
-            return Some("proactive_notification".to_string());
+    // Case 2: Simple integration (external_integration WITHOUT auth_steps, chat, or memories)
+    let has_external = app.capabilities.contains(&"external_integration".to_string());
+    has_external
+        && !app.has_auth_steps
+        && !app.capabilities.contains(&"chat".to_string())
+        && !app.capabilities.contains(&"memories".to_string())
+}
+
+/// Determine the primary capability section for an app (matching Python backend logic)
+/// Priority: notification apps -> external_integration (with auth) -> chat -> memories
+fn get_app_capability(app: &AppSummary) -> Option<String> {
+    let has_external = app.capabilities.contains(&"external_integration".to_string());
+
+    // First: notification apps (including simple integrations without auth_steps)
+    if is_notification_app(app) {
+        return Some("proactive_notification".to_string());
+    }
+
+    // Second: external integration WITH auth_steps only
+    if has_external && app.has_auth_steps {
+        return Some("external_integration".to_string());
+    }
+
+    // Third: chat apps (if no external+auth)
+    if app.capabilities.contains(&"chat".to_string()) {
+        if !has_external || !app.has_auth_steps {
+            return Some("chat".to_string());
         }
     }
 
-    // Check capabilities in priority order
-    if capabilities.contains(&"external_integration".to_string()) {
-        return Some("external_integration".to_string());
-    }
-    if capabilities.contains(&"chat".to_string()) {
-        return Some("chat".to_string());
-    }
-    if capabilities.contains(&"memories".to_string()) {
-        return Some("memories".to_string());
-    }
-    if capabilities.contains(&"proactive_notification".to_string()) {
-        return Some("proactive_notification".to_string());
+    // Fourth: memories apps (if no chat, no external+auth)
+    if app.capabilities.contains(&"memories".to_string())
+        && !app.capabilities.contains(&"chat".to_string())
+    {
+        if !has_external || !app.has_auth_steps {
+            return Some("memories".to_string());
+        }
     }
 
     None
