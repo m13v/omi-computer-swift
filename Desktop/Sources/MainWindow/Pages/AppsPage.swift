@@ -154,11 +154,31 @@ struct AppsPage: View {
                             }
                         }
 
-                        // Popular section (horizontal scroll)
+                        // Featured section (horizontal scroll) - apps marked as is_popular in backend
                         if !appProvider.popularApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
-                                title: "Popular",
+                                title: "Featured",
                                 apps: appProvider.popularApps,
+                                appProvider: appProvider,
+                                onSelectApp: { selectedApp = $0 }
+                            )
+                        }
+
+                        // Integrations section - apps with external_integration capability
+                        if !appProvider.integrationApps.isEmpty && searchText.isEmpty {
+                            HorizontalAppSection(
+                                title: "Integrations",
+                                apps: appProvider.integrationApps,
+                                appProvider: appProvider,
+                                onSelectApp: { selectedApp = $0 }
+                            )
+                        }
+
+                        // Real-time Notifications section - apps with proactive_notification capability
+                        if !appProvider.notificationApps.isEmpty && searchText.isEmpty {
+                            HorizontalAppSection(
+                                title: "Real-time Notifications",
+                                apps: appProvider.notificationApps,
                                 appProvider: appProvider,
                                 onSelectApp: { selectedApp = $0 }
                             )
