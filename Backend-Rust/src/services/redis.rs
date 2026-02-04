@@ -139,4 +139,42 @@ impl RedisService {
         let pong: String = redis::cmd("PING").query_async(&mut conn).await?;
         Ok(pong == "PONG")
     }
+
+    // ============================================================================
+    // APP INSTALLS - matches Python backend redis_db.py
+    // ============================================================================
+
+    /// Get installs count for multiple apps
+    /// Key format: plugins:{app_id}:installs
+    /// Returns a HashMap of app_id -> installs count
+    pub async fn get_apps_installs_count(
+        &self,
+        app_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, i32>, redis::RedisError> {
+        if app_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let mut conn = self.get_connection().await?;
+        let keys: Vec<String> = app_ids
+            .iter()
+            .map(|id| format!("plugins:{}:installs", id))
+            .collect();
+
+        let counts: Vec<Option<String>> = conn.mget(&keys).await?;
+
+        let result: std::collections::HashMap<String, i32> = app_ids
+            .iter()
+            .zip(counts.iter())
+            .map(|(id, count)| {
+                let installs = count
+                    .as_ref()
+                    .and_then(|s| s.parse::<i32>().ok())
+                    .unwrap_or(0);
+                (id.clone(), installs)
+            })
+            .collect();
+
+        Ok(result)
+    }
 }
