@@ -6,9 +6,10 @@ class AppProvider: ObservableObject {
     @Published var apps: [OmiApp] = []
     @Published var popularApps: [OmiApp] = []  // Featured apps (is_popular=true)
     @Published var integrationApps: [OmiApp] = []  // Apps with external_integration capability
+    @Published var chatApps: [OmiApp] = []  // Apps with chat capability
+    @Published var summaryApps: [OmiApp] = []  // Apps with memories capability
     @Published var notificationApps: [OmiApp] = []  // Apps with proactive_notification capability
     @Published var enabledApps: [OmiApp] = []
-    @Published var chatApps: [OmiApp] = []
     @Published var categories: [OmiAppCategory] = []
     @Published var capabilities: [OmiAppCapability] = []
 
@@ -27,44 +28,69 @@ class AppProvider: ObservableObject {
 
     // MARK: - Fetch Methods
 
-    /// Fetch all apps data (popular, integrations, notifications, categories, etc.)
+    /// Fetch all apps data using v2/apps endpoint (grouped by capability, matching Flutter)
     func fetchApps() async {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
         do {
-            // Fetch in parallel - matching Flutter app sections
-            async let appsTask = apiClient.getApps()
-            async let popularTask = apiClient.getPopularApps()
-            async let integrationsTask = apiClient.getApps(capability: "external_integration")
-            async let notificationsTask = apiClient.getApps(capability: "proactive_notification")
+            // Fetch grouped apps and metadata in parallel
+            async let v2AppsTask = apiClient.getAppsV2()
             async let categoriesTask = apiClient.getAppCategories()
             async let capabilitiesTask = apiClient.getAppCapabilities()
 
-            let (fetchedApps, fetchedPopular, fetchedIntegrations, fetchedNotifications, fetchedCategories, fetchedCapabilities) = try await (
-                appsTask,
-                popularTask,
-                integrationsTask,
-                notificationsTask,
+            let (v2Response, fetchedCategories, fetchedCapabilities) = try await (
+                v2AppsTask,
                 categoriesTask,
                 capabilitiesTask
             )
 
-            apps = fetchedApps
-            popularApps = fetchedPopular
+            // Parse groups from v2 response
+            var allApps: [OmiApp] = []
+            popularApps = []
+            integrationApps = []
+            chatApps = []
+            summaryApps = []
+            notificationApps = []
 
-            // Filter out popular apps from integrations/notifications to avoid duplicates
-            let popularIds = Set(popularApps.map { $0.id })
-            integrationApps = fetchedIntegrations.filter { !popularIds.contains($0.id) }
-            notificationApps = fetchedNotifications.filter { !popularIds.contains($0.id) }
+            for group in v2Response.groups {
+                // Add all apps to the main list
+                allApps.append(contentsOf: group.data)
+
+                // Also assign to specific lists based on capability
+                switch group.capability.id {
+                case "popular":
+                    popularApps = group.data
+                case "external_integration":
+                    integrationApps = group.data
+                case "chat":
+                    chatApps = group.data
+                case "memories":
+                    summaryApps = group.data
+                case "proactive_notification":
+                    notificationApps = group.data
+                default:
+                    break
+                }
+            }
+
+            // Remove duplicates from allApps (same app may appear in multiple groups)
+            var seenIds = Set<String>()
+            apps = allApps.filter { app in
+                if seenIds.contains(app.id) {
+                    return false
+                }
+                seenIds.insert(app.id)
+                return true
+            }
 
             categories = fetchedCategories
             capabilities = fetchedCapabilities
 
             updateDerivedLists()
 
-            log("Fetched \(apps.count) apps, \(popularApps.count) featured, \(integrationApps.count) integrations, \(notificationApps.count) notifications")
+            log("Fetched \(apps.count) apps via v2: \(popularApps.count) featured, \(integrationApps.count) integrations, \(chatApps.count) chat, \(summaryApps.count) summary, \(notificationApps.count) notifications")
         } catch {
             logError("Failed to fetch apps", error: error)
             errorMessage = "Failed to load apps: \(error.localizedDescription)"
@@ -125,7 +151,7 @@ class AppProvider: ObservableObject {
                 AnalyticsManager.shared.appEnabled(appId: app.id, appName: app.name)
             }
 
-            // Update local state
+            // Update local state across all lists
             if let index = apps.firstIndex(where: { $0.id == app.id }) {
                 apps[index].enabled.toggle()
             }
@@ -134,6 +160,12 @@ class AppProvider: ObservableObject {
             }
             if let index = integrationApps.firstIndex(where: { $0.id == app.id }) {
                 integrationApps[index].enabled.toggle()
+            }
+            if let index = chatApps.firstIndex(where: { $0.id == app.id }) {
+                chatApps[index].enabled.toggle()
+            }
+            if let index = summaryApps.firstIndex(where: { $0.id == app.id }) {
+                summaryApps[index].enabled.toggle()
             }
             if let index = notificationApps.firstIndex(where: { $0.id == app.id }) {
                 notificationApps[index].enabled.toggle()
@@ -170,7 +202,15 @@ class AppProvider: ObservableObject {
     /// Update derived lists from main apps list
     private func updateDerivedLists() {
         enabledApps = apps.filter { $0.enabled }
-        chatApps = enabledApps.filter { $0.worksWithChat }
+        // Note: chatApps is populated from v2 response, but we also include enabled chat apps
+        // that might not be in the original chatApps list
+        let enabledChatApps = enabledApps.filter { $0.worksWithChat }
+        let existingChatIds = Set(chatApps.map { $0.id })
+        for app in enabledChatApps {
+            if !existingChatIds.contains(app.id) {
+                chatApps.append(app)
+            }
+        }
     }
 
     /// Get apps filtered by category
