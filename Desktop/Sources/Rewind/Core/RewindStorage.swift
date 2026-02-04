@@ -253,7 +253,7 @@ actor RewindStorage {
             let image = try await loadVideoFrame(videoPath: videoPath, frameOffset: offset)
             guard let tiffData = image.tiffRepresentation,
                   let bitmap = NSBitmapImageRep(data: tiffData),
-                  let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 0.85])
+                  let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: 1.0])
             else {
                 throw RewindError.invalidImage
             }
