@@ -23,6 +23,23 @@ class RewindViewModel: ObservableObject {
     /// The active search query (trimmed, non-empty) for highlighting
     @Published var activeSearchQuery: String? = nil
 
+    // MARK: - Recovery Status
+
+    /// Whether the database was recovered from corruption on this launch
+    @Published var didRecoverFromCorruption = false
+
+    /// Number of records recovered (0 if fresh database created)
+    @Published var recoveredRecordCount = 0
+
+    /// Whether the recovery banner should be shown
+    @Published var showRecoveryBanner = false
+
+    /// Whether a database rebuild is in progress
+    @Published var isRebuilding = false
+
+    /// Progress of database rebuild (0.0 to 1.0)
+    @Published var rebuildProgress: Double = 0.0
+
     /// Time window in seconds for grouping search results
     var searchGroupingTimeWindow: TimeInterval = 30
 
@@ -67,6 +84,17 @@ class RewindViewModel: ObservableObject {
             // Initialize the indexer if needed
             try await RewindIndexer.shared.initialize()
 
+            // Check if database was recovered from corruption
+            let recovered = await RewindDatabase.shared.didRecoverFromCorruption
+            let recoveredCount = await RewindDatabase.shared.recoveredRecordCount
+
+            if recovered {
+                didRecoverFromCorruption = true
+                recoveredRecordCount = recoveredCount
+                showRecoveryBanner = true
+                log("RewindViewModel: Database was recovered from corruption, \(recoveredCount) records salvaged")
+            }
+
             // Load today's screenshots (date filter is always active)
             await loadScreenshotsForDate(selectedDate)
 
@@ -89,6 +117,11 @@ class RewindViewModel: ObservableObject {
                 stats = indexerStats
             }
         }
+    }
+
+    /// Dismiss the recovery banner
+    func dismissRecoveryBanner() {
+        showRecoveryBanner = false
     }
 
     func refresh() async {
