@@ -586,4 +586,22 @@ extension PostHogManager {
             "assistant_id": assistantId
         ])
     }
+
+    // MARK: - Menu Bar Events
+
+    func menuBarOpened() {
+        track("Menu Bar Opened")
+    }
+
+    func menuBarActionClicked(action: String) {
+        track("Menu Bar Action Clicked", properties: [
+            "action": action
+        ])
+    }
+
+    // MARK: - Display Info
+
+    func displayInfoTracked(info: [String: Any]) {
+        track("Display Info", properties: info)
+    }
 }
