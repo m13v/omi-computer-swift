@@ -88,6 +88,11 @@ actor RewindIndexer {
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
 
+            // Notify that a new frame was captured (for live UI updates)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .rewindFrameCaptured, object: nil)
+            }
+
         } catch {
             logError("RewindIndexer: Failed to process frame: \(error)")
         }
@@ -160,6 +165,11 @@ actor RewindIndexer {
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            // Notify that a new frame was captured (for live UI updates)
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .rewindFrameCaptured, object: nil)
+            }
 
         } catch {
             logError("RewindIndexer: Failed to process frame with metadata: \(error)")
