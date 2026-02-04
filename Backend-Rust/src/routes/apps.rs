@@ -252,17 +252,23 @@ async fn get_apps_v2(
 
     // Sort each group (matching Python backend behavior)
     // - Popular group: sort by installs only
-    // - Other groups: sort by computed score (rating + reviews + installs)
+    // - Other groups: sort by computed score, with installs as tiebreaker
     for (cap_id, apps) in grouped.iter_mut() {
         if cap_id == "popular" {
             // Popular apps sorted by installs only
             apps.sort_by(|a, b| b.installs.cmp(&a.installs));
         } else {
-            // Other groups sorted by computed score
+            // Other groups sorted by computed score, installs as tiebreaker
             apps.sort_by(|a, b| {
                 let score_a = compute_app_score(a);
                 let score_b = compute_app_score(b);
-                score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+                match score_b.partial_cmp(&score_a) {
+                    Some(std::cmp::Ordering::Equal) | None => {
+                        // Tiebreaker: sort by installs descending
+                        b.installs.cmp(&a.installs)
+                    }
+                    Some(ord) => ord,
+                }
             });
         }
     }
