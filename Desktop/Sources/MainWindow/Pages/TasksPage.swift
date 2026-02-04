@@ -1020,7 +1020,7 @@ struct TaskCategorySection: View {
                             }
                             .dropDestination(for: String.self) { droppedIds, _ in
                                 guard let droppedId = droppedIds.first,
-                                      let droppedIndex = orderedTasks.firstIndex(where: { $0.id == droppedId }),
+                                      orderedTasks.contains(where: { $0.id == droppedId }),
                                       let targetIndex = orderedTasks.firstIndex(where: { $0.id == task.id }) else {
                                     return false
                                 }
