@@ -620,4 +620,23 @@ extension MixpanelManager {
             "assistant_id": assistantId
         ])
     }
+
+    // MARK: - Menu Bar Events
+
+    func menuBarOpened() {
+        track("Menu Bar Opened")
+    }
+
+    func menuBarActionClicked(action: String) {
+        track("Menu Bar Action Clicked", properties: [
+            "action": action
+        ])
+    }
+
+    // MARK: - Display Info
+
+    func displayInfoTracked(info: [String: Any]) {
+        let mixpanelInfo = info.compactMapValues { $0 as? MixpanelType }
+        track("Display Info", properties: mixpanelInfo)
+    }
 }
