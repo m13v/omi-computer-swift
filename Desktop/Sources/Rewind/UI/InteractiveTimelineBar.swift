@@ -450,7 +450,10 @@ class TimelineContentView: NSView {
         let endIndex = min(screenshots.count, Int((visibleMaxX - edgePadding) / totalWidth) + 2)
 
         // Guard against invalid range (startIndex > endIndex can happen with edge padding)
-        guard startIndex < endIndex else { return }
+        guard startIndex < endIndex else {
+            log("TimelineBar: Skipping draw - invalid range startIndex=\(startIndex) endIndex=\(endIndex) screenshots=\(screenshots.count) edgePadding=\(edgePadding) dirtyRect=\(dirtyRect)")
+            return
+        }
 
         for i in startIndex..<endIndex {
             let barX = edgePadding + CGFloat(i) * totalWidth
