@@ -384,3 +384,76 @@ pub fn get_app_capabilities() -> Vec<AppCapabilityDef> {
         },
     ]
 }
+
+/// Get capabilities list for v2/apps grouping (matching Python backend order)
+pub fn get_v2_capabilities() -> Vec<CapabilityInfo> {
+    vec![
+        CapabilityInfo { id: "popular".to_string(), title: "Featured".to_string() },
+        CapabilityInfo { id: "external_integration".to_string(), title: "Integrations".to_string() },
+        CapabilityInfo { id: "chat".to_string(), title: "Chat Assistants".to_string() },
+        CapabilityInfo { id: "memories".to_string(), title: "Summary Apps".to_string() },
+        CapabilityInfo { id: "proactive_notification".to_string(), title: "Realtime Notifications".to_string() },
+    ]
+}
+
+// ============================================================================
+// V2 Apps Response Types
+// ============================================================================
+
+/// Capability info for v2/apps response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CapabilityInfo {
+    pub id: String,
+    pub title: String,
+}
+
+/// Pagination metadata for v2/apps response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PaginationMeta {
+    pub total: usize,
+    pub count: usize,
+    pub offset: usize,
+    pub limit: usize,
+}
+
+/// A single group in the v2/apps response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppGroup {
+    pub capability: CapabilityInfo,
+    pub data: Vec<AppSummary>,
+    pub pagination: PaginationMeta,
+}
+
+/// Response metadata for v2/apps
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AppsV2Meta {
+    pub capabilities: Vec<CapabilityInfo>,
+    pub group_count: usize,
+    pub limit: usize,
+    pub offset: usize,
+}
+
+/// Full v2/apps grouped response
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppsV2Response {
+    pub groups: Vec<AppGroup>,
+    pub meta: AppsV2Meta,
+}
+
+/// Query parameters for v2/apps
+#[derive(Debug, Deserialize)]
+pub struct AppsV2Query {
+    #[serde(default)]
+    pub capability: Option<String>,
+    #[serde(default = "default_offset")]
+    pub offset: usize,
+    #[serde(default = "default_v2_limit")]
+    pub limit: usize,
+    #[serde(default)]
+    pub include_reviews: bool,
+}
+
+fn default_v2_limit() -> usize {
+    20
+}
