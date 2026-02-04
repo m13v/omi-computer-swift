@@ -125,6 +125,9 @@ struct SettingsContentView: View {
     @State private var transcriptionAutoDetect: Bool = true
     @State private var transcriptionLanguage: String = "en"
 
+    // Multi-chat mode setting
+    @AppStorage("multiChatEnabled") private var multiChatEnabled = false
+
     enum SettingsSection: String, CaseIterable {
         case general = "General"
         case device = "Device"
@@ -398,6 +401,34 @@ struct SettingsContentView: View {
                                 .fill(OmiColors.warning.opacity(0.1))
                         )
                     }
+                }
+            }
+
+            // Multiple Chat Sessions toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Multiple Chat Sessions")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(multiChatEnabled
+                             ? "Create separate chat threads"
+                             : "Single chat synced with mobile app")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $multiChatEnabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
                 }
             }
 
