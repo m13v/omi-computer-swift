@@ -131,21 +131,8 @@ class FullWidthTimelineNSView: NSView {
         setupTrackingArea()
     }
 
-    // Handle scroll wheel - move playhead
-    override func scrollWheel(with event: NSEvent) {
-        guard !screenshots.isEmpty else { return }
-
-        let delta = event.scrollingDeltaY + event.scrollingDeltaX
-        let sensitivity: CGFloat = 3.0 // Frames per scroll unit
-        let framesToMove = Int(-delta * sensitivity)
-
-        if framesToMove != 0 {
-            let newIndex = max(0, min(screenshots.count - 1, currentIndex + framesToMove))
-            if newIndex != currentIndex {
-                onSelect?(newIndex)
-            }
-        }
-    }
+    // Scroll wheel is handled at the page level (RewindPage.swift)
+    // so it works anywhere on the page, not just over the timeline
 
     // Handle click - jump to position
     override func mouseDown(with event: NSEvent) {
