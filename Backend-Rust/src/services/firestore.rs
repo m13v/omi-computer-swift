@@ -2193,7 +2193,7 @@ impl FirestoreService {
     ) -> Result<Vec<AppSummary>, Box<dyn std::error::Error + Send + Sync>> {
         let parent = self.base_url();
 
-        // Build filters
+        // Build filters (matching Python backend: approved=True AND private=False)
         let mut filters: Vec<Value> = vec![
             // Only approved apps
             json!({
@@ -2201,6 +2201,14 @@ impl FirestoreService {
                     "field": {"fieldPath": "approved"},
                     "op": "EQUAL",
                     "value": {"booleanValue": true}
+                }
+            }),
+            // Only public apps (not private)
+            json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "private"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": false}
                 }
             }),
         ];
