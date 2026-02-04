@@ -4,13 +4,14 @@ import Sparkle
 /// Settings page that wraps SettingsView with proper dark theme styling for the main window
 struct SettingsPage: View {
     @ObservedObject var appState: AppState
+    @Binding var selectedSection: SettingsContentView.SettingsSection
 
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // Header
+                // Section header
                 HStack {
-                    Text("Settings")
+                    Text(selectedSection.rawValue)
                         .font(.system(size: 28, weight: .bold))
                         .foregroundColor(OmiColors.textPrimary)
 
@@ -21,7 +22,7 @@ struct SettingsPage: View {
                 .padding(.bottom, 24)
 
                 // Settings content - embedded SettingsView with dark theme override
-                SettingsContentView(appState: appState)
+                SettingsContentView(appState: appState, selectedSection: $selectedSection)
                     .padding(.horizontal, 32)
 
                 Spacer()
@@ -80,8 +81,8 @@ struct SettingsContentView: View {
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
 
-    // Selected section
-    @State private var selectedSection: SettingsSection = .general
+    // Selected section (passed in from parent)
+    @Binding var selectedSection: SettingsSection
 
     // Notification settings (from backend)
     @State private var dailySummaryEnabled: Bool = true
