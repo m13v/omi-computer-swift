@@ -72,6 +72,18 @@ class TasksViewModel: ObservableObject {
     @Published var isMultiSelectMode = false
     @Published var selectedTaskIds: Set<String> = []
 
+    // MARK: - Drag-and-Drop Reordering (like Flutter)
+    /// Custom order of task IDs per category (persisted to UserDefaults)
+    @Published var categoryOrder: [TaskCategory: [String]] = [:] {
+        didSet { saveCategoryOrder() }
+    }
+
+    // MARK: - Task Indentation (like Flutter)
+    /// Indent levels for tasks (0-3), persisted to UserDefaults
+    @Published var indentLevels: [String: Int] = [:] {
+        didSet { saveIndentLevels() }
+    }
+
     // Date filter state (filters locally from store's tasks)
     @Published var filterStartDate: Date? = nil {
         didSet { recomputeAllCaches() }
@@ -104,6 +116,10 @@ class TasksViewModel: ObservableObject {
     }
 
     init() {
+        // Load saved order and indent levels
+        loadCategoryOrder()
+        loadIndentLevels()
+
         // Forward store changes to trigger view updates and recompute caches
         store.objectWillChange
             .receive(on: DispatchQueue.main)
@@ -112,6 +128,112 @@ class TasksViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+    }
+
+    // MARK: - Persistence (UserDefaults)
+
+    private static let categoryOrderKey = "TasksCategoryOrder"
+    private static let indentLevelsKey = "TasksIndentLevels"
+
+    private func loadCategoryOrder() {
+        guard let data = UserDefaults.standard.dictionary(forKey: Self.categoryOrderKey) as? [String: [String]] else {
+            return
+        }
+        var order: [TaskCategory: [String]] = [:]
+        for (key, ids) in data {
+            if let category = TaskCategory(rawValue: key) {
+                order[category] = ids
+            }
+        }
+        categoryOrder = order
+    }
+
+    private func saveCategoryOrder() {
+        var data: [String: [String]] = [:]
+        for (category, ids) in categoryOrder {
+            data[category.rawValue] = ids
+        }
+        UserDefaults.standard.set(data, forKey: Self.categoryOrderKey)
+    }
+
+    private func loadIndentLevels() {
+        guard let data = UserDefaults.standard.dictionary(forKey: Self.indentLevelsKey) as? [String: Int] else {
+            return
+        }
+        indentLevels = data
+    }
+
+    private func saveIndentLevels() {
+        UserDefaults.standard.set(indentLevels, forKey: Self.indentLevelsKey)
+    }
+
+    // MARK: - Drag-and-Drop Methods
+
+    /// Get ordered tasks for a category, respecting custom order
+    func getOrderedTasks(for category: TaskCategory) -> [TaskActionItem] {
+        guard let tasks = categorizedTasks[category], !tasks.isEmpty else {
+            return []
+        }
+
+        guard let order = categoryOrder[category], !order.isEmpty else {
+            return tasks // No custom order, return as-is
+        }
+
+        // Sort tasks by custom order, new items go at the end
+        var orderedTasks: [TaskActionItem] = []
+        var taskMap = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+
+        // Add tasks in custom order
+        for id in order {
+            if let task = taskMap[id] {
+                orderedTasks.append(task)
+                taskMap.removeValue(forKey: id)
+            }
+        }
+
+        // Add remaining tasks (new ones not in custom order)
+        orderedTasks.append(contentsOf: taskMap.values)
+
+        return orderedTasks
+    }
+
+    /// Move a task within a category
+    func moveTask(_ task: TaskActionItem, toIndex targetIndex: Int, inCategory category: TaskCategory) {
+        var order = categoryOrder[category] ?? categorizedTasks[category]?.map { $0.id } ?? []
+
+        // Remove task from current position
+        order.removeAll { $0 == task.id }
+
+        // Insert at new position
+        let safeIndex = min(targetIndex, order.count)
+        order.insert(task.id, at: safeIndex)
+
+        categoryOrder[category] = order
+    }
+
+    /// Move a task to first position in category
+    func moveTaskToFirst(_ task: TaskActionItem, inCategory category: TaskCategory) {
+        moveTask(task, toIndex: 0, inCategory: category)
+    }
+
+    // MARK: - Indent Methods
+
+    func getIndentLevel(for taskId: String) -> Int {
+        return indentLevels[taskId] ?? 0
+    }
+
+    func incrementIndent(for taskId: String) {
+        let current = indentLevels[taskId] ?? 0
+        if current < 3 {
+            indentLevels[taskId] = current + 1
+        }
+    }
+
+    func decrementIndent(for taskId: String) {
+        let current = indentLevels[taskId] ?? 0
+        if current > 0 {
+            indentLevels[taskId] = current - 1
+        }
     }
 
     // MARK: - Cache Recomputation
@@ -848,6 +970,11 @@ struct TaskCategorySection: View {
     let onToggle: () -> Void
     @ObservedObject var viewModel: TasksViewModel
 
+    /// Get ordered tasks respecting custom drag order
+    private var orderedTasks: [TaskActionItem] {
+        viewModel.getOrderedTasks(for: category)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Category header
@@ -882,11 +1009,27 @@ struct TaskCategorySection: View {
             }
             .buttonStyle(.plain)
 
-            // Tasks in category
-            if isExpanded {
+            // Tasks in category with drag-and-drop reordering
+            if isExpanded && !viewModel.isMultiSelectMode {
                 VStack(spacing: 8) {
-                    ForEach(tasks) { task in
-                        TaskRow(task: task, viewModel: viewModel)
+                    ForEach(orderedTasks) { task in
+                        TaskRow(task: task, viewModel: viewModel, category: category)
+                            .draggable(task.id) {
+                                // Drag preview
+                                TaskDragPreview(task: task)
+                            }
+                            .dropDestination(for: String.self) { droppedIds, _ in
+                                guard let droppedId = droppedIds.first,
+                                      let droppedIndex = orderedTasks.firstIndex(where: { $0.id == droppedId }),
+                                      let targetIndex = orderedTasks.firstIndex(where: { $0.id == task.id }) else {
+                                    return false
+                                }
+                                // Move the task
+                                if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
+                                    viewModel.moveTask(droppedTask, toIndex: targetIndex, inCategory: category)
+                                }
+                                return true
+                            }
                             .transition(.asymmetric(
                                 insertion: .opacity.combined(with: .move(edge: .top)),
                                 removal: .opacity.combined(with: .move(edge: .trailing))
@@ -898,11 +1041,40 @@ struct TaskCategorySection: View {
     }
 }
 
+// MARK: - Task Drag Preview
+
+struct TaskDragPreview: View {
+    let task: TaskActionItem
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "circle")
+                .font(.system(size: 16))
+                .foregroundColor(OmiColors.textTertiary)
+
+            Text(task.description)
+                .font(.system(size: 13))
+                .foregroundColor(OmiColors.textPrimary)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(OmiColors.backgroundSecondary)
+                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+        )
+        .frame(maxWidth: 300)
+    }
+}
+
 // MARK: - Task Row
 
 struct TaskRow: View {
     let task: TaskActionItem
     @ObservedObject var viewModel: TasksViewModel
+    var category: TaskCategory? = nil  // Optional for flat list views
+
     @State private var isHovering = false
     @State private var showDeleteConfirmation = false
     @State private var isCompletingAnimation = false
@@ -910,12 +1082,112 @@ struct TaskRow: View {
     @State private var rowOpacity: Double = 1.0
     @State private var rowOffset: CGFloat = 0
 
+    // Swipe-to-delete state
+    @State private var swipeOffset: CGFloat = 0
+    @State private var isDragging = false
+
     private var isSelected: Bool {
         viewModel.selectedTaskIds.contains(task.id)
     }
 
+    /// Indent level for this task (0-3)
+    private var indentLevel: Int {
+        viewModel.getIndentLevel(for: task.id)
+    }
+
+    /// Indent amount in points (28pt per level, like Flutter)
+    private var indentPadding: CGFloat {
+        CGFloat(indentLevel) * 28
+    }
+
     var body: some View {
+        ZStack(alignment: .trailing) {
+            // Delete button revealed on swipe
+            if swipeOffset < -30 {
+                HStack {
+                    Spacer()
+                    Button {
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                            swipeOffset = 0
+                        }
+                        showDeleteConfirmation = true
+                    } label: {
+                        Image(systemName: "trash.fill")
+                            .font(.system(size: 18))
+                            .foregroundColor(.white)
+                            .frame(width: 60, height: 50)
+                            .background(Color.red)
+                            .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+
+            // Main row content
+            taskRowContent
+                .offset(x: swipeOffset)
+                .gesture(
+                    DragGesture(minimumDistance: 10)
+                        .onChanged { value in
+                            // Only allow horizontal swipes to the left (negative translation)
+                            guard !viewModel.isMultiSelectMode else { return }
+                            isDragging = true
+                            let translation = value.translation.width
+                            if translation < 0 {
+                                // Limit swipe to -100pt with resistance
+                                swipeOffset = max(translation, -100)
+                            } else if swipeOffset < 0 {
+                                // Allow swiping back to original position
+                                swipeOffset = min(0, swipeOffset + translation)
+                            }
+                        }
+                        .onEnded { value in
+                            isDragging = false
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                                // If swiped past threshold, keep showing delete button
+                                if swipeOffset < -60 {
+                                    swipeOffset = -70
+                                } else {
+                                    swipeOffset = 0
+                                }
+                            }
+                        }
+                )
+        }
+        .confirmationDialog(
+            "Delete Task",
+            isPresented: $showDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task {
+                    await viewModel.deleteTask(task)
+                }
+            }
+            Button("Cancel", role: .cancel) {
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    swipeOffset = 0
+                }
+            }
+        } message: {
+            Text("Are you sure you want to delete this task? This action cannot be undone.")
+        }
+    }
+
+    private var taskRowContent: some View {
         HStack(alignment: .top, spacing: 12) {
+            // Indent visual (vertical line for indented tasks)
+            if indentLevel > 0 {
+                HStack(spacing: 0) {
+                    ForEach(0..<indentLevel, id: \.self) { level in
+                        Rectangle()
+                            .fill(OmiColors.textQuaternary.opacity(0.5))
+                            .frame(width: 2)
+                            .padding(.leading, level == 0 ? 8 : 26)
+                    }
+                }
+                .frame(width: indentPadding)
+            }
             // Multi-select checkbox or completion checkbox
             if viewModel.isMultiSelectMode {
                 Button {
@@ -1056,20 +1328,6 @@ struct TaskRow: View {
             } else {
                 NSCursor.pop()
             }
-        }
-        .confirmationDialog(
-            "Delete Task",
-            isPresented: $showDeleteConfirmation,
-            titleVisibility: .visible
-        ) {
-            Button("Delete", role: .destructive) {
-                Task {
-                    await viewModel.deleteTask(task)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Are you sure you want to delete this task? This action cannot be undone.")
         }
     }
 
