@@ -155,7 +155,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var localHotkeyMonitor: Any?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let isRewindMode = OMIApp.launchMode == .rewind
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
