@@ -17,6 +17,9 @@ actor VideoChunkEncoder {
     private let frameRate: Double = 1.0 // 1 FPS (matching current capture rate)
     private let maxResolution: CGFloat = 3000 // Maximum dimension
 
+    /// Threshold for aspect ratio change that triggers a new chunk (20% difference)
+    private let aspectRatioChangeThreshold: CGFloat = 0.2
+
     // MARK: - State
 
     private var frameBuffer: [(image: CGImage, timestamp: Date)] = []
@@ -28,6 +31,7 @@ actor VideoChunkEncoder {
     private var ffmpegProcess: Process?
     private var ffmpegStdin: FileHandle?
     private var currentOutputSize: CGSize?
+    private var currentChunkInputSize: CGSize?  // Track input size for aspect ratio comparison
 
     private var videosDirectory: URL?
     private var isInitialized = false
@@ -66,17 +70,28 @@ actor VideoChunkEncoder {
             throw RewindError.storageError("VideoChunkEncoder not initialized")
         }
 
+        let newFrameSize = CGSize(width: image.width, height: image.height)
+
+        // Check if aspect ratio changed significantly - if so, start a new chunk
+        // This prevents frames from different window sizes being squished together
+        if let currentInputSize = currentChunkInputSize,
+           hasSignificantAspectRatioChange(from: currentInputSize, to: newFrameSize) {
+            log("VideoChunkEncoder: Aspect ratio changed significantly (\(currentInputSize) -> \(newFrameSize)), starting new chunk")
+            try await finalizeCurrentChunk()
+        }
+
         // Start new chunk if needed
         if currentChunkStartTime == nil {
             currentChunkStartTime = timestamp
             currentChunkPath = generateChunkPath(for: timestamp)
             frameOffsetInChunk = 0
+            currentChunkInputSize = newFrameSize
 
             // Start ffmpeg process for this chunk
             try await startFFmpegProcess(
                 for: currentChunkPath!,
                 videosDir: videosDir,
-                imageSize: CGSize(width: image.width, height: image.height)
+                imageSize: newFrameSize
             )
         }
 
