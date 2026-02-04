@@ -95,15 +95,18 @@ struct SidebarView: View {
     var body: some View {
         ZStack(alignment: .trailing) {
             VStack(alignment: .leading, spacing: 0) {
-                // Collapse button at top
-                collapseButton
+                // Header: Logo + Collapse button on same row
+                headerSection
                     .padding(.top, 12)
                     .padding(.horizontal, isCollapsed ? 8 : 16)
 
-                // Logo section
-                logoSection
+                // Expand button when collapsed (below logo)
+                if isCollapsed {
+                    collapsedExpandButton
+                        .padding(.horizontal, 8)
+                }
 
-                Spacer().frame(height: 8)
+                Spacer().frame(height: isCollapsed ? 8 : 16)
 
                 // Main navigation section
                 VStack(alignment: .leading, spacing: 0) {
@@ -286,65 +289,69 @@ struct SidebarView: View {
         }
     }
 
-    // MARK: - Collapse Button (at top, icon only)
-    private var collapseButton: some View {
+    // MARK: - Header Section (Logo + Collapse Button on same row)
+    private var headerSection: some View {
+        HStack(spacing: 12) {
+            // Omi logo icon - using the herologo from Resources
+            if let logoImage = NSImage(contentsOf: Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png")!) {
+                Image(nsImage: logoImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: iconWidth, height: iconWidth)
+            } else {
+                // Fallback SF Symbol
+                Image(systemName: "circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundColor(OmiColors.purplePrimary)
+                    .frame(width: iconWidth)
+            }
+
+            if !isCollapsed {
+                // Brand name
+                Text("Omi")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundColor(OmiColors.textPrimary)
+                    .tracking(-0.5)
+
+                Spacer()
+
+                // Collapse button
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isCollapsed.toggle()
+                    }
+                }) {
+                    Image(systemName: "sidebar.left")
+                        .font(.system(size: 17))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Collapse sidebar")
+            } else {
+                // When collapsed, just show collapse button below logo
+                Spacer()
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 11)
+    }
+
+    // Collapse button for collapsed state (shown separately)
+    private var collapsedExpandButton: some View {
         Button(action: {
             withAnimation(.easeInOut(duration: 0.2)) {
                 isCollapsed.toggle()
             }
         }) {
-            HStack(spacing: 12) {
-                Image(systemName: "sidebar.left")
-                    .font(.system(size: 17))
-                    .foregroundColor(OmiColors.textTertiary)
-                    .frame(width: iconWidth)
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 11)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(Color.clear)
-            )
+            Image(systemName: "sidebar.left")
+                .font(.system(size: 17))
+                .foregroundColor(OmiColors.textTertiary)
+                .frame(width: iconWidth)
         }
         .buttonStyle(.plain)
-        .help(isCollapsed ? "Expand sidebar" : "Collapse sidebar")
-    }
-
-    // MARK: - Logo Section
-    private var logoSection: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer().frame(height: 8)
-
-            // Logo and brand name
-            HStack(spacing: 12) {
-                // Omi logo icon - using the herologo from Resources
-                if let logoImage = NSImage(contentsOf: Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png")!) {
-                    Image(nsImage: logoImage)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .frame(width: iconWidth, height: iconWidth)
-                } else {
-                    // Fallback SF Symbol
-                    Image(systemName: "circle.fill")
-                        .font(.system(size: 17))
-                        .foregroundColor(OmiColors.purplePrimary)
-                        .frame(width: iconWidth)
-                }
-
-                if !isCollapsed {
-                    // Brand name
-                    Text("Omi")
-                        .font(.system(size: 22, weight: .bold))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .tracking(-0.5)
-
-                    // Pro badge (placeholder - would check subscription status)
-                    // proBadge
-                }
-            }
-        }
-        .padding(.horizontal, isCollapsed ? 20 : 28)
-        .padding(.bottom, 16)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .help("Expand sidebar")
     }
 
     private var proBadge: some View {
