@@ -94,7 +94,7 @@ struct ScrollableTimelineView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TimelineScrollContainerView, context: Context) {
-        let needsScroll = nsView.currentIndex != currentIndex
+        let indexChanged = nsView.currentIndex != currentIndex
 
         nsView.screenshots = screenshots
         nsView.currentIndex = currentIndex
@@ -108,7 +108,9 @@ struct ScrollableTimelineView: NSViewRepresentable {
 
         nsView.updateContentSize()
 
-        if needsScroll {
+        // Only scroll programmatically if index changed AND user is NOT actively scrolling
+        // This prevents fighting with user's scroll gesture
+        if indexChanged && !nsView.isUserScrolling {
             nsView.scrollToCurrentIndex(animated: true)
         }
     }
@@ -132,6 +134,8 @@ class TimelineScrollContainerView: NSView {
     private var contentView: TimelineContentView!
     private var centerIndicatorView: NSView!
     private var isScrollingProgrammatically = false
+    var isUserScrolling = false  // Track if user is actively scrolling (public for SwiftUI check)
+    private var userScrollEndTimer: Timer?  // Timer to detect scroll end
     private var lastManualScrollTime: Date = .distantPast
 
     override init(frame frameRect: NSRect) {
@@ -246,9 +250,18 @@ class TimelineScrollContainerView: NSView {
         // Update which frame is at center during scroll
         guard !isScrollingProgrammatically else { return }
 
-        // Debounce - don't update too frequently
+        // Mark that user is scrolling - prevents updateNSView from fighting with user
+        isUserScrolling = true
+
+        // Reset the end-scroll timer
+        userScrollEndTimer?.invalidate()
+        userScrollEndTimer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: false) { [weak self] _ in
+            self?.handleScrollEnd()
+        }
+
+        // Debounce index updates - don't update too frequently
         let now = Date()
-        guard now.timeIntervalSince(lastManualScrollTime) > 0.016 else { return } // ~60fps
+        guard now.timeIntervalSince(lastManualScrollTime) > 0.05 else { return } // 20fps for index updates
         lastManualScrollTime = now
 
         let centerIndex = indexAtCenter()
@@ -260,16 +273,32 @@ class TimelineScrollContainerView: NSView {
     }
 
     @objc private func scrollViewDidEndScroll(_ notification: Notification) {
-        // Snap to nearest frame when scroll ends
+        // This notification may not fire reliably, so we use timer-based detection too
+        handleScrollEnd()
+    }
+
+    private func handleScrollEnd() {
+        // Cancel any pending timer
+        userScrollEndTimer?.invalidate()
+        userScrollEndTimer = nil
+
         guard !isScrollingProgrammatically else { return }
 
         let centerIndex = indexAtCenter()
         if centerIndex >= 0 && centerIndex < screenshots.count {
             onSelect?(centerIndex)
-            // Smooth snap to exact center
+            // Smooth snap to exact center, then mark scrolling as done
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.isScrollingProgrammatically = true
                 self?.scrollToCurrentIndex(animated: true)
+                // Mark user scrolling as done after animation completes
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                    self?.isUserScrolling = false
+                    self?.isScrollingProgrammatically = false
+                }
             }
+        } else {
+            isUserScrolling = false
         }
     }
 
