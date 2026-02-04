@@ -187,7 +187,7 @@ final class OpusAudioDecoder: AudioCodecDecoder {
 
         // Prepare output buffer
         var outputSamples = [Int16](repeating: 0, count: frameSize * outputChannels)
-        var outputSize = UInt32(outputSamples.count * 2)
+        let outputSize = UInt32(outputSamples.count * 2)
 
         // Prepare input packet description
         var packetDescription = AudioStreamPacketDescription(
@@ -354,7 +354,7 @@ final class AACAudioDecoder: AudioCodecDecoder {
         // Prepare output buffer (AAC typically decodes to 1024 samples per frame)
         let aacFrameSize = 1024
         var outputSamples = [Int16](repeating: 0, count: aacFrameSize * outputChannels)
-        var outputSize = UInt32(outputSamples.count * 2)
+        let outputSize = UInt32(outputSamples.count * 2)
 
         // Prepare input packet description (skip 7-byte ADTS header for raw AAC)
         let rawAACOffset = 7
