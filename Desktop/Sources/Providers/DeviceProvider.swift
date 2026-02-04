@@ -64,7 +64,7 @@ final class DeviceProvider: ObservableObject {
 
     // MARK: - Private Properties
 
-    private let bluetoothManager = BluetoothManager.shared
+    private var bluetoothManager: BluetoothManager { BluetoothManager.shared }
     /// The active device connection (internal for AudioSourceManager access)
     private(set) var activeConnection: DeviceConnection?
     private var batterySubscription: Task<Void, Never>?
@@ -87,12 +87,19 @@ final class DeviceProvider: ObservableObject {
 
     // MARK: - Initialization
 
+    private var hasSetupBluetoothBindings = false
+
     private init() {
-        setupBindings()
+        setupNotificationBindings()
         loadPairedDevice()
     }
 
-    private func setupBindings() {
+    /// Initialize Bluetooth bindings - call this when Bluetooth features are needed
+    /// This is separate from init to avoid triggering Bluetooth permission dialog at app startup
+    func initializeBluetoothBindingsIfNeeded() {
+        guard !hasSetupBluetoothBindings else { return }
+        hasSetupBluetoothBindings = true
+
         // Observe Bluetooth state changes
         bluetoothManager.$bluetoothState
             .receive(on: DispatchQueue.main)
@@ -116,6 +123,9 @@ final class DeviceProvider: ObservableObject {
                 self?.discoveredDevices = devices
             }
             .store(in: &cancellables)
+    }
+
+    private func setupNotificationBindings() {
 
         // Observe BLE connection events
         NotificationCenter.default.publisher(for: .bleDeviceConnected)
@@ -176,6 +186,9 @@ final class DeviceProvider: ObservableObject {
     /// Start scanning for devices
     /// - Parameter timeout: Scan duration in seconds
     func startDiscovery(timeout: TimeInterval = 5.0) {
+        // Initialize Bluetooth bindings if not already done
+        initializeBluetoothBindingsIfNeeded()
+
         guard bluetoothState == .poweredOn else {
             errorMessage = "Bluetooth is not available"
             return
@@ -186,6 +199,7 @@ final class DeviceProvider: ObservableObject {
 
     /// Stop scanning for devices
     func stopDiscovery() {
+        initializeBluetoothBindingsIfNeeded()
         bluetoothManager.stopScanning()
     }
 
