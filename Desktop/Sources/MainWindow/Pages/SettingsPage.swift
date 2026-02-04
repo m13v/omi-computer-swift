@@ -2248,5 +2248,5 @@ struct RunningAppChip: View {
 }
 
 #Preview {
-    SettingsPage(appState: AppState())
+    SettingsPage(appState: AppState(), selectedSection: .constant(.general))
 }
