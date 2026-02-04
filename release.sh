@@ -1,6 +1,9 @@
 #!/bin/bash
 set -e
 
+# Use Xcode's default toolchain (avoid Swift 6.1 conflicts)
+unset TOOLCHAINS
+
 # Track release timing
 START_TIME=$(date +%s)
 
@@ -244,11 +247,11 @@ mkdir -p "$BUILD_DIR"
 
 # Build for Apple Silicon (arm64)
 echo "  Building for arm64..."
-swift build -c release --package-path Desktop --triple arm64-apple-macosx
+xcrun swift build -c release --package-path Desktop --triple arm64-apple-macosx
 
 # Build for Intel (x86_64)
 echo "  Building for x86_64..."
-swift build -c release --package-path Desktop --triple x86_64-apple-macosx
+xcrun swift build -c release --package-path Desktop --triple x86_64-apple-macosx
 
 # Get binary paths for each architecture
 ARM64_BINARY="Desktop/.build/arm64-apple-macosx/release/$APP_NAME"
