@@ -1002,12 +1002,10 @@ struct NavItemView: View {
             onTap()
         }
         .onHover { hovering in
-            logPerf("HOVER: Sidebar '\(label)' = \(hovering ? "ENTER" : "EXIT")")
             isHovered = hovering
         }
         .padding(.bottom, 2)
         .help(isCollapsed ? label : "")
-        .trackRender("NavItem(\(label))")
     }
 }
 
