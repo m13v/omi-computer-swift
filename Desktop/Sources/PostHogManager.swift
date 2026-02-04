@@ -240,22 +240,28 @@ extension PostHogManager {
 
     // MARK: - Permission Events
 
-    func permissionRequested(permission: String) {
-        track("Permission Requested", properties: [
-            "permission": permission
-        ])
+    func permissionRequested(permission: String, extraProperties: [String: Any] = [:]) {
+        var props: [String: Any] = ["permission": permission]
+        for (key, value) in extraProperties {
+            props[key] = value
+        }
+        track("Permission Requested", properties: props)
     }
 
-    func permissionGranted(permission: String) {
-        track("Permission Granted", properties: [
-            "permission": permission
-        ])
+    func permissionGranted(permission: String, extraProperties: [String: Any] = [:]) {
+        var props: [String: Any] = ["permission": permission]
+        for (key, value) in extraProperties {
+            props[key] = value
+        }
+        track("Permission Granted", properties: props)
     }
 
-    func permissionDenied(permission: String) {
-        track("Permission Denied", properties: [
-            "permission": permission
-        ])
+    func permissionDenied(permission: String, extraProperties: [String: Any] = [:]) {
+        var props: [String: Any] = ["permission": permission]
+        for (key, value) in extraProperties {
+            props[key] = value
+        }
+        track("Permission Denied", properties: props)
     }
 
     /// Track when ScreenCaptureKit broken state is detected
