@@ -207,6 +207,9 @@ class AppState: ObservableObject {
 
         log("Initializing Bluetooth manager...")
 
+        // Also initialize DeviceProvider's Bluetooth bindings
+        DeviceProvider.shared.initializeBluetoothBindingsIfNeeded()
+
         // Subscribe to Bluetooth state changes for reactive permission updates
         bluetoothStateCancellable = BluetoothManager.shared.$bluetoothState
             .receive(on: DispatchQueue.main)
