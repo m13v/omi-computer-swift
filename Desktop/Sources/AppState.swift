@@ -1859,4 +1859,6 @@ extension Notification.Name {
     static let navigateToRewindSettings = Notification.Name("navigateToRewindSettings")
     /// Posted to navigate to Rewind page (global hotkey: Cmd+Option+R)
     static let navigateToRewind = Notification.Name("navigateToRewind")
+    /// Posted to navigate to Device settings
+    static let navigateToDeviceSettings = Notification.Name("navigateToDeviceSettings")
 }
