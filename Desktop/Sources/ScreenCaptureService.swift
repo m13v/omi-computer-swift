@@ -5,7 +5,7 @@ import ScreenCaptureKit
 
 final class ScreenCaptureService: Sendable {
     private let maxSize: CGFloat = 3000
-    private let jpegQuality: CGFloat = 0.85
+    private let jpegQuality: CGFloat = 1.0
 
     init() {}
 
