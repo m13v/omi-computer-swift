@@ -144,8 +144,9 @@ struct SettingsContentView: View {
     // Track if showing developer settings sub-view
     @State private var showingDeveloperSettings: Bool = false
 
-    init(appState: AppState) {
+    init(appState: AppState, selectedSection: Binding<SettingsSection>) {
         self.appState = appState
+        self._selectedSection = selectedSection
         let settings = AssistantSettings.shared
         _isMonitoring = State(initialValue: ProactiveAssistantsPlugin.shared.isMonitoring)
         _isTranscribing = State(initialValue: appState.isTranscribing)
@@ -178,32 +179,6 @@ struct SettingsContentView: View {
 
     var body: some View {
         VStack(spacing: 24) {
-            // Section tabs (hidden when showing developer settings)
-            if !showingDeveloperSettings {
-                HStack(spacing: 8) {
-                    ForEach(SettingsSection.allCases, id: \.self) { section in
-                        Button(action: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedSection = section
-                            }
-                        }) {
-                            Text(section.rawValue)
-                                .font(.system(size: 14, weight: selectedSection == section ? .semibold : .regular))
-                                .foregroundColor(selectedSection == section ? OmiColors.textPrimary : OmiColors.textTertiary)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 10)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(selectedSection == section ? OmiColors.backgroundTertiary : Color.clear)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    Spacer()
-                }
-            }
-
             // Section content
             if showingDeveloperSettings {
                 developerSettingsSection
@@ -236,12 +211,6 @@ struct SettingsContentView: View {
             isTranscribing = appState.isTranscribing
             // Refresh notification permission state
             appState.checkNotificationPermission()
-
-            // Check for pending section navigation
-            if let pending = Self.pendingSection {
-                selectedSection = pending
-                Self.pendingSection = nil
-            }
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             if let userInfo = notification.userInfo, let state = userInfo["isMonitoring"] as? Bool {
