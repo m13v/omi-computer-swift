@@ -154,7 +154,7 @@ struct AppsPage: View {
                             }
                         }
 
-                        // Featured section (horizontal scroll) - apps marked as is_popular in backend
+                        // Featured section (apps marked as is_popular in backend)
                         if !appProvider.popularApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
                                 title: "Featured",
@@ -164,7 +164,7 @@ struct AppsPage: View {
                             )
                         }
 
-                        // Integrations section - apps with external_integration capability
+                        // Integrations section (external_integration capability)
                         if !appProvider.integrationApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
                                 title: "Integrations",
@@ -174,31 +174,41 @@ struct AppsPage: View {
                             )
                         }
 
-                        // Real-time Notifications section - apps with proactive_notification capability
+                        // Chat Assistants section (chat capability)
+                        if !appProvider.chatApps.isEmpty && searchText.isEmpty {
+                            HorizontalAppSection(
+                                title: "Chat Assistants",
+                                apps: appProvider.chatApps,
+                                appProvider: appProvider,
+                                onSelectApp: { selectedApp = $0 }
+                            )
+                        }
+
+                        // Summary Apps section (memories capability)
+                        if !appProvider.summaryApps.isEmpty && searchText.isEmpty {
+                            HorizontalAppSection(
+                                title: "Summary Apps",
+                                apps: appProvider.summaryApps,
+                                appProvider: appProvider,
+                                onSelectApp: { selectedApp = $0 }
+                            )
+                        }
+
+                        // Realtime Notifications section (proactive_notification capability)
                         if !appProvider.notificationApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
-                                title: "Real-time Notifications",
+                                title: "Realtime Notifications",
                                 apps: appProvider.notificationApps,
                                 appProvider: appProvider,
                                 onSelectApp: { selectedApp = $0 }
                             )
                         }
 
-                        // Enabled apps section (horizontal scroll)
+                        // Installed apps section (user's enabled apps)
                         if !appProvider.enabledApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
                                 title: "Installed",
                                 apps: appProvider.enabledApps,
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
-                            )
-                        }
-
-                        // Chat apps section
-                        if !appProvider.chatApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Chat Apps",
-                                apps: appProvider.chatApps,
                                 appProvider: appProvider,
                                 onSelectApp: { selectedApp = $0 }
                             )
