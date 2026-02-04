@@ -140,10 +140,10 @@ async fn get_apps_v2(
         query.limit
     );
 
-    // Get all approved apps
+    // Get all approved apps (high limit to match Python backend which fetches all from cache)
     let all_apps = match state
         .firestore
-        .get_apps(&user.uid, 500, 0, None, None)
+        .get_apps(&user.uid, 5000, 0, None, None)
         .await
     {
         Ok(apps) => apps,
