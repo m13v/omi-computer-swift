@@ -39,6 +39,11 @@ struct RewindPage: View {
             } else {
                 // Main content with persistent search field
                 VStack(spacing: 0) {
+                    // Recovery banner (if database was recovered from corruption)
+                    if viewModel.showRecoveryBanner {
+                        recoveryBanner
+                    }
+
                     // Unified top bar - search field is always here
                     unifiedTopBar
 
@@ -300,50 +305,6 @@ struct RewindPage: View {
                         .foregroundColor(.white.opacity(0.5))
                 }
 
-                // Playback speed
-                Menu {
-                    ForEach([0.5, 1.0, 2.0, 4.0, 8.0], id: \.self) { speed in
-                        Button {
-                            playbackSpeed = speed
-                            if isPlaying {
-                                restartPlayback()
-                            }
-                        } label: {
-                            HStack {
-                                Text("\(speed, specifier: "%.1f")x")
-                                if playbackSpeed == speed {
-                                    Image(systemName: "checkmark")
-                                }
-                            }
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "speedometer")
-                        Text("\(playbackSpeed, specifier: "%.1f")x")
-                    }
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 5)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
-
-                // Refresh
-                Button {
-                    Task { await viewModel.refresh() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.6))
-                        .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
-                        .animation(viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isLoading)
-
                 // Settings
                 Button {
                     NotificationCenter.default.post(
@@ -505,43 +466,19 @@ struct RewindPage: View {
     // MARK: - Date Picker Controls
 
     private var datePickerControls: some View {
-        HStack(spacing: 8) {
-            // Date picker
-            DatePicker(
-                "",
-                selection: Binding(
-                    get: { viewModel.selectedDate },
-                    set: { newDate in
-                        Task { await viewModel.filterByDate(newDate) }
-                    }
-                ),
-                displayedComponents: [.date]
-            )
-            .datePickerStyle(.compact)
-            .labelsHidden()
-            .colorScheme(.dark)
-
-            // Quick date buttons
-            quickDateButton("Today", date: Date())
-            quickDateButton("Yesterday", date: Calendar.current.date(byAdding: .day, value: -1, to: Date())!)
-        }
-    }
-
-    private func quickDateButton(_ title: String, date: Date) -> some View {
-        let isSelected = Calendar.current.isDate(viewModel.selectedDate, inSameDayAs: date)
-
-        return Button {
-            Task { await viewModel.filterByDate(date) }
-        } label: {
-            Text(title)
-                .font(.system(size: 11, weight: isSelected ? .semibold : .regular))
-                .foregroundColor(isSelected ? OmiColors.purplePrimary : .white.opacity(0.6))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(isSelected ? OmiColors.purplePrimary.opacity(0.2) : Color.white.opacity(0.1))
-                .cornerRadius(4)
-        }
-        .buttonStyle(.plain)
+        DatePicker(
+            "",
+            selection: Binding(
+                get: { viewModel.selectedDate },
+                set: { newDate in
+                    Task { await viewModel.filterByDate(newDate) }
+                }
+            ),
+            displayedComponents: [.date]
+        )
+        .datePickerStyle(.compact)
+        .labelsHidden()
+        .colorScheme(.dark)
     }
 
     // MARK: - Frame Display
@@ -632,19 +569,31 @@ struct RewindPage: View {
                 }
             )
 
-            // Single compact control bar: app info | playback | position/time
-            HStack(spacing: 16) {
-                // Left: App icon and name
-                if currentIndex < screenshots.count {
-                    let screenshot = screenshots[currentIndex]
-                    HStack(spacing: 6) {
-                        AppIconView(appName: screenshot.appName, size: 16)
-                        Text(screenshot.appName)
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundColor(.white)
-                            .lineLimit(1)
+            // Single compact control bar: legend | playback | position/timestamp | scroll hint
+            HStack(spacing: 12) {
+                // Left: Legend indicators
+                HStack(spacing: 12) {
+                    // Current indicator
+                    HStack(spacing: 4) {
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Color.white)
+                            .frame(width: 8, height: 8)
+                        Text("current")
+                            .font(.system(size: 9))
+                            .foregroundColor(.white.opacity(0.4))
                     }
-                    .frame(width: 120, alignment: .leading)
+
+                    // Match indicator (only when searching)
+                    if viewModel.activeSearchQuery != nil && !searchResultIndices.isEmpty {
+                        HStack(spacing: 4) {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(Color.yellow.opacity(0.8))
+                                .frame(width: 8, height: 8)
+                            Text("match")
+                                .font(.system(size: 9))
+                                .foregroundColor(.white.opacity(0.4))
+                        }
+                    }
                 }
 
                 Spacer()
@@ -688,6 +637,34 @@ struct RewindPage: View {
                             .foregroundColor(.white.opacity(0.7))
                     }
                     .buttonStyle(.plain)
+
+                    // Playback speed
+                    Menu {
+                        ForEach([0.5, 1.0, 2.0, 4.0, 8.0], id: \.self) { speed in
+                            Button {
+                                playbackSpeed = speed
+                                if isPlaying {
+                                    restartPlayback()
+                                }
+                            } label: {
+                                HStack {
+                                    Text("\(speed, specifier: "%.1f")x")
+                                    if playbackSpeed == speed {
+                                        Image(systemName: "checkmark")
+                                    }
+                                }
+                            }
+                        }
+                    } label: {
+                        Text("\(playbackSpeed, specifier: "%.0f")x")
+                            .font(.system(size: 10, weight: .medium, design: .monospaced))
+                            .foregroundColor(.white.opacity(0.7))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 4)
+                            .background(Color.white.opacity(0.1))
+                            .cornerRadius(4)
+                    }
+                    .buttonStyle(.plain)
                 }
 
                 Spacer()
@@ -699,12 +676,16 @@ struct RewindPage: View {
                         Text("\(currentIndex + 1)/\(screenshots.count)")
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.white.opacity(0.5))
-                        Text(screenshot.formattedDate)
+                        Text(screenshot.formattedDateCompact)
                             .font(.system(size: 10, design: .monospaced))
                             .foregroundColor(.white.opacity(0.7))
                     }
-                    .frame(width: 160, alignment: .trailing)
                 }
+
+                // Scroll hint
+                Text("scroll to navigate")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.3))
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
@@ -886,6 +867,87 @@ struct RewindPage: View {
             .cornerRadius(8)
             .padding(.top, 8)
         }
+    }
+
+    private var recoveryBanner: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundColor(.orange)
+                .font(.system(size: 16))
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Database Recovered")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+
+                if viewModel.recoveredRecordCount > 0 {
+                    Text("\(viewModel.recoveredRecordCount) screenshots recovered from corrupted database")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.7))
+                } else {
+                    Text("Database was corrupted and has been reset. Your video files are intact.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+
+            Spacer()
+
+            if viewModel.recoveredRecordCount == 0 {
+                Button {
+                    Task { await rebuildDatabase() }
+                } label: {
+                    Text("Rebuild Index")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(OmiColors.purplePrimary)
+                        .cornerRadius(4)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isRebuilding)
+            }
+
+            Button {
+                withAnimation(.easeOut(duration: 0.2)) {
+                    viewModel.dismissRecoveryBanner()
+                }
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(Color.orange.opacity(0.15))
+        .overlay(
+            Rectangle()
+                .fill(Color.orange)
+                .frame(height: 2),
+            alignment: .top
+        )
+    }
+
+    private func rebuildDatabase() async {
+        viewModel.isRebuilding = true
+        viewModel.rebuildProgress = 0
+
+        do {
+            try await RewindIndexer.shared.rebuildFromVideoFiles { progress in
+                Task { @MainActor in
+                    viewModel.rebuildProgress = progress
+                }
+            }
+            await viewModel.loadInitialData()
+            viewModel.dismissRecoveryBanner()
+        } catch {
+            logError("RewindPage: Database rebuild failed: \(error)")
+        }
+
+        viewModel.isRebuilding = false
     }
 
     private var loadingView: some View {
