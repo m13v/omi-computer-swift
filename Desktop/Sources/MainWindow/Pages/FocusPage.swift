@@ -6,6 +6,7 @@ import SwiftUI
 class FocusViewModel: ObservableObject {
     @Published var searchText = ""
     @Published var showHistorical = false
+    @Published var isLoading = false
 
     private let storage = FocusStorage.shared
     private let settings = FocusAssistantSettings.shared
@@ -68,9 +69,12 @@ class FocusViewModel: ObservableObject {
     }
 
     func refresh() async {
+        isLoading = true
         await storage.refreshFromBackend()
         await MainActor.run {
+            isLoading = false
             objectWillChange.send()
+            NotificationCenter.default.post(name: .focusPageDidLoad, object: nil)
         }
     }
 }
@@ -87,6 +91,25 @@ struct FocusPage: View {
     private let countdownTimer = Timer.publish(every: 1, on: .main, in: .common).autoconnect()
 
     var body: some View {
+        if viewModel.isLoading && storage.sessions.isEmpty {
+            // Show loading when initially loading with no cached data
+            VStack {
+                Spacer()
+                ProgressView()
+                    .scaleEffect(1.2)
+                Text("Loading focus data...")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .padding(.top, 12)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            focusContent
+        }
+    }
+
+    private var focusContent: some View {
         VStack(spacing: 20) {
             // Header row with title and actions
             HStack {
