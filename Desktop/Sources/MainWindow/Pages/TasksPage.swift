@@ -706,7 +706,7 @@ struct TasksPage: View {
                 Text("Add Task")
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(OmiColors.textPrimary)
+            .foregroundColor(.black)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
@@ -2081,7 +2081,7 @@ struct DateFilterPopover: View {
             } label: {
                 Text("Apply Filter")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(OmiColors.textPrimary)
+                    .foregroundColor(.black)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(
