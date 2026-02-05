@@ -1303,6 +1303,10 @@ struct OnboardingView: View {
             AnalyticsManager.shared.onboardingStepCompleted(step: 10, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
+            // Enable launch at login by default for new users
+            if LaunchAtLoginManager.shared.setEnabled(true) {
+                AnalyticsManager.shared.launchAtLoginChanged(enabled: true, source: "onboarding")
+            }
             ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
             appState.startTranscription()
             // Only call completion handler if provided (for sheet presentations)
