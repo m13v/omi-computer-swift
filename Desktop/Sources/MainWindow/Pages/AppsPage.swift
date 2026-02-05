@@ -614,7 +614,7 @@ struct SmallAppButton: View {
             } else {
                 Text(app.enabled ? "Open" : "Install")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(OmiColors.textPrimary)
+                    .foregroundColor(.black)
                     .frame(width: 50, height: 22)
                     .background(Color.white)
                     .cornerRadius(11)
@@ -744,7 +744,7 @@ struct AppActionButton: View {
             } else {
                 Text(app.enabled ? "Open" : "Install")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(OmiColors.textPrimary)
+                    .foregroundColor(.black)
                     .frame(width: 60, height: 28)
                     .background(Color.white)
                     .cornerRadius(14)
@@ -1051,7 +1051,7 @@ struct AppDetailSheet: View {
                             } else {
                                 Text(app.enabled ? "Disable" : "Install")
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(app.enabled ? .white : OmiColors.textPrimary)
+                                    .foregroundColor(app.enabled ? .white : .black)
                                     .frame(width: 100, height: 36)
                                     .background(app.enabled ? OmiColors.error : Color.white)
                                     .cornerRadius(18)
