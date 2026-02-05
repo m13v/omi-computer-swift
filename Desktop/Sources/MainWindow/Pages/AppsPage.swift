@@ -274,6 +274,12 @@ struct AppsPage: View {
             })
             .frame(width: 500, height: 650)
         }
+        .onAppear {
+            // If apps are already loaded, notify sidebar to clear loading indicator
+            if !appProvider.isLoading {
+                NotificationCenter.default.post(name: .appsPageDidLoad, object: nil)
+            }
+        }
     }
 
     private var searchBar: some View {
