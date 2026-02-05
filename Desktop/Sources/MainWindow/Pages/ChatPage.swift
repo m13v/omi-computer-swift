@@ -359,32 +359,40 @@ struct ChatPage: View {
                     // User is "at bottom" if content bottom is within 100pt of scroll view bottom
                     // This threshold allows for some tolerance when content is near the bottom
                     let threshold: CGFloat = 100
+                    let wasAtBottom = isUserAtBottom
                     isUserAtBottom = contentMaxY <= scrollViewHeight + threshold
+                    if wasAtBottom != isUserAtBottom {
+                        log("SCROLL: isUserAtBottom changed to \(isUserAtBottom) - contentMaxY: \(contentMaxY), scrollViewHeight: \(scrollViewHeight), threshold: \(threshold)")
+                    }
                 }
                 .onChange(of: chatProvider.messages.count) { oldCount, newCount in
+                    log("SCROLL: messages.count changed from \(oldCount) to \(newCount), isUserAtBottom: \(isUserAtBottom)")
                     // Scroll to bottom when messages first load or when at bottom
                     if newCount > oldCount || oldCount == 0 {
                         if isUserAtBottom || oldCount == 0 {
-                            scrollToBottom(proxy: proxy)
+                            scrollToBottom(proxy: proxy, reason: "messages.count changed (\(oldCount)->\(newCount))")
+                        } else {
+                            log("SCROLL: NOT scrolling - user scrolled up")
                         }
                     }
                 }
                 .onChange(of: chatProvider.messages.last?.text) { _, _ in
                     // Scroll as streaming text updates, but only if user is at bottom
                     if isUserAtBottom {
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom(proxy: proxy, reason: "streaming text update")
                     }
                 }
                 .onAppear {
                     // Scroll to bottom when chat view first appears
-                    scrollToBottom(proxy: proxy)
+                    log("SCROLL: onAppear triggered")
+                    scrollToBottom(proxy: proxy, reason: "onAppear")
                 }
 
                 // Scroll to bottom button - appears when user has scrolled up
                 if !isUserAtBottom && !chatProvider.messages.isEmpty {
                     Button {
                         isUserAtBottom = true
-                        scrollToBottom(proxy: proxy)
+                        scrollToBottom(proxy: proxy, reason: "button tap")
                     } label: {
                         Image(systemName: "arrow.down.circle.fill")
                             .font(.system(size: 32))
@@ -405,8 +413,9 @@ struct ChatPage: View {
         }
     }
 
-    private func scrollToBottom(proxy: ScrollViewProxy) {
+    private func scrollToBottom(proxy: ScrollViewProxy, reason: String = "unknown") {
         if let lastMessage = chatProvider.messages.last {
+            log("SCROLL: scrollToBottom called - reason: \(reason), isUserAtBottom: \(isUserAtBottom), messageCount: \(chatProvider.messages.count)")
             withAnimation(.easeOut(duration: 0.1)) {
                 proxy.scrollTo(lastMessage.id, anchor: .bottom)
             }
