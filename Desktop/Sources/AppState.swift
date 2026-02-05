@@ -1092,6 +1092,9 @@ class AppState: ObservableObject {
                 // Get local count
                 let localCount = try await TranscriptionStorage.shared.getLocalConversationsCount(starredOnly: showStarredOnly)
                 totalConversationsCount = localCount
+
+                // Stop loading state so UI shows cached data immediately
+                isLoadingConversations = false
             }
         } catch {
             log("Conversations: Local cache load failed: \(error.localizedDescription)")
