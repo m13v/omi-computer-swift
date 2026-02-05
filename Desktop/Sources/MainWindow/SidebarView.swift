@@ -73,7 +73,14 @@ struct SidebarView: View {
     @State private var isMonitoring = false
     @State private var isTogglingMonitoring = false
     @State private var isTogglingTranscription = false
+
+    // Page loading states (show spinner in place of icon)
     @State private var isRewindPageLoading = false
+    @State private var isConversationsPageLoading = false
+    @State private var isTasksPageLoading = false
+    @State private var isFocusPageLoading = false
+    @State private var isAdvicePageLoading = false
+    @State private var isAppsPageLoading = false
 
     // Drag state
     @State private var dragOffset: CGFloat = 0
@@ -124,7 +131,18 @@ struct SidebarView: View {
                                 iconWidth: iconWidth,
                                 isOn: appState.isTranscribing,
                                 isToggling: isTogglingTranscription,
+                                isPageLoading: isConversationsPageLoading,
                                 onTap: {
+                                    // Show loading immediately when navigating to Conversations
+                                    if selectedIndex != item.rawValue {
+                                        isConversationsPageLoading = true
+                                        // Fallback timeout
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                            if isConversationsPageLoading {
+                                                isConversationsPageLoading = false
+                                            }
+                                        }
+                                    }
                                     selectedIndex = item.rawValue
                                     AnalyticsManager.shared.tabChanged(tabName: item.title)
                                 },
@@ -176,7 +194,16 @@ struct SidebarView: View {
                                 iconWidth: iconWidth,
                                 badge: item == .advice ? adviceStorage.unreadCount : 0,
                                 statusColor: item == .focus ? focusStatusColor : nil,
+                                isLoading: pageLoadingState(for: item),
                                 onTap: {
+                                    // Show loading immediately when navigating
+                                    if selectedIndex != item.rawValue {
+                                        setPageLoading(for: item, loading: true)
+                                        // Fallback timeout
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                            setPageLoading(for: item, loading: false)
+                                        }
+                                    }
                                     selectedIndex = item.rawValue
                                     AnalyticsManager.shared.tabChanged(tabName: item.title)
                                 }
@@ -307,9 +334,22 @@ struct SidebarView: View {
             appState.checkAllPermissions()
         }
         .onReceive(NotificationCenter.default.publisher(for: .rewindPageDidLoad)) { _ in
-            // Clear Rewind loading state when page finishes loading
-            log("SIDEBAR: Received rewindPageDidLoad, clearing loading indicator")
             isRewindPageLoading = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .conversationsPageDidLoad)) { _ in
+            isConversationsPageLoading = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .tasksPageDidLoad)) { _ in
+            isTasksPageLoading = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusPageDidLoad)) { _ in
+            isFocusPageLoading = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .advicePageDidLoad)) { _ in
+            isAdvicePageLoading = false
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .appsPageDidLoad)) { _ in
+            isAppsPageLoading = false
         }
     }
 
@@ -946,6 +986,28 @@ struct SidebarView: View {
     private func syncMonitoringState() {
         isMonitoring = ProactiveAssistantsPlugin.shared.isMonitoring
     }
+
+    // MARK: - Page Loading Helpers
+
+    private func pageLoadingState(for item: SidebarNavItem) -> Bool {
+        switch item {
+        case .tasks: return isTasksPageLoading
+        case .focus: return isFocusPageLoading
+        case .advice: return isAdvicePageLoading
+        case .apps: return isAppsPageLoading
+        default: return false
+        }
+    }
+
+    private func setPageLoading(for item: SidebarNavItem, loading: Bool) {
+        switch item {
+        case .tasks: isTasksPageLoading = loading
+        case .focus: isFocusPageLoading = loading
+        case .advice: isAdvicePageLoading = loading
+        case .apps: isAppsPageLoading = loading
+        default: break
+        }
+    }
 }
 
 // MARK: - Nav Item View
@@ -957,6 +1019,7 @@ struct NavItemView: View {
     let iconWidth: CGFloat
     var badge: Int = 0
     var statusColor: Color? = nil
+    var isLoading: Bool = false
     let onTap: () -> Void
 
     @State private var isHovered = false
@@ -964,10 +1027,16 @@ struct NavItemView: View {
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .topTrailing) {
-                Image(systemName: icon)
-                    .font(.system(size: 17))
-                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                    .frame(width: iconWidth)
+                if isLoading {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: iconWidth, height: 17)
+                } else {
+                    Image(systemName: icon)
+                        .font(.system(size: 17))
+                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                        .frame(width: iconWidth)
+                }
 
                 // Badge on icon when collapsed
                 if isCollapsed && badge > 0 {
@@ -1070,8 +1139,13 @@ struct NavItemWithStatusView: View {
         HStack(spacing: 12) {
             // Icon area - tappable to toggle
             ZStack(alignment: .topTrailing) {
-                // Show audio bars when active and enabled for conversations
-                if showAudioBars && isOn {
+                // Show loading spinner in place of icon when loading
+                if isToggling || isPageLoading {
+                    ProgressView()
+                        .scaleEffect(0.5)
+                        .frame(width: iconWidth, height: 17)
+                } else if showAudioBars && isOn {
+                    // Show audio bars when active and enabled for conversations
                     SidebarAudioLevelIcon(
                         micLevel: micLevel,
                         systemLevel: systemLevel,
@@ -1090,7 +1164,7 @@ struct NavItemWithStatusView: View {
                 }
 
                 // Status indicator when collapsed and off
-                if isCollapsed && !isOn {
+                if isCollapsed && !isOn && !isToggling && !isPageLoading {
                     Circle()
                         .fill(OmiColors.error)
                         .frame(width: 6, height: 6)
@@ -1110,31 +1184,24 @@ struct NavItemWithStatusView: View {
                     .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
                     .lineLimit(1)
                     .fixedSize(horizontal: true, vertical: false)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        onTap()
-                    }
 
                 Spacer(minLength: 4)
-
-                // Loading indicator when toggling or page loading
-                if isToggling || isPageLoading {
-                    ProgressView()
-                        .scaleEffect(0.5)
-                        .frame(width: 20, height: 20)
-                        .padding(.trailing, 8)
-                }
             }
         }
         .padding(.leading, 12)
         .padding(.trailing, isCollapsed ? 12 : 8)
         .padding(.vertical, 11)
+        .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: 10)
                 .fill(isSelected
                       ? OmiColors.backgroundTertiary.opacity(0.8)
                       : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
         )
+        .onTapGesture {
+            log("SIDEBAR: NavItemWithStatus '\(label)' row tapped at mouse position: \(NSEvent.mouseLocation)")
+            onTap()
+        }
         .onHover { hovering in
             isHovered = hovering
         }
