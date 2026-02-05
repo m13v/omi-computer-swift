@@ -503,6 +503,21 @@ extension MixpanelManager {
         ])
     }
 
+    // MARK: - Launch At Login Events
+
+    func launchAtLoginStatusChecked(enabled: Bool) {
+        track("Launch At Login Status", properties: [
+            "enabled": enabled
+        ])
+    }
+
+    func launchAtLoginChanged(enabled: Bool, source: String) {
+        track("Launch At Login Changed", properties: [
+            "enabled": enabled,
+            "source": source
+        ])
+    }
+
     // MARK: - Feedback Events
 
     func feedbackOpened() {
