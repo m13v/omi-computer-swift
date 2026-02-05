@@ -23,6 +23,10 @@ struct ConversationDetailView: View {
     // Tab state
     @State private var selectedTab: ConversationDetailTab = .summary
 
+    // Full conversation loaded from API (with transcript segments)
+    @State private var loadedConversation: ServerConversation?
+    @State private var isLoadingConversation = false
+
     // Action states
     @State private var showDeleteConfirmation = false
     @State private var showEditDialog = false
@@ -31,9 +35,14 @@ struct ConversationDetailView: View {
     @State private var isCopyingLink = false
     @State private var isDeleting = false
 
+    /// The conversation to display - use loaded version if available, otherwise use prop
+    private var displayConversation: ServerConversation {
+        loadedConversation ?? conversation
+    }
+
     /// The date to display (prefer startedAt, fall back to createdAt)
     private var displayDate: Date {
-        conversation.startedAt ?? conversation.createdAt
+        displayConversation.startedAt ?? displayConversation.createdAt
     }
 
     /// Format date for display
@@ -75,6 +84,20 @@ struct ConversationDetailView: View {
         .task {
             await appProvider.fetchApps()
             AnalyticsManager.shared.conversationDetailOpened(conversationId: conversation.id)
+
+            // Load full conversation from API (with transcript segments)
+            // This is needed because cached conversations don't include segments for performance
+            if conversation.transcriptSegments.isEmpty {
+                isLoadingConversation = true
+                do {
+                    let fullConversation = try await APIClient.shared.getConversation(id: conversation.id)
+                    loadedConversation = fullConversation
+                    log("ConversationDetail: Loaded full conversation with \(fullConversation.transcriptSegments.count) segments")
+                } catch {
+                    logError("ConversationDetail: Failed to load full conversation", error: error)
+                }
+                isLoadingConversation = false
+            }
         }
         .dismissableSheet(isPresented: $showAppSelector) {
             AppSelectorSheet(
@@ -109,18 +132,18 @@ struct ConversationDetailView: View {
             .buttonStyle(.plain)
 
             // Emoji
-            Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
+            Text(displayConversation.structured.emoji.isEmpty ? "💬" : displayConversation.structured.emoji)
                 .font(.system(size: 28))
 
             // Title with edit button
-            Text(conversation.title)
+            Text(displayConversation.title)
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
 
             // Edit title button (inline with title)
             Button(action: {
-                editedTitle = conversation.title
+                editedTitle = displayConversation.title
                 showEditDialog = true
             }) {
                 Image(systemName: "pencil")
@@ -133,7 +156,7 @@ struct ConversationDetailView: View {
             Spacer()
 
             // Status badge
-            if conversation.status != .completed {
+            if displayConversation.status != .completed {
                 statusBadge
             }
 
