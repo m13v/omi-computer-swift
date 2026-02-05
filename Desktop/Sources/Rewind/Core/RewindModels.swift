@@ -372,14 +372,27 @@ class RewindSettings: ObservableObject {
         }
     }
 
+    /// Tracks default apps the user explicitly chose to un-exclude.
+    /// This prevents them from being re-added on future launches.
+    private var removedDefaults: Set<String> {
+        didSet {
+            defaults.set(Array(removedDefaults), forKey: "rewindRemovedDefaultApps")
+        }
+    }
+
     private init() {
         // Load settings with defaults
         self.retentionDays = defaults.object(forKey: "rewindRetentionDays") as? Int ?? 7
         self.captureInterval = defaults.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
+        self.removedDefaults = Set(defaults.array(forKey: "rewindRemovedDefaultApps") as? [String] ?? [])
 
-        // Load excluded apps, defaulting to the default list if not set
+        // Load excluded apps, merging in any new defaults
         if let savedApps = defaults.array(forKey: "rewindExcludedApps") as? [String] {
-            self.excludedApps = Set(savedApps)
+            var apps = Set(savedApps)
+            // Add any new defaults that the user hasn't explicitly removed
+            let newDefaults = Self.defaultExcludedApps.subtracting(apps).subtracting(removedDefaults)
+            apps.formUnion(newDefaults)
+            self.excludedApps = apps
         } else {
             self.excludedApps = Self.defaultExcludedApps
         }
@@ -393,16 +406,25 @@ class RewindSettings: ObservableObject {
     /// Add an app to the exclusion list
     func excludeApp(_ appName: String) {
         excludedApps.insert(appName)
+        // If re-excluding a default app, stop tracking it as removed
+        if Self.defaultExcludedApps.contains(appName) {
+            removedDefaults.remove(appName)
+        }
     }
 
     /// Remove an app from the exclusion list
     func includeApp(_ appName: String) {
         excludedApps.remove(appName)
+        // Track removal of default apps so they don't get re-added on next launch
+        if Self.defaultExcludedApps.contains(appName) {
+            removedDefaults.insert(appName)
+        }
     }
 
     /// Reset excluded apps to defaults
     func resetToDefaults() {
         excludedApps = Self.defaultExcludedApps
+        removedDefaults = []
     }
 }
 
