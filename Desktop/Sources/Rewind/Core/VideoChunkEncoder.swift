@@ -20,9 +20,21 @@ actor VideoChunkEncoder {
     /// Threshold for aspect ratio change that triggers a new chunk (20% difference)
     private let aspectRatioChangeThreshold: CGFloat = 0.2
 
+    /// Maximum frames to buffer before forcing a flush (memory safety)
+    /// At ~24MB per CGImage (3000px), 120 frames = ~2.9GB max
+    private let maxBufferFrames = 120
+
+    /// Maximum consecutive ffmpeg failures before emergency reset
+    private let maxConsecutiveFailures = 5
+
     // MARK: - State
 
-    private var frameBuffer: [(image: CGImage, timestamp: Date)] = []
+    /// Buffer stores only timestamps, not CGImages (memory optimization)
+    /// CGImages are written to ffmpeg immediately and not retained
+    private var frameTimestamps: [Date] = []
+
+    /// Track consecutive ffmpeg write failures for recovery
+    private var consecutiveWriteFailures = 0
     private var currentChunkStartTime: Date?
     private var currentChunkPath: String?
     private var frameOffsetInChunk: Int = 0
@@ -72,6 +84,13 @@ actor VideoChunkEncoder {
 
         let newFrameSize = CGSize(width: image.width, height: image.height)
 
+        // SAFETY: Check if buffer exceeded max size (memory leak prevention)
+        if frameTimestamps.count >= maxBufferFrames {
+            log("VideoChunkEncoder: Buffer exceeded \(maxBufferFrames) frames, forcing flush to prevent memory leak")
+            logError("VideoChunkEncoder: Emergency buffer flush triggered - \(frameTimestamps.count) frames")
+            try await emergencyReset()
+        }
+
         // Check if aspect ratio changed significantly - if so, start a new chunk
         // This prevents frames from different window sizes being squished together
         if let currentInputSize = currentChunkInputSize,
@@ -88,15 +107,27 @@ actor VideoChunkEncoder {
             currentChunkInputSize = newFrameSize
 
             // Start ffmpeg process for this chunk
-            try await startFFmpegProcess(
-                for: currentChunkPath!,
-                videosDir: videosDir,
-                imageSize: newFrameSize
-            )
+            do {
+                try await startFFmpegProcess(
+                    for: currentChunkPath!,
+                    videosDir: videosDir,
+                    imageSize: newFrameSize
+                )
+                consecutiveWriteFailures = 0 // Reset on successful start
+            } catch {
+                consecutiveWriteFailures += 1
+                logError("VideoChunkEncoder: Failed to start ffmpeg (\(consecutiveWriteFailures)/\(maxConsecutiveFailures)): \(error)")
+
+                if consecutiveWriteFailures >= maxConsecutiveFailures {
+                    logError("VideoChunkEncoder: Too many ffmpeg failures, performing emergency reset")
+                    try await emergencyReset()
+                }
+                throw error
+            }
         }
 
-        // Add frame to buffer
-        frameBuffer.append((image: image, timestamp: timestamp))
+        // Record timestamp only (CGImage is not retained - memory optimization)
+        frameTimestamps.append(timestamp)
 
         let frameInfo = EncodedFrame(
             videoChunkPath: currentChunkPath!,
@@ -106,8 +137,20 @@ actor VideoChunkEncoder {
 
         frameOffsetInChunk += 1
 
-        // Write frame to ffmpeg
-        try await writeFrame(image: image)
+        // Write frame to ffmpeg immediately (CGImage not stored after this)
+        do {
+            try await writeFrame(image: image)
+            consecutiveWriteFailures = 0 // Reset on successful write
+        } catch {
+            consecutiveWriteFailures += 1
+            logError("VideoChunkEncoder: Failed to write frame (\(consecutiveWriteFailures)/\(maxConsecutiveFailures)): \(error)")
+
+            if consecutiveWriteFailures >= maxConsecutiveFailures {
+                logError("VideoChunkEncoder: Too many write failures, performing emergency reset")
+                try await emergencyReset()
+            }
+            throw error
+        }
 
         // Check if chunk duration exceeded
         if let startTime = currentChunkStartTime,
@@ -123,16 +166,16 @@ actor VideoChunkEncoder {
 
     /// Force flush current buffer (app termination, etc.)
     func flushCurrentChunk() async throws -> ChunkFlushResult? {
-        guard currentChunkPath != nil, !frameBuffer.isEmpty else {
+        guard currentChunkPath != nil, !frameTimestamps.isEmpty else {
             return nil
         }
 
         let chunkPath = currentChunkPath!
-        let frames = frameBuffer.enumerated().map { index, item in
+        let frames = frameTimestamps.enumerated().map { index, timestamp in
             EncodedFrame(
                 videoChunkPath: chunkPath,
                 frameOffset: index,
-                timestamp: item.timestamp
+                timestamp: timestamp
             )
         }
 
@@ -244,19 +287,20 @@ actor VideoChunkEncoder {
             if process.terminationStatus != 0 {
                 logError("VideoChunkEncoder: FFmpeg exited with status \(process.terminationStatus)")
             } else {
-                log("VideoChunkEncoder: Finalized chunk with \(frameBuffer.count) frames")
+                log("VideoChunkEncoder: Finalized chunk with \(frameTimestamps.count) frames")
             }
 
             ffmpegProcess = nil
         }
 
-        // Reset state
-        frameBuffer.removeAll()
+        // Reset state (timestamps only - no CGImages retained)
+        frameTimestamps.removeAll()
         currentChunkStartTime = nil
         currentChunkPath = nil
         frameOffsetInChunk = 0
         currentOutputSize = nil
         currentChunkInputSize = nil
+        consecutiveWriteFailures = 0
     }
 
     // MARK: - Helpers
@@ -385,11 +429,60 @@ actor VideoChunkEncoder {
             ffmpegProcess = nil
         }
 
-        frameBuffer.removeAll()
+        frameTimestamps.removeAll()
         currentChunkStartTime = nil
         currentChunkPath = nil
         frameOffsetInChunk = 0
         currentOutputSize = nil
         currentChunkInputSize = nil
+        consecutiveWriteFailures = 0
+    }
+
+    /// Emergency reset when ffmpeg fails repeatedly or buffer overflows
+    /// Clears all state and allows fresh start on next frame
+    private func emergencyReset() async throws {
+        let droppedFrames = frameTimestamps.count
+
+        // Report to Sentry for monitoring
+        let breadcrumb = Breadcrumb(level: .error, category: "video_encoder")
+        breadcrumb.message = "Emergency reset triggered"
+        breadcrumb.data = [
+            "dropped_frames": droppedFrames,
+            "consecutive_failures": consecutiveWriteFailures,
+            "chunk_path": currentChunkPath ?? "none"
+        ]
+        SentrySDK.addBreadcrumb(breadcrumb)
+
+        logError("VideoChunkEncoder: Emergency reset - dropping \(droppedFrames) frames to prevent memory leak")
+
+        // Close stdin first (don't wait for ffmpeg to finish - it may be hung)
+        if let stdin = ffmpegStdin {
+            try? stdin.close()
+            ffmpegStdin = nil
+        }
+
+        // Terminate ffmpeg process forcefully
+        if let process = ffmpegProcess {
+            process.terminate()
+            ffmpegProcess = nil
+        }
+
+        // Clear all state
+        frameTimestamps.removeAll()
+        currentChunkStartTime = nil
+        currentChunkPath = nil
+        frameOffsetInChunk = 0
+        currentOutputSize = nil
+        currentChunkInputSize = nil
+        consecutiveWriteFailures = 0
+
+        log("VideoChunkEncoder: Emergency reset complete, ready for new frames")
+    }
+
+    /// Get current buffer status for debugging
+    func getBufferStatus() -> (frameCount: Int, oldestFrameAge: TimeInterval?) {
+        let count = frameTimestamps.count
+        let age = frameTimestamps.first.map { Date().timeIntervalSince($0) }
+        return (count, age)
     }
 }
