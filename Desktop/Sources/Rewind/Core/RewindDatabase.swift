@@ -788,6 +788,53 @@ actor RewindDatabase {
             try db.create(index: "idx_live_notes_session", on: "live_notes", columns: ["sessionId"])
         }
 
+        // Migration 12: Expand transcription storage to match full ServerConversation schema
+        migrator.registerMigration("expandTranscriptionSchema") { db in
+            // Add structured data columns to transcription_sessions
+            try db.alter(table: "transcription_sessions") { t in
+                t.add(column: "title", .text)
+                t.add(column: "overview", .text)
+                t.add(column: "emoji", .text)
+                t.add(column: "category", .text)
+                t.add(column: "actionItemsJson", .text)
+                t.add(column: "eventsJson", .text)
+            }
+
+            // Add additional conversation data columns
+            try db.alter(table: "transcription_sessions") { t in
+                t.add(column: "geolocationJson", .text)
+                t.add(column: "photosJson", .text)
+                t.add(column: "appsResultsJson", .text)
+            }
+
+            // Add conversation status and flags
+            try db.alter(table: "transcription_sessions") { t in
+                t.add(column: "conversationStatus", .text).defaults(to: "in_progress")
+                t.add(column: "discarded", .boolean).defaults(to: false)
+                t.add(column: "deleted", .boolean).defaults(to: false)
+                t.add(column: "isLocked", .boolean).defaults(to: false)
+                t.add(column: "starred", .boolean).defaults(to: false)
+                t.add(column: "folderId", .text)
+            }
+
+            // Add backend segment data columns to transcription_segments
+            try db.alter(table: "transcription_segments") { t in
+                t.add(column: "segmentId", .text)
+                t.add(column: "speakerLabel", .text)
+                t.add(column: "isUser", .boolean).defaults(to: false)
+                t.add(column: "personId", .text)
+            }
+
+            // Add index for backendId lookups (for syncing)
+            try db.create(index: "idx_sessions_backendId", on: "transcription_sessions", columns: ["backendId"])
+
+            // Add index for conversation status filtering
+            try db.create(index: "idx_sessions_conversationStatus", on: "transcription_sessions", columns: ["conversationStatus"])
+
+            // Add index for starred conversations
+            try db.create(index: "idx_sessions_starred", on: "transcription_sessions", columns: ["starred"])
+        }
+
         try migrator.migrate(queue)
     }
 
