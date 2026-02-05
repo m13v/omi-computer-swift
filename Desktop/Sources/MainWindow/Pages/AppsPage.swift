@@ -144,7 +144,7 @@ struct AppsPage: View {
                                     apps: Array(appProvider.popularApps.prefix(6)),
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 },
-                                    showSeeMore: appProvider.popularApps.count > 6,
+                                    showSeeMore: appProvider.popularApps.count >= 6,
                                     onSeeMore: { viewAllCategory = OmiAppCategory(id: "featured", title: "Featured") }
                                 )
                             }
@@ -156,7 +156,7 @@ struct AppsPage: View {
                                     apps: Array(appProvider.integrationApps.prefix(6)),
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 },
-                                    showSeeMore: appProvider.integrationApps.count > 6,
+                                    showSeeMore: appProvider.integrationApps.count >= 6,
                                     onSeeMore: { viewAllCategory = OmiAppCategory(id: "integrations", title: "Integrations") }
                                 )
                             }
@@ -168,7 +168,7 @@ struct AppsPage: View {
                                     apps: Array(appProvider.notificationApps.prefix(6)),
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 },
-                                    showSeeMore: appProvider.notificationApps.count > 6,
+                                    showSeeMore: appProvider.notificationApps.count >= 6,
                                     onSeeMore: { viewAllCategory = OmiAppCategory(id: "notifications", title: "Realtime Notifications") }
                                 )
                             }
