@@ -101,6 +101,7 @@ class TimeBasedTimelineNSView: NSView {
     private var segments: [TimelineSegment] = []
     private var segmentRects: [NSRect] = []  // Cached rects for each segment
     private var frameXPositions: [CGFloat] = []  // X position for each frame
+    private var lastLayoutBounds: NSRect = .zero  // Track bounds changes
 
     // Gap threshold: 2 minutes
     private let gapThreshold: TimeInterval = 120
@@ -137,6 +138,14 @@ class TimeBasedTimelineNSView: NSView {
     }
 
     // MARK: - Segment Building
+
+    private func needsLayoutRecalculation() -> Bool {
+        // Recalculate if bounds have changed significantly
+        let currentRect = timelineRect()
+        return abs(currentRect.width - lastLayoutBounds.width) > 1 ||
+               abs(currentRect.height - lastLayoutBounds.height) > 1 ||
+               lastLayoutBounds.width < 10  // Initial layout
+    }
 
     func rebuildSegments() {
         segments = []
@@ -200,6 +209,7 @@ class TimeBasedTimelineNSView: NSView {
     private func calculateLayout() {
         let rect = timelineRect()
         segmentRects = []
+        lastLayoutBounds = rect  // Track that we calculated with these bounds
 
         guard !segments.isEmpty else { return }
 
@@ -256,9 +266,13 @@ class TimeBasedTimelineNSView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let location = convert(event.locationInWindow, from: nil)
+        let rect = timelineRect()
 
         if let index = indexAtPoint(location) {
+            log("TimelineBar: Click at \(location) resolved to index \(index) of \(screenshots.count)")
             onSelect?(index)
+        } else {
+            log("TimelineBar: Click at \(location) not in timeline rect \(rect), bounds=\(bounds), screenshots=\(screenshots.count)")
         }
     }
 
@@ -301,6 +315,20 @@ class TimeBasedTimelineNSView: NSView {
         let rect = timelineRect()
         guard rect.contains(point), !screenshots.isEmpty else { return nil }
 
+        // Ensure layout is calculated
+        if frameXPositions.isEmpty || needsLayoutRecalculation() {
+            rebuildSegments()
+        }
+
+        // If we still have no positions or all positions are 0, use linear fallback
+        if frameXPositions.isEmpty || (frameXPositions.count > 1 && frameXPositions.allSatisfy { $0 == 0 }) {
+            // Linear fallback (like the old implementation)
+            let relativeX = point.x - rect.minX
+            let ratio = relativeX / rect.width
+            let index = Int(ratio * CGFloat(screenshots.count))
+            return max(0, min(screenshots.count - 1, index))
+        }
+
         // Find closest frame to this x position
         var closestIndex = 0
         var closestDistance = CGFloat.infinity
@@ -313,11 +341,7 @@ class TimeBasedTimelineNSView: NSView {
             }
         }
 
-        // Only return if within reasonable distance (20px)
-        if closestDistance < 20 {
-            return closestIndex
-        }
-        return nil
+        return closestIndex
     }
 
     private func gapAtPoint(_ point: CGPoint) -> Int? {
@@ -407,6 +431,11 @@ class TimeBasedTimelineNSView: NSView {
 
     override func draw(_ dirtyRect: NSRect) {
         guard !screenshots.isEmpty else { return }
+
+        // Recalculate layout if bounds have changed (needed for proper click detection)
+        if segmentRects.isEmpty || needsLayoutRecalculation() {
+            rebuildSegments()
+        }
 
         let rect = timelineRect()
 
