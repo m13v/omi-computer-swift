@@ -534,17 +534,12 @@ struct TasksPage: View {
                 addTaskButton
             }
 
-            // Multi-select toggle / Filter / Sort dropdown
+            // Sort dropdown and settings
             if viewModel.isMultiSelectMode {
                 cancelMultiSelectButton
             } else {
-                // Show "Show All" toggle only when viewing To Do (incomplete) tasks
-                if !viewModel.showCompleted {
-                    showAllTasksToggle
-                }
-                dateFilterButton
-                multiSelectToggleButton
                 sortDropdown
+                taskSettingsButton
             }
         }
         .padding(.horizontal, 16)
@@ -801,6 +796,26 @@ struct TasksPage: View {
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)
+    }
+
+    private var taskSettingsButton: some View {
+        Button {
+            NotificationCenter.default.post(
+                name: .navigateToTaskSettings,
+                object: nil
+            )
+        } label: {
+            Image(systemName: "gearshape")
+                .font(.system(size: 12))
+                .foregroundColor(OmiColors.textSecondary)
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(OmiColors.backgroundSecondary)
+                )
+        }
+        .buttonStyle(.plain)
+        .help("Task Settings")
     }
 
     // MARK: - Loading View
