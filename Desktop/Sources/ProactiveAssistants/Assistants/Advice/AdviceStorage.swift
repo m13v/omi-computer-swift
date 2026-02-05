@@ -1,4 +1,5 @@
 import Foundation
+import FirebaseCore
 
 /// Stored advice item with additional metadata
 struct StoredAdvice: Codable, Identifiable {
@@ -186,6 +187,13 @@ class AdviceStorage: ObservableObject {
 
     private func syncFromBackend() async {
         guard !isSyncing else { return }
+
+        // Don't sync if Firebase isn't configured yet (app still initializing)
+        guard FirebaseApp.app() != nil else {
+            log("Advice: Skipping sync - Firebase not configured yet")
+            return
+        }
+
         isSyncing = true
         isLoading = true
         lastSyncError = nil
