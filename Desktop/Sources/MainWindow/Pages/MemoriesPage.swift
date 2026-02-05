@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Combine
 
 /// All available tags for filtering memories
 enum MemoryTag: String, CaseIterable, Identifiable {
@@ -122,6 +123,8 @@ class MemoriesViewModel: ObservableObject {
     @Published var pendingDeleteMemory: ServerMemory? = nil
     @Published var undoTimeRemaining: Double = 0
     private var deleteTask: Task<Void, Never>? = nil
+    private var cancellables = Set<AnyCancellable>()
+    private var hasLoadedInitially = false
 
     // Bulk operations state
     @Published var showingDeleteAllConfirmation = false
@@ -148,6 +151,35 @@ class MemoriesViewModel: ObservableObject {
     /// Count memories for a specific tag (uses cached value)
     func tagCount(_ tag: MemoryTag) -> Int {
         tagCounts[tag] ?? 0
+    }
+
+    // MARK: - Initialization
+
+    init() {
+        // Auto-refresh memories every 3 seconds
+        Timer.publish(every: 3.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { await self?.refreshMemoriesIfNeeded() }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Refresh memories if already loaded (for auto-refresh)
+    private func refreshMemoriesIfNeeded() async {
+        // Skip if currently loading or haven't loaded initially
+        guard !isLoading, hasLoadedInitially else { return }
+
+        // Skip if there's a pending delete (avoid interfering with undo)
+        guard pendingDeleteMemory == nil else { return }
+
+        // Silently reload memories
+        do {
+            memories = try await APIClient.shared.getMemories(limit: 500)
+        } catch {
+            // Silently ignore errors during auto-refresh
+            logError("MemoriesViewModel: Auto-refresh failed", error: error)
+        }
     }
 
     /// Recompute all caches when memories change
@@ -198,6 +230,7 @@ class MemoriesViewModel: ObservableObject {
             // Fetch memories with reasonable limit to avoid timeout
             // TODO: Add pagination for users with many memories
             memories = try await APIClient.shared.getMemories(limit: 500)
+            hasLoadedInitially = true
         } catch {
             errorMessage = error.localizedDescription
             logError("Failed to load memories", error: error)
@@ -1211,6 +1244,11 @@ private struct MemoryCardView: View {
 
     @State private var isHovered = false
 
+    /// Check if memory was created less than 1 minute ago (newly added)
+    private var isNewlyCreated: Bool {
+        Date().timeIntervalSince(memory.createdAt) < 60
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Content
@@ -1322,11 +1360,11 @@ private struct MemoryCardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(isHovered ? OmiColors.backgroundSecondary : OmiColors.backgroundTertiary)
+        .background(isHovered ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : Color.clear, lineWidth: 1)
+                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.3) : Color.clear), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
