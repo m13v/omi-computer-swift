@@ -114,11 +114,15 @@ struct RewindSearchBar: View {
                         Image(systemName: "chevron.down")
                             .font(.system(size: 10))
                     }
-                    .foregroundColor(selectedApp != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                    .foregroundColor(selectedApp != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 7)
-                    .background(selectedApp != nil ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)
+                    .background(selectedApp != nil ? Color.white : OmiColors.backgroundTertiary)
                     .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(selectedApp != nil ? OmiColors.border : Color.clear, lineWidth: 1)
+                    )
                 }
                 .menuStyle(.borderlessButton)
 
@@ -177,11 +181,15 @@ struct RewindSearchBar: View {
         } label: {
             Text(title)
                 .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
-                .background(isSelected ? OmiColors.purplePrimary.opacity(0.15) : Color.clear)
+                .background(isSelected ? Color.white : Color.clear)
                 .cornerRadius(6)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(isSelected ? OmiColors.border : Color.clear, lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
     }
