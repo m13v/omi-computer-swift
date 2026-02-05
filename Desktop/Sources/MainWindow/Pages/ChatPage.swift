@@ -1,6 +1,22 @@
 import SwiftUI
 import MarkdownUI
 
+// MARK: - Scroll Position Tracking
+
+private struct ScrollOffsetPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct ScrollViewHeightPreferenceKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 struct ChatPage: View {
     @ObservedObject var appProvider: AppProvider
     @ObservedObject var chatProvider: ChatProvider
@@ -11,6 +27,10 @@ struct ChatPage: View {
     @State private var citedConversation: ServerConversation?
     @State private var isLoadingCitation = false
     @FocusState private var isInputFocused: Bool
+
+    // Smart scroll state
+    @State private var isUserAtBottom = true
+    @State private var scrollViewHeight: CGFloat = 0
 
     var selectedApp: OmiApp? {
         guard let appId = chatProvider.selectedAppId else { return nil }
@@ -311,13 +331,49 @@ struct ChatPage: View {
                     }
                 }
                 .padding()
+                .background(
+                    GeometryReader { contentGeometry in
+                        Color.clear
+                            .preference(
+                                key: ScrollOffsetPreferenceKey.self,
+                                value: contentGeometry.frame(in: .named("chatScroll")).maxY
+                            )
+                    }
+                )
             }
-            .onChange(of: chatProvider.messages.count) { _, _ in
-                scrollToBottom(proxy: proxy)
+            .coordinateSpace(name: "chatScroll")
+            .background(
+                GeometryReader { scrollGeometry in
+                    Color.clear
+                        .preference(
+                            key: ScrollViewHeightPreferenceKey.self,
+                            value: scrollGeometry.size.height
+                        )
+                }
+            )
+            .onPreferenceChange(ScrollViewHeightPreferenceKey.self) { height in
+                scrollViewHeight = height
+            }
+            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentMaxY in
+                // User is "at bottom" if content bottom is within 100pt of scroll view bottom
+                // This threshold allows for some tolerance when content is near the bottom
+                let threshold: CGFloat = 100
+                isUserAtBottom = contentMaxY <= scrollViewHeight + threshold
+            }
+            .onChange(of: chatProvider.messages.count) { oldCount, newCount in
+                // Always scroll to bottom when user sends a new message (count increases)
+                // or when first loading messages
+                if newCount > oldCount || oldCount == 0 {
+                    if isUserAtBottom || newCount == 1 {
+                        scrollToBottom(proxy: proxy)
+                    }
+                }
             }
             .onChange(of: chatProvider.messages.last?.text) { _, _ in
-                // Scroll as streaming text updates
-                scrollToBottom(proxy: proxy)
+                // Scroll as streaming text updates, but only if user is at bottom
+                if isUserAtBottom {
+                    scrollToBottom(proxy: proxy)
+                }
             }
         }
     }
@@ -422,6 +478,9 @@ struct ChatPage: View {
 
         let messageText = inputText
         inputText = ""
+
+        // Force scroll to bottom when user sends a message - they'll want to see the response
+        isUserAtBottom = true
 
         // Track chat message sent
         AnalyticsManager.shared.chatMessageSent(messageLength: messageText.count, hasContext: selectedApp != nil)
