@@ -19,6 +19,7 @@ use crate::models::{
 };
 use crate::AppState;
 use crate::services::redis::RedisService;
+use std::sync::Arc;
 
 // ============================================================================
 // Helper function to enrich apps with Redis data
@@ -26,7 +27,7 @@ use crate::services::redis::RedisService;
 
 /// Enrich apps with installs and ratings from Redis (matching Python backend behavior)
 /// Python calculates rating_avg and rating_count at query time from reviews stored in Redis
-async fn enrich_apps_from_redis(apps: &mut [AppSummary], redis: Option<&RedisService>) {
+async fn enrich_apps_from_redis(apps: &mut [AppSummary], redis: Option<&Arc<RedisService>>) {
     let Some(redis) = redis else { return };
     let app_ids: Vec<String> = apps.iter().map(|a| a.id.clone()).collect();
     if app_ids.is_empty() {
