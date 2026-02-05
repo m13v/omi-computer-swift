@@ -1127,9 +1127,15 @@ struct TaskRow: View {
 
     private var swipeableContent: some View {
         ZStack(alignment: .trailing) {
-            // Delete background (revealed when swiping left)
+            // Background revealed when swiping left
             if swipeOffset < 0 {
-                deleteBackground
+                if indentLevel > 0 {
+                    // Indented task: swipe left to outdent
+                    outdentBackground
+                } else {
+                    // Not indented: swipe left to delete
+                    deleteBackground
+                }
             }
 
             // Indent background (revealed when swiping right)
@@ -1149,13 +1155,10 @@ struct TaskRow: View {
                             // Apply resistance at the edges
                             let translation = value.translation.width
                             if translation < 0 {
-                                // Swiping left (delete)
+                                // Swiping left (delete or outdent)
                                 swipeOffset = translation * 0.8
                             } else if translation > 0 && indentLevel < 3 {
                                 // Swiping right (indent) - only if can indent more
-                                swipeOffset = translation * 0.6
-                            } else if translation > 0 && indentLevel > 0 {
-                                // Swiping right when can outdent
                                 swipeOffset = translation * 0.6
                             }
                         }
@@ -1231,22 +1234,30 @@ struct TaskRow: View {
     // MARK: - Swipe Handling
 
     private func handleSwipeEnd(velocity: CGFloat) {
-        let shouldDelete = swipeOffset < -deleteThreshold || velocity < -500
-        let shouldIndent = swipeOffset > indentThreshold || velocity > 500
+        let swipedLeftPastThreshold = swipeOffset < -deleteThreshold || velocity < -500
+        let swipedRightPastThreshold = swipeOffset > indentThreshold || velocity > 500
 
-        if shouldDelete {
-            // Animate off screen and delete
-            withAnimation(.easeOut(duration: 0.2)) {
-                swipeOffset = -400
-                rowOpacity = 0
-            }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                Task {
-                    await viewModel.deleteTask(task)
+        if swipedLeftPastThreshold {
+            if indentLevel > 0 {
+                // Outdent (decrease indent) and snap back
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                    swipeOffset = 0
+                }
+                viewModel.decrementIndent(for: task.id)
+            } else {
+                // Delete - animate off screen
+                withAnimation(.easeOut(duration: 0.2)) {
+                    swipeOffset = -400
+                    rowOpacity = 0
+                }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    Task {
+                        await viewModel.deleteTask(task)
+                    }
                 }
             }
-        } else if shouldIndent && indentLevel < 3 {
-            // Increment indent and snap back
+        } else if swipedRightPastThreshold && indentLevel < 3 {
+            // Indent (increase indent) and snap back
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 swipeOffset = 0
             }
