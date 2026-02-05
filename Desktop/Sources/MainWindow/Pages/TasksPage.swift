@@ -28,6 +28,133 @@ enum TaskCategory: String, CaseIterable {
     }
 }
 
+// MARK: - Task Filter Tag
+
+enum TaskFilterGroup: String, CaseIterable {
+    case status = "Status"
+    case category = "Category"
+    case source = "Source"
+    case priority = "Priority"
+}
+
+enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
+    // Status
+    case todo
+    case done
+
+    // Category (matches TaskClassification)
+    case personal
+    case work
+    case feature
+    case bug
+    case code
+    case research
+    case communication
+    case finance
+    case health
+    case other
+
+    // Source
+    case sourceScreen
+    case sourceOmi
+    case sourceDesktop
+    case sourceManual
+
+    // Priority
+    case priorityHigh
+    case priorityMedium
+    case priorityLow
+
+    var id: String { rawValue }
+
+    var group: TaskFilterGroup {
+        switch self {
+        case .todo, .done: return .status
+        case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
+        case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual: return .source
+        case .priorityHigh, .priorityMedium, .priorityLow: return .priority
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .todo: return "To Do"
+        case .done: return "Done"
+        case .personal: return "Personal"
+        case .work: return "Work"
+        case .feature: return "Feature"
+        case .bug: return "Bug"
+        case .code: return "Code"
+        case .research: return "Research"
+        case .communication: return "Communication"
+        case .finance: return "Finance"
+        case .health: return "Health"
+        case .other: return "Other"
+        case .sourceScreen: return "Screen"
+        case .sourceOmi: return "OMI"
+        case .sourceDesktop: return "Desktop"
+        case .sourceManual: return "Manual"
+        case .priorityHigh: return "High"
+        case .priorityMedium: return "Medium"
+        case .priorityLow: return "Low"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .todo: return "circle"
+        case .done: return "checkmark.circle.fill"
+        case .personal: return "person.fill"
+        case .work: return "briefcase.fill"
+        case .feature: return "sparkles"
+        case .bug: return "ladybug.fill"
+        case .code: return "chevron.left.forwardslash.chevron.right"
+        case .research: return "magnifyingglass"
+        case .communication: return "message.fill"
+        case .finance: return "dollarsign.circle.fill"
+        case .health: return "heart.fill"
+        case .other: return "folder.fill"
+        case .sourceScreen: return "camera.fill"
+        case .sourceOmi: return "waveform"
+        case .sourceDesktop: return "desktopcomputer"
+        case .sourceManual: return "square.and.pencil"
+        case .priorityHigh: return "flag.fill"
+        case .priorityMedium: return "flag"
+        case .priorityLow: return "flag"
+        }
+    }
+
+    /// Check if a task matches this filter tag
+    func matches(_ task: TaskActionItem) -> Bool {
+        switch self {
+        case .todo: return !task.completed
+        case .done: return task.completed
+        case .personal: return task.category == "personal"
+        case .work: return task.category == "work"
+        case .feature: return task.category == "feature"
+        case .bug: return task.category == "bug"
+        case .code: return task.category == "code"
+        case .research: return task.category == "research"
+        case .communication: return task.category == "communication"
+        case .finance: return task.category == "finance"
+        case .health: return task.category == "health"
+        case .other: return task.category == "other"
+        case .sourceScreen: return task.source == "screenshot"
+        case .sourceOmi: return task.source == "transcription:omi"
+        case .sourceDesktop: return task.source == "transcription:desktop"
+        case .sourceManual: return task.source == "manual"
+        case .priorityHigh: return task.priority == "high"
+        case .priorityMedium: return task.priority == "medium"
+        case .priorityLow: return task.priority == "low"
+        }
+    }
+
+    /// Tags grouped by their filter group
+    static func tags(for group: TaskFilterGroup) -> [TaskFilterTag] {
+        allCases.filter { $0.group == group }
+    }
+}
+
 // MARK: - Sort Option
 
 enum TaskSortOption: String, CaseIterable {
@@ -60,7 +187,7 @@ class TasksViewModel: ObservableObject {
                     if showCompleted {
                         await store.loadCompletedTasks()
                     } else {
-                        await store.loadIncompleteTasks(showAll: showAllTasks)
+                        await store.loadIncompleteTasks(showAll: true)
                     }
                 }
             }
@@ -70,20 +197,38 @@ class TasksViewModel: ObservableObject {
     @Published var sortOption: TaskSortOption = .dueDate {
         didSet { recomputeDisplayCaches() }
     }
-    /// When false (default), server returns only recent (7 days) incomplete tasks
-    /// When true, server returns all incomplete tasks
-    @Published var showAllTasks = false {
+    @Published var expandedCategories: Set<TaskCategory> = Set(TaskCategory.allCases)
+
+    // Filter tags (Memories-style dropdown)
+    @Published var selectedTags: Set<TaskFilterTag> = [] {
         didSet {
-            if oldValue != showAllTasks && !showCompleted {
-                // Reload incomplete tasks with new filter from server
-                Task {
-                    await store.loadIncompleteTasks(showAll: showAllTasks)
+            // Map status tags to showCompleted for server-side loading
+            let hasStatusFilter = selectedTags.contains(where: { $0.group == .status })
+            if hasStatusFilter {
+                let wantsDone = selectedTags.contains(.done)
+                let wantsTodo = selectedTags.contains(.todo)
+                if wantsDone && !wantsTodo && !showCompleted {
+                    showCompleted = true
+                } else if wantsTodo && !wantsDone && showCompleted {
+                    showCompleted = false
+                } else if wantsDone && wantsTodo {
+                    // Both selected - load both
+                    if !showCompleted {
+                        Task { await store.loadCompletedTasks() }
+                    }
                 }
             }
             recomputeDisplayCaches()
         }
     }
-    @Published var expandedCategories: Set<TaskCategory> = Set(TaskCategory.allCases)
+
+    /// Cached tag counts - recomputed when tasks change
+    @Published private(set) var tagCounts: [TaskFilterTag: Int] = [:]
+
+    /// Count tasks for a specific tag
+    func tagCount(_ tag: TaskFilterTag) -> Int {
+        tagCounts[tag] ?? 0
+    }
 
     // Create/Edit task state
     @Published var showingCreateTask = false
@@ -105,15 +250,6 @@ class TasksViewModel: ObservableObject {
         didSet { saveIndentLevels() }
     }
 
-    // Date filter state (filters locally from store's tasks)
-    @Published var filterStartDate: Date? = nil {
-        didSet { recomputeAllCaches() }
-    }
-    @Published var filterEndDate: Date? = nil {
-        didSet { recomputeAllCaches() }
-    }
-    @Published var showingDateFilter = false
-
     private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Cached Properties (avoid recomputation on every render)
@@ -122,8 +258,6 @@ class TasksViewModel: ObservableObject {
     @Published private(set) var categorizedTasks: [TaskCategory: [TaskActionItem]] = [:]
     @Published private(set) var todoCount: Int = 0
     @Published private(set) var doneCount: Int = 0
-    /// Note: With server-side filtering, this is no longer tracked locally
-    @Published private(set) var hiddenOldTasksCount: Int = 0
 
     // Delegate to store
     var isLoading: Bool { store.isLoading }
@@ -133,10 +267,6 @@ class TasksViewModel: ObservableObject {
     }
     var error: String? { store.error }
     var tasks: [TaskActionItem] { store.tasks }
-
-    var isFiltered: Bool {
-        filterStartDate != nil || filterEndDate != nil
-    }
 
     init() {
         // Load saved order and indent levels
@@ -262,51 +392,58 @@ class TasksViewModel: ObservableObject {
     // MARK: - Cache Recomputation
 
     /// Get the source tasks based on current view (completed vs incomplete)
-    /// With server-side filtering, tasks are already filtered by completion status
     private func getSourceTasks() -> [TaskActionItem] {
-        if showCompleted {
+        // If both status tags selected or no status tags, combine both lists
+        let statusTags = selectedTags.filter { $0.group == .status }
+        if statusTags.isEmpty || (statusTags.contains(.todo) && statusTags.contains(.done)) {
+            return store.incompleteTasks + store.completedTasks
+        } else if statusTags.contains(.done) {
             return store.completedTasks
         } else {
             return store.incompleteTasks
         }
     }
 
-    /// Apply optional local date filter to tasks
-    private func applyLocalDateFilter(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
-        var result = tasks
+    /// Apply selected filter tags to tasks (non-status tags)
+    private func applyTagFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+        let nonStatusTags = selectedTags.filter { $0.group != .status }
+        guard !nonStatusTags.isEmpty else { return tasks }
 
-        // Apply local date filter if set (for additional filtering beyond server-side)
-        if let start = filterStartDate {
-            result = result.filter { $0.createdAt >= start }
-        }
-        if let end = filterEndDate {
-            result = result.filter { $0.createdAt <= end }
-        }
+        // Group tags by their filter group, then AND between groups, OR within a group
+        let tagsByGroup = Dictionary(grouping: nonStatusTags) { $0.group }
 
-        return result
+        return tasks.filter { task in
+            tagsByGroup.allSatisfy { (_, groupTags) in
+                groupTags.contains { $0.matches(task) }
+            }
+        }
     }
 
-    /// Recompute all caches when tasks or date filters change
+    /// Recompute all caches when tasks change
     private func recomputeAllCaches() {
-        // Counts come directly from store (server-side filtered)
+        // Counts come directly from store
         todoCount = store.incompleteTasks.count
         doneCount = store.completedTasks.count
 
-        // hiddenOldTasksCount is no longer relevant with server-side filtering
-        // The server handles the 7-day filter when showAllTasks is false
-        hiddenOldTasksCount = 0
+        // Recompute tag counts from all tasks
+        let allTasks = store.incompleteTasks + store.completedTasks
+        var counts: [TaskFilterTag: Int] = [:]
+        for tag in TaskFilterTag.allCases {
+            counts[tag] = allTasks.filter { tag.matches($0) }.count
+        }
+        tagCounts = counts
 
         // Recompute display caches
         recomputeDisplayCaches()
     }
 
-    /// Recompute display-related caches when showCompleted or sortOption change
+    /// Recompute display-related caches when filters or sort change
     private func recomputeDisplayCaches() {
-        // Get tasks from appropriate list (already filtered by server)
+        // Get tasks from appropriate list based on status filter
         let sourceTasks = getSourceTasks()
 
-        // Apply any additional local date filters
-        let filteredTasks = applyLocalDateFilter(sourceTasks)
+        // Apply tag filters (category, source, priority)
+        let filteredTasks = applyTagFilters(sourceTasks)
 
         // Sort and store
         displayTasks = sortTasks(filteredTasks)
@@ -390,19 +527,6 @@ class TasksViewModel: ObservableObject {
 
     func loadMoreIfNeeded(currentTask: TaskActionItem) async {
         await store.loadMoreIfNeeded(currentTask: currentTask)
-    }
-
-    func applyDateFilter(startDate: Date?, endDate: Date?) {
-        filterStartDate = startDate
-        filterEndDate = endDate
-        showingDateFilter = false
-        // No need to reload - filtering is done locally
-    }
-
-    func clearDateFilter() {
-        filterStartDate = nil
-        filterEndDate = nil
-        showingDateFilter = false
     }
 
     func toggleTask(_ task: TaskActionItem) async {
