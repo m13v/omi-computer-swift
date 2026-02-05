@@ -231,25 +231,38 @@ actor RewindDatabase {
             try? fileManager.removeItem(atPath: recoveredPath)
         }
 
-        // Try using sqlite3 .recover command (available in SQLite 3.29+)
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
-        process.arguments = [corruptedPath, ".recover"]
+        // Run sqlite3 recovery in a detached task to avoid blocking the actor
+        // Process.waitUntilExit() is synchronous and would deadlock the actor
+        let (success, recoveredSQL) = await withCheckedContinuation { (continuation: CheckedContinuation<(Bool, Data), Never>) in
+            Task.detached {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+                process.arguments = [corruptedPath, ".recover"]
 
-        let outputPipe = Pipe()
-        process.standardOutput = outputPipe
-        process.standardError = FileHandle.nullDevice
+                let outputPipe = Pipe()
+                process.standardOutput = outputPipe
+                process.standardError = FileHandle.nullDevice
 
-        do {
-            try process.run()
-            process.waitUntilExit()
+                do {
+                    try process.run()
+                    process.waitUntilExit()
 
-            if process.terminationStatus == 0 {
-                // .recover outputs SQL statements, pipe them into new database
-                let recoveredSQL = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                    if process.terminationStatus == 0 {
+                        let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                        continuation.resume(returning: (true, data))
+                    } else {
+                        continuation.resume(returning: (false, Data()))
+                    }
+                } catch {
+                    continuation.resume(returning: (false, Data()))
+                }
+            }
+        }
 
-                if !recoveredSQL.isEmpty {
-                    // Create recovered database from SQL dump
+        if success && !recoveredSQL.isEmpty {
+            // Import recovered SQL into new database (also in detached task)
+            let importSuccess = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+                Task.detached {
                     let importProcess = Process()
                     importProcess.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
                     importProcess.arguments = [recoveredPath]
@@ -259,19 +272,21 @@ actor RewindDatabase {
                     importProcess.standardOutput = FileHandle.nullDevice
                     importProcess.standardError = FileHandle.nullDevice
 
-                    try importProcess.run()
-                    inputPipe.fileHandleForWriting.write(recoveredSQL)
-                    inputPipe.fileHandleForWriting.closeFile()
-                    importProcess.waitUntilExit()
-
-                    // Count recovered screenshots
-                    if fileManager.fileExists(atPath: recoveredPath) {
-                        return countRecoveredScreenshots(at: recoveredPath)
+                    do {
+                        try importProcess.run()
+                        inputPipe.fileHandleForWriting.write(recoveredSQL)
+                        inputPipe.fileHandleForWriting.closeFile()
+                        importProcess.waitUntilExit()
+                        continuation.resume(returning: importProcess.terminationStatus == 0)
+                    } catch {
+                        continuation.resume(returning: false)
                     }
                 }
             }
-        } catch {
-            log("RewindDatabase: Recovery attempt failed: \(error)")
+
+            if importSuccess && fileManager.fileExists(atPath: recoveredPath) {
+                return countRecoveredScreenshots(at: recoveredPath)
+            }
         }
 
         // Fallback: Try to read screenshots table directly
