@@ -600,7 +600,7 @@ struct MemoriesPage: View {
                         Text("Add Memory")
                     }
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(OmiColors.textPrimary)
+                    .foregroundColor(.black)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
                     .background(Color.white)
@@ -851,29 +851,29 @@ struct MemoriesPage: View {
             HStack(spacing: 6) {
                 Image(systemName: icon)
                     .font(.system(size: 11))
-                    .foregroundColor(isSelected ? (tag?.color ?? OmiColors.purplePrimary) : OmiColors.textTertiary)
+                    .foregroundColor(isSelected ? .black : OmiColors.textTertiary)
 
                 Text(title)
                     .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? (tag?.color ?? OmiColors.purplePrimary) : OmiColors.textSecondary)
+                    .foregroundColor(isSelected ? .black : OmiColors.textSecondary)
 
                 if count > 0 {
                     Text("\(count)")
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(isSelected ? (tag?.color ?? OmiColors.purplePrimary) : OmiColors.textTertiary)
+                        .foregroundColor(isSelected ? .black : OmiColors.textTertiary)
                         .padding(.horizontal, 5)
                         .padding(.vertical, 2)
-                        .background(isSelected ? (tag?.color ?? OmiColors.purplePrimary).opacity(0.15) : OmiColors.backgroundTertiary)
+                        .background(isSelected ? Color.white : OmiColors.backgroundTertiary)
                         .cornerRadius(4)
                 }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(isSelected ? (tag?.color ?? OmiColors.purplePrimary).opacity(0.1) : Color.clear)
+            .background(isSelected ? Color.white : Color.clear)
             .cornerRadius(6)
             .overlay(
                 RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? (tag?.color ?? OmiColors.purplePrimary).opacity(0.3) : Color.clear, lineWidth: 1)
+                    .stroke(isSelected ? OmiColors.border : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
