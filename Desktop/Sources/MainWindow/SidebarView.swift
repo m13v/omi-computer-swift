@@ -73,6 +73,7 @@ struct SidebarView: View {
     @State private var isMonitoring = false
     @State private var isTogglingMonitoring = false
     @State private var isTogglingTranscription = false
+    @State private var isRewindPageLoading = false
 
     // Drag state
     @State private var dragOffset: CGFloat = 0
@@ -144,7 +145,16 @@ struct SidebarView: View {
                                 iconWidth: iconWidth,
                                 isOn: isMonitoring,
                                 isToggling: isTogglingMonitoring,
+                                isPageLoading: isRewindPageLoading,
                                 onTap: {
+                                    // Show loading immediately when navigating to Rewind
+                                    if selectedIndex != item.rawValue {
+                                        isRewindPageLoading = true
+                                        // Fallback timeout in case page load notification never comes
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                            isRewindPageLoading = false
+                                        }
+                                    }
                                     selectedIndex = item.rawValue
                                     AnalyticsManager.shared.tabChanged(tabName: item.title)
                                 },
@@ -291,6 +301,10 @@ struct SidebarView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Refresh permissions when app becomes active (user may have changed them in System Settings)
             appState.checkAllPermissions()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .rewindPageDidLoad)) { _ in
+            // Clear Rewind loading state when page finishes loading
+            isRewindPageLoading = false
         }
     }
 
@@ -1024,6 +1038,7 @@ struct NavItemWithStatusView: View {
     let iconWidth: CGFloat
     let isOn: Bool
     let isToggling: Bool
+    var isPageLoading: Bool = false
     let onTap: () -> Void
     let onToggle: () -> Void
 
@@ -1097,8 +1112,8 @@ struct NavItemWithStatusView: View {
 
                 Spacer(minLength: 4)
 
-                // Loading indicator when toggling
-                if isToggling {
+                // Loading indicator when toggling or page loading
+                if isToggling || isPageLoading {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: 20, height: 20)
