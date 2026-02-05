@@ -236,7 +236,8 @@ actor TaskAssistant: ProactiveAssistant {
                 "source_app": task.sourceApp,
                 "confidence": task.confidence,
                 "context_summary": taskResult.contextSummary,
-                "current_activity": taskResult.currentActivity
+                "current_activity": taskResult.currentActivity,
+                "category": task.category.rawValue
             ]
 
             // Add reasoning/description if available
@@ -254,6 +255,7 @@ actor TaskAssistant: ProactiveAssistant {
                 dueAt: nil, // Could parse task.inferredDeadline if available
                 source: "screenshot",
                 priority: task.priority.rawValue,
+                category: task.category.rawValue,
                 metadata: metadata
             )
 
@@ -367,6 +369,11 @@ actor TaskAssistant: ProactiveAssistant {
             "title": .init(type: "string", description: "Brief, actionable task title"),
             "description": .init(type: "string", description: "Optional additional context"),
             "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
+            "category": .init(
+                type: "string",
+                enum: TaskClassification.allCases.map { $0.rawValue },
+                description: "Task category: 'feature' for new features/enhancements, 'bug' for bugs/issues to fix, 'code' for coding/development tasks, 'work' for professional tasks, 'personal' for personal to-dos, 'research' for investigation/learning, 'communication' for messages/calls, 'finance' for money-related, 'health' for wellness, 'other' for everything else"
+            ),
             "source_app": .init(type: "string", description: "App where task was found"),
             "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied"),
             "confidence": .init(type: "number", description: "Confidence score 0.0-1.0")
@@ -380,7 +387,7 @@ actor TaskAssistant: ProactiveAssistant {
                     type: "object",
                     description: "The extracted task (only if has_new_task is true)",
                     properties: taskProperties,
-                    required: ["title", "priority", "source_app", "confidence"]
+                    required: ["title", "priority", "category", "source_app", "confidence"]
                 ),
                 "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
                 "current_activity": .init(type: "string", description: "High-level description of user's activity")
