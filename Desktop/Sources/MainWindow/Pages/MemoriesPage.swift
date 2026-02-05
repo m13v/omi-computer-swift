@@ -910,6 +910,91 @@ struct MemoriesPage: View {
         .background(OmiColors.backgroundSecondary)
     }
 
+    // MARK: - Management Menu Popover
+
+    private var managementMenuPopover: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Visibility section
+            Text("Visibility")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(OmiColors.textTertiary)
+                .padding(.horizontal, 12)
+                .padding(.top, 12)
+                .padding(.bottom, 6)
+
+            Button {
+                showManagementMenu = false
+                Task { await viewModel.makeAllMemoriesPrivate() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "lock")
+                        .font(.system(size: 13))
+                        .frame(width: 20)
+                    Text("Make All Private")
+                        .font(.system(size: 13))
+                    Spacer()
+                }
+                .foregroundColor(OmiColors.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
+            .opacity(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress ? 0.5 : 1)
+
+            Button {
+                showManagementMenu = false
+                Task { await viewModel.makeAllMemoriesPublic() }
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "globe")
+                        .font(.system(size: 13))
+                        .frame(width: 20)
+                    Text("Make All Public")
+                        .font(.system(size: 13))
+                    Spacer()
+                }
+                .foregroundColor(OmiColors.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
+            .opacity(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress ? 0.5 : 1)
+
+            Divider()
+                .padding(.vertical, 8)
+                .padding(.horizontal, 12)
+
+            // Danger section
+            Button {
+                showManagementMenu = false
+                viewModel.showingDeleteAllConfirmation = true
+            } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .frame(width: 20)
+                    Text("Delete All Memories")
+                        .font(.system(size: 13))
+                    Spacer()
+                }
+                .foregroundColor(OmiColors.error)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
+            .opacity(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress ? 0.5 : 1)
+        }
+        .padding(.vertical, 4)
+        .frame(width: 200)
+        .background(OmiColors.backgroundSecondary)
+    }
+
     // MARK: - Memory List
 
     private var memoryList: some View {
