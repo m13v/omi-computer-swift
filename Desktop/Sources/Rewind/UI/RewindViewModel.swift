@@ -263,6 +263,12 @@ class RewindViewModel: ObservableObject {
                 limit: 500
             )
 
+            // Filter out frames from the active (unfinalized) video chunk — they can't be displayed yet
+            let activeChunk = await VideoChunkEncoder.shared.currentChunkPath
+            if let activeChunk = activeChunk {
+                results = results.filter { $0.videoChunkPath != activeChunk }
+            }
+
             // Apply app filter if set
             if let app = selectedApp {
                 results = results.filter { $0.appName == app }
