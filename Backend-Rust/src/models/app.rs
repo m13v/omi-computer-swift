@@ -343,18 +343,24 @@ pub struct SearchAppsQuery {
     pub offset: usize,
 }
 
-/// Static app categories
+/// Static app categories (matching Python backend / production API)
 pub fn get_app_categories() -> Vec<AppCategory> {
     vec![
-        AppCategory { id: "productivity".to_string(), title: "Productivity".to_string() },
-        AppCategory { id: "education".to_string(), title: "Education".to_string() },
-        AppCategory { id: "health".to_string(), title: "Health".to_string() },
-        AppCategory { id: "entertainment".to_string(), title: "Entertainment".to_string() },
-        AppCategory { id: "social".to_string(), title: "Social".to_string() },
-        AppCategory { id: "utilities".to_string(), title: "Utilities".to_string() },
-        AppCategory { id: "finance".to_string(), title: "Finance".to_string() },
-        AppCategory { id: "lifestyle".to_string(), title: "Lifestyle".to_string() },
-        AppCategory { id: "personality-emulation".to_string(), title: "Personality Emulation".to_string() },
+        AppCategory { id: "conversation-analysis".to_string(), title: "Conversation Analysis".to_string() },
+        AppCategory { id: "personality-emulation".to_string(), title: "Personality Clone".to_string() },
+        AppCategory { id: "health-and-wellness".to_string(), title: "Health".to_string() },
+        AppCategory { id: "education-and-learning".to_string(), title: "Education".to_string() },
+        AppCategory { id: "communication-improvement".to_string(), title: "Communication".to_string() },
+        AppCategory { id: "emotional-and-mental-support".to_string(), title: "Emotional Support".to_string() },
+        AppCategory { id: "productivity-and-organization".to_string(), title: "Productivity".to_string() },
+        AppCategory { id: "entertainment-and-fun".to_string(), title: "Entertainment".to_string() },
+        AppCategory { id: "financial".to_string(), title: "Financial".to_string() },
+        AppCategory { id: "travel-and-exploration".to_string(), title: "Travel".to_string() },
+        AppCategory { id: "safety-and-security".to_string(), title: "Safety".to_string() },
+        AppCategory { id: "shopping-and-commerce".to_string(), title: "Shopping".to_string() },
+        AppCategory { id: "social-and-relationships".to_string(), title: "Social".to_string() },
+        AppCategory { id: "news-and-information".to_string(), title: "News".to_string() },
+        AppCategory { id: "utilities-and-tools".to_string(), title: "Utilities".to_string() },
         AppCategory { id: "other".to_string(), title: "Other".to_string() },
     ]
 }
