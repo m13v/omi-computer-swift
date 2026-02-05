@@ -17,6 +17,11 @@ struct RewindPage: View {
     @State private var selectedGroupIndex: Int = 0
     @FocusState private var isSearchFocused: Bool
 
+    // Monitoring toggle state
+    @State private var isMonitoring = false
+    @State private var isTogglingMonitoring = false
+    @AppStorage("screenAnalysisEnabled") private var screenAnalysisEnabled = true
+
     enum SearchViewMode {
         case results  // Full-screen search results
         case timeline // Timeline with search highlights
@@ -67,6 +72,12 @@ struct RewindPage: View {
         }
         .task {
             await viewModel.loadInitialData()
+        }
+        .onAppear {
+            isMonitoring = ProactiveAssistantsPlugin.shared.isMonitoring
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
+            isMonitoring = ProactiveAssistantsPlugin.shared.isMonitoring
         }
         .onChange(of: viewModel.screenshots) { _, screenshots in
             // Reset indices when screenshots change
@@ -206,6 +217,69 @@ struct RewindPage: View {
         }
     }
 
+    // MARK: - Rewind Toggle
+
+    private var rewindToggle: some View {
+        ZStack {
+            Capsule()
+                .fill(isMonitoring ? OmiColors.purplePrimary : Color.white.opacity(0.2))
+                .frame(width: 36, height: 20)
+
+            Circle()
+                .fill(Color.white)
+                .frame(width: 16, height: 16)
+                .shadow(color: .black.opacity(0.15), radius: 1, x: 0, y: 1)
+                .offset(x: isMonitoring ? 8 : -8)
+                .animation(.easeInOut(duration: 0.15), value: isMonitoring)
+        }
+        .opacity(isTogglingMonitoring ? 0.5 : 1.0)
+        .overlay {
+            if isTogglingMonitoring {
+                ProgressView()
+                    .scaleEffect(0.5)
+            }
+        }
+        .onTapGesture {
+            if !isTogglingMonitoring {
+                toggleMonitoring(enabled: !isMonitoring)
+            }
+        }
+        .help(isMonitoring ? "Rewind is capturing - click to stop" : "Rewind is off - click to start capturing")
+    }
+
+    private func toggleMonitoring(enabled: Bool) {
+        if enabled && !ProactiveAssistantsPlugin.shared.hasScreenRecordingPermission {
+            isMonitoring = false
+            ScreenCaptureService.requestAllScreenCapturePermissions()
+            ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
+            return
+        }
+
+        isTogglingMonitoring = true
+        isMonitoring = enabled
+
+        AnalyticsManager.shared.settingToggled(setting: "monitoring", enabled: enabled)
+
+        screenAnalysisEnabled = enabled
+        AssistantSettings.shared.screenAnalysisEnabled = enabled
+
+        if enabled {
+            ProactiveAssistantsPlugin.shared.startMonitoring { success, _ in
+                DispatchQueue.main.async {
+                    isTogglingMonitoring = false
+                    if !success {
+                        isMonitoring = false
+                    }
+                }
+            }
+        } else {
+            ProactiveAssistantsPlugin.shared.stopMonitoring()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                isTogglingMonitoring = false
+            }
+        }
+    }
+
     // MARK: - Unified Top Bar (persistent search field)
 
     private var unifiedTopBar: some View {
@@ -225,11 +299,10 @@ struct RewindPage: View {
                 .buttonStyle(.plain)
                 .help("Back to results")
             } else {
-                // Rewind title/logo
+                // Rewind title/logo with toggle
                 HStack(spacing: 8) {
-                    Image(systemName: "clock.arrow.circlepath")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.purplePrimary)
+                    // Toggle for monitoring on/off
+                    rewindToggle
 
                     Text("Rewind")
                         .font(.system(size: 16, weight: .semibold))
