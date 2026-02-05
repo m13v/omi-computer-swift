@@ -162,6 +162,18 @@ struct ScoreWidget: View {
                         .stroke(OmiColors.backgroundQuaternary.opacity(0.5), lineWidth: 1)
                 )
         )
+        .onChange(of: scoreResponse?.defaultTab) { oldValue, newValue in
+            // Update tab when data first arrives (oldValue was nil)
+            if let defaultTab = newValue, oldValue == nil {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    switch defaultTab {
+                    case "daily": selectedTab = .daily
+                    case "weekly": selectedTab = .weekly
+                    default: selectedTab = .overall
+                    }
+                }
+            }
+        }
     }
 }
 
