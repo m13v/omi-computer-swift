@@ -299,6 +299,7 @@ enum RewindError: LocalizedError {
     case storageError(String)
     case ocrFailed(String)
     case screenshotNotFound
+    case corruptedVideoChunk(String)
 
     var errorDescription: String? {
         switch self {
@@ -314,6 +315,8 @@ enum RewindError: LocalizedError {
             return "OCR failed: \(message)"
         case .screenshotNotFound:
             return "Screenshot not found"
+        case .corruptedVideoChunk(let path):
+            return "Video chunk corrupted: \(path)"
         }
     }
 }
