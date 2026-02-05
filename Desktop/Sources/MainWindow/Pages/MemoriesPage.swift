@@ -416,6 +416,7 @@ struct MemoriesPage: View {
     @State private var showCategoryFilter = false
     @State private var categorySearchText = ""
     @State private var pendingSelectedTags: Set<MemoryTag> = []
+    @State private var showManagementMenu = false
 
     var body: some View {
         Group {
@@ -633,33 +634,8 @@ struct MemoriesPage: View {
                 .help("Refresh memories")
 
                 // Management menu
-                Menu {
-                    Section("Visibility") {
-                        Button {
-                            Task { await viewModel.makeAllMemoriesPrivate() }
-                        } label: {
-                            Label("Make All Private", systemImage: "lock")
-                        }
-                        .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
-
-                        Button {
-                            Task { await viewModel.makeAllMemoriesPublic() }
-                        } label: {
-                            Label("Make All Public", systemImage: "globe")
-                        }
-                        .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
-                    }
-
-                    Divider()
-
-                    Section {
-                        Button(role: .destructive) {
-                            viewModel.showingDeleteAllConfirmation = true
-                        } label: {
-                            Label("Delete All Memories", systemImage: "trash")
-                        }
-                        .disabled(viewModel.memories.isEmpty || viewModel.isBulkOperationInProgress)
-                    }
+                Button {
+                    showManagementMenu = true
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 12, weight: .medium))
@@ -672,8 +648,10 @@ struct MemoriesPage: View {
                                 .stroke(OmiColors.border, lineWidth: 1)
                         )
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
+                .buttonStyle(.plain)
+                .popover(isPresented: $showManagementMenu, arrowEdge: .bottom) {
+                    managementMenuPopover
+                }
             }
         }
         .padding(.horizontal, 24)
@@ -702,12 +680,16 @@ struct MemoriesPage: View {
         }
     }
 
-    /// Filtered categories based on search text
+    /// Filtered and sorted categories (by count, highest first)
     private var filteredCategories: [MemoryTag] {
+        let categories: [MemoryTag]
         if categorySearchText.isEmpty {
-            return MemoryTag.allCases
+            categories = Array(MemoryTag.allCases)
+        } else {
+            categories = MemoryTag.allCases.filter { $0.displayName.localizedCaseInsensitiveContains(categorySearchText) }
         }
-        return MemoryTag.allCases.filter { $0.displayName.localizedCaseInsensitiveContains(categorySearchText) }
+        // Sort by count (highest first)
+        return categories.sorted { viewModel.tagCount($0) > viewModel.tagCount($1) }
     }
 
     private var filterBar: some View {
