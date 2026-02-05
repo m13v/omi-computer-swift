@@ -108,7 +108,6 @@ struct AppsPage: View {
     @ObservedObject var appProvider: AppProvider
     @State private var searchText = ""
     @State private var selectedApp: OmiApp?
-    @State private var showFilterSheet = false
     @State private var viewAllCategory: OmiAppCategory?
     @State private var showPersonaPage = false
 
@@ -129,51 +128,51 @@ struct AppsPage: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        // Featured section (apps marked as is_popular in backend)
-                        if !appProvider.popularApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Featured",
-                                apps: Array(appProvider.popularApps.prefix(6)),
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 },
-                                showSeeMore: appProvider.popularApps.count > 6,
-                                onSeeMore: { viewAllCategory = OmiAppCategory(id: "featured", title: "Featured") }
-                            )
-                        }
-
-                        // Integrations section (external_integration capability)
-                        if !appProvider.integrationApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Integrations",
-                                apps: Array(appProvider.integrationApps.prefix(6)),
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 },
-                                showSeeMore: appProvider.integrationApps.count > 6,
-                                onSeeMore: { viewAllCategory = OmiAppCategory(id: "integrations", title: "Integrations") }
-                            )
-                        }
-
-                        // Realtime Notifications section (proactive_notification capability)
-                        if !appProvider.notificationApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Realtime Notifications",
-                                apps: Array(appProvider.notificationApps.prefix(6)),
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 },
-                                showSeeMore: appProvider.notificationApps.count > 6,
-                                onSeeMore: { viewAllCategory = OmiAppCategory(id: "notifications", title: "Realtime Notifications") }
-                            )
-                        }
-
-                        // All apps or search results
-                        if !searchText.isEmpty {
+                        if !searchText.isEmpty || hasActiveFilters {
+                            // Show filtered/search results in a flat grid
                             AppGridSection(
-                                title: "Search Results (\(appProvider.apps.count))",
+                                title: filterResultsTitle,
                                 apps: appProvider.apps,
                                 appProvider: appProvider,
                                 onSelectApp: { selectedApp = $0 }
                             )
                         } else {
+                            // Featured section (apps marked as is_popular in backend)
+                            if !appProvider.popularApps.isEmpty {
+                                HorizontalAppSection(
+                                    title: "Featured",
+                                    apps: Array(appProvider.popularApps.prefix(6)),
+                                    appProvider: appProvider,
+                                    onSelectApp: { selectedApp = $0 },
+                                    showSeeMore: appProvider.popularApps.count > 6,
+                                    onSeeMore: { viewAllCategory = OmiAppCategory(id: "featured", title: "Featured") }
+                                )
+                            }
+
+                            // Integrations section (external_integration capability)
+                            if !appProvider.integrationApps.isEmpty {
+                                HorizontalAppSection(
+                                    title: "Integrations",
+                                    apps: Array(appProvider.integrationApps.prefix(6)),
+                                    appProvider: appProvider,
+                                    onSelectApp: { selectedApp = $0 },
+                                    showSeeMore: appProvider.integrationApps.count > 6,
+                                    onSeeMore: { viewAllCategory = OmiAppCategory(id: "integrations", title: "Integrations") }
+                                )
+                            }
+
+                            // Realtime Notifications section (proactive_notification capability)
+                            if !appProvider.notificationApps.isEmpty {
+                                HorizontalAppSection(
+                                    title: "Realtime Notifications",
+                                    apps: Array(appProvider.notificationApps.prefix(6)),
+                                    appProvider: appProvider,
+                                    onSelectApp: { selectedApp = $0 },
+                                    showSeeMore: appProvider.notificationApps.count > 6,
+                                    onSeeMore: { viewAllCategory = OmiAppCategory(id: "notifications", title: "Realtime Notifications") }
+                                )
+                            }
+
                             // Group by category
                             ForEach(appProvider.categories) { category in
                                 let categoryApps = appProvider.apps(forCategory: category.id)
@@ -210,10 +209,6 @@ struct AppsPage: View {
                 .onAppear {
                     AnalyticsManager.shared.appDetailViewed(appId: app.id, appName: app.name)
                 }
-        }
-        .dismissableSheet(isPresented: $showFilterSheet) {
-            AppFilterSheet(appProvider: appProvider, onDismiss: { showFilterSheet = false })
-                .frame(width: 400, height: 500)
         }
         .dismissableSheet(item: $viewAllCategory) { category in
             CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 }, onDismiss: { viewAllCategory = nil })
@@ -265,13 +260,56 @@ struct AppsPage: View {
                 Task { await appProvider.searchApps() }
             }
 
-            // Filter button
-            Button(action: { showFilterSheet = true }) {
-                Image(systemName: "line.3.horizontal.decrease.circle")
-                    .font(.system(size: 20))
-                    .foregroundColor(hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
+            // Category dropdown
+            Menu {
+                Button(action: {
+                    appProvider.selectedCategory = nil
+                    Task { await appProvider.searchApps() }
+                }) {
+                    HStack {
+                        Text("All Categories")
+                        if appProvider.selectedCategory == nil {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+
+                Divider()
+
+                ForEach(appProvider.categories) { category in
+                    Button(action: {
+                        appProvider.selectedCategory = category.id
+                        Task { await appProvider.searchApps() }
+                    }) {
+                        HStack {
+                            Text(category.title)
+                            if appProvider.selectedCategory == category.id {
+                                Image(systemName: "checkmark")
+                            }
+                        }
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease.circle")
+                        .font(.system(size: 12))
+                    Text(selectedCategoryLabel)
+                        .font(.system(size: 13))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 9, weight: .medium))
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(appProvider.selectedCategory != nil ? Color.white : OmiColors.backgroundSecondary)
+                .foregroundColor(appProvider.selectedCategory != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(appProvider.selectedCategory != nil ? OmiColors.border : Color.clear, lineWidth: 1)
+                )
             }
-            .buttonStyle(.plain)
+            .menuStyle(.borderlessButton)
+            .fixedSize()
 
             Spacer()
 
@@ -300,6 +338,25 @@ struct AppsPage: View {
 
     private var hasActiveFilters: Bool {
         appProvider.selectedCategory != nil || appProvider.selectedCapability != nil
+    }
+
+    private var selectedCategoryLabel: String {
+        if let categoryId = appProvider.selectedCategory,
+           let category = appProvider.categories.first(where: { $0.id == categoryId }) {
+            return category.title
+        }
+        return "Category"
+    }
+
+    private var filterResultsTitle: String {
+        if !searchText.isEmpty {
+            return "Search Results (\(appProvider.apps.count))"
+        }
+        if let categoryId = appProvider.selectedCategory,
+           let category = appProvider.categories.first(where: { $0.id == categoryId }) {
+            return "\(category.title) (\(appProvider.apps.count))"
+        }
+        return "Results (\(appProvider.apps.count))"
     }
 
     private var loadingShimmerView: some View {
