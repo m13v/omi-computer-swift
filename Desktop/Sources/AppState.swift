@@ -1891,4 +1891,6 @@ extension Notification.Name {
     static let navigateToDeviceSettings = Notification.Name("navigateToDeviceSettings")
     /// Posted when a new Rewind frame is captured (for live frame count updates)
     static let rewindFrameCaptured = Notification.Name("rewindFrameCaptured")
+    /// Posted when Rewind page finishes loading initial data
+    static let rewindPageDidLoad = Notification.Name("rewindPageDidLoad")
 }
