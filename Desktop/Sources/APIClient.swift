@@ -1922,6 +1922,20 @@ struct OmiApp: Codable, Identifiable {
         guard let rating = ratingAvg else { return nil }
         return String(format: "%.1f", rating)
     }
+
+    /// Formatted installs string (e.g., "1.2k", "43k")
+    var formattedInstalls: String? {
+        guard installs > 0 else { return nil }
+        if installs >= 1000 {
+            let thousands = Double(installs) / 1000.0
+            if thousands >= 10 {
+                return String(format: "%.0fk", thousands)
+            } else {
+                return String(format: "%.1fk", thousands)
+            }
+        }
+        return "\(installs)"
+    }
 }
 
 /// Full app details
