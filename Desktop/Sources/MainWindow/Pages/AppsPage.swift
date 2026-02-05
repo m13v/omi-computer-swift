@@ -128,24 +128,7 @@ struct AppsPage: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        if let section = viewAllSection {
-                            // "See more" view - show all apps from a section with back button
-                            ViewAllSectionHeader(
-                                title: viewAllSectionTitle,
-                                count: viewAllSectionApps.count,
-                                onBack: { viewAllSection = nil }
-                            )
-
-                            LazyVGrid(columns: [
-                                GridItem(.flexible(), spacing: 16),
-                                GridItem(.flexible(), spacing: 16),
-                                GridItem(.flexible(), spacing: 16)
-                            ], spacing: 16) {
-                                ForEach(viewAllSectionApps) { app in
-                                    AppCard(app: app, appProvider: appProvider, onSelect: { selectedApp = app })
-                                }
-                            }
-                        } else if !searchText.isEmpty || hasActiveFilters {
+                        if !searchText.isEmpty || hasActiveFilters {
                             // Show filtered/search results in a flat grid
                             if appProvider.isSearching {
                                 // Loading state for category filter
@@ -168,6 +151,20 @@ struct AppsPage: View {
                                 }
                                 .frame(maxWidth: .infinity, minHeight: 200)
                             } else {
+                                // Back button for "See more" view
+                                if viewAllSection != nil {
+                                    Button(action: { viewAllSection = nil }) {
+                                        HStack(spacing: 6) {
+                                            Image(systemName: "chevron.left")
+                                                .font(.system(size: 12, weight: .medium))
+                                            Text("Back")
+                                                .font(.system(size: 13, weight: .medium))
+                                        }
+                                        .foregroundColor(OmiColors.textSecondary)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+
                                 AppGridSection(
                                     title: filterResultsTitle,
                                     apps: filteredApps,
@@ -244,9 +241,12 @@ struct AppsPage: View {
         .background(OmiColors.backgroundPrimary)
         .onChange(of: searchText) { _, newValue in
             appProvider.searchQuery = newValue
-            // Clear category filter when searching to search across all apps
-            if !newValue.isEmpty && appProvider.selectedCategory != nil {
-                appProvider.clearCategoryFilter()
+            // Clear filters when searching
+            if !newValue.isEmpty {
+                viewAllSection = nil
+                if appProvider.selectedCategory != nil {
+                    appProvider.clearCategoryFilter()
+                }
             }
             Task {
                 // Debounce search
@@ -305,6 +305,7 @@ struct AppsPage: View {
                 label: "Installed",
                 isActive: appProvider.showInstalledOnly
             ) {
+                viewAllSection = nil
                 appProvider.showInstalledOnly.toggle()
                 Task { await appProvider.searchApps() }
             }
@@ -312,6 +313,7 @@ struct AppsPage: View {
             // Category dropdown
             Menu {
                 Button(action: {
+                    viewAllSection = nil
                     appProvider.clearCategoryFilter()
                 }) {
                     HStack {
@@ -326,6 +328,7 @@ struct AppsPage: View {
 
                 ForEach(appProvider.categories) { category in
                     Button(action: {
+                        viewAllSection = nil
                         appProvider.selectedCategory = category.id
                         Task { await appProvider.fetchAppsForCategory(category.id) }
                     }) {
@@ -435,25 +438,6 @@ struct AppsPage: View {
         return "Results (\(apps.count))"
     }
 
-    /// Title for the "See more" view based on the selected section
-    private var viewAllSectionTitle: String {
-        switch viewAllSection {
-        case "featured": return "Featured"
-        case "integrations": return "Integrations"
-        case "notifications": return "Realtime Notifications"
-        default: return "Apps"
-        }
-    }
-
-    /// Apps for the "See more" view based on the selected section
-    private var viewAllSectionApps: [OmiApp] {
-        switch viewAllSection {
-        case "featured": return appProvider.popularApps
-        case "integrations": return appProvider.integrationApps
-        case "notifications": return appProvider.notificationApps
-        default: return []
-        }
-    }
 
     private var loadingShimmerView: some View {
         ScrollView {
@@ -577,39 +561,6 @@ struct FilterToggle: View {
             )
         }
         .buttonStyle(.plain)
-    }
-}
-
-// MARK: - View All Section Header
-
-struct ViewAllSectionHeader: View {
-    let title: String
-    let count: Int
-    let onBack: () -> Void
-
-    var body: some View {
-        HStack(spacing: 12) {
-            Button(action: onBack) {
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .medium))
-                    Text("Back")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundColor(OmiColors.textSecondary)
-            }
-            .buttonStyle(.plain)
-
-            Text(title)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
-
-            Text("(\(count))")
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textTertiary)
-
-            Spacer()
-        }
     }
 }
 
