@@ -79,14 +79,23 @@ struct RewindPage: View {
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
             isMonitoring = ProactiveAssistantsPlugin.shared.isMonitoring
         }
-        .onChange(of: viewModel.screenshots) { _, screenshots in
-            // Reset indices when screenshots change
-            if !screenshots.isEmpty && currentIndex >= screenshots.count {
-                currentIndex = 0
+        .onChange(of: viewModel.screenshots) { oldScreenshots, newScreenshots in
+            // Try to preserve position on the same screenshot the user was viewing
+            if !oldScreenshots.isEmpty,
+               currentIndex < oldScreenshots.count,
+               let currentId = oldScreenshots[currentIndex].id,
+               let newIndex = newScreenshots.firstIndex(where: { $0.id == currentId }) {
+                // Same screenshot found in new array - adjust index
+                currentIndex = newIndex
+                // No need to reload frame - it's the same screenshot
+            } else if !newScreenshots.isEmpty {
+                // Can't find the current screenshot (first load, or it was deleted)
+                if currentIndex >= newScreenshots.count {
+                    currentIndex = 0
+                }
+                selectedGroupIndex = 0
+                Task { await loadCurrentFrame() }
             }
-            selectedGroupIndex = 0
-            // Load frame for current position
-            Task { await loadCurrentFrame() }
         }
         .onChange(of: viewModel.activeSearchQuery) { oldQuery, newQuery in
             // When search becomes active, default to results view
