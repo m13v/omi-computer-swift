@@ -690,22 +690,34 @@ class AuthService {
         // First try: Use stored token if valid AND belongs to the current user
         if !forceRefresh, let token = storedIdToken, !isTokenExpired {
             // Validate token belongs to current user to prevent using stale tokens after account switch
-            if let tokenUserId = storedTokenUserId, let expected = expectedUserId, tokenUserId == expected {
-                return token
+            // Allow tokens without userId (backward compatibility with pre-c052b0b tokens)
+            if let tokenUserId = storedTokenUserId {
+                // Token has userId - must match expected user
+                if let expected = expectedUserId, tokenUserId == expected {
+                    return token
+                } else {
+                    NSLog("OMI AUTH: Stored token user mismatch (token: %@, expected: %@) - clearing stale token",
+                          tokenUserId, expectedUserId ?? "nil")
+                    clearTokens()
+                }
             } else {
-                NSLog("OMI AUTH: Stored token user mismatch (token: %@, expected: %@) - clearing stale token",
-                      storedTokenUserId ?? "nil", expectedUserId ?? "nil")
-                clearTokens()
+                // Old token without userId - allow it (backward compatibility)
+                NSLog("OMI AUTH: Using legacy token without userId")
+                return token
             }
         }
 
-        // Second try: Refresh using stored refresh token (only if it belongs to current user)
-        if let _ = storedRefreshToken, let tokenUserId = storedTokenUserId,
-           let expected = expectedUserId, tokenUserId == expected {
-            do {
-                return try await refreshIdToken()
-            } catch {
-                NSLog("OMI AUTH: Token refresh failed: %@", error.localizedDescription)
+        // Second try: Refresh using stored refresh token
+        // Allow refresh for tokens without userId (backward compatibility)
+        if let _ = storedRefreshToken {
+            let tokenUserId = storedTokenUserId
+            let canRefresh = tokenUserId == nil || (expectedUserId != nil && tokenUserId == expectedUserId)
+            if canRefresh {
+                do {
+                    return try await refreshIdToken()
+                } catch {
+                    NSLog("OMI AUTH: Token refresh failed: %@", error.localizedDescription)
+                }
             }
         }
 
