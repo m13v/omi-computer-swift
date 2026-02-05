@@ -213,12 +213,12 @@ struct TaskRowView: View {
                 if showDueDate, let dueAt = task.dueAt {
                     Text(formatDueDate(dueAt))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(.black)
+                        .foregroundColor(OmiColors.textSecondary)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
                             Capsule()
-                                .fill(Color.white)
+                                .fill(OmiColors.backgroundTertiary)
                         )
                 }
             }
@@ -229,12 +229,12 @@ struct TaskRowView: View {
             if let priority = task.priority, priority != "low" {
                 Text(priority.capitalized)
                     .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(.black)
+                    .foregroundColor(OmiColors.textSecondary)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
                     .background(
                         Capsule()
-                            .fill(Color.white)
+                            .fill(OmiColors.backgroundTertiary)
                     )
             }
         }
