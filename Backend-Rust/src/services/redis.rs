@@ -11,6 +11,12 @@ pub struct RedisService {
     connection: Arc<RwLock<Option<redis::aio::MultiplexedConnection>>>,
 }
 
+/// Review data stored in Redis
+#[derive(Debug, Clone)]
+pub struct RedisReview {
+    pub score: i32,
+}
+
 impl RedisService {
     /// Create a new Redis service with explicit connection parameters
     /// This avoids URL encoding issues with special characters in passwords
@@ -181,12 +187,6 @@ impl RedisService {
     // ============================================================================
     // APP REVIEWS - matches Python backend redis_db.py
     // ============================================================================
-
-    /// Review data stored in Redis
-    #[derive(Debug, Clone)]
-    pub struct RedisReview {
-        pub score: i32,
-    }
 
     /// Get reviews for multiple apps
     /// Key format: plugins:{app_id}:reviews
