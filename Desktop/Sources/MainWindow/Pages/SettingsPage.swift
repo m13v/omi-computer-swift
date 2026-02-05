@@ -437,7 +437,11 @@ struct SettingsContentView: View {
 
                     Toggle("", isOn: Binding(
                         get: { launchAtLoginManager.isEnabled },
-                        set: { launchAtLoginManager.setEnabled($0) }
+                        set: { newValue in
+                            if launchAtLoginManager.setEnabled(newValue) {
+                                AnalyticsManager.shared.launchAtLoginChanged(enabled: newValue, source: "user")
+                            }
+                        }
                     ))
                         .toggleStyle(.switch)
                         .labelsHidden()
