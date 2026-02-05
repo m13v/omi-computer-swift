@@ -29,7 +29,7 @@ struct OnboardingView: View {
 
     // State for language selection
     @State private var selectedLanguage: String = "en"
-    @State private var autoDetectEnabled: Bool = true
+    @State private var autoDetectEnabled: Bool = false
 
 
     var body: some View {
