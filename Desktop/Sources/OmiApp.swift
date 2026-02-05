@@ -96,7 +96,9 @@ struct OMIApp: App {
         MenuBarExtra {
             MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
         } label: {
-            Text(Self.launchMode == .rewind ? "Rewind" : "Omi")
+            // Use an icon image instead of text for better visibility
+            Image(systemName: Self.launchMode == .rewind ? "clock.arrow.circlepath" : "waveform.circle.fill")
+                .accessibilityLabel(Self.launchMode == .rewind ? "Rewind" : "Omi")
         }
         .menuBarExtraStyle(.menu)
     }
