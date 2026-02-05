@@ -482,6 +482,7 @@ actor TranscriptionStorage {
 
     /// Get conversations from local storage as ServerConversation objects
     /// Used for instant display before API fetch completes
+    /// Note: Does NOT load segments for performance - segments are loaded on-demand for detail view
     func getLocalConversations(
         limit: Int = 50,
         offset: Int = 0,
@@ -509,20 +510,12 @@ actor TranscriptionStorage {
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
-            // Convert each session to ServerConversation
-            var conversations: [ServerConversation] = []
-            for session in sessions {
-                let segments = try TranscriptionSegmentRecord
-                    .filter(Column("sessionId") == session.id)
-                    .order(Column("segmentOrder").asc)
-                    .fetchAll(database)
-
-                if let conversation = session.toServerConversation(segments: segments) {
-                    conversations.append(conversation)
-                }
+            // Convert each session to ServerConversation WITHOUT loading segments
+            // Segments are only needed for conversation detail view, not list view
+            // This makes the query O(1) instead of O(N) for much faster loading
+            return sessions.compactMap { session in
+                session.toServerConversation(segments: [])
             }
-
-            return conversations
         }
     }
 
