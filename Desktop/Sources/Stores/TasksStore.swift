@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 
 /// Shared store for all tasks - single source of truth
 /// Both Dashboard and Tasks tab observe this store
@@ -41,6 +42,7 @@ class TasksStore: ObservableObject {
     private var hasLoadedCompleted = false
     /// Whether we're currently showing all tasks (no date filter) or just recent
     private var isShowingAllIncompleteTasks = false
+    private var cancellables = Set<AnyCancellable>()
 
     // MARK: - Computed Properties (for Dashboard)
 
@@ -106,7 +108,57 @@ class TasksStore: ObservableObject {
 
     // MARK: - Initialization
 
-    private init() {}
+    private init() {
+        // Auto-refresh tasks every 3 seconds
+        Timer.publish(every: 3.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { await self?.refreshTasksIfNeeded() }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Refresh tasks if already loaded (for auto-refresh)
+    private func refreshTasksIfNeeded() async {
+        // Skip if currently loading
+        guard !isLoadingIncomplete, !isLoadingCompleted, !isLoadingMore else { return }
+
+        // Only refresh if we've already loaded tasks
+        guard hasLoadedIncomplete else { return }
+
+        // Silently reload incomplete tasks
+        do {
+            let startDate = isShowingAllIncompleteTasks ? nil : sevenDaysAgo
+            let response = try await APIClient.shared.getActionItems(
+                limit: pageSize,
+                offset: 0,
+                completed: false,
+                startDate: startDate
+            )
+            incompleteTasks = response.items
+            hasMoreIncompleteTasks = response.hasMore
+            incompleteOffset = response.items.count
+        } catch {
+            // Silently ignore errors during auto-refresh
+            logError("TasksStore: Auto-refresh failed", error: error)
+        }
+
+        // Also refresh completed if loaded
+        if hasLoadedCompleted {
+            do {
+                let response = try await APIClient.shared.getActionItems(
+                    limit: pageSize,
+                    offset: 0,
+                    completed: true
+                )
+                completedTasks = response.items
+                hasMoreCompletedTasks = response.hasMore
+                completedOffset = response.items.count
+            } catch {
+                logError("TasksStore: Auto-refresh completed tasks failed", error: error)
+            }
+        }
+    }
 
     // MARK: - Load Tasks
 
