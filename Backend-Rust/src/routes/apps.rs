@@ -18,6 +18,44 @@ use crate::models::{
     get_app_categories, get_v2_capabilities,
 };
 use crate::AppState;
+use crate::services::redis::RedisService;
+
+// ============================================================================
+// Helper function to enrich apps with Redis data
+// ============================================================================
+
+/// Enrich apps with installs and ratings from Redis (matching Python backend behavior)
+/// Python calculates rating_avg and rating_count at query time from reviews stored in Redis
+async fn enrich_apps_from_redis(apps: &mut [AppSummary], redis: Option<&RedisService>) {
+    let Some(redis) = redis else { return };
+    let app_ids: Vec<String> = apps.iter().map(|a| a.id.clone()).collect();
+    if app_ids.is_empty() {
+        return;
+    }
+
+    // Fetch installs
+    if let Ok(installs_map) = redis.get_apps_installs_count(&app_ids).await {
+        for app in apps.iter_mut() {
+            if let Some(&installs) = installs_map.get(&app.id) {
+                app.installs = installs;
+            }
+        }
+    }
+
+    // Fetch reviews and calculate ratings
+    if let Ok(reviews_map) = redis.get_apps_reviews(&app_ids).await {
+        for app in apps.iter_mut() {
+            if let Some(reviews) = reviews_map.get(&app.id) {
+                if !reviews.is_empty() {
+                    let total_score: i32 = reviews.iter().map(|r| r.score).sum();
+                    let count = reviews.len();
+                    app.rating_avg = Some(total_score as f64 / count as f64);
+                    app.rating_count = count as i32;
+                }
+            }
+        }
+    }
+}
 
 // ============================================================================
 // App Discovery Endpoints
@@ -38,17 +76,20 @@ async fn list_apps(
         query.offset
     );
 
-    match state
+    let mut apps = match state
         .firestore
         .get_apps(&user.uid, query.limit, query.offset, query.capability.as_deref(), query.category.as_deref())
         .await
     {
-        Ok(apps) => Ok(Json(apps)),
+        Ok(apps) => apps,
         Err(e) => {
             tracing::error!("Failed to get apps: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get apps: {}", e)))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get apps: {}", e)));
         }
-    }
+    };
+
+    enrich_apps_from_redis(&mut apps, state.redis.as_ref()).await;
+    Ok(Json(apps))
 }
 
 /// GET /v1/approved-apps - List public approved apps only
@@ -59,17 +100,20 @@ async fn list_approved_apps(
 ) -> Result<Json<Vec<AppSummary>>, (StatusCode, String)> {
     tracing::info!("Listing approved apps for user {}", user.uid);
 
-    match state
+    let mut apps = match state
         .firestore
         .get_approved_apps(&user.uid, query.limit, query.offset)
         .await
     {
-        Ok(apps) => Ok(Json(apps)),
+        Ok(apps) => apps,
         Err(e) => {
             tracing::error!("Failed to get approved apps: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get approved apps: {}", e)))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get approved apps: {}", e)));
         }
-    }
+    };
+
+    enrich_apps_from_redis(&mut apps, state.redis.as_ref()).await;
+    Ok(Json(apps))
 }
 
 /// GET /v1/apps/popular - List popular apps
@@ -79,13 +123,16 @@ async fn list_popular_apps(
 ) -> Result<Json<Vec<AppSummary>>, (StatusCode, String)> {
     tracing::info!("Listing popular apps for user {}", user.uid);
 
-    match state.firestore.get_popular_apps(&user.uid, 20).await {
-        Ok(apps) => Ok(Json(apps)),
+    let mut apps = match state.firestore.get_popular_apps(&user.uid, 20).await {
+        Ok(apps) => apps,
         Err(e) => {
             tracing::error!("Failed to get popular apps: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get popular apps: {}", e)))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get popular apps: {}", e)));
         }
-    }
+    };
+
+    enrich_apps_from_redis(&mut apps, state.redis.as_ref()).await;
+    Ok(Json(apps))
 }
 
 /// GET /v2/apps/search - Search apps with filters
@@ -124,34 +171,7 @@ async fn search_apps(
         }
     };
 
-    // Fetch installs and ratings from Redis (matching Python backend behavior)
-    if let Some(redis) = &state.redis {
-        let app_ids: Vec<String> = apps.iter().map(|a| a.id.clone()).collect();
-
-        // Fetch installs
-        if let Ok(installs_map) = redis.get_apps_installs_count(&app_ids).await {
-            for app in &mut apps {
-                if let Some(&installs) = installs_map.get(&app.id) {
-                    app.installs = installs;
-                }
-            }
-        }
-
-        // Fetch reviews and calculate ratings
-        if let Ok(reviews_map) = redis.get_apps_reviews(&app_ids).await {
-            for app in &mut apps {
-                if let Some(reviews) = reviews_map.get(&app.id) {
-                    if !reviews.is_empty() {
-                        let total_score: i32 = reviews.iter().map(|r| r.score).sum();
-                        let count = reviews.len();
-                        app.rating_avg = Some(total_score as f64 / count as f64);
-                        app.rating_count = count as i32;
-                    }
-                }
-            }
-        }
-    }
-
+    enrich_apps_from_redis(&mut apps, state.redis.as_ref()).await;
     Ok(Json(apps))
 }
 
@@ -458,14 +478,40 @@ async fn get_app_details(
 ) -> Result<Json<App>, (StatusCode, String)> {
     tracing::info!("Getting app details for {} by user {}", app_id, user.uid);
 
-    match state.firestore.get_app(&user.uid, &app_id).await {
-        Ok(Some(app)) => Ok(Json(app)),
-        Ok(None) => Err((StatusCode::NOT_FOUND, "App not found".to_string())),
+    let mut app = match state.firestore.get_app(&user.uid, &app_id).await {
+        Ok(Some(app)) => app,
+        Ok(None) => return Err((StatusCode::NOT_FOUND, "App not found".to_string())),
         Err(e) => {
             tracing::error!("Failed to get app: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get app: {}", e)))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get app: {}", e)));
+        }
+    };
+
+    // Fetch installs and ratings from Redis (matching Python backend behavior)
+    if let Some(redis) = &state.redis {
+        let app_ids = vec![app_id.clone()];
+
+        // Fetch installs
+        if let Ok(installs_map) = redis.get_apps_installs_count(&app_ids).await {
+            if let Some(&installs) = installs_map.get(&app_id) {
+                app.installs = installs;
+            }
+        }
+
+        // Fetch reviews and calculate ratings
+        if let Ok(reviews_map) = redis.get_apps_reviews(&app_ids).await {
+            if let Some(reviews) = reviews_map.get(&app_id) {
+                if !reviews.is_empty() {
+                    let total_score: i32 = reviews.iter().map(|r| r.score).sum();
+                    let count = reviews.len();
+                    app.rating_avg = Some(total_score as f64 / count as f64);
+                    app.rating_count = count as i32;
+                }
+            }
         }
     }
+
+    Ok(Json(app))
 }
 
 /// GET /v1/apps/:app_id/reviews - Get app reviews
@@ -536,13 +582,16 @@ async fn get_enabled_apps(
 ) -> Result<Json<Vec<AppSummary>>, (StatusCode, String)> {
     tracing::info!("Getting enabled apps for user {}", user.uid);
 
-    match state.firestore.get_enabled_apps(&user.uid).await {
-        Ok(apps) => Ok(Json(apps)),
+    let mut apps = match state.firestore.get_enabled_apps(&user.uid).await {
+        Ok(apps) => apps,
         Err(e) => {
             tracing::error!("Failed to get enabled apps: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get enabled apps: {}", e)))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to get enabled apps: {}", e)));
         }
-    }
+    };
+
+    enrich_apps_from_redis(&mut apps, state.redis.as_ref()).await;
+    Ok(Json(apps))
 }
 
 // ============================================================================
