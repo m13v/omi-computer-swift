@@ -176,7 +176,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Set up menu bar icon with NSStatusBar (more reliable than SwiftUI MenuBarExtra)
         // Called synchronously on main thread to ensure status item is created before app finishes launching
-        DispatchQueue.main.async {
+        Task { @MainActor in
             self.setupMenuBar()
         }
 
@@ -350,7 +350,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Set up menu bar icon using NSStatusBar (more reliable than SwiftUI MenuBarExtra)
-    private func setupMenuBar() {
+    @MainActor private func setupMenuBar() {
         log("AppDelegate: [MENUBAR] Setting up NSStatusBar menu (macOS \(ProcessInfo.processInfo.operatingSystemVersionString))")
         log("AppDelegate: [MENUBAR] Thread: \(Thread.isMainThread ? "main" : "background"), statusBar items: \(NSStatusBar.system.thickness)")
 
