@@ -1505,6 +1505,7 @@ extension APIClient {
         dueAt: Date? = nil,
         source: String? = nil,
         priority: String? = nil,
+        category: String? = nil,
         metadata: [String: Any]? = nil
     ) async throws -> TaskActionItem {
         struct CreateRequest: Encodable {
@@ -1512,12 +1513,13 @@ extension APIClient {
             let dueAt: String?
             let source: String?
             let priority: String?
+            let category: String?
             let metadata: String?
 
             enum CodingKeys: String, CodingKey {
                 case description
                 case dueAt = "due_at"
-                case source, priority, metadata
+                case source, priority, category, metadata
             }
         }
 
@@ -1537,6 +1539,7 @@ extension APIClient {
             dueAt: dueAt.map { formatter.string(from: $0) },
             source: source,
             priority: priority,
+            category: category,
             metadata: metadataString
         )
 
