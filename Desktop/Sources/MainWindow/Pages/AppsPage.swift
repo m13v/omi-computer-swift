@@ -130,12 +130,34 @@ struct AppsPage: View {
                     LazyVStack(alignment: .leading, spacing: 24) {
                         if !searchText.isEmpty || hasActiveFilters {
                             // Show filtered/search results in a flat grid
-                            AppGridSection(
-                                title: filterResultsTitle,
-                                apps: filteredApps,
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
-                            )
+                            if appProvider.isSearching {
+                                // Loading state for category filter
+                                VStack(spacing: 16) {
+                                    ProgressView()
+                                        .scaleEffect(1.2)
+                                    Text("Loading...")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 200)
+                            } else if filteredApps.isEmpty {
+                                VStack(spacing: 12) {
+                                    Image(systemName: "magnifyingglass")
+                                        .font(.system(size: 32))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                    Text("No apps found")
+                                        .font(.system(size: 16, weight: .medium))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                }
+                                .frame(maxWidth: .infinity, minHeight: 200)
+                            } else {
+                                AppGridSection(
+                                    title: filterResultsTitle,
+                                    apps: filteredApps,
+                                    appProvider: appProvider,
+                                    onSelectApp: { selectedApp = $0 }
+                                )
+                            }
                         } else {
                             // Featured section (apps marked as is_popular in backend)
                             if !appProvider.popularApps.isEmpty {
