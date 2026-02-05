@@ -413,6 +413,9 @@ class MemoriesViewModel: ObservableObject {
 struct MemoriesPage: View {
     @ObservedObject var viewModel: MemoriesViewModel
     @State private var showingMemoryGraph = false
+    @State private var showCategoryFilter = false
+    @State private var categorySearchText = ""
+    @State private var pendingSelectedTags: Set<MemoryTag> = []
 
     var body: some View {
         Group {
@@ -612,6 +615,23 @@ struct MemoriesPage: View {
                 }
                 .buttonStyle(.plain)
 
+                // Refresh button
+                Button {
+                    Task { await viewModel.loadMemories() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 32, height: 32)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(8)
+                        .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
+                        .animation(viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
+                }
+                .buttonStyle(.plain)
+                .disabled(viewModel.isLoading)
+                .help("Refresh memories")
+
                 // Management menu
                 Menu {
                     Section("Visibility") {
@@ -667,23 +687,27 @@ struct MemoriesPage: View {
 
     // MARK: - Filter Bar
 
-    /// Tags that appear in the "More" dropdown menu
-    private var moreFilterTags: [MemoryTag] {
-        [.focus, .focused, .distracted, .tips, .productivity, .health, .communication, .learning, .other]
+    /// Label for the category filter button
+    private var categoryFilterLabel: String {
+        if viewModel.selectedTags.isEmpty {
+            return "All"
+        } else if viewModel.selectedTags.count == 1 {
+            return viewModel.selectedTags.first!.displayName
+        } else {
+            return "\(viewModel.selectedTags.count) selected"
+        }
     }
 
-    /// Check if any "More" filter is currently selected
-    private var hasMoreFilterSelected: Bool {
-        !viewModel.selectedTags.isDisjoint(with: Set(moreFilterTags))
-    }
-
-    /// Count of selected "More" filters
-    private var selectedMoreFiltersCount: Int {
-        viewModel.selectedTags.intersection(Set(moreFilterTags)).count
+    /// Filtered categories based on search text
+    private var filteredCategories: [MemoryTag] {
+        if categorySearchText.isEmpty {
+            return MemoryTag.allCases
+        }
+        return MemoryTag.allCases.filter { $0.displayName.localizedCaseInsensitiveContains(categorySearchText) }
     }
 
     private var filterBar: some View {
-        VStack(spacing: 12) {
+        HStack(spacing: 10) {
             // Search field
             HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
@@ -708,175 +732,194 @@ struct MemoriesPage: View {
             .background(OmiColors.backgroundTertiary)
             .cornerRadius(8)
 
-            // Tag filters - single row with main categories + More dropdown
-            HStack(spacing: 8) {
-                // All button
-                tagFilterButton(nil, "All", "tray.full", viewModel.memories.count)
-
-                // Divider
-                Rectangle()
-                    .fill(OmiColors.textQuaternary)
-                    .frame(width: 1, height: 20)
-                    .padding(.horizontal, 2)
-
-                // Main categories (like old Flutter app)
-                tagFilterButton(.system, "System", "gearshape", viewModel.tagCount(.system))
-                tagFilterButton(.interesting, "Interesting", "sparkles", viewModel.tagCount(.interesting))
-                tagFilterButton(.manual, "Manual", "square.and.pencil", viewModel.tagCount(.manual))
-
-                Spacer()
-
-                // More dropdown for other filters
-                Menu {
-                    // Clear selection option (only show if something is selected)
-                    if hasMoreFilterSelected {
-                        Button {
-                            for tag in moreFilterTags {
-                                viewModel.selectedTags.remove(tag)
-                            }
-                        } label: {
-                            Label("Clear Selection", systemImage: "xmark.circle")
-                        }
-                        Divider()
-                    }
-
-                    // Focus section
-                    Section("Focus") {
-                        moreFilterMenuItem(.focus, "Focus", "eye")
-                        moreFilterMenuItem(.focused, "Focused", "eye.fill")
-                        moreFilterMenuItem(.distracted, "Distracted", "eye.slash.fill")
-                    }
-
-                    // Tips section
-                    Section("Tips") {
-                        moreFilterMenuItem(.tips, "All Tips", "lightbulb.fill")
-                        moreFilterMenuItem(.productivity, "Productivity", "chart.line.uptrend.xyaxis")
-                        moreFilterMenuItem(.health, "Health", "heart.fill")
-                        moreFilterMenuItem(.communication, "Communication", "bubble.left.and.bubble.right.fill")
-                        moreFilterMenuItem(.learning, "Learning", "book.fill")
-                        moreFilterMenuItem(.other, "Other", "ellipsis.circle")
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "line.3.horizontal.decrease")
-                            .font(.system(size: 11))
-                        Text("More")
-                            .font(.system(size: 12, weight: hasMoreFilterSelected ? .semibold : .regular))
-                        if selectedMoreFiltersCount > 0 {
-                            Text("\(selectedMoreFiltersCount)")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(OmiColors.textPrimary)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(OmiColors.backgroundTertiary)
-                                .cornerRadius(4)
-                        }
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9, weight: .medium))
-                    }
-                    .foregroundColor(hasMoreFilterSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(hasMoreFilterSelected ? Color.white : Color.clear)
-                    .cornerRadius(6)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(hasMoreFilterSelected ? OmiColors.border : Color.clear, lineWidth: 1)
-                    )
+            // Category filter dropdown
+            Button {
+                pendingSelectedTags = viewModel.selectedTags
+                categorySearchText = ""
+                showCategoryFilter = true
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "line.3.horizontal.decrease")
+                        .font(.system(size: 12))
+                    Text(categoryFilterLabel)
+                        .font(.system(size: 13, weight: viewModel.selectedTags.isEmpty ? .regular : .medium))
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 10))
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-
-                // Refresh button
-                Button {
-                    Task { await viewModel.loadMemories() }
-                } label: {
-                    Image(systemName: "arrow.clockwise")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .rotationEffect(.degrees(viewModel.isLoading ? 360 : 0))
-                        .animation(viewModel.isLoading ? .linear(duration: 1).repeatForever(autoreverses: false) : .default, value: viewModel.isLoading)
-                }
-                .buttonStyle(.plain)
-                .disabled(viewModel.isLoading)
+                .foregroundColor(viewModel.selectedTags.isEmpty ? OmiColors.textSecondary : OmiColors.textPrimary)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 10)
+                .background(viewModel.selectedTags.isEmpty ? OmiColors.backgroundTertiary : Color.white)
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(viewModel.selectedTags.isEmpty ? Color.clear : OmiColors.border, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $showCategoryFilter, arrowEdge: .bottom) {
+                categoryFilterPopover
             }
         }
         .padding(.horizontal, 24)
         .padding(.bottom, 16)
     }
 
-    @ViewBuilder
-    private func moreFilterMenuItem(_ tag: MemoryTag, _ title: String, _ icon: String) -> some View {
-        let isSelected = viewModel.selectedTags.contains(tag)
-        let count = viewModel.tagCount(tag)
+    private var categoryFilterPopover: some View {
+        VStack(spacing: 0) {
+            // Search field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(OmiColors.textTertiary)
+                    .font(.system(size: 12))
 
-        Button {
-            if isSelected {
-                viewModel.selectedTags.remove(tag)
-            } else {
-                viewModel.selectedTags.insert(tag)
-            }
-        } label: {
-            HStack {
-                Label(title, systemImage: icon)
-                Spacer()
-                if count > 0 {
-                    Text("\(count)")
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                if isSelected {
-                    Image(systemName: "checkmark")
-                        .foregroundColor(OmiColors.textPrimary)
-                }
-            }
-        }
-    }
+                TextField("Search categories...", text: $categorySearchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundColor(OmiColors.textPrimary)
 
-    private func tagFilterButton(_ tag: MemoryTag?, _ title: String, _ icon: String, _ count: Int) -> some View {
-        let isSelected = tag == nil ? viewModel.selectedTags.isEmpty : viewModel.selectedTags.contains(tag!)
-
-        return Button {
-            if tag == nil {
-                // "All" clears selection
-                viewModel.selectedTags.removeAll()
-            } else {
-                // Toggle tag selection
-                if viewModel.selectedTags.contains(tag!) {
-                    viewModel.selectedTags.remove(tag!)
-                } else {
-                    viewModel.selectedTags.insert(tag!)
+                if !categorySearchText.isEmpty {
+                    Button {
+                        categorySearchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(OmiColors.textTertiary)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
                 }
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: icon)
-                    .font(.system(size: 11))
-                    .foregroundColor(isSelected ? .black : OmiColors.textTertiary)
-
-                Text(title)
-                    .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                    .foregroundColor(isSelected ? .black : OmiColors.textSecondary)
-
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(isSelected ? .black : OmiColors.textTertiary)
-                        .padding(.horizontal, 5)
-                        .padding(.vertical, 2)
-                        .background(isSelected ? Color.white : OmiColors.backgroundTertiary)
-                        .cornerRadius(4)
-                }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background(isSelected ? Color.white : Color.clear)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(OmiColors.backgroundTertiary)
             .cornerRadius(6)
-            .overlay(
-                RoundedRectangle(cornerRadius: 6)
-                    .stroke(isSelected ? OmiColors.border : Color.clear, lineWidth: 1)
-            )
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Divider()
+                .padding(.horizontal, 12)
+
+            // Category list
+            ScrollView {
+                VStack(spacing: 2) {
+                    // "All" option
+                    Button {
+                        pendingSelectedTags.removeAll()
+                    } label: {
+                        HStack {
+                            Image(systemName: "tray.full")
+                                .font(.system(size: 12))
+                                .frame(width: 20)
+                            Text("All")
+                                .font(.system(size: 13))
+                            Spacer()
+                            Text("\(viewModel.memories.count)")
+                                .font(.system(size: 11))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(OmiColors.backgroundTertiary)
+                                .cornerRadius(4)
+                            if pendingSelectedTags.isEmpty {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(OmiColors.purplePrimary)
+                            }
+                        }
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(pendingSelectedTags.isEmpty ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+                        .cornerRadius(6)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+                        .padding(.vertical, 4)
+
+                    // Category items
+                    ForEach(filteredCategories) { tag in
+                        let isSelected = pendingSelectedTags.contains(tag)
+                        let count = viewModel.tagCount(tag)
+
+                        Button {
+                            if isSelected {
+                                pendingSelectedTags.remove(tag)
+                            } else {
+                                pendingSelectedTags.insert(tag)
+                            }
+                        } label: {
+                            HStack {
+                                Image(systemName: tag.icon)
+                                    .font(.system(size: 12))
+                                    .frame(width: 20)
+                                Text(tag.displayName)
+                                    .font(.system(size: 13))
+                                Spacer()
+                                Text("\(count)")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(OmiColors.backgroundTertiary)
+                                    .cornerRadius(4)
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(OmiColors.purplePrimary)
+                                }
+                            }
+                            .foregroundColor(OmiColors.textPrimary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(isSelected ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+                            .cornerRadius(6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .frame(maxHeight: 300)
+
+            Divider()
+                .padding(.horizontal, 12)
+
+            // Action buttons
+            HStack(spacing: 8) {
+                Button {
+                    pendingSelectedTags.removeAll()
+                } label: {
+                    Text("Clear")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    viewModel.selectedTags = pendingSelectedTags
+                    showCategoryFilter = false
+                } label: {
+                    Text("Apply")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
         }
-        .buttonStyle(.plain)
+        .frame(width: 280)
+        .background(OmiColors.backgroundSecondary)
     }
 
     // MARK: - Memory List
