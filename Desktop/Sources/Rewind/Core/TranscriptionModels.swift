@@ -289,3 +289,125 @@ enum TranscriptionStorageError: LocalizedError {
         }
     }
 }
+
+// MARK: - ServerConversation Conversion
+
+extension TranscriptionSessionRecord {
+    /// Create a local record from a ServerConversation
+    /// Used when syncing conversations from backend to local storage
+    static func from(_ conversation: ServerConversation) -> TranscriptionSessionRecord {
+        let encoder = JSONEncoder()
+
+        // Encode structured data as JSON
+        let actionItemsJson = try? String(data: encoder.encode(conversation.structured.actionItems), encoding: .utf8)
+        let eventsJson = try? String(data: encoder.encode(conversation.structured.events), encoding: .utf8)
+        let geolocationJson = try? String(data: encoder.encode(conversation.geolocation), encoding: .utf8)
+        let photosJson = try? String(data: encoder.encode(conversation.photos), encoding: .utf8)
+        let appsResultsJson = try? String(data: encoder.encode(conversation.appsResults), encoding: .utf8)
+
+        // Convert ConversationStatus to LocalConversationStatus
+        let localStatus: LocalConversationStatus
+        switch conversation.status {
+        case .inProgress: localStatus = .inProgress
+        case .processing: localStatus = .processing
+        case .merging: localStatus = .merging
+        case .completed: localStatus = .completed
+        case .failed: localStatus = .failed
+        }
+
+        return TranscriptionSessionRecord(
+            startedAt: conversation.startedAt ?? conversation.createdAt,
+            finishedAt: conversation.finishedAt,
+            source: conversation.source?.rawValue ?? "unknown",
+            language: conversation.language ?? "en",
+            timezone: "UTC",
+            inputDeviceName: conversation.inputDeviceName,
+            status: .completed,  // Synced from backend = already completed
+            retryCount: 0,
+            lastError: nil,
+            backendId: conversation.id,
+            backendSynced: true,
+            createdAt: conversation.createdAt,
+            updatedAt: Date(),
+            title: conversation.structured.title,
+            overview: conversation.structured.overview,
+            emoji: conversation.structured.emoji,
+            category: conversation.structured.category,
+            actionItemsJson: actionItemsJson,
+            eventsJson: eventsJson,
+            geolocationJson: geolocationJson,
+            photosJson: photosJson,
+            appsResultsJson: appsResultsJson,
+            conversationStatus: localStatus,
+            discarded: conversation.discarded,
+            deleted: conversation.deleted,
+            isLocked: conversation.isLocked,
+            starred: conversation.starred,
+            folderId: conversation.folderId
+        )
+    }
+
+    /// Update this record from a ServerConversation (preserving local id)
+    mutating func updateFrom(_ conversation: ServerConversation) {
+        let encoder = JSONEncoder()
+
+        // Update timestamps
+        self.startedAt = conversation.startedAt ?? conversation.createdAt
+        self.finishedAt = conversation.finishedAt
+        self.updatedAt = Date()
+
+        // Update metadata
+        self.source = conversation.source?.rawValue ?? self.source
+        self.language = conversation.language ?? self.language
+        self.inputDeviceName = conversation.inputDeviceName
+
+        // Update structured data
+        self.title = conversation.structured.title
+        self.overview = conversation.structured.overview
+        self.emoji = conversation.structured.emoji
+        self.category = conversation.structured.category
+        self.actionItemsJson = try? String(data: encoder.encode(conversation.structured.actionItems), encoding: .utf8)
+        self.eventsJson = try? String(data: encoder.encode(conversation.structured.events), encoding: .utf8)
+
+        // Update additional data
+        self.geolocationJson = try? String(data: encoder.encode(conversation.geolocation), encoding: .utf8)
+        self.photosJson = try? String(data: encoder.encode(conversation.photos), encoding: .utf8)
+        self.appsResultsJson = try? String(data: encoder.encode(conversation.appsResults), encoding: .utf8)
+
+        // Update status & flags
+        switch conversation.status {
+        case .inProgress: self.conversationStatus = .inProgress
+        case .processing: self.conversationStatus = .processing
+        case .merging: self.conversationStatus = .merging
+        case .completed: self.conversationStatus = .completed
+        case .failed: self.conversationStatus = .failed
+        }
+        self.discarded = conversation.discarded
+        self.deleted = conversation.deleted
+        self.isLocked = conversation.isLocked
+        self.starred = conversation.starred
+        self.folderId = conversation.folderId
+
+        // Mark as synced
+        self.backendId = conversation.id
+        self.backendSynced = true
+    }
+}
+
+extension TranscriptionSegmentRecord {
+    /// Create a local record from a TranscriptSegment
+    static func from(_ segment: TranscriptSegment, sessionId: Int64, segmentOrder: Int) -> TranscriptionSegmentRecord {
+        return TranscriptionSegmentRecord(
+            sessionId: sessionId,
+            speaker: segment.speakerId,
+            text: segment.text,
+            startTime: segment.start,
+            endTime: segment.end,
+            segmentOrder: segmentOrder,
+            segmentId: segment.id,
+            speakerLabel: segment.speaker,
+            isUser: segment.isUser,
+            personId: segment.personId
+        )
+    }
+}
