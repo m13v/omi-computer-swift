@@ -1101,6 +1101,7 @@ struct TaskRow: View {
     @State private var checkmarkScale: CGFloat = 1.0
     @State private var rowOpacity: Double = 1.0
     @State private var rowOffset: CGFloat = 0
+    @State private var showAgentDetail = false
 
     // Swipe gesture state
     @State private var swipeOffset: CGFloat = 0
@@ -1145,6 +1146,12 @@ struct TaskRow: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Are you sure you want to delete this task? This action cannot be undone.")
+            }
+            .sheet(isPresented: $showAgentDetail) {
+                TaskAgentDetailView(
+                    task: task,
+                    onDismiss: { showAgentDetail = false }
+                )
             }
     }
 
@@ -1377,6 +1384,16 @@ struct TaskRow: View {
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
 
+                    // Category badge (classification like feature, bug, code, etc.)
+                    if let taskCategory = task.category {
+                        TaskClassificationBadge(category: taskCategory)
+                    }
+
+                    // Agent status indicator (for code-related tasks with active agents)
+                    if task.shouldTriggerAgent {
+                        AgentStatusIndicator(taskId: task.id)
+                    }
+
                     // Due date badge (color-coded)
                     if let dueAt = task.dueAt {
                         DueDateBadgeCompact(dueAt: dueAt, isCompleted: task.completed)
@@ -1399,9 +1416,23 @@ struct TaskRow: View {
 
             Spacer(minLength: 0)
 
-            // Hover actions: indent controls and delete
+            // Hover actions: agent, indent controls, and delete
             if isHovering && !viewModel.isMultiSelectMode {
                 HStack(spacing: 4) {
+                    // Agent button (for code-related tasks)
+                    if task.shouldTriggerAgent {
+                        Button {
+                            showAgentDetail = true
+                        } label: {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("View Agent Details")
+                    }
+
                     // Outdent button (decrease indent)
                     if indentLevel > 0 {
                         Button {
