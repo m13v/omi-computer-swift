@@ -1698,6 +1698,7 @@ impl FirestoreService {
         limit: usize,
         offset: usize,
         completed_filter: Option<bool>,
+        conversation_id: Option<&str>,
         start_date: Option<&str>,
         end_date: Option<&str>,
         due_start_date: Option<&str>,
@@ -1715,6 +1716,17 @@ impl FirestoreService {
                     "field": {"fieldPath": "completed"},
                     "op": "EQUAL",
                     "value": {"booleanValue": completed}
+                }
+            }));
+        }
+
+        // Conversation ID filter
+        if let Some(conv_id) = conversation_id {
+            filters.push(json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "conversation_id"},
+                    "op": "EQUAL",
+                    "value": {"stringValue": conv_id}
                 }
             }));
         }
@@ -1830,6 +1842,25 @@ impl FirestoreService {
 
         // Enrich action items that have conversation_id but no source
         self.enrich_action_items_with_source(uid, &mut action_items).await;
+
+        // Post-query sort to match Python backend behavior:
+        // 1. Items WITH due_at come first (sorted by due_at ascending)
+        // 2. Items WITHOUT due_at come last
+        // 3. Tie-breaker: created_at descending (newest first)
+        action_items.sort_by(|a, b| {
+            match (&a.due_at, &b.due_at) {
+                // Both have due_at: sort by due_at ascending, then created_at descending
+                (Some(due_a), Some(due_b)) => {
+                    due_a.cmp(due_b).then_with(|| b.created_at.cmp(&a.created_at))
+                }
+                // a has due_at, b doesn't: a comes first
+                (Some(_), None) => std::cmp::Ordering::Less,
+                // a doesn't have due_at, b does: b comes first
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                // Neither has due_at: sort by created_at descending
+                (None, None) => b.created_at.cmp(&a.created_at),
+            }
+        });
 
         Ok(action_items)
     }
