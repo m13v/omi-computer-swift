@@ -10,6 +10,76 @@ enum TaskPriority: String, Codable {
 
 // MARK: - Extracted Task
 
+/// Task category for classification
+enum TaskClassification: String, Codable, CaseIterable {
+    case personal
+    case work
+    case feature
+    case bug
+    case code
+    case research
+    case communication
+    case finance
+    case health
+    case other
+
+    /// Categories that should trigger Claude agent execution
+    static let agentCategories: Set<TaskClassification> = [.feature, .bug, .code]
+
+    /// Check if this category should trigger an agent
+    var shouldTriggerAgent: Bool {
+        Self.agentCategories.contains(self)
+    }
+
+    /// User-friendly display label
+    var label: String {
+        switch self {
+        case .personal: return "Personal"
+        case .work: return "Work"
+        case .feature: return "Feature"
+        case .bug: return "Bug"
+        case .code: return "Code"
+        case .research: return "Research"
+        case .communication: return "Communication"
+        case .finance: return "Finance"
+        case .health: return "Health"
+        case .other: return "Other"
+        }
+    }
+
+    /// Icon name for the category
+    var icon: String {
+        switch self {
+        case .personal: return "person.fill"
+        case .work: return "briefcase.fill"
+        case .feature: return "sparkles"
+        case .bug: return "ladybug.fill"
+        case .code: return "chevron.left.forwardslash.chevron.right"
+        case .research: return "magnifyingglass"
+        case .communication: return "message.fill"
+        case .finance: return "dollarsign.circle.fill"
+        case .health: return "heart.fill"
+        case .other: return "folder.fill"
+        }
+    }
+
+    /// Color for the category
+    var color: String {
+        switch self {
+        case .personal: return "#8B5CF6"  // Purple
+        case .work: return "#3B82F6"      // Blue
+        case .feature: return "#10B981"   // Green
+        case .bug: return "#EF4444"       // Red
+        case .code: return "#F59E0B"      // Amber
+        case .research: return "#6366F1"  // Indigo
+        case .communication: return "#EC4899" // Pink
+        case .finance: return "#14B8A6"   // Teal
+        case .health: return "#F43F5E"    // Rose
+        case .other: return "#6B7280"     // Gray
+        }
+    }
+}
+
 struct ExtractedTask: Codable {
     let title: String
     let description: String?
@@ -17,6 +87,7 @@ struct ExtractedTask: Codable {
     let sourceApp: String
     let inferredDeadline: String?
     let confidence: Double
+    let category: TaskClassification
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -25,6 +96,7 @@ struct ExtractedTask: Codable {
         case sourceApp = "source_app"
         case inferredDeadline = "inferred_deadline"
         case confidence
+        case category
     }
 
     /// Convert to dictionary for Flutter
@@ -33,7 +105,8 @@ struct ExtractedTask: Codable {
             "title": title,
             "priority": priority.rawValue,
             "sourceApp": sourceApp,
-            "confidence": confidence
+            "confidence": confidence,
+            "category": category.rawValue
         ]
         if let description = description {
             dict["description"] = description
