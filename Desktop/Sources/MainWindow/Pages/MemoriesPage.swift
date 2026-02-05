@@ -663,10 +663,14 @@ struct MemoriesPage: View {
                 } label: {
                     Image(systemName: "chevron.down")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
+                        .foregroundColor(.black)
                         .frame(width: 32, height: 32)
-                        .background(OmiColors.backgroundTertiary)
+                        .background(Color.white)
                         .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(OmiColors.border, lineWidth: 1)
+                        )
                 }
                 .menuStyle(.borderlessButton)
                 .menuIndicator(.hidden)
@@ -824,7 +828,7 @@ struct MemoriesPage: View {
                             if pendingSelectedTags.isEmpty {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(OmiColors.purplePrimary)
+                                    .foregroundColor(.white)
                             }
                         }
                         .foregroundColor(OmiColors.textPrimary)
@@ -832,6 +836,7 @@ struct MemoriesPage: View {
                         .padding(.vertical, 8)
                         .background(pendingSelectedTags.isEmpty ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
                         .cornerRadius(6)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
 
@@ -867,7 +872,7 @@ struct MemoriesPage: View {
                                 if isSelected {
                                     Image(systemName: "checkmark")
                                         .font(.system(size: 12, weight: .medium))
-                                        .foregroundColor(OmiColors.purplePrimary)
+                                        .foregroundColor(.white)
                                 }
                             }
                             .foregroundColor(OmiColors.textPrimary)
@@ -875,6 +880,7 @@ struct MemoriesPage: View {
                             .padding(.vertical, 8)
                             .background(isSelected ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
                             .cornerRadius(6)
+                            .contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                     }
@@ -1180,18 +1186,24 @@ private struct MemoryCardView: View {
                         Text("Tips")
                             .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(OmiColors.warning)
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(4)
 
                     if let tipCat = memory.tipCategory {
-                        Text("·")
-                            .foregroundColor(OmiColors.textQuaternary)
                         HStack(spacing: 4) {
                             Image(systemName: memory.tipCategoryIcon)
                                 .font(.system(size: 10))
                             Text(tipCat.capitalized)
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .foregroundColor(tagColorFor(tipCat))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(OmiColors.backgroundSecondary)
+                        .cornerRadius(4)
                     }
                 } else {
                     HStack(spacing: 4) {
@@ -1200,20 +1212,26 @@ private struct MemoryCardView: View {
                         Text(memory.category.displayName)
                             .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(categoryColor(memory.category))
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(4)
                 }
 
                 // Source device
                 if let sourceName = memory.sourceName {
-                    Text("·")
-                        .foregroundColor(OmiColors.textQuaternary)
                     HStack(spacing: 4) {
                         Image(systemName: memory.sourceIcon)
                             .font(.system(size: 10))
                         Text(sourceName)
                             .font(.system(size: 11))
                     }
-                    .foregroundColor(OmiColors.textTertiary)
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(4)
                 }
 
                 Spacer()
@@ -1221,7 +1239,11 @@ private struct MemoryCardView: View {
                 // Date
                 Text(formatDate(memory.createdAt))
                     .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textTertiary)
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(4)
 
                 // Click hint on hover
                 if isHovered {
