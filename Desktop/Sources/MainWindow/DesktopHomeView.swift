@@ -95,27 +95,24 @@ struct DesktopHomeView: View {
 
     private var mainContent: some View {
         HStack(spacing: 0) {
-            // Show sidebar only in full mode
-            if !hideSidebar {
-                // Show settings sidebar when in settings, otherwise show main sidebar
-                if isInSettings {
-                    SettingsSidebar(
-                        selectedSection: $selectedSettingsSection,
-                        onBack: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                selectedIndex = previousIndexBeforeSettings
-                            }
+            // Show settings sidebar when in settings (always visible, even in rewind mode)
+            if isInSettings {
+                SettingsSidebar(
+                    selectedSection: $selectedSettingsSection,
+                    onBack: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedIndex = previousIndexBeforeSettings
                         }
-                    )
-                } else {
-                    // Sidebar (with click-through so first click activates items even when window is inactive)
-                    SidebarView(
-                        selectedIndex: $selectedIndex,
-                        isCollapsed: $isSidebarCollapsed,
-                        appState: appState
-                    )
-                    .clickThrough()
-                }
+                    }
+                )
+            } else if !hideSidebar {
+                // Main sidebar only in full mode (hidden in rewind mode)
+                SidebarView(
+                    selectedIndex: $selectedIndex,
+                    isCollapsed: $isSidebarCollapsed,
+                    appState: appState
+                )
+                .clickThrough()
             }
 
             // Main content area with rounded container
