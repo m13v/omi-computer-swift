@@ -70,6 +70,7 @@ struct SettingsContentView: View {
     @State private var taskEnabled: Bool
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
+    @State private var taskExcludedApps: Set<String>
 
     // Advice Assistant states
     @State private var adviceEnabled: Bool
@@ -165,6 +166,7 @@ struct SettingsContentView: View {
         _taskEnabled = State(initialValue: TaskAssistantSettings.shared.isEnabled)
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
+        _taskExcludedApps = State(initialValue: TaskAssistantSettings.shared.excludedApps)
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
@@ -232,6 +234,9 @@ struct SettingsContentView: View {
         }
         .onChange(of: appState.isTranscribing) { _, newValue in
             isTranscribing = newValue
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .navigateToTaskSettings)) { _ in
+            showingDeveloperSettings = true
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Refresh notification permission when app becomes active (user may have changed it in System Settings)
@@ -1459,6 +1464,43 @@ struct SettingsContentView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Excluded Apps for Task Extraction
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Excluded Apps")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Tasks won't be extracted from these apps (screenshots still captured for other features)")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        if !taskExcludedApps.isEmpty {
+                            LazyVStack(spacing: 8) {
+                                ForEach(Array(taskExcludedApps).sorted(), id: \.self) { appName in
+                                    ExcludedAppRow(
+                                        appName: appName,
+                                        onRemove: {
+                                            TaskAssistantSettings.shared.includeApp(appName)
+                                            taskExcludedApps = TaskAssistantSettings.shared.excludedApps
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        AddExcludedAppView(
+                            onAdd: { appName in
+                                TaskAssistantSettings.shared.excludeApp(appName)
+                                taskExcludedApps = TaskAssistantSettings.shared.excludedApps
+                            },
+                            excludedApps: taskExcludedApps
+                        )
                     }
                 }
             }
