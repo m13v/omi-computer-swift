@@ -14,7 +14,10 @@ actor VideoChunkEncoder {
     // MARK: - Configuration
 
     private let chunkDuration: TimeInterval = 60.0 // 60-second chunks
-    private let frameRate: Double = 1.0 // 1 FPS (matching current capture rate)
+    private var frameRate: Double {
+        let interval = UserDefaults.standard.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
+        return 1.0 / interval // e.g. 0.5s interval = 2 FPS
+    }
     private let maxResolution: CGFloat = 3000 // Maximum dimension
 
     /// Threshold for aspect ratio change that triggers a new chunk (20% difference)
