@@ -129,38 +129,15 @@ struct AppsPage: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        // Create buttons row (only show when not searching)
-                        if searchText.isEmpty {
-                            HStack(spacing: 16) {
-                                CreateAppCard(
-                                    icon: "app.badge.fill",
-                                    iconColor: OmiColors.purplePrimary,
-                                    title: "Create an app",
-                                    onTap: {
-                                        if let url = URL(string: "https://docs.omi.me/docs/developer/apps/Introduction") {
-                                            NSWorkspace.shared.open(url)
-                                        }
-                                    }
-                                )
-
-                                CreateAppCard(
-                                    icon: "person.crop.circle.fill",
-                                    iconColor: .blue,
-                                    title: "Create my clone",
-                                    onTap: {
-                                        showPersonaPage = true
-                                    }
-                                )
-                            }
-                        }
-
                         // Featured section (apps marked as is_popular in backend)
                         if !appProvider.popularApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
                                 title: "Featured",
-                                apps: appProvider.popularApps,
+                                apps: Array(appProvider.popularApps.prefix(6)),
                                 appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
+                                onSelectApp: { selectedApp = $0 },
+                                showSeeMore: appProvider.popularApps.count > 6,
+                                onSeeMore: { viewAllCategory = OmiAppCategory(id: "featured", title: "Featured") }
                             )
                         }
 
@@ -168,29 +145,11 @@ struct AppsPage: View {
                         if !appProvider.integrationApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
                                 title: "Integrations",
-                                apps: appProvider.integrationApps,
+                                apps: Array(appProvider.integrationApps.prefix(6)),
                                 appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
-                            )
-                        }
-
-                        // Chat Assistants section (chat capability)
-                        if !appProvider.chatApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Chat Assistants",
-                                apps: appProvider.chatApps,
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
-                            )
-                        }
-
-                        // Summary Apps section (memories capability)
-                        if !appProvider.summaryApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Summary Apps",
-                                apps: appProvider.summaryApps,
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
+                                onSelectApp: { selectedApp = $0 },
+                                showSeeMore: appProvider.integrationApps.count > 6,
+                                onSeeMore: { viewAllCategory = OmiAppCategory(id: "integrations", title: "Integrations") }
                             )
                         }
 
@@ -198,19 +157,11 @@ struct AppsPage: View {
                         if !appProvider.notificationApps.isEmpty && searchText.isEmpty {
                             HorizontalAppSection(
                                 title: "Realtime Notifications",
-                                apps: appProvider.notificationApps,
+                                apps: Array(appProvider.notificationApps.prefix(6)),
                                 appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
-                            )
-                        }
-
-                        // Installed apps section (user's enabled apps)
-                        if !appProvider.enabledApps.isEmpty && searchText.isEmpty {
-                            HorizontalAppSection(
-                                title: "Installed",
-                                apps: appProvider.enabledApps,
-                                appProvider: appProvider,
-                                onSelectApp: { selectedApp = $0 }
+                                onSelectApp: { selectedApp = $0 },
+                                showSeeMore: appProvider.notificationApps.count > 6,
+                                onSeeMore: { viewAllCategory = OmiAppCategory(id: "notifications", title: "Realtime Notifications") }
                             )
                         }
 
@@ -283,7 +234,7 @@ struct AppsPage: View {
     }
 
     private var searchBar: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             HStack {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(OmiColors.textTertiary)
@@ -321,6 +272,29 @@ struct AppsPage: View {
                     .foregroundColor(hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
             }
             .buttonStyle(.plain)
+
+            Spacer()
+
+            // Create buttons (compact)
+            HStack(spacing: 8) {
+                SmallHeaderButton(
+                    icon: "app.badge.fill",
+                    label: "Create App",
+                    color: OmiColors.purplePrimary
+                ) {
+                    if let url = URL(string: "https://docs.omi.me/docs/developer/apps/Introduction") {
+                        NSWorkspace.shared.open(url)
+                    }
+                }
+
+                SmallHeaderButton(
+                    icon: "person.crop.circle.fill",
+                    label: "My Clone",
+                    color: .blue
+                ) {
+                    showPersonaPage = true
+                }
+            }
         }
     }
 
@@ -442,7 +416,7 @@ struct FilterToggle: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(isActive ? Color.white : OmiColors.backgroundSecondary)
-            .foregroundColor(isActive ? OmiColors.textPrimary : OmiColors.textSecondary)
+            .foregroundColor(isActive ? Color.black : OmiColors.textSecondary)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
@@ -453,6 +427,36 @@ struct FilterToggle: View {
     }
 }
 
+// MARK: - Small Header Button
+
+struct SmallHeaderButton: View {
+    let icon: String
+    let label: String
+    let color: Color
+    let action: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 12))
+                    .foregroundColor(color)
+                Text(label)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OmiColors.textSecondary)
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(isHovering ? OmiColors.backgroundTertiary : OmiColors.backgroundSecondary)
+            .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovering = $0 }
+    }
+}
+
 // MARK: - Horizontal App Section
 
 struct HorizontalAppSection: View {
@@ -460,6 +464,8 @@ struct HorizontalAppSection: View {
     let apps: [OmiApp]
     let appProvider: AppProvider
     let onSelectApp: (OmiApp) -> Void
+    var showSeeMore: Bool = false
+    var onSeeMore: (() -> Void)? = nil
     var onViewAll: (() -> Void)? = nil
 
     var body: some View {
@@ -471,7 +477,18 @@ struct HorizontalAppSection: View {
 
                 Spacer()
 
-                if apps.count > 5, let onViewAll = onViewAll {
+                if showSeeMore, let onSeeMore = onSeeMore {
+                    Button(action: onSeeMore) {
+                        HStack(spacing: 4) {
+                            Text("See more")
+                                .font(.system(size: 13))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11))
+                        }
+                        .foregroundColor(OmiColors.textSecondary)
+                    }
+                    .buttonStyle(.plain)
+                } else if let onViewAll = onViewAll {
                     Button(action: onViewAll) {
                         HStack(spacing: 4) {
                             Text("View All")
@@ -487,7 +504,7 @@ struct HorizontalAppSection: View {
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
-                    ForEach(apps.prefix(10)) { app in
+                    ForEach(apps) { app in
                         CompactAppCard(app: app, appProvider: appProvider, onSelect: { onSelectApp(app) })
                     }
                 }
