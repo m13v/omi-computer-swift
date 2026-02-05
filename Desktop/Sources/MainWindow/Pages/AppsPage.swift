@@ -172,20 +172,6 @@ struct AppsPage: View {
                                     onSeeMore: { viewAllCategory = OmiAppCategory(id: "notifications", title: "Realtime Notifications") }
                                 )
                             }
-
-                            // Group by category
-                            ForEach(appProvider.categories) { category in
-                                let categoryApps = appProvider.apps(forCategory: category.id)
-                                if !categoryApps.isEmpty {
-                                    HorizontalAppSection(
-                                        title: category.title,
-                                        apps: categoryApps,
-                                        appProvider: appProvider,
-                                        onSelectApp: { selectedApp = $0 },
-                                        onViewAll: { viewAllCategory = category }
-                                    )
-                                }
-                            }
                         }
                     }
                     .padding()
