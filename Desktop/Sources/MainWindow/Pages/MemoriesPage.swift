@@ -519,7 +519,7 @@ struct MemoriesPage: View {
                 } label: {
                     Text("Undo")
                         .font(.system(size: 14, weight: .semibold))
-                        .foregroundColor(OmiColors.purplePrimary)
+                        .foregroundColor(OmiColors.textPrimary)
                 }
                 .buttonStyle(.plain)
 
@@ -600,11 +600,15 @@ struct MemoriesPage: View {
                         Text("Add Memory")
                     }
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(OmiColors.textPrimary)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 8)
-                    .background(OmiColors.purplePrimary)
+                    .background(Color.white)
                     .cornerRadius(8)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(OmiColors.border, lineWidth: 1)
+                    )
                 }
                 .buttonStyle(.plain)
 
@@ -761,23 +765,23 @@ struct MemoriesPage: View {
                         if selectedMoreFiltersCount > 0 {
                             Text("\(selectedMoreFiltersCount)")
                                 .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(OmiColors.purplePrimary)
+                                .foregroundColor(OmiColors.textPrimary)
                                 .padding(.horizontal, 5)
                                 .padding(.vertical, 2)
-                                .background(OmiColors.purplePrimary.opacity(0.15))
+                                .background(OmiColors.backgroundTertiary)
                                 .cornerRadius(4)
                         }
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9, weight: .medium))
                     }
-                    .foregroundColor(hasMoreFilterSelected ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                    .foregroundColor(hasMoreFilterSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
-                    .background(hasMoreFilterSelected ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                    .background(hasMoreFilterSelected ? Color.white : Color.clear)
                     .cornerRadius(6)
                     .overlay(
                         RoundedRectangle(cornerRadius: 6)
-                            .stroke(hasMoreFilterSelected ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+                            .stroke(hasMoreFilterSelected ? OmiColors.border : Color.clear, lineWidth: 1)
                     )
                 }
                 .menuStyle(.borderlessButton)
@@ -822,7 +826,7 @@ struct MemoriesPage: View {
                 }
                 if isSelected {
                     Image(systemName: "checkmark")
-                        .foregroundColor(OmiColors.purplePrimary)
+                        .foregroundColor(OmiColors.textPrimary)
                 }
             }
         }
@@ -981,11 +985,15 @@ struct MemoriesPage: View {
                     Text("Add Your First Memory")
                 }
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundColor(OmiColors.textPrimary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(OmiColors.purplePrimary)
+                .background(Color.white)
                 .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(OmiColors.border, lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
             .padding(.top, 8)
@@ -1013,7 +1021,7 @@ struct MemoriesPage: View {
                 } label: {
                     Text("Clear Filters")
                         .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(OmiColors.purplePrimary)
+                        .foregroundColor(OmiColors.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -1056,11 +1064,15 @@ struct MemoriesPage: View {
                     Text("Retry")
                 }
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundColor(OmiColors.textPrimary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(OmiColors.purplePrimary)
+                .background(Color.white)
                 .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(OmiColors.border, lineWidth: 1)
+                )
             }
             .buttonStyle(.plain)
         }
@@ -1605,11 +1617,15 @@ struct AddMemorySheet: View {
                 } label: {
                     Text("Save")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(viewModel.newMemoryText.isEmpty ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(viewModel.newMemoryText.isEmpty ? OmiColors.textQuaternary : OmiColors.purplePrimary)
+                        .background(viewModel.newMemoryText.isEmpty ? OmiColors.backgroundTertiary : Color.white)
                         .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(viewModel.newMemoryText.isEmpty ? Color.clear : OmiColors.border, lineWidth: 1)
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.newMemoryText.isEmpty)
@@ -1673,11 +1689,15 @@ struct EditMemorySheet: View {
                 } label: {
                     Text("Save")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(viewModel.editText.isEmpty ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
-                        .background(viewModel.editText.isEmpty ? OmiColors.textQuaternary : OmiColors.purplePrimary)
+                        .background(viewModel.editText.isEmpty ? OmiColors.backgroundTertiary : Color.white)
                         .cornerRadius(8)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 8)
+                                .stroke(viewModel.editText.isEmpty ? Color.clear : OmiColors.border, lineWidth: 1)
+                        )
                 }
                 .buttonStyle(.plain)
                 .disabled(viewModel.editText.isEmpty)
