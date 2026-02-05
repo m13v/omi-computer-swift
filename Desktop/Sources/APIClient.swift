@@ -1709,9 +1709,19 @@ struct TaskActionItem: Codable, Identifiable {
     let priority: String?
     /// JSON metadata string containing extra info like source_app, confidence
     let metadata: String?
+    /// Classification category: personal, work, feature, bug, code, research, communication, finance, health, other
+    let category: String?
+
+    // Agent execution tracking (stored locally, not synced to backend)
+    var agentStatus: String?       // nil, "pending", "processing", "completed", "failed"
+    var agentPrompt: String?       // The prompt sent to Claude
+    var agentPlan: String?         // Claude's response/plan
+    var agentSessionId: String?    // tmux session name for the Claude session
+    var agentStartedAt: Date?      // When agent was launched
+    var agentCompletedAt: Date?    // When agent finished
 
     enum CodingKeys: String, CodingKey {
-        case id, description, completed, source, priority, metadata
+        case id, description, completed, source, priority, metadata, category
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case dueAt = "due_at"
@@ -1732,6 +1742,24 @@ struct TaskActionItem: Codable, Identifiable {
         source = try container.decodeIfPresent(String.self, forKey: .source)
         priority = try container.decodeIfPresent(String.self, forKey: .priority)
         metadata = try container.decodeIfPresent(String.self, forKey: .metadata)
+        category = try container.decodeIfPresent(String.self, forKey: .category)
+
+        // Agent fields are local-only, not decoded from API
+        agentStatus = nil
+        agentPrompt = nil
+        agentPlan = nil
+        agentSessionId = nil
+        agentStartedAt = nil
+        agentCompletedAt = nil
+    }
+
+    /// Categories that trigger Claude agent execution
+    static let agentCategories: Set<String> = ["feature", "bug", "code"]
+
+    /// Check if this task should trigger an agent
+    var shouldTriggerAgent: Bool {
+        guard let category = category else { return false }
+        return Self.agentCategories.contains(category)
     }
 
     /// Parse metadata JSON to extract source app name
@@ -1777,6 +1805,46 @@ struct TaskActionItem: Codable, Identifiable {
         case "transcription:phone": return "iphone"
         case "manual": return "square.and.pencil"
         default: return "list.bullet"
+        }
+    }
+
+    /// Display-friendly category label
+    var categoryLabel: String {
+        guard let category = category else { return "" }
+        return category.capitalized
+    }
+
+    /// System icon name for category
+    var categoryIcon: String {
+        guard let category = category else { return "folder.fill" }
+        switch category {
+        case "feature": return "sparkles"
+        case "bug": return "ladybug.fill"
+        case "code": return "chevron.left.forwardslash.chevron.right"
+        case "work": return "briefcase.fill"
+        case "personal": return "person.fill"
+        case "research": return "magnifyingglass"
+        case "communication": return "bubble.left.fill"
+        case "finance": return "dollarsign.circle.fill"
+        case "health": return "heart.fill"
+        default: return "folder.fill"
+        }
+    }
+
+    /// Color for category badge
+    var categoryColor: String {
+        guard let category = category else { return "gray" }
+        switch category {
+        case "feature": return "purple"
+        case "bug": return "red"
+        case "code": return "blue"
+        case "work": return "orange"
+        case "personal": return "green"
+        case "research": return "cyan"
+        case "communication": return "indigo"
+        case "finance": return "yellow"
+        case "health": return "pink"
+        default: return "gray"
         }
     }
 }
