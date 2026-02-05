@@ -149,10 +149,14 @@ struct SidebarView: View {
                                 onTap: {
                                     // Show loading immediately when navigating to Rewind
                                     if selectedIndex != item.rawValue {
+                                        log("SIDEBAR: Rewind tapped, showing loading indicator")
                                         isRewindPageLoading = true
                                         // Fallback timeout in case page load notification never comes
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                                            isRewindPageLoading = false
+                                            if isRewindPageLoading {
+                                                log("SIDEBAR: Rewind loading timeout, clearing indicator")
+                                                isRewindPageLoading = false
+                                            }
                                         }
                                     }
                                     selectedIndex = item.rawValue
@@ -304,6 +308,7 @@ struct SidebarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .rewindPageDidLoad)) { _ in
             // Clear Rewind loading state when page finishes loading
+            log("SIDEBAR: Received rewindPageDidLoad, clearing loading indicator")
             isRewindPageLoading = false
         }
     }
