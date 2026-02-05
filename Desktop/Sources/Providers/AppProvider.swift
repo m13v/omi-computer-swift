@@ -23,6 +23,7 @@ class AppProvider: ObservableObject {
     @Published var showInstalledOnly = false
 
     @Published var errorMessage: String?
+    @Published var categoryFilteredApps: [OmiApp]?
 
     private let apiClient = APIClient.shared
 
@@ -124,6 +125,28 @@ class AppProvider: ObservableObject {
             logError("Failed to search apps", error: error)
             errorMessage = "Search failed: \(error.localizedDescription)"
         }
+    }
+
+    /// Fetch apps for a specific category from the API
+    func fetchAppsForCategory(_ categoryId: String) async {
+        isSearching = true
+        defer { isSearching = false }
+
+        do {
+            let results = try await apiClient.getApps(category: categoryId, limit: 100)
+            categoryFilteredApps = results
+            log("Fetched \(results.count) apps for category \(categoryId)")
+        } catch {
+            logError("Failed to fetch apps for category \(categoryId)", error: error)
+            // Fallback to client-side filtering
+            categoryFilteredApps = apps.filter { $0.category == categoryId }
+        }
+    }
+
+    /// Clear category filter results
+    func clearCategoryFilter() {
+        selectedCategory = nil
+        categoryFilteredApps = nil
     }
 
     /// Fetch user's enabled apps
