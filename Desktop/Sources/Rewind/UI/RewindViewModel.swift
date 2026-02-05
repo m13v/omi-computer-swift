@@ -126,6 +126,9 @@ class RewindViewModel: ObservableObject {
 
         isLoading = false
 
+        // Notify that Rewind page finished loading (for sidebar loading indicator)
+        NotificationCenter.default.post(name: .rewindPageDidLoad, object: nil)
+
         // Load stats asynchronously (includes storage size calculation which can be slow)
         Task {
             if let indexerStats = await RewindIndexer.shared.getStats() {
