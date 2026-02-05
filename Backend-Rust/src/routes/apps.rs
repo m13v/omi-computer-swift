@@ -102,7 +102,7 @@ async fn search_apps(
         query.capability
     );
 
-    match state
+    let mut apps = match state
         .firestore
         .search_apps(
             &user.uid,
@@ -117,12 +117,42 @@ async fn search_apps(
         )
         .await
     {
-        Ok(apps) => Ok(Json(apps)),
+        Ok(apps) => apps,
         Err(e) => {
             tracing::error!("Failed to search apps: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to search apps: {}", e)))
+            return Err((StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to search apps: {}", e)));
+        }
+    };
+
+    // Fetch installs and ratings from Redis (matching Python backend behavior)
+    if let Some(redis) = &state.redis {
+        let app_ids: Vec<String> = apps.iter().map(|a| a.id.clone()).collect();
+
+        // Fetch installs
+        if let Ok(installs_map) = redis.get_apps_installs_count(&app_ids).await {
+            for app in &mut apps {
+                if let Some(&installs) = installs_map.get(&app.id) {
+                    app.installs = installs;
+                }
+            }
+        }
+
+        // Fetch reviews and calculate ratings
+        if let Ok(reviews_map) = redis.get_apps_reviews(&app_ids).await {
+            for app in &mut apps {
+                if let Some(reviews) = reviews_map.get(&app.id) {
+                    if !reviews.is_empty() {
+                        let total_score: i32 = reviews.iter().map(|r| r.score).sum();
+                        let count = reviews.len();
+                        app.rating_avg = Some(total_score as f64 / count as f64);
+                        app.rating_count = count as i32;
+                    }
+                }
+            }
         }
     }
+
+    Ok(Json(apps))
 }
 
 /// GET /v2/apps - Get apps grouped by capability (matching Python backend)
@@ -192,6 +222,39 @@ async fn get_apps_v2(
             }
             Err(e) => {
                 tracing::warn!("Failed to fetch installs from Redis: {} - using Firestore values", e);
+            }
+        }
+
+        // Fetch reviews from Redis and calculate rating_avg/rating_count
+        // Python backend stores reviews in Redis and calculates ratings at query time
+        match redis.get_apps_reviews(&all_app_ids).await {
+            Ok(reviews_map) => {
+                // Update all_apps with calculated ratings
+                for app in &mut all_apps {
+                    if let Some(reviews) = reviews_map.get(&app.id) {
+                        if !reviews.is_empty() {
+                            let total_score: i32 = reviews.iter().map(|r| r.score).sum();
+                            let count = reviews.len();
+                            app.rating_avg = Some(total_score as f64 / count as f64);
+                            app.rating_count = count as i32;
+                        }
+                    }
+                }
+                // Update popular_apps with calculated ratings
+                for app in &mut popular_apps {
+                    if let Some(reviews) = reviews_map.get(&app.id) {
+                        if !reviews.is_empty() {
+                            let total_score: i32 = reviews.iter().map(|r| r.score).sum();
+                            let count = reviews.len();
+                            app.rating_avg = Some(total_score as f64 / count as f64);
+                            app.rating_count = count as i32;
+                        }
+                    }
+                }
+                tracing::debug!("Updated {} apps with ratings from Redis reviews", reviews_map.len());
+            }
+            Err(e) => {
+                tracing::warn!("Failed to fetch reviews from Redis: {} - ratings may be missing", e);
             }
         }
     } else {
