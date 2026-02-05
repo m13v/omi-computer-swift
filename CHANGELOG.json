@@ -1,6 +1,21 @@
 {
   "releases": [
     {
+      "version": "0.3.0",
+      "date": "2026-02-04",
+      "changes": [
+        "Live Notes: real-time AI-generated notes during recordings",
+        "Memory Graph: interactive 3D visualization of your memories",
+        "Launch at Login: automatically start OMI when you log in",
+        "Goals AI: personalized goal suggestions and progress tracking",
+        "Audio level indicator in sidebar shows recording status",
+        "Resizable notes panel in transcript view",
+        "Improved Rewind-only mode with streamlined menu bar",
+        "Enhanced database recovery with automatic rebuild from video chunks",
+        "Upgraded to Gemini 3 Pro Preview for better AI responses"
+      ]
+    },
+    {
       "version": "0.2.6",
       "date": "2026-02-04",
       "changes": [
