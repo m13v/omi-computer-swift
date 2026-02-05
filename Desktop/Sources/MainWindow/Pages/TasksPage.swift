@@ -1082,6 +1082,15 @@ struct TaskRow: View {
     @State private var rowOpacity: Double = 1.0
     @State private var rowOffset: CGFloat = 0
 
+    // Swipe gesture state
+    @State private var swipeOffset: CGFloat = 0
+    @State private var isDragging = false
+
+    /// Threshold for triggering delete (30% of row width, like Flutter)
+    private let deleteThreshold: CGFloat = 100
+    /// Threshold for triggering indent change (25% of row width)
+    private let indentThreshold: CGFloat = 80
+
     private var isSelected: Bool {
         viewModel.selectedTaskIds.contains(task.id)
     }
@@ -1097,7 +1106,7 @@ struct TaskRow: View {
     }
 
     var body: some View {
-        taskRowContent
+        swipeableContent
             .confirmationDialog(
                 "Delete Task",
                 isPresented: $showDeleteConfirmation,
@@ -1114,8 +1123,144 @@ struct TaskRow: View {
             }
     }
 
+    // MARK: - Swipeable Content
+
+    private var swipeableContent: some View {
+        ZStack(alignment: .trailing) {
+            // Delete background (revealed when swiping left)
+            if swipeOffset < 0 {
+                deleteBackground
+            }
+
+            // Indent background (revealed when swiping right)
+            if swipeOffset > 0 && indentLevel < 3 {
+                indentBackground
+            }
+
+            // Main task row content
+            taskRowContent
+                .offset(x: swipeOffset)
+                .gesture(
+                    DragGesture(minimumDistance: 10, coordinateSpace: .local)
+                        .onChanged { value in
+                            guard !viewModel.isMultiSelectMode else { return }
+                            isDragging = true
+
+                            // Apply resistance at the edges
+                            let translation = value.translation.width
+                            if translation < 0 {
+                                // Swiping left (delete)
+                                swipeOffset = translation * 0.8
+                            } else if translation > 0 && indentLevel < 3 {
+                                // Swiping right (indent) - only if can indent more
+                                swipeOffset = translation * 0.6
+                            } else if translation > 0 && indentLevel > 0 {
+                                // Swiping right when can outdent
+                                swipeOffset = translation * 0.6
+                            }
+                        }
+                        .onEnded { value in
+                            isDragging = false
+                            handleSwipeEnd(velocity: value.velocity.width)
+                        }
+                )
+        }
+        .clipped()
+    }
+
+    // MARK: - Swipe Backgrounds
+
+    private var deleteBackground: some View {
+        HStack {
+            Spacer()
+            HStack(spacing: 8) {
+                Image(systemName: "trash.fill")
+                    .font(.system(size: 16, weight: .semibold))
+                if swipeOffset < -deleteThreshold {
+                    Text("Release to delete")
+                        .font(.system(size: 13, weight: .medium))
+                }
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.red)
+        .cornerRadius(8)
+    }
+
+    private var indentBackground: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Image(systemName: "arrow.right.to.line")
+                    .font(.system(size: 16, weight: .semibold))
+                if swipeOffset > indentThreshold {
+                    Text("Release to indent")
+                        .font(.system(size: 13, weight: .medium))
+                }
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+            Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(OmiColors.purplePrimary)
+        .cornerRadius(8)
+    }
+
+    /// Outdent background (revealed when swiping left on indented tasks)
+    private var outdentBackground: some View {
+        HStack {
+            Spacer()
+            HStack(spacing: 8) {
+                if swipeOffset < -indentThreshold {
+                    Text("Release to outdent")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                Image(systemName: "arrow.left.to.line")
+                    .font(.system(size: 16, weight: .semibold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 20)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.orange)
+        .cornerRadius(8)
+    }
+
+    // MARK: - Swipe Handling
+
+    private func handleSwipeEnd(velocity: CGFloat) {
+        let shouldDelete = swipeOffset < -deleteThreshold || velocity < -500
+        let shouldIndent = swipeOffset > indentThreshold || velocity > 500
+
+        if shouldDelete {
+            // Animate off screen and delete
+            withAnimation(.easeOut(duration: 0.2)) {
+                swipeOffset = -400
+                rowOpacity = 0
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                Task {
+                    await viewModel.deleteTask(task)
+                }
+            }
+        } else if shouldIndent && indentLevel < 3 {
+            // Increment indent and snap back
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                swipeOffset = 0
+            }
+            viewModel.incrementIndent(for: task.id)
+        } else {
+            // Snap back to original position
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
+                swipeOffset = 0
+            }
+        }
+    }
+
     private var taskRowContent: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             // Indent visual (vertical line for indented tasks)
             if indentLevel > 0 {
                 HStack(spacing: 0) {
@@ -1152,7 +1297,6 @@ struct TaskRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 2)
             } else {
                 // Completion checkbox with animation
                 Button {
@@ -1180,7 +1324,6 @@ struct TaskRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.top, 2)
             }
 
             // Task content (tappable for editing or selection)
@@ -1271,10 +1414,10 @@ struct TaskRow: View {
         }
         .padding(.leading, indentPadding > 0 ? 0 : 12)
         .padding(.trailing, 12)
-        .padding(.vertical, 10)
+        .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHovering ? OmiColors.backgroundTertiary : Color.clear)
+                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : OmiColors.backgroundPrimary)
         )
         .opacity(rowOpacity)
         .offset(x: rowOffset)
@@ -1471,7 +1614,7 @@ struct DueDateBadgeCompact: View {
     let dueAt: Date
     let isCompleted: Bool
 
-    private var badgeInfo: (text: String, color: Color) {
+    private var displayText: String {
         let calendar = Calendar.current
         let now = Date()
         let startOfToday = calendar.startOfDay(for: now)
@@ -1480,39 +1623,37 @@ struct DueDateBadgeCompact: View {
         let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfToday)!
 
         if isCompleted {
-            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.textTertiary)
+            return dueAt.formatted(date: .abbreviated, time: .omitted)
         }
 
         if dueAt < startOfToday {
             let formatter = RelativeDateTimeFormatter()
             formatter.unitsStyle = .short
-            return (formatter.localizedString(for: dueAt, relativeTo: now), Color.red.opacity(0.8))
+            return formatter.localizedString(for: dueAt, relativeTo: now)
         } else if dueAt < startOfTomorrow {
-            return ("Today", .yellow)
+            return "Today"
         } else if dueAt < startOfDayAfterTomorrow {
-            return ("Tomorrow", .blue)
+            return "Tomorrow"
         } else if dueAt < endOfWeek {
-            let weekday = calendar.weekdaySymbols[calendar.component(.weekday, from: dueAt) - 1]
-            return (weekday, .green)
+            return calendar.weekdaySymbols[calendar.component(.weekday, from: dueAt) - 1]
         } else {
-            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.purplePrimary)
+            return dueAt.formatted(date: .abbreviated, time: .omitted)
         }
     }
 
     var body: some View {
-        let info = badgeInfo
         HStack(spacing: 3) {
             Image(systemName: "calendar")
                 .font(.system(size: 9))
-            Text(info.text)
+            Text(displayText)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundColor(info.color)
+        .foregroundColor(.black)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(
             Capsule()
-                .fill(info.color.opacity(0.15))
+                .fill(Color.white)
         )
     }
 }
@@ -1522,19 +1663,6 @@ struct SourceBadgeCompact: View {
     let sourceLabel: String
     let sourceIcon: String
 
-    private var badgeColor: Color {
-        switch source {
-        case "screenshot":
-            return .blue
-        case "transcription:omi", "transcription:desktop", "transcription:phone":
-            return .green
-        case "manual":
-            return .orange
-        default:
-            return OmiColors.textTertiary
-        }
-    }
-
     var body: some View {
         HStack(spacing: 2) {
             Image(systemName: sourceIcon)
@@ -1542,12 +1670,12 @@ struct SourceBadgeCompact: View {
             Text(sourceLabel)
                 .font(.system(size: 10, weight: .medium))
         }
-        .foregroundColor(badgeColor)
+        .foregroundColor(.black)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background(
             Capsule()
-                .fill(badgeColor.opacity(0.15))
+                .fill(Color.white)
         )
     }
 }
@@ -1555,26 +1683,15 @@ struct SourceBadgeCompact: View {
 struct PriorityBadgeCompact: View {
     let priority: String
 
-    private var badgeColor: Color {
-        switch priority {
-        case "high":
-            return .red
-        case "medium":
-            return .orange
-        default:
-            return OmiColors.textTertiary
-        }
-    }
-
     var body: some View {
         Text(priority.capitalized)
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(badgeColor)
+            .foregroundColor(.black)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(
                 Capsule()
-                    .fill(badgeColor.opacity(0.15))
+                    .fill(Color.white)
             )
     }
 }
