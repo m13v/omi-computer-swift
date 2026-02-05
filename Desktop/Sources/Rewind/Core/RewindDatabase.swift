@@ -287,7 +287,7 @@ actor RewindDatabase {
             let corruptedQueue = try DatabaseQueue(path: corruptedPath, configuration: config)
 
             // Try to read screenshot records
-            let screenshots: [(timestamp: Date, appName: String, windowTitle: String?, videoChunkPath: String?, frameOffset: Int?)] = try corruptedQueue.read { db in
+            let screenshots: [(timestamp: Date, appName: String, windowTitle: String?, videoChunkPath: String?, frameOffset: Int?)] = try await corruptedQueue.read { db in
                 var results: [(Date, String, String?, String?, Int?)] = []
 
                 // Try to fetch what we can from screenshots table
@@ -320,7 +320,7 @@ actor RewindDatabase {
             // Create new database with recovered data
             let recoveredQueue = try DatabaseQueue(path: recoveredPath)
 
-            try recoveredQueue.write { db in
+            try await recoveredQueue.write { db in
                 // Create minimal screenshots table
                 try db.execute(sql: """
                     CREATE TABLE IF NOT EXISTS screenshots (
