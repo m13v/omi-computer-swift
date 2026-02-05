@@ -106,6 +106,8 @@ class MemoriesViewModel: ObservableObject {
         didSet { recomputeCaches() }
     }
     @Published var isLoading = false
+    @Published var isLoadingMore = false
+    @Published var hasMoreMemories = true
     @Published var errorMessage: String?
     @Published var searchText = "" {
         didSet { recomputeFilteredMemories() }
@@ -125,6 +127,10 @@ class MemoriesViewModel: ObservableObject {
     private var deleteTask: Task<Void, Never>? = nil
     private var cancellables = Set<AnyCancellable>()
     private var hasLoadedInitially = false
+
+    // Pagination state
+    private var currentOffset = 0
+    private let pageSize = 100  // Reduced from 500 for better performance
 
     // Bulk operations state
     @Published var showingDeleteAllConfirmation = false
@@ -168,14 +174,18 @@ class MemoriesViewModel: ObservableObject {
     /// Refresh memories if already loaded (for auto-refresh)
     private func refreshMemoriesIfNeeded() async {
         // Skip if currently loading or haven't loaded initially
-        guard !isLoading, hasLoadedInitially else { return }
+        guard !isLoading, !isLoadingMore, hasLoadedInitially else { return }
 
         // Skip if there's a pending delete (avoid interfering with undo)
         guard pendingDeleteMemory == nil else { return }
 
-        // Silently reload memories
+        // Silently reload memories (only reload what we currently have loaded)
         do {
-            memories = try await APIClient.shared.getMemories(limit: 500)
+            let reloadLimit = max(pageSize, memories.count)
+            let newMemories = try await APIClient.shared.getMemories(limit: reloadLimit, offset: 0)
+            memories = newMemories
+            currentOffset = newMemories.count
+            hasMoreMemories = newMemories.count >= reloadLimit
         } catch {
             // Silently ignore errors during auto-refresh
             logError("MemoriesViewModel: Auto-refresh failed", error: error)
@@ -223,20 +233,58 @@ class MemoriesViewModel: ObservableObject {
     // MARK: - API Actions
 
     func loadMemories() async {
+        guard !isLoading else { return }
+
         isLoading = true
         errorMessage = nil
+        currentOffset = 0
 
         do {
-            // Fetch memories with reasonable limit to avoid timeout
-            // TODO: Add pagination for users with many memories
-            memories = try await APIClient.shared.getMemories(limit: 500)
+            let newMemories = try await APIClient.shared.getMemories(limit: pageSize, offset: 0)
+            memories = newMemories
+            currentOffset = newMemories.count
+            hasMoreMemories = newMemories.count >= pageSize
             hasLoadedInitially = true
+            log("MemoriesViewModel: Loaded \(newMemories.count) memories")
         } catch {
             errorMessage = error.localizedDescription
             logError("Failed to load memories", error: error)
         }
 
         isLoading = false
+    }
+
+    /// Load more memories (pagination) - triggered by scrolling near end
+    func loadMoreIfNeeded(currentMemory: ServerMemory) async {
+        guard hasMoreMemories, !isLoading, !isLoadingMore else { return }
+
+        // Only load more when near the end of the list
+        let thresholdIndex = filteredMemories.index(filteredMemories.endIndex, offsetBy: -10, limitedBy: filteredMemories.startIndex) ?? filteredMemories.startIndex
+        guard let memoryIndex = filteredMemories.firstIndex(where: { $0.id == currentMemory.id }),
+              memoryIndex >= thresholdIndex else {
+            return
+        }
+
+        await loadMore()
+    }
+
+    /// Explicitly load more memories (for button tap)
+    func loadMore() async {
+        guard hasMoreMemories, !isLoading, !isLoadingMore else { return }
+
+        isLoadingMore = true
+
+        do {
+            let newMemories = try await APIClient.shared.getMemories(limit: pageSize, offset: currentOffset)
+            memories.append(contentsOf: newMemories)
+            currentOffset += newMemories.count
+            hasMoreMemories = newMemories.count >= pageSize
+            log("MemoriesViewModel: Loaded \(newMemories.count) more memories (total: \(memories.count))")
+        } catch {
+            logError("Failed to load more memories", error: error)
+        }
+
+        isLoadingMore = false
     }
 
     func createMemory() async {
@@ -596,7 +644,7 @@ struct MemoriesPage: View {
                     .foregroundColor(OmiColors.textPrimary)
 
                 HStack(spacing: 8) {
-                    Text("\(viewModel.memories.count) memories")
+                    Text("\(viewModel.memories.count) memories\(viewModel.hasMoreMemories ? "+" : "")")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
 
@@ -1048,6 +1096,44 @@ struct MemoriesPage: View {
                         tagColorFor: tagColorFor,
                         formatDate: formatDate
                     )
+                    .onAppear {
+                        // Load more when approaching the end of the list
+                        Task { await viewModel.loadMoreIfNeeded(currentMemory: memory) }
+                    }
+                }
+
+                // Loading more indicator
+                if viewModel.isLoadingMore {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Loading more...")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                }
+
+                // "Load more" button if there are more memories
+                if viewModel.hasMoreMemories && !viewModel.isLoadingMore && !viewModel.filteredMemories.isEmpty {
+                    Button {
+                        Task { await viewModel.loadMore() }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.down.circle")
+                            Text("Load more memories")
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 10)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(8)
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
                 }
             }
             .padding(.horizontal, 24)
