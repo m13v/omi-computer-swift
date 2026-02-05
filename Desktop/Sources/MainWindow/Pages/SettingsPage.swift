@@ -518,7 +518,7 @@ struct SettingsContentView: View {
                     Button(action: { showResetOnboardingAlert = true }) {
                         Text("Reset")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.backgroundPrimary)
+                            .foregroundColor(.black)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
                             .background(
