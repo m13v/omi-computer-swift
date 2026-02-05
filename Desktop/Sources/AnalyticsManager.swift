@@ -466,6 +466,23 @@ class AnalyticsManager {
         PostHogManager.shared.languageChanged(language: language)
     }
 
+    // MARK: - Launch At Login Events
+
+    /// Track launch at login status once per app launch (not continuously)
+    func launchAtLoginStatusChecked(enabled: Bool) {
+        MixpanelManager.shared.launchAtLoginStatusChecked(enabled: enabled)
+        PostHogManager.shared.launchAtLoginStatusChecked(enabled: enabled)
+    }
+
+    /// Track when launch at login state changes
+    /// - Parameters:
+    ///   - enabled: New state
+    ///   - source: What triggered the change (user, migration, onboarding)
+    func launchAtLoginChanged(enabled: Bool, source: String) {
+        MixpanelManager.shared.launchAtLoginChanged(enabled: enabled, source: source)
+        PostHogManager.shared.launchAtLoginChanged(enabled: enabled, source: source)
+    }
+
     // MARK: - Feedback Events
 
     func feedbackOpened() {
