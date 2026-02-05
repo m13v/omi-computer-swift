@@ -92,60 +92,17 @@ struct OMIApp: App {
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
 
-        // Menu bar - full menu for both modes
-        MenuBarExtra {
-            MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
-        } label: {
-            // Use an icon image instead of text for better visibility
-            Image(systemName: Self.launchMode == .rewind ? "clock.arrow.circlepath" : "waveform.circle.fill")
-                .accessibilityLabel(Self.launchMode == .rewind ? "Rewind" : "Omi")
-        }
-        .menuBarExtraStyle(.menu)
+        // Note: Menu bar is now handled by NSStatusBar in AppDelegate.setupMenuBar()
+        // for better reliability on macOS Sequoia (SwiftUI MenuBarExtra had rendering issues)
     }
 }
 
-// MARK: - Rewind Mode Menu Bar
-/// Simplified menu bar for rewind-only mode
-struct RewindMenuBarView: View {
-    var openMain: () -> Void = {}
-
-    var body: some View {
-        Button("Open Rewind") {
-            AnalyticsManager.shared.menuBarActionClicked(action: "open_rewind")
-            openMain()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                NSApp.activate(ignoringOtherApps: true)
-                for window in NSApp.windows {
-                    if window.title.contains("Rewind") || window.title.hasPrefix("Omi") {
-                        window.makeKeyAndOrderFront(nil)
-                        window.appearance = NSAppearance(named: .darkAqua)
-                    }
-                }
-            }
-        }
-        .keyboardShortcut("o", modifiers: .command)
-
-        Divider()
-
-        Button("Quit") {
-            AnalyticsManager.shared.menuBarActionClicked(action: "quit")
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q", modifiers: .command)
-
-        // Track when menu bar is opened (this view appears)
-        Color.clear.frame(height: 0)
-            .onAppear {
-                AnalyticsManager.shared.menuBarOpened()
-            }
-    }
-}
-
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var sentryHeartbeatTimer: Timer?
     private var globalHotkeyMonitor: Any?
     private var localHotkeyMonitor: Any?
     private var windowObservers: [NSObjectProtocol] = []
+    private var statusBarItem: NSStatusItem?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
@@ -216,6 +173,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Set up dock icon visibility based on window state
         setupDockIconObservers()
+
+        // Set up menu bar icon with NSStatusBar (more reliable than SwiftUI MenuBarExtra)
+        Task { @MainActor in
+            self.setupMenuBar()
+        }
 
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
@@ -386,6 +348,140 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Set up menu bar icon using NSStatusBar (more reliable than SwiftUI MenuBarExtra)
+    @MainActor private func setupMenuBar() {
+        log("AppDelegate: [MENUBAR] Setting up NSStatusBar menu (macOS \(ProcessInfo.processInfo.operatingSystemVersionString))")
+
+        statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+
+        guard let statusBarItem = statusBarItem else {
+            log("AppDelegate: [MENUBAR] ERROR - Failed to create status bar item")
+            SentrySDK.capture(message: "Failed to create NSStatusItem") { scope in
+                scope.setLevel(.error)
+                scope.setTag(value: "menu_bar", key: "component")
+            }
+            return
+        }
+
+        log("AppDelegate: [MENUBAR] NSStatusItem created successfully")
+
+        // Set up the button with icon
+        if let button = statusBarItem.button {
+            let iconName = OMIApp.launchMode == .rewind ? "clock.arrow.circlepath" : "waveform.circle.fill"
+            if let icon = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
+                icon.isTemplate = true
+                button.image = icon
+                log("AppDelegate: [MENUBAR] Icon '\(iconName)' set successfully")
+            } else {
+                log("AppDelegate: [MENUBAR] WARNING - Failed to load SF Symbol '\(iconName)'")
+            }
+            button.toolTip = OMIApp.launchMode == .rewind ? "Omi Rewind" : "Omi Computer"
+        } else {
+            log("AppDelegate: [MENUBAR] WARNING - statusBarItem.button is nil")
+        }
+
+        // Create menu
+        let menu = NSMenu()
+
+        // Open Omi item
+        let openItem = NSMenuItem(title: "Open Omi", action: #selector(openOmiFromMenu), keyEquivalent: "o")
+        openItem.target = self
+        menu.addItem(openItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Check for Updates
+        let updatesItem = NSMenuItem(title: "Check for Updates...", action: #selector(checkForUpdates), keyEquivalent: "")
+        updatesItem.target = self
+        menu.addItem(updatesItem)
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Sign out / User info
+        if AuthState.shared.isSignedIn {
+            if let email = AuthState.shared.userEmail {
+                let emailItem = NSMenuItem(title: "Signed in as \(email)", action: nil, keyEquivalent: "")
+                emailItem.isEnabled = false
+                menu.addItem(emailItem)
+                menu.addItem(NSMenuItem.separator())
+            }
+
+            let resetItem = NSMenuItem(title: "Reset Onboarding...", action: #selector(resetOnboarding), keyEquivalent: "")
+            resetItem.target = self
+            menu.addItem(resetItem)
+
+            menu.addItem(NSMenuItem.separator())
+
+            let reportItem = NSMenuItem(title: "Report Issue...", action: #selector(reportIssue), keyEquivalent: "")
+            reportItem.target = self
+            menu.addItem(reportItem)
+
+            menu.addItem(NSMenuItem.separator())
+
+            let signOutItem = NSMenuItem(title: "Sign Out", action: #selector(signOut), keyEquivalent: "")
+            signOutItem.target = self
+            menu.addItem(signOutItem)
+        } else {
+            let notSignedInItem = NSMenuItem(title: "Not signed in", action: nil, keyEquivalent: "")
+            notSignedInItem.isEnabled = false
+            menu.addItem(notSignedInItem)
+        }
+
+        menu.addItem(NSMenuItem.separator())
+
+        // Quit item
+        let quitItem = NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q")
+        quitItem.target = self
+        menu.addItem(quitItem)
+
+        statusBarItem.menu = menu
+        menu.delegate = self
+        log("AppDelegate: [MENUBAR] Menu bar setup completed - icon visible in status bar")
+    }
+
+    @MainActor @objc private func openOmiFromMenu() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "open_omi")
+        NSApp.activate(ignoringOtherApps: true)
+        for window in NSApp.windows {
+            if window.title.hasPrefix("Omi") {
+                window.makeKeyAndOrderFront(nil)
+                window.appearance = NSAppearance(named: .darkAqua)
+            }
+        }
+    }
+
+    @MainActor @objc private func checkForUpdates() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "check_updates")
+        UpdaterViewModel.shared.checkForUpdates()
+    }
+
+    @MainActor @objc private func resetOnboarding() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "reset_onboarding")
+        AppState().resetOnboardingAndRestart()
+    }
+
+    @MainActor @objc private func reportIssue() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "report_issue")
+        FeedbackWindow.show(userEmail: AuthState.shared.userEmail)
+    }
+
+    @MainActor @objc private func signOut() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "sign_out")
+        ProactiveAssistantsPlugin.shared.stopMonitoring()
+        try? AuthService.shared.signOut()
+    }
+
+    @MainActor @objc private func quitApp() {
+        AnalyticsManager.shared.menuBarActionClicked(action: "quit")
+        NSApplication.shared.terminate(nil)
+    }
+
+    // MARK: - NSMenuDelegate
+    func menuWillOpen(_ menu: NSMenu) {
+        log("AppDelegate: [MENUBAR] Menu opened by user")
+        AnalyticsManager.shared.menuBarOpened()
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         // Remove window observers
         for observer in windowObservers {
@@ -439,89 +535,5 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillResignActive(_ notification: Notification) {
         AnalyticsManager.shared.appResignedActive()
-    }
-}
-
-struct MenuBarView: View {
-    @ObservedObject var appState: AppState
-    @ObservedObject var authState: AuthState
-    @ObservedObject var updaterViewModel = UpdaterViewModel.shared
-    var openMain: () -> Void = {}
-
-    var body: some View {
-        Button("Open Omi") {
-            AnalyticsManager.shared.menuBarActionClicked(action: "open_omi")
-            openMain()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                NSApp.activate(ignoringOtherApps: true)
-                for window in NSApp.windows {
-                    if window.title.hasPrefix("Omi") {
-                        window.makeKeyAndOrderFront(nil)
-                        window.appearance = NSAppearance(named: .darkAqua)
-                    }
-                }
-            }
-        }
-        .keyboardShortcut("o", modifiers: .command)
-
-        Divider()
-
-        Button("Check for Updates...") {
-            AnalyticsManager.shared.menuBarActionClicked(action: "check_updates")
-            updaterViewModel.checkForUpdates()
-        }
-        .disabled(!updaterViewModel.canCheckForUpdates)
-
-        Divider()
-
-        if authState.isSignedIn {
-            if let email = authState.userEmail {
-                Text("Signed in as \(email)")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Divider()
-
-            Button("Reset Onboarding...") {
-                AnalyticsManager.shared.menuBarActionClicked(action: "reset_onboarding")
-                appState.resetOnboardingAndRestart()
-            }
-
-            Divider()
-
-            Button("Report Issue...") {
-                AnalyticsManager.shared.menuBarActionClicked(action: "report_issue")
-                FeedbackWindow.show(userEmail: authState.userEmail)
-            }
-
-            Divider()
-
-            Button("Sign Out") {
-                AnalyticsManager.shared.menuBarActionClicked(action: "sign_out")
-                // Stop monitoring if running
-                ProactiveAssistantsPlugin.shared.stopMonitoring()
-                // Sign out
-                try? AuthService.shared.signOut()
-            }
-        } else {
-            Text("Not signed in")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-
-        Divider()
-
-        Button("Quit") {
-            AnalyticsManager.shared.menuBarActionClicked(action: "quit")
-            NSApplication.shared.terminate(nil)
-        }
-        .keyboardShortcut("q", modifiers: .command)
-
-        // Track when menu bar is opened (this view appears)
-        Color.clear.frame(height: 0)
-            .onAppear {
-                AnalyticsManager.shared.menuBarOpened()
-            }
     }
 }
