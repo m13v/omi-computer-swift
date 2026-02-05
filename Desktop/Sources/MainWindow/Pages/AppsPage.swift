@@ -312,7 +312,7 @@ struct AppsPage: View {
             Button(action: { showFilterSheet = true }) {
                 Image(systemName: "line.3.horizontal.decrease.circle")
                     .font(.system(size: 20))
-                    .foregroundColor(hasActiveFilters ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                    .foregroundColor(hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
             }
             .buttonStyle(.plain)
         }
@@ -435,9 +435,13 @@ struct FilterToggle: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(isActive ? OmiColors.purplePrimary.opacity(0.2) : OmiColors.backgroundSecondary)
-            .foregroundColor(isActive ? OmiColors.purplePrimary : OmiColors.textSecondary)
+            .background(isActive ? Color.white : OmiColors.backgroundSecondary)
+            .foregroundColor(isActive ? OmiColors.textPrimary : OmiColors.textSecondary)
             .cornerRadius(8)
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isActive ? OmiColors.border : Color.clear, lineWidth: 1)
+            )
         }
         .buttonStyle(.plain)
     }
@@ -469,7 +473,7 @@ struct HorizontalAppSection: View {
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 11))
                         }
-                        .foregroundColor(OmiColors.purplePrimary)
+                        .foregroundColor(OmiColors.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -608,12 +612,16 @@ struct SmallAppButton: View {
                     .scaleEffect(0.6)
                     .frame(width: 50, height: 22)
             } else {
-                Text(app.enabled ? "Open" : "Get")
+                Text(app.enabled ? "Open" : "Install")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(app.enabled ? OmiColors.textSecondary : .white)
+                    .foregroundColor(OmiColors.textPrimary)
                     .frame(width: 50, height: 22)
-                    .background(app.enabled ? OmiColors.backgroundTertiary : OmiColors.purplePrimary)
+                    .background(Color.white)
                     .cornerRadius(11)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 11)
+                            .stroke(OmiColors.border, lineWidth: 1)
+                    )
             }
         }
         .buttonStyle(.plain)
@@ -734,12 +742,16 @@ struct AppActionButton: View {
                     .scaleEffect(0.7)
                     .frame(width: 60, height: 28)
             } else {
-                Text(app.enabled ? "Open" : "Get")
+                Text(app.enabled ? "Open" : "Install")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(app.enabled ? OmiColors.textSecondary : .white)
+                    .foregroundColor(OmiColors.textPrimary)
                     .frame(width: 60, height: 28)
-                    .background(app.enabled ? OmiColors.backgroundTertiary : OmiColors.purplePrimary)
+                    .background(Color.white)
                     .cornerRadius(14)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 14)
+                            .stroke(OmiColors.border, lineWidth: 1)
+                    )
             }
         }
         .buttonStyle(.plain)
@@ -779,7 +791,7 @@ struct AppFilterSheet: View {
                         Task { await appProvider.searchApps() }
                     }
                     .font(.system(size: 13))
-                    .foregroundColor(OmiColors.purplePrimary)
+                    .foregroundColor(OmiColors.textSecondary)
                 }
 
                 DismissButton(action: dismissSheet)
@@ -878,9 +890,13 @@ struct FilterChip: View {
                 .font(.system(size: 13))
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
-                .background(isSelected ? OmiColors.purplePrimary : OmiColors.backgroundSecondary)
-                .foregroundColor(isSelected ? .white : OmiColors.textSecondary)
+                .background(isSelected ? Color.white : OmiColors.backgroundSecondary)
+                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
                 .cornerRadius(20)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(isSelected ? OmiColors.border : Color.clear, lineWidth: 1)
+                )
         }
         .buttonStyle(.plain)
     }
@@ -1033,12 +1049,16 @@ struct AppDetailSheet: View {
                                 ProgressView()
                                     .frame(width: 100, height: 36)
                             } else {
-                                Text(app.enabled ? "Disable" : "Enable")
+                                Text(app.enabled ? "Disable" : "Install")
                                     .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
+                                    .foregroundColor(app.enabled ? .white : OmiColors.textPrimary)
                                     .frame(width: 100, height: 36)
-                                    .background(app.enabled ? OmiColors.error : OmiColors.purplePrimary)
+                                    .background(app.enabled ? OmiColors.error : Color.white)
                                     .cornerRadius(18)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 18)
+                                            .stroke(app.enabled ? Color.clear : OmiColors.border, lineWidth: 1)
+                                    )
                             }
                         }
                         .buttonStyle(.plain)
@@ -1105,7 +1125,7 @@ struct AppDetailSheet: View {
                                         Text("Add Review")
                                             .font(.system(size: 13, weight: .medium))
                                     }
-                                    .foregroundColor(OmiColors.purplePrimary)
+                                    .foregroundColor(OmiColors.textSecondary)
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -1117,7 +1137,7 @@ struct AppDetailSheet: View {
                                 HStack {
                                     Text("Your Review")
                                         .font(.system(size: 13, weight: .medium))
-                                        .foregroundColor(OmiColors.purplePrimary)
+                                        .foregroundColor(OmiColors.textPrimary)
 
                                     Spacer()
 
@@ -1347,17 +1367,21 @@ struct AddReviewSheet: View {
                             if isSubmitting {
                                 ProgressView()
                                     .scaleEffect(0.8)
-                                    .tint(.white)
+                                    .tint(OmiColors.textPrimary)
                             } else {
                                 Text(existingReview != nil ? "Update Review" : "Submit Review")
                                     .font(.system(size: 14, weight: .semibold))
                             }
                         }
-                        .foregroundColor(.white)
+                        .foregroundColor(OmiColors.textPrimary)
                         .frame(maxWidth: .infinity)
                         .frame(height: 44)
-                        .background(isFormValid ? OmiColors.purplePrimary : OmiColors.purplePrimary.opacity(0.5))
+                        .background(isFormValid ? Color.white : Color.white.opacity(0.5))
                         .cornerRadius(10)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(OmiColors.border, lineWidth: 1)
+                        )
                     }
                     .buttonStyle(.plain)
                     .disabled(!isFormValid || isSubmitting)
