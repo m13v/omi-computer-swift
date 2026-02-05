@@ -14,6 +14,9 @@ actor RewindStorage {
     // Frame extraction cache
     private var frameCache = NSCache<NSString, NSImage>()
 
+    // Track corrupted video chunks to avoid repeated FFmpeg calls
+    private var corruptedChunks = Set<String>()
+
     // MARK: - Initialization
 
     private init() {
@@ -133,6 +136,11 @@ actor RewindStorage {
             throw RewindError.storageError("Videos directory not initialized")
         }
 
+        // Skip known corrupted chunks immediately
+        if corruptedChunks.contains(videoPath) {
+            throw RewindError.corruptedVideoChunk(videoPath)
+        }
+
         // Check cache first
         let cacheKey = "\(videoPath):\(frameOffset)" as NSString
         if let cached = frameCache.object(forKey: cacheKey) {
@@ -146,12 +154,27 @@ actor RewindStorage {
         }
 
         // Use ffmpeg to extract frame (works with fragmented MP4)
-        let image = try await extractFrameWithFFmpeg(from: fullPath.path, frameOffset: frameOffset)
+        do {
+            let image = try await extractFrameWithFFmpeg(from: fullPath.path, frameOffset: frameOffset)
 
-        // Cache for reuse (estimate ~4MB per frame for cost)
-        frameCache.setObject(image, forKey: cacheKey, cost: 4 * 1024 * 1024)
+            // Cache for reuse (estimate ~4MB per frame for cost)
+            frameCache.setObject(image, forKey: cacheKey, cost: 4 * 1024 * 1024)
 
-        return image
+            return image
+        } catch let error as RewindError {
+            // Check if this is a corruption error
+            if case .corruptedVideoChunk = error {
+                throw error
+            }
+            // Check error message for corruption indicators
+            if case .storageError(let message) = error,
+               message.contains("moov atom not found") || message.contains("Invalid data found") {
+                log("RewindStorage: Marking video chunk as corrupted: \(videoPath)")
+                corruptedChunks.insert(videoPath)
+                throw RewindError.corruptedVideoChunk(videoPath)
+            }
+            throw error
+        }
     }
 
     /// Extract a frame from video using ffmpeg
@@ -281,6 +304,40 @@ actor RewindStorage {
     /// Clear the frame cache
     func clearCache() {
         frameCache.removeAllObjects()
+    }
+
+    /// Check if a video chunk is known to be corrupted
+    func isChunkCorrupted(_ videoPath: String) -> Bool {
+        return corruptedChunks.contains(videoPath)
+    }
+
+    /// Mark a video chunk as corrupted (called when corruption is detected)
+    func markChunkAsCorrupted(_ videoPath: String) {
+        corruptedChunks.insert(videoPath)
+        log("RewindStorage: Marked chunk as corrupted: \(videoPath)")
+    }
+
+    /// Clean up a corrupted video chunk - deletes DB entries and optionally the file
+    /// Returns the number of deleted database records
+    func cleanupCorruptedChunk(_ videoPath: String, deleteFile: Bool = true) async throws -> Int {
+        // Delete database entries for this chunk
+        let deletedCount = try await RewindDatabase.shared.deleteScreenshotsFromVideoChunk(videoChunkPath: videoPath)
+
+        // Optionally delete the corrupted file
+        if deleteFile {
+            try await deleteVideoChunk(relativePath: videoPath)
+        }
+
+        // Remove from corrupted set since it's cleaned up
+        corruptedChunks.remove(videoPath)
+
+        log("RewindStorage: Cleaned up corrupted chunk \(videoPath), deleted \(deletedCount) DB entries")
+        return deletedCount
+    }
+
+    /// Get all currently known corrupted chunks
+    func getCorruptedChunks() -> Set<String> {
+        return corruptedChunks
     }
 
     // MARK: - Delete Screenshot
