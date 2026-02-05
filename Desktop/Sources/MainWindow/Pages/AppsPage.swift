@@ -110,6 +110,7 @@ struct AppsPage: View {
     @State private var selectedApp: OmiApp?
     @State private var viewAllCategory: OmiAppCategory?
     @State private var showPersonaPage = false
+    @State private var viewAllSection: String? = nil  // "featured", "integrations", "notifications"
 
     var body: some View {
         VStack(spacing: 0) {
@@ -128,7 +129,24 @@ struct AppsPage: View {
             } else {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 24) {
-                        if !searchText.isEmpty || hasActiveFilters {
+                        if let section = viewAllSection {
+                            // "See more" view - show all apps from a section with back button
+                            ViewAllSectionHeader(
+                                title: viewAllSectionTitle,
+                                count: viewAllSectionApps.count,
+                                onBack: { viewAllSection = nil }
+                            )
+
+                            LazyVGrid(columns: [
+                                GridItem(.flexible(), spacing: 16),
+                                GridItem(.flexible(), spacing: 16),
+                                GridItem(.flexible(), spacing: 16)
+                            ], spacing: 16) {
+                                ForEach(viewAllSectionApps) { app in
+                                    AppCard(app: app, appProvider: appProvider, onSelect: { selectedApp = app })
+                                }
+                            }
+                        } else if !searchText.isEmpty || hasActiveFilters {
                             // Show filtered/search results in a flat grid
                             if appProvider.isSearching {
                                 // Loading state for category filter
@@ -191,7 +209,7 @@ struct AppsPage: View {
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 },
                                     showSeeMore: appProvider.popularApps.count >= 6,
-                                    onSeeMore: { viewAllCategory = OmiAppCategory(id: "featured", title: "Featured") }
+                                    onSeeMore: { viewAllSection = "featured" }
                                 )
                             }
 
@@ -203,7 +221,7 @@ struct AppsPage: View {
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 },
                                     showSeeMore: appProvider.integrationApps.count >= 6,
-                                    onSeeMore: { viewAllCategory = OmiAppCategory(id: "integrations", title: "Integrations") }
+                                    onSeeMore: { viewAllSection = "integrations" }
                                 )
                             }
 
@@ -215,7 +233,7 @@ struct AppsPage: View {
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 },
                                     showSeeMore: appProvider.notificationApps.count >= 6,
-                                    onSeeMore: { viewAllCategory = OmiAppCategory(id: "notifications", title: "Realtime Notifications") }
+                                    onSeeMore: { viewAllSection = "notifications" }
                                 )
                             }
                         }
