@@ -157,6 +157,30 @@ struct AppsPage: View {
                                     appProvider: appProvider,
                                     onSelectApp: { selectedApp = $0 }
                                 )
+
+                                // Infinite scroll: load more when reaching bottom
+                                if appProvider.hasMoreCategoryApps {
+                                    HStack {
+                                        Spacer()
+                                        if appProvider.isLoadingMore {
+                                            ProgressView()
+                                                .scaleEffect(0.8)
+                                            Text("Loading more...")
+                                                .font(.system(size: 13))
+                                                .foregroundColor(OmiColors.textTertiary)
+                                        } else {
+                                            Color.clear
+                                                .frame(height: 1)
+                                                .onAppear {
+                                                    Task {
+                                                        await appProvider.loadMoreCategoryApps()
+                                                    }
+                                                }
+                                        }
+                                        Spacer()
+                                    }
+                                    .padding(.vertical, 16)
+                                }
                             }
                         } else {
                             // Featured section (apps marked as is_popular in backend)
@@ -203,6 +227,10 @@ struct AppsPage: View {
         .background(OmiColors.backgroundPrimary)
         .onChange(of: searchText) { _, newValue in
             appProvider.searchQuery = newValue
+            // Clear category filter when searching to search across all apps
+            if !newValue.isEmpty && appProvider.selectedCategory != nil {
+                appProvider.clearCategoryFilter()
+            }
             Task {
                 // Debounce search
                 try? await Task.sleep(for: .milliseconds(300))
