@@ -329,11 +329,21 @@ actor RewindIndexer {
     /// Parse timestamp from chunk filename
     private func parseChunkTimestamp(_ filename: String) -> Date? {
         // Expected format: chunk_YYYYMMDD_HHMMSS.hevc
-        let pattern = /chunk_(\d{8})_(\d{6})\.hevc/
-        guard let match = filename.firstMatch(of: pattern) else { return nil }
+        guard filename.hasPrefix("chunk_"),
+              filename.hasSuffix(".hevc"),
+              filename.count == 26 else { return nil }  // "chunk_" (6) + 8 + "_" (1) + 6 + ".hevc" (5) = 26
 
-        let dateStr = String(match.1)
-        let timeStr = String(match.2)
+        let startIndex = filename.index(filename.startIndex, offsetBy: 6)
+        let dateEndIndex = filename.index(startIndex, offsetBy: 8)
+        let timeStartIndex = filename.index(dateEndIndex, offsetBy: 1)
+        let timeEndIndex = filename.index(timeStartIndex, offsetBy: 6)
+
+        let dateStr = String(filename[startIndex..<dateEndIndex])
+        let timeStr = String(filename[timeStartIndex..<timeEndIndex])
+
+        // Validate that both parts are numeric
+        guard dateStr.allSatisfy({ $0.isNumber }),
+              timeStr.allSatisfy({ $0.isNumber }) else { return nil }
 
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMddHHmmss"
