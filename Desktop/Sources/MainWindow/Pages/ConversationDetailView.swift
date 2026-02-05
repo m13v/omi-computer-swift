@@ -222,7 +222,7 @@ struct ConversationDetailView: View {
             // Move to folder button (menu)
             if !folders.isEmpty {
                 Menu {
-                    if conversation.folderId != nil {
+                    if displayConversation.folderId != nil {
                         Button(action: {
                             Task { await onMoveToFolder?(conversation.id, nil) }
                         }) {
@@ -237,17 +237,17 @@ struct ConversationDetailView: View {
                         }) {
                             HStack {
                                 Text(folder.name)
-                                if conversation.folderId == folder.id {
+                                if displayConversation.folderId == folder.id {
                                     Image(systemName: "checkmark")
                                 }
                             }
                         }
-                        .disabled(conversation.folderId == folder.id)
+                        .disabled(displayConversation.folderId == folder.id)
                     }
                 } label: {
-                    Image(systemName: conversation.folderId != nil ? "folder.fill" : "folder")
+                    Image(systemName: displayConversation.folderId != nil ? "folder.fill" : "folder")
                         .font(.system(size: 14))
-                        .foregroundColor(conversation.folderId != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                        .foregroundColor(displayConversation.folderId != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
                         .frame(width: 28, height: 28)
                         .background(
                             Circle()
@@ -278,7 +278,7 @@ struct ConversationDetailView: View {
     // MARK: - Actions
 
     private func copyTranscript() {
-        let transcript: String = conversation.transcriptSegments.map { segment -> String in
+        let transcript: String = displayConversation.transcriptSegments.map { segment -> String in
             let speakerName = segment.isUser ? "You" : "Speaker \(segment.speaker ?? "Unknown")"
             return "[\(speakerName)]: \(segment.text)"
         }.joined(separator: "\n\n")
@@ -331,7 +331,7 @@ struct ConversationDetailView: View {
     }
 
     private var statusBadge: some View {
-        Text(conversation.status.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
+        Text(displayConversation.status.rawValue.replacingOccurrences(of: "_", with: " ").capitalized)
             .font(.system(size: 11, weight: .medium))
             .foregroundColor(statusColor)
             .padding(.horizontal, 8)
@@ -343,7 +343,7 @@ struct ConversationDetailView: View {
     }
 
     private var statusColor: Color {
-        switch conversation.status {
+        switch displayConversation.status {
         case .completed:
             return OmiColors.success
         case .processing, .merging:
@@ -372,7 +372,7 @@ struct ConversationDetailView: View {
                             Text(tab.rawValue)
                                 .font(.system(size: 13, weight: .medium))
                             if tab == .transcript {
-                                Text("(\(conversation.transcriptSegments.count))")
+                                Text("(\(displayConversation.transcriptSegments.count))")
                                     .font(.system(size: 11))
                                     .foregroundColor(OmiColors.textTertiary)
                             }
@@ -398,7 +398,7 @@ struct ConversationDetailView: View {
     @ViewBuilder
     private var summaryTabContent: some View {
         // Overview section
-        if !conversation.overview.isEmpty {
+        if !displayConversation.overview.isEmpty {
             overviewSection
         }
 
@@ -406,7 +406,7 @@ struct ConversationDetailView: View {
         metadataSection
 
         // App Results section
-        if !conversation.appsResults.isEmpty {
+        if !displayConversation.appsResults.isEmpty {
             appResultsSection
         }
 
@@ -414,7 +414,7 @@ struct ConversationDetailView: View {
         suggestedAppsSection
 
         // Action items section
-        if !conversation.structured.actionItems.isEmpty {
+        if !displayConversation.structured.actionItems.isEmpty {
             actionItemsSection
         }
     }
@@ -423,7 +423,7 @@ struct ConversationDetailView: View {
 
     @ViewBuilder
     private var transcriptTabContent: some View {
-        if conversation.transcriptSegments.isEmpty {
+        if displayConversation.transcriptSegments.isEmpty && !isLoadingConversation {
             // Empty state
             VStack(spacing: 12) {
                 Image(systemName: "text.quote")
@@ -436,10 +436,22 @@ struct ConversationDetailView: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 60)
+        } else if isLoadingConversation {
+            // Loading state
+            VStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(0.8)
+
+                Text("Loading transcript...")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 60)
         } else {
             // Transcript header with copy button
             HStack {
-                Text("\(conversation.transcriptSegments.count) segments")
+                Text("\(displayConversation.transcriptSegments.count) segments")
                     .font(.system(size: 13))
                     .foregroundColor(OmiColors.textSecondary)
 
@@ -459,7 +471,7 @@ struct ConversationDetailView: View {
 
             // Transcript content
             VStack(spacing: 12) {
-                ForEach(conversation.transcriptSegments) { segment in
+                ForEach(displayConversation.transcriptSegments) { segment in
                     SpeakerBubbleView(
                         segment: segment,
                         isUser: segment.isUser
@@ -482,7 +494,7 @@ struct ConversationDetailView: View {
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundColor(OmiColors.textSecondary)
 
-            Text(conversation.overview)
+            Text(displayConversation.overview)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
                 .lineSpacing(4)
@@ -503,11 +515,11 @@ struct ConversationDetailView: View {
             metadataChip(icon: "clock", text: formattedTime)
 
             // Duration chip
-            metadataChip(icon: "hourglass", text: conversation.formattedDuration)
+            metadataChip(icon: "hourglass", text: displayConversation.formattedDuration)
 
             // Category chip
-            if !conversation.structured.category.isEmpty && conversation.structured.category != "other" {
-                metadataChip(icon: "tag", text: conversation.structured.category.capitalized)
+            if !displayConversation.structured.category.isEmpty && displayConversation.structured.category != "other" {
+                metadataChip(icon: "tag", text: displayConversation.structured.category.capitalized)
             }
 
             Spacer()
@@ -519,7 +531,7 @@ struct ConversationDetailView: View {
     }
 
     private var sourceLabel: String {
-        switch conversation.source {
+        switch displayConversation.source {
         case .desktop: return "Desktop"
         case .omi: return "Omi"
         case .phone: return "Phone"
@@ -572,7 +584,7 @@ struct ConversationDetailView: View {
 
             // Transcript content
             VStack(spacing: 12) {
-                ForEach(conversation.transcriptSegments) { segment in
+                ForEach(displayConversation.transcriptSegments) { segment in
                     SpeakerBubbleView(
                         segment: segment,
                         isUser: segment.isUser
