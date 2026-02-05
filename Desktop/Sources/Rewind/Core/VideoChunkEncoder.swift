@@ -36,7 +36,7 @@ actor VideoChunkEncoder {
     /// Track consecutive ffmpeg write failures for recovery
     private var consecutiveWriteFailures = 0
     private var currentChunkStartTime: Date?
-    private var currentChunkPath: String?
+    private(set) var currentChunkPath: String?
     private var frameOffsetInChunk: Int = 0
 
     // FFmpeg process state
