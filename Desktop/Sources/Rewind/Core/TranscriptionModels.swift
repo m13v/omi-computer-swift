@@ -410,4 +410,82 @@ extension TranscriptionSegmentRecord {
             personId: segment.personId
         )
     }
+
+    /// Convert back to TranscriptSegment for UI display
+    func toTranscriptSegment() -> TranscriptSegment {
+        return TranscriptSegment(
+            id: segmentId ?? UUID().uuidString,
+            text: text,
+            speaker: speakerLabel,
+            isUser: isUser,
+            personId: personId,
+            start: startTime,
+            end: endTime
+        )
+    }
+}
+
+// MARK: - Convert to ServerConversation
+
+extension TranscriptionSessionRecord {
+    /// Convert local record back to ServerConversation for UI display
+    /// Requires segments to be passed in (fetched separately)
+    func toServerConversation(segments: [TranscriptionSegmentRecord]) -> ServerConversation? {
+        guard let backendId = backendId else { return nil }
+
+        let decoder = JSONDecoder()
+
+        // Decode JSON fields
+        let actionItems: [ActionItem] = (actionItemsJson?.data(using: .utf8))
+            .flatMap { try? decoder.decode([ActionItem].self, from: $0) } ?? []
+        let events: [Event] = (eventsJson?.data(using: .utf8))
+            .flatMap { try? decoder.decode([Event].self, from: $0) } ?? []
+        let geolocation: Geolocation? = (geolocationJson?.data(using: .utf8))
+            .flatMap { try? decoder.decode(Geolocation.self, from: $0) }
+        let photos: [ConversationPhoto] = (photosJson?.data(using: .utf8))
+            .flatMap { try? decoder.decode([ConversationPhoto].self, from: $0) } ?? []
+        let appsResults: [AppResponse] = (appsResultsJson?.data(using: .utf8))
+            .flatMap { try? decoder.decode([AppResponse].self, from: $0) } ?? []
+
+        // Convert conversation status
+        let status: ConversationStatus
+        switch conversationStatus {
+        case .inProgress: status = .inProgress
+        case .processing: status = .processing
+        case .merging: status = .merging
+        case .completed: status = .completed
+        case .failed: status = .failed
+        }
+
+        // Convert segments
+        let transcriptSegments = segments.map { $0.toTranscriptSegment() }
+
+        return ServerConversation(
+            id: backendId,
+            createdAt: createdAt,
+            startedAt: startedAt,
+            finishedAt: finishedAt,
+            structured: Structured(
+                title: title ?? "",
+                overview: overview ?? "",
+                emoji: emoji ?? "",
+                category: category ?? "other",
+                actionItems: actionItems,
+                events: events
+            ),
+            transcriptSegments: transcriptSegments,
+            geolocation: geolocation,
+            photos: photos,
+            appsResults: appsResults,
+            source: ConversationSource(rawValue: source),
+            language: language,
+            status: status,
+            discarded: discarded,
+            deleted: deleted,
+            isLocked: isLocked,
+            starred: starred,
+            folderId: folderId,
+            inputDeviceName: inputDeviceName
+        )
+    }
 }
