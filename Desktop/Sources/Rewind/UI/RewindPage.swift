@@ -268,9 +268,9 @@ struct RewindPage: View {
                     } label: {
                         Image(systemName: "list.bullet")
                             .font(.system(size: 11))
-                            .foregroundColor(searchViewMode == .results ? .white : .white.opacity(0.5))
+                            .foregroundColor(searchViewMode == .results ? OmiColors.textPrimary : .white.opacity(0.5))
                             .frame(width: 28, height: 24)
-                            .background(searchViewMode == .results ? OmiColors.purplePrimary : Color.clear)
+                            .background(searchViewMode == .results ? Color.white : Color.clear)
                             .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
@@ -285,9 +285,9 @@ struct RewindPage: View {
                     } label: {
                         Image(systemName: "timeline.selection")
                             .font(.system(size: 11))
-                            .foregroundColor(searchViewMode == .timeline ? .white : .white.opacity(0.5))
+                            .foregroundColor(searchViewMode == .timeline ? OmiColors.textPrimary : .white.opacity(0.5))
                             .frame(width: 28, height: 24)
-                            .background(searchViewMode == .timeline ? OmiColors.purplePrimary : Color.clear)
+                            .background(searchViewMode == .timeline ? Color.white : Color.clear)
                             .cornerRadius(4)
                     }
                     .buttonStyle(.plain)
@@ -617,9 +617,9 @@ struct RewindPage: View {
                     Button { togglePlayback() } label: {
                         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 14))
-                            .foregroundColor(.white)
+                            .foregroundColor(OmiColors.textPrimary)
                             .frame(width: 32, height: 32)
-                            .background(OmiColors.purplePrimary)
+                            .background(Color.white)
                             .clipShape(Circle())
                     }
                     .buttonStyle(.plain)
@@ -899,10 +899,10 @@ struct RewindPage: View {
                 } label: {
                     Text("Rebuild Index")
                         .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(.white)
+                        .foregroundColor(OmiColors.textPrimary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
-                        .background(OmiColors.purplePrimary)
+                        .background(Color.white)
                         .cornerRadius(4)
                 }
                 .buttonStyle(.plain)
@@ -991,10 +991,10 @@ struct RewindPage: View {
                     Text("Retry")
                 }
                 .font(.system(size: 14, weight: .medium))
-                .foregroundColor(.white)
+                .foregroundColor(OmiColors.textPrimary)
                 .padding(.horizontal, 20)
                 .padding(.vertical, 10)
-                .background(OmiColors.purplePrimary)
+                .background(Color.white)
                 .cornerRadius(8)
             }
             .buttonStyle(.plain)
