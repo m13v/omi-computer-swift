@@ -502,6 +502,12 @@ struct TasksPage: View {
                 onDismiss: { viewModel.editingTask = nil }
             )
         }
+        .onAppear {
+            // If tasks are already loaded, notify sidebar to clear loading indicator
+            if !viewModel.isLoading {
+                NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
+            }
+        }
     }
 
     // MARK: - Header View
