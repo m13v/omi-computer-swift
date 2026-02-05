@@ -216,9 +216,18 @@ class AppProvider: ObservableObject {
         }
     }
 
-    /// Get apps filtered by category
+    /// Get apps filtered by category (supports special section IDs)
     func apps(forCategory category: String) -> [OmiApp] {
-        apps.filter { $0.category == category }
+        switch category {
+        case "featured":
+            return popularApps
+        case "integrations":
+            return integrationApps
+        case "notifications":
+            return notificationApps
+        default:
+            return apps.filter { $0.category == category }
+        }
     }
 
     /// Get apps filtered by capability
