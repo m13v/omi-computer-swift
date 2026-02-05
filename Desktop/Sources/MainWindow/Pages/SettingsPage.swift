@@ -1,5 +1,6 @@
 import SwiftUI
 import Sparkle
+import UniformTypeIdentifiers
 
 /// Settings page that wraps SettingsView with proper dark theme styling for the main window
 struct SettingsPage: View {
@@ -436,6 +437,41 @@ struct SettingsContentView: View {
                     ))
                         .toggleStyle(.switch)
                         .labelsHidden()
+                }
+            }
+
+            // Export Logs
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Export Logs")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Save app logs for troubleshooting")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Button(action: exportLogs) {
+                        Text("Export")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(OmiColors.purplePrimary)
+                            )
+                    }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -1908,6 +1944,62 @@ struct SettingsContentView: View {
 
         // Persist the setting
         AssistantSettings.shared.transcriptionEnabled = enabled
+    }
+
+    private func exportLogs() {
+        let logFile = "/tmp/omi.log"
+
+        // Check if log file exists
+        guard FileManager.default.fileExists(atPath: logFile) else {
+            // Show alert that no logs exist
+            let alert = NSAlert()
+            alert.messageText = "No Logs Available"
+            alert.informativeText = "The log file doesn't exist yet. Logs are created when the app runs."
+            alert.alertStyle = .informational
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        // Create save panel
+        let savePanel = NSSavePanel()
+        savePanel.title = "Export Omi Logs"
+        savePanel.nameFieldStringValue = "omi-logs-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")).log"
+        savePanel.allowedContentTypes = [.plainText]
+        savePanel.canCreateDirectories = true
+
+        savePanel.begin { response in
+            if response == .OK, let url = savePanel.url {
+                do {
+                    try FileManager.default.copyItem(atPath: logFile, toPath: url.path)
+                    log("Exported logs to: \(url.path)")
+
+                    // Show success notification
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "Logs Exported"
+                        alert.informativeText = "Logs saved to \(url.lastPathComponent)"
+                        alert.alertStyle = .informational
+                        alert.addButton(withTitle: "OK")
+                        alert.addButton(withTitle: "Show in Finder")
+                        if alert.runModal() == .alertSecondButtonReturn {
+                            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: "")
+                        }
+                    }
+                } catch {
+                    logError("Failed to export logs", error: error)
+
+                    DispatchQueue.main.async {
+                        let alert = NSAlert()
+                        alert.messageText = "Export Failed"
+                        alert.informativeText = error.localizedDescription
+                        alert.alertStyle = .warning
+                        alert.addButton(withTitle: "OK")
+                        alert.runModal()
+                    }
+                }
+            }
+        }
     }
 
     private func startGlowPreview() {
