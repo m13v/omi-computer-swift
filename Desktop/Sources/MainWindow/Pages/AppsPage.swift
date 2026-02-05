@@ -212,7 +212,7 @@ struct AppsPage: View {
         }
         .dismissableSheet(item: $viewAllCategory) { category in
             CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 }, onDismiss: { viewAllCategory = nil })
-                .frame(width: 500, height: 600)
+                .frame(width: 580, height: 600)
         }
         .dismissableSheet(isPresented: $showPersonaPage) {
             PersonaPage(onDismiss: {
@@ -534,42 +534,53 @@ struct HorizontalAppSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text(title)
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                Spacer()
-
-                if showSeeMore, let onSeeMore = onSeeMore {
-                    Button(action: onSeeMore) {
-                        HStack(spacing: 4) {
-                            Text("See more")
-                                .font(.system(size: 13))
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11))
-                        }
-                        .foregroundColor(OmiColors.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                } else if let onViewAll = onViewAll {
-                    Button(action: onViewAll) {
-                        HStack(spacing: 4) {
-                            Text("View All")
-                                .font(.system(size: 13))
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11))
-                        }
-                        .foregroundColor(OmiColors.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
+            Text(title)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(OmiColors.textPrimary)
 
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 16) {
                     ForEach(apps) { app in
                         CompactAppCard(app: app, appProvider: appProvider, onSelect: { onSelectApp(app) })
+                    }
+
+                    // "See more" button inline with cards
+                    if showSeeMore, let onSeeMore = onSeeMore {
+                        Button(action: onSeeMore) {
+                            VStack(spacing: 6) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(OmiColors.backgroundSecondary)
+                                        .frame(width: 56, height: 56)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                }
+                                Text("See more")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            .frame(width: 70)
+                        }
+                        .buttonStyle(.plain)
+                    } else if let onViewAll = onViewAll {
+                        Button(action: onViewAll) {
+                            VStack(spacing: 6) {
+                                ZStack {
+                                    RoundedRectangle(cornerRadius: 14)
+                                        .fill(OmiColors.backgroundSecondary)
+                                        .frame(width: 56, height: 56)
+                                    Image(systemName: "chevron.right")
+                                        .font(.system(size: 18, weight: .medium))
+                                        .foregroundColor(OmiColors.textSecondary)
+                                }
+                                Text("View all")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            .frame(width: 70)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -1061,7 +1072,6 @@ struct CategoryAppsSheet: View {
                 .padding()
             }
         }
-        .frame(width: 600, height: 500)
         .background(OmiColors.backgroundPrimary)
     }
 }
