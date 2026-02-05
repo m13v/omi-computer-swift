@@ -13,11 +13,8 @@ struct FocusSummaryWidget: View {
                 Spacer()
             }
 
-            // Stats grid
-            LazyVGrid(columns: [
-                GridItem(.flexible()),
-                GridItem(.flexible())
-            ], spacing: 12) {
+            // Stats row - all in one line
+            HStack(spacing: 10) {
                 FocusStatCard(
                     title: "Focus Time",
                     value: "\(stats.focusedMinutes)",
@@ -39,7 +36,7 @@ struct FocusSummaryWidget: View {
                     value: String(format: "%.0f", stats.focusRate),
                     unit: "%",
                     icon: "chart.pie.fill",
-                    color: OmiColors.purplePrimary
+                    color: OmiColors.info
                 )
 
                 FocusStatCard(
@@ -73,32 +70,34 @@ struct FocusStatCard: View {
     let color: Color
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .center, spacing: 8) {
+        VStack(alignment: .center, spacing: 4) {
+            HStack(alignment: .center, spacing: 4) {
                 Image(systemName: icon)
-                    .font(.system(size: 16))
-                    .foregroundColor(.white)
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textSecondary)
 
-                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                HStack(alignment: .lastTextBaseline, spacing: 1) {
                     Text(value)
-                        .font(.system(size: 24, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .foregroundColor(OmiColors.textPrimary)
 
                     if !unit.isEmpty {
                         Text(unit)
-                            .font(.system(size: 12))
+                            .font(.system(size: 10))
                             .foregroundColor(OmiColors.textTertiary)
                     }
                 }
             }
 
             Text(title)
-                .font(.system(size: 12))
+                .font(.system(size: 10))
                 .foregroundColor(OmiColors.textTertiary)
         }
-        .padding(14)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .padding(.horizontal, 8)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(OmiColors.backgroundTertiary.opacity(0.6))
         )
     }
