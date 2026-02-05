@@ -114,6 +114,10 @@ struct AdvicePage: View {
         } message: {
             Text("Are you sure you want to clear all advice history? This cannot be undone.")
         }
+        .onAppear {
+            // Advice uses local storage, so it's immediately ready
+            NotificationCenter.default.post(name: .advicePageDidLoad, object: nil)
+        }
     }
 
     // MARK: - Header
