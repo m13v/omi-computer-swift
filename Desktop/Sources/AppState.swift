@@ -1127,6 +1127,7 @@ class AppState: ObservableObject {
         }
 
         isLoadingConversations = false
+        NotificationCenter.default.post(name: .conversationsPageDidLoad, object: nil)
     }
 
     /// Refresh conversations (for pull-to-refresh)
@@ -1893,4 +1894,14 @@ extension Notification.Name {
     static let rewindFrameCaptured = Notification.Name("rewindFrameCaptured")
     /// Posted when Rewind page finishes loading initial data
     static let rewindPageDidLoad = Notification.Name("rewindPageDidLoad")
+    /// Posted when Conversations page finishes loading initial data
+    static let conversationsPageDidLoad = Notification.Name("conversationsPageDidLoad")
+    /// Posted when Tasks page finishes loading initial data
+    static let tasksPageDidLoad = Notification.Name("tasksPageDidLoad")
+    /// Posted when Focus page finishes loading initial data
+    static let focusPageDidLoad = Notification.Name("focusPageDidLoad")
+    /// Posted when Advice page finishes loading initial data
+    static let advicePageDidLoad = Notification.Name("advicePageDidLoad")
+    /// Posted when Apps page finishes loading initial data
+    static let appsPageDidLoad = Notification.Name("appsPageDidLoad")
 }
