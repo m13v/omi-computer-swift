@@ -80,6 +80,30 @@ class RewindViewModel: ObservableObject {
                 Task { await self?.updateStatsOnly() }
             }
             .store(in: &cancellables)
+
+        // Auto-refresh timeline every 3 seconds when viewing today
+        Timer.publish(every: 3.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { await self?.refreshTimelineIfViewingToday() }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Refresh timeline only if viewing today and not actively searching
+    private func refreshTimelineIfViewingToday() async {
+        // Skip if not initialized or currently loading
+        guard isInitialized, !isLoading, !isSearching else { return }
+
+        // Skip if there's an active search query
+        guard activeSearchQuery == nil else { return }
+
+        // Only refresh if viewing today
+        let calendar = Calendar.current
+        guard calendar.isDateInToday(selectedDate) else { return }
+
+        // Reload screenshots for today
+        await loadScreenshotsForDate(selectedDate)
     }
 
     /// Update only the stats (for live frame count updates)
