@@ -169,6 +169,12 @@ actor RewindStorage {
             // Check error message for corruption indicators
             if case .storageError(let message) = error,
                message.contains("moov atom not found") || message.contains("Invalid data found") {
+                // Don't mark the active chunk as corrupted — it's still being written
+                let activeChunk = await VideoChunkEncoder.shared.currentChunkPath
+                if videoPath == activeChunk {
+                    log("RewindStorage: Frame in active chunk not yet available: \(videoPath)")
+                    throw RewindError.screenshotNotFound
+                }
                 log("RewindStorage: Marking video chunk as corrupted: \(videoPath)")
                 corruptedChunks.insert(videoPath)
                 throw RewindError.corruptedVideoChunk(videoPath)
