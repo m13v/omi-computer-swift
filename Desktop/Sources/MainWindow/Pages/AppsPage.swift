@@ -249,7 +249,7 @@ struct AppsPage: View {
             // Category dropdown
             Menu {
                 Button(action: {
-                    appProvider.selectedCategory = nil
+                    appProvider.clearCategoryFilter()
                 }) {
                     HStack {
                         Text("All Categories")
@@ -264,6 +264,7 @@ struct AppsPage: View {
                 ForEach(appProvider.categories) { category in
                     Button(action: {
                         appProvider.selectedCategory = category.id
+                        Task { await appProvider.fetchAppsForCategory(category.id) }
                     }) {
                         HStack {
                             Text(category.title)
@@ -332,10 +333,10 @@ struct AppsPage: View {
         return "Category"
     }
 
-    /// Apps filtered client-side by selected category
+    /// Apps for the selected category (from API) or search results
     private var filteredApps: [OmiApp] {
-        if let categoryId = appProvider.selectedCategory {
-            return appProvider.apps.filter { $0.category == categoryId }
+        if appProvider.selectedCategory != nil {
+            return appProvider.categoryFilteredApps ?? []
         }
         return appProvider.apps
     }
