@@ -275,109 +275,132 @@ struct ChatPage: View {
 
     private var messagesView: some View {
         ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 16) {
-                    // Load more button at top
-                    if chatProvider.hasMoreMessages {
-                        Button {
-                            Task {
-                                await chatProvider.loadMoreMessages()
+            ZStack(alignment: .bottom) {
+                ScrollView {
+                    LazyVStack(spacing: 16) {
+                        // Load more button at top
+                        if chatProvider.hasMoreMessages {
+                            Button {
+                                Task {
+                                    await chatProvider.loadMoreMessages()
+                                }
+                            } label: {
+                                if chatProvider.isLoadingMoreMessages {
+                                    ProgressView()
+                                        .scaleEffect(0.8)
+                                } else {
+                                    Text("Load earlier messages")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
                             }
-                        } label: {
-                            if chatProvider.isLoadingMoreMessages {
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
+
+                        if (chatProvider.isLoading || chatProvider.isLoadingSessions) && chatProvider.messages.isEmpty {
+                            // Show loading indicator while fetching sessions or messages
+                            VStack(spacing: 12) {
+                                Spacer()
                                 ProgressView()
                                     .scaleEffect(0.8)
-                            } else {
-                                Text("Load earlier messages")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                Text("Loading...")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Spacer()
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        } else if chatProvider.messages.isEmpty {
+                            welcomeMessage
+                        } else {
+                            ForEach(chatProvider.messages) { message in
+                                ChatBubble(
+                                    message: message,
+                                    app: selectedApp,
+                                    onRate: { rating in
+                                        Task {
+                                            await chatProvider.rateMessage(message.id, rating: rating)
+                                        }
+                                    },
+                                    onCitationTap: { citation in
+                                        handleCitationTap(citation)
+                                    }
+                                )
+                                .id(message.id)
                             }
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
                     }
-
-                    if (chatProvider.isLoading || chatProvider.isLoadingSessions) && chatProvider.messages.isEmpty {
-                        // Show loading indicator while fetching sessions or messages
-                        VStack(spacing: 12) {
-                            Spacer()
-                            ProgressView()
-                                .scaleEffect(0.8)
-                            Text("Loading...")
-                                .font(.system(size: 13))
-                                .foregroundColor(OmiColors.textTertiary)
-                            Spacer()
+                    .padding()
+                    .background(
+                        GeometryReader { contentGeometry in
+                            Color.clear
+                                .preference(
+                                    key: ScrollOffsetPreferenceKey.self,
+                                    value: contentGeometry.frame(in: .named("chatScroll")).maxY
+                                )
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    } else if chatProvider.messages.isEmpty {
-                        welcomeMessage
-                    } else {
-                        ForEach(chatProvider.messages) { message in
-                            ChatBubble(
-                                message: message,
-                                app: selectedApp,
-                                onRate: { rating in
-                                    Task {
-                                        await chatProvider.rateMessage(message.id, rating: rating)
-                                    }
-                                },
-                                onCitationTap: { citation in
-                                    handleCitationTap(citation)
-                                }
-                            )
-                            .id(message.id)
-                        }
-                    }
+                    )
                 }
-                .padding()
+                .coordinateSpace(name: "chatScroll")
                 .background(
-                    GeometryReader { contentGeometry in
+                    GeometryReader { scrollGeometry in
                         Color.clear
                             .preference(
-                                key: ScrollOffsetPreferenceKey.self,
-                                value: contentGeometry.frame(in: .named("chatScroll")).maxY
+                                key: ScrollViewHeightPreferenceKey.self,
+                                value: scrollGeometry.size.height
                             )
                     }
                 )
-            }
-            .coordinateSpace(name: "chatScroll")
-            .background(
-                GeometryReader { scrollGeometry in
-                    Color.clear
-                        .preference(
-                            key: ScrollViewHeightPreferenceKey.self,
-                            value: scrollGeometry.size.height
-                        )
+                .onPreferenceChange(ScrollViewHeightPreferenceKey.self) { height in
+                    scrollViewHeight = height
                 }
-            )
-            .onPreferenceChange(ScrollViewHeightPreferenceKey.self) { height in
-                scrollViewHeight = height
-            }
-            .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentMaxY in
-                // User is "at bottom" if content bottom is within 100pt of scroll view bottom
-                // This threshold allows for some tolerance when content is near the bottom
-                let threshold: CGFloat = 100
-                isUserAtBottom = contentMaxY <= scrollViewHeight + threshold
-            }
-            .onChange(of: chatProvider.messages.count) { oldCount, newCount in
-                // Always scroll to bottom when user sends a new message (count increases)
-                // or when first loading messages
-                if newCount > oldCount || oldCount == 0 {
-                    if isUserAtBottom || newCount == 1 {
+                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentMaxY in
+                    // User is "at bottom" if content bottom is within 100pt of scroll view bottom
+                    // This threshold allows for some tolerance when content is near the bottom
+                    let threshold: CGFloat = 100
+                    isUserAtBottom = contentMaxY <= scrollViewHeight + threshold
+                }
+                .onChange(of: chatProvider.messages.count) { oldCount, newCount in
+                    // Scroll to bottom when messages first load or when at bottom
+                    if newCount > oldCount || oldCount == 0 {
+                        if isUserAtBottom || oldCount == 0 {
+                            scrollToBottom(proxy: proxy)
+                        }
+                    }
+                }
+                .onChange(of: chatProvider.messages.last?.text) { _, _ in
+                    // Scroll as streaming text updates, but only if user is at bottom
+                    if isUserAtBottom {
                         scrollToBottom(proxy: proxy)
                     }
                 }
-            }
-            .onChange(of: chatProvider.messages.last?.text) { _, _ in
-                // Scroll as streaming text updates, but only if user is at bottom
-                if isUserAtBottom {
+                .onAppear {
+                    // Scroll to bottom when chat view first appears
                     scrollToBottom(proxy: proxy)
                 }
-            }
-            .onAppear {
-                // Scroll to bottom when chat view first appears
-                scrollToBottom(proxy: proxy)
+
+                // Scroll to bottom button - appears when user has scrolled up
+                if !isUserAtBottom && !chatProvider.messages.isEmpty {
+                    Button {
+                        isUserAtBottom = true
+                        scrollToBottom(proxy: proxy)
+                    } label: {
+                        Image(systemName: "arrow.down.circle.fill")
+                            .font(.system(size: 32))
+                            .foregroundColor(OmiColors.purplePrimary)
+                            .background(
+                                Circle()
+                                    .fill(OmiColors.backgroundPrimary)
+                                    .frame(width: 28, height: 28)
+                            )
+                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 16)
+                    .transition(.scale.combined(with: .opacity))
+                    .animation(.easeInOut(duration: 0.2), value: isUserAtBottom)
+                }
             }
         }
     }
@@ -482,9 +505,6 @@ struct ChatPage: View {
 
         let messageText = inputText
         inputText = ""
-
-        // Force scroll to bottom when user sends a message - they'll want to see the response
-        isUserAtBottom = true
 
         // Track chat message sent
         AnalyticsManager.shared.chatMessageSent(messageLength: messageText.count, hasContext: selectedApp != nil)
