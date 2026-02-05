@@ -560,6 +560,47 @@ struct ServerConversation: Codable, Identifiable {
         inputDeviceName = try container.decodeIfPresent(String.self, forKey: .inputDeviceName)
     }
 
+    /// Memberwise initializer for creating from local storage
+    init(
+        id: String,
+        createdAt: Date,
+        startedAt: Date?,
+        finishedAt: Date?,
+        structured: Structured,
+        transcriptSegments: [TranscriptSegment],
+        geolocation: Geolocation?,
+        photos: [ConversationPhoto],
+        appsResults: [AppResponse],
+        source: ConversationSource?,
+        language: String?,
+        status: ConversationStatus,
+        discarded: Bool,
+        deleted: Bool,
+        isLocked: Bool,
+        starred: Bool,
+        folderId: String?,
+        inputDeviceName: String?
+    ) {
+        self.id = id
+        self.createdAt = createdAt
+        self.startedAt = startedAt
+        self.finishedAt = finishedAt
+        self.structured = structured
+        self.transcriptSegments = transcriptSegments
+        self.geolocation = geolocation
+        self.photos = photos
+        self.appsResults = appsResults
+        self.source = source
+        self.language = language
+        self.status = status
+        self.discarded = discarded
+        self.deleted = deleted
+        self.isLocked = isLocked
+        self.starred = starred
+        self.folderId = folderId
+        self.inputDeviceName = inputDeviceName
+    }
+
     /// Returns the title from structured data, or a fallback
     var title: String {
         structured.title.isEmpty ? "Untitled Conversation" : structured.title
@@ -623,6 +664,23 @@ struct Structured: Codable {
         category = try container.decodeIfPresent(String.self, forKey: .category) ?? "other"
         actionItems = try container.decodeIfPresent([ActionItem].self, forKey: .actionItems) ?? []
         events = try container.decodeIfPresent([Event].self, forKey: .events) ?? []
+    }
+
+    /// Memberwise initializer for creating from local storage
+    init(
+        title: String,
+        overview: String,
+        emoji: String,
+        category: String,
+        actionItems: [ActionItem],
+        events: [Event]
+    ) {
+        self.title = title
+        self.overview = overview
+        self.emoji = emoji
+        self.category = category
+        self.actionItems = actionItems
+        self.events = events
     }
 }
 
@@ -700,6 +758,25 @@ struct TranscriptSegment: Codable, Identifiable {
         personId = try container.decodeIfPresent(String.self, forKey: .personId)
         start = try container.decodeIfPresent(Double.self, forKey: .start) ?? 0
         end = try container.decodeIfPresent(Double.self, forKey: .end) ?? 0
+    }
+
+    /// Memberwise initializer for creating from local storage
+    init(
+        id: String,
+        text: String,
+        speaker: String?,
+        isUser: Bool,
+        personId: String?,
+        start: Double,
+        end: Double
+    ) {
+        self.id = id
+        self.text = text
+        self.speaker = speaker
+        self.isUser = isUser
+        self.personId = personId
+        self.start = start
+        self.end = end
     }
 
     /// Formatted timestamp string (e.g., "00:01:30 - 00:01:45")
