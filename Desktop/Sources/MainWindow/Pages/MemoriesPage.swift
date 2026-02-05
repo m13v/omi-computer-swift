@@ -566,10 +566,10 @@ struct MemoriesPage: View {
                     if viewModel.unreadTipsCount > 0 {
                         Text("\(viewModel.unreadTipsCount) new tips")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(OmiColors.warning)
+                            .foregroundColor(OmiColors.textSecondary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(OmiColors.warning.opacity(0.15))
+                            .background(OmiColors.backgroundTertiary)
                             .cornerRadius(4)
                     }
                 }
@@ -913,10 +913,10 @@ struct MemoriesPage: View {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundColor(color)
+        .foregroundColor(OmiColors.textSecondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(color.opacity(0.15))
+        .background(OmiColors.backgroundTertiary)
         .cornerRadius(4)
     }
 
@@ -1491,10 +1491,10 @@ struct MemoryDetailSheet: View {
             Text(title)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundColor(color)
+        .foregroundColor(OmiColors.textSecondary)
         .padding(.horizontal, 8)
         .padding(.vertical, 4)
-        .background(color.opacity(0.15))
+        .background(OmiColors.backgroundTertiary)
         .cornerRadius(4)
     }
 }
