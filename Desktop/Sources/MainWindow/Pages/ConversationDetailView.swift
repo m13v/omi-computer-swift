@@ -85,16 +85,35 @@ struct ConversationDetailView: View {
             await appProvider.fetchApps()
             AnalyticsManager.shared.conversationDetailOpened(conversationId: conversation.id)
 
-            // Load full conversation from API (with transcript segments)
-            // This is needed because cached conversations don't include segments for performance
+            // Load segments from local database if not already present
+            // Segments are stored locally but not loaded with the list view for performance
             if conversation.transcriptSegments.isEmpty {
                 isLoadingConversation = true
                 do {
-                    let fullConversation = try await APIClient.shared.getConversation(id: conversation.id)
-                    loadedConversation = fullConversation
-                    log("ConversationDetail: Loaded full conversation with \(fullConversation.transcriptSegments.count) segments")
+                    // First try local database (faster, works offline)
+                    if let session = try await TranscriptionStorage.shared.getSessionByBackendId(conversation.id) {
+                        let segmentRecords = try await TranscriptionStorage.shared.getSegments(sessionId: session.id!)
+                        if !segmentRecords.isEmpty {
+                            // Convert local records to TranscriptSegments and update conversation
+                            let segments = segmentRecords.map { $0.toTranscriptSegment() }
+                            var updatedConversation = conversation
+                            updatedConversation.transcriptSegments = segments
+                            loadedConversation = updatedConversation
+                            log("ConversationDetail: Loaded \(segments.count) segments from local database")
+                        } else {
+                            // No local segments, fetch from API
+                            let fullConversation = try await APIClient.shared.getConversation(id: conversation.id)
+                            loadedConversation = fullConversation
+                            log("ConversationDetail: Loaded \(fullConversation.transcriptSegments.count) segments from API")
+                        }
+                    } else {
+                        // No local session found, fetch from API
+                        let fullConversation = try await APIClient.shared.getConversation(id: conversation.id)
+                        loadedConversation = fullConversation
+                        log("ConversationDetail: Loaded \(fullConversation.transcriptSegments.count) segments from API (no local session)")
+                    }
                 } catch {
-                    logError("ConversationDetail: Failed to load full conversation", error: error)
+                    logError("ConversationDetail: Failed to load conversation segments", error: error)
                 }
                 isLoadingConversation = false
             }
@@ -577,7 +596,7 @@ struct ConversationDetailView: View {
 
                 Spacer()
 
-                Text("\(conversation.transcriptSegments.count) segments")
+                Text("\(displayConversation.transcriptSegments.count) segments")
                     .font(.system(size: 12))
                     .foregroundColor(OmiColors.textTertiary)
             }
@@ -623,7 +642,7 @@ struct ConversationDetailView: View {
                 .disabled(isReprocessing)
             }
 
-            ForEach(conversation.appsResults) { result in
+            ForEach(displayConversation.appsResults) { result in
                 AppResultCard(
                     result: result,
                     app: appProvider.apps.first { $0.id == result.appId }
@@ -646,7 +665,7 @@ struct ConversationDetailView: View {
 
             let memoryApps = appProvider.apps.filter {
                 $0.capabilities.contains("memories") &&
-                !conversation.appsResults.contains(where: { $0.appId == $0.id })
+                !displayConversation.appsResults.contains(where: { $0.appId == $0.id })
             }.prefix(4)
 
             if memoryApps.isEmpty && !appProvider.isLoading {
@@ -716,13 +735,13 @@ struct ConversationDetailView: View {
 
                 Spacer()
 
-                Text("\(conversation.structured.actionItems.count) items")
+                Text("\(displayConversation.structured.actionItems.count) items")
                     .font(.system(size: 12))
                     .foregroundColor(OmiColors.textTertiary)
             }
 
             VStack(alignment: .leading, spacing: 8) {
-                ForEach(conversation.structured.actionItems.filter { !$0.deleted }) { item in
+                ForEach(displayConversation.structured.actionItems.filter { !$0.deleted }) { item in
                     HStack(alignment: .top, spacing: 10) {
                         Image(systemName: item.completed ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: 16))
