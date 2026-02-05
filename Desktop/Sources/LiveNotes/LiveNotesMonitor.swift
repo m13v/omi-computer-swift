@@ -77,8 +77,9 @@ class LiveNotesMonitor: ObservableObject {
         // Initialize Gemini client if not already done
         if geminiClient == nil {
             do {
-                geminiClient = try GeminiClient()
-                log("LiveNotesMonitor: GeminiClient initialized")
+                // Use Gemini 3 Pro for better note generation quality
+                geminiClient = try GeminiClient(model: "gemini-3-pro-preview")
+                log("LiveNotesMonitor: GeminiClient initialized with gemini-3-pro-preview")
             } catch {
                 logError("LiveNotesMonitor: Failed to initialize GeminiClient", error: error)
             }
