@@ -500,7 +500,7 @@ struct ServerConversation: Codable, Identifiable {
     let finishedAt: Date?
 
     var structured: Structured
-    let transcriptSegments: [TranscriptSegment]
+    var transcriptSegments: [TranscriptSegment]
     let geolocation: Geolocation?
     let photos: [ConversationPhoto]
 
