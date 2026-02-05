@@ -798,39 +798,72 @@ struct RewindPage: View {
 
         isLoadingFrame = true
 
-        // Try to load current frame
-        if let image = await tryLoadFrame(at: currentIndex) {
-            currentImage = image
-            viewModel.selectScreenshot(screenshots[currentIndex])
-            isLoadingFrame = false
-            return
+        // Track corrupted chunks we've already tried to skip them
+        var triedCorruptedChunks = Set<String>()
+
+        // Helper to check if a screenshot is from a known corrupted chunk
+        func isFromCorruptedChunk(_ screenshot: Screenshot) async -> Bool {
+            guard let chunkPath = screenshot.videoChunkPath else { return false }
+            if triedCorruptedChunks.contains(chunkPath) { return true }
+            if await RewindStorage.shared.isChunkCorrupted(chunkPath) {
+                triedCorruptedChunks.insert(chunkPath)
+                return true
+            }
+            return false
         }
 
-        // Current frame failed - search for first valid frame
+        // Try to load current frame
+        let currentScreenshot = screenshots[currentIndex]
+        if await !isFromCorruptedChunk(currentScreenshot) {
+            if let image = await tryLoadFrame(at: currentIndex) {
+                currentImage = image
+                viewModel.selectScreenshot(currentScreenshot)
+                isLoadingFrame = false
+                return
+            }
+            // Mark as tried if it was from a video chunk
+            if let chunkPath = currentScreenshot.videoChunkPath {
+                triedCorruptedChunks.insert(chunkPath)
+            }
+        }
+
+        // Current frame failed - search for first valid frame, skipping corrupted chunks
         for offset in 1..<screenshots.count {
             // Try forward
             let forwardIndex = currentIndex + offset
             if forwardIndex < screenshots.count {
-                if let image = await tryLoadFrame(at: forwardIndex) {
-                    currentIndex = forwardIndex
-                    currentImage = image
-                    viewModel.selectScreenshot(screenshots[forwardIndex])
-                    isLoadingFrame = false
-                    log("RewindPage: Skipped to valid frame at index \(forwardIndex), imageSize=\(image.size), screenshotsCount=\(screenshots.count)")
-                    return
+                let forwardScreenshot = screenshots[forwardIndex]
+                if await !isFromCorruptedChunk(forwardScreenshot) {
+                    if let image = await tryLoadFrame(at: forwardIndex) {
+                        currentIndex = forwardIndex
+                        currentImage = image
+                        viewModel.selectScreenshot(forwardScreenshot)
+                        isLoadingFrame = false
+                        log("RewindPage: Skipped to valid frame at index \(forwardIndex), imageSize=\(image.size), screenshotsCount=\(screenshots.count)")
+                        return
+                    }
+                    if let chunkPath = forwardScreenshot.videoChunkPath {
+                        triedCorruptedChunks.insert(chunkPath)
+                    }
                 }
             }
 
             // Try backward
             let backwardIndex = currentIndex - offset
             if backwardIndex >= 0 {
-                if let image = await tryLoadFrame(at: backwardIndex) {
-                    currentIndex = backwardIndex
-                    currentImage = image
-                    viewModel.selectScreenshot(screenshots[backwardIndex])
-                    isLoadingFrame = false
-                    log("RewindPage: Skipped to valid frame at index \(backwardIndex)")
-                    return
+                let backwardScreenshot = screenshots[backwardIndex]
+                if await !isFromCorruptedChunk(backwardScreenshot) {
+                    if let image = await tryLoadFrame(at: backwardIndex) {
+                        currentIndex = backwardIndex
+                        currentImage = image
+                        viewModel.selectScreenshot(backwardScreenshot)
+                        isLoadingFrame = false
+                        log("RewindPage: Skipped to valid frame at index \(backwardIndex)")
+                        return
+                    }
+                    if let chunkPath = backwardScreenshot.videoChunkPath {
+                        triedCorruptedChunks.insert(chunkPath)
+                    }
                 }
             }
         }
@@ -838,7 +871,7 @@ struct RewindPage: View {
         // No valid frames found
         currentImage = nil
         isLoadingFrame = false
-        logError("RewindPage: No valid frames found")
+        logError("RewindPage: No valid frames found (skipped \(triedCorruptedChunks.count) corrupted chunks)")
     }
 
     /// Try to load a frame at a specific index, returns nil if failed
@@ -855,6 +888,24 @@ struct RewindPage: View {
                 return nil
             }
             return image
+        } catch let error as RewindError {
+            // Handle corrupted video chunk - clean it up in background
+            if case .corruptedVideoChunk(let chunkPath) = error {
+                log("RewindPage: Detected corrupted chunk at index \(index): \(chunkPath), cleaning up...")
+                Task {
+                    do {
+                        let deleted = try await RewindStorage.shared.cleanupCorruptedChunk(chunkPath)
+                        log("RewindPage: Cleaned up corrupted chunk, removed \(deleted) entries")
+                        // Refresh the view model data after cleanup
+                        await viewModel.refresh()
+                    } catch {
+                        logError("RewindPage: Failed to cleanup corrupted chunk: \(error.localizedDescription)")
+                    }
+                }
+                return nil
+            }
+            logError("RewindPage: Failed to load frame at index \(index): \(error.localizedDescription), videoChunk=\(screenshot.videoChunkPath ?? "nil"), frameOffset=\(screenshot.frameOffset ?? -1)")
+            return nil
         } catch {
             logError("RewindPage: Failed to load frame at index \(index): \(error.localizedDescription), videoChunk=\(screenshot.videoChunkPath ?? "nil"), frameOffset=\(screenshot.frameOffset ?? -1)")
             return nil
