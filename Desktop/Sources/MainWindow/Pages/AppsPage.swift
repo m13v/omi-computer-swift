@@ -550,9 +550,9 @@ struct CompactAppCard: View {
                         .foregroundColor(OmiColors.textPrimary)
                         .lineLimit(1)
 
-                    // Rating or category
-                    if let rating = app.formattedRating {
-                        HStack(spacing: 2) {
+                    // Rating and installs
+                    HStack(spacing: 3) {
+                        if let rating = app.formattedRating {
                             Image(systemName: "star.fill")
                                 .font(.system(size: 8))
                                 .foregroundColor(.yellow)
@@ -560,11 +560,16 @@ struct CompactAppCard: View {
                                 .font(.system(size: 10))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
-                    } else {
-                        Text(app.category.replacingOccurrences(of: "-", with: " ").capitalized)
-                            .font(.system(size: 10))
-                            .foregroundColor(OmiColors.textTertiary)
-                            .lineLimit(1)
+                        if let installs = app.formattedInstalls {
+                            if app.formattedRating != nil {
+                                Text("·")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            Text(installs)
+                                .font(.system(size: 10))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
                     }
                 }
 
@@ -678,15 +683,27 @@ struct AppCard: View {
                     .multilineTextAlignment(.leading)
 
                 HStack {
-                    // Rating
-                    if let rating = app.formattedRating {
-                        HStack(spacing: 4) {
-                            Image(systemName: "star.fill")
-                                .font(.system(size: 10))
-                                .foregroundColor(.yellow)
-                            Text(rating)
-                                .font(.system(size: 11))
-                                .foregroundColor(OmiColors.textTertiary)
+                    // Rating and installs
+                    HStack(spacing: 6) {
+                        if let rating = app.formattedRating {
+                            HStack(spacing: 3) {
+                                Image(systemName: "star.fill")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(.yellow)
+                                Text(rating)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                        }
+                        if let installs = app.formattedInstalls {
+                            HStack(spacing: 3) {
+                                Image(systemName: "arrow.down.circle")
+                                    .font(.system(size: 10))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Text(installs)
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
                         }
                     }
 
