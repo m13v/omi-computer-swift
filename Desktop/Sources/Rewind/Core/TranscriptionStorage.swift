@@ -415,8 +415,8 @@ actor TranscriptionStorage {
 
             // Insert new segments
             for (index, segment) in conversation.transcriptSegments.enumerated() {
-                var record = TranscriptionSegmentRecord.from(segment, sessionId: sessionId, segmentOrder: index)
-                try record.insert(database)
+                let record = TranscriptionSegmentRecord.from(segment, sessionId: sessionId, segmentOrder: index)
+                _ = try record.inserted(database)
             }
 
             log("TranscriptionStorage: Upserted \(conversation.transcriptSegments.count) segments for session \(sessionId)")
