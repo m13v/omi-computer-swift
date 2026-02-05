@@ -518,12 +518,12 @@ struct SettingsContentView: View {
                     Button(action: { showResetOnboardingAlert = true }) {
                         Text("Reset")
                             .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.white)
+                            .foregroundColor(OmiColors.backgroundPrimary)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(OmiColors.warning)
+                                    .fill(.white)
                             )
                     }
                     .buttonStyle(.plain)
