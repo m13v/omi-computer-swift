@@ -108,7 +108,6 @@ struct AppsPage: View {
     @ObservedObject var appProvider: AppProvider
     @State private var searchText = ""
     @State private var selectedApp: OmiApp?
-    @State private var viewAllCategory: OmiAppCategory?
     @State private var showPersonaPage = false
     @State private var viewAllSection: String? = nil  // "featured", "integrations", "notifications"
 
@@ -264,10 +263,6 @@ struct AppsPage: View {
                     AnalyticsManager.shared.appDetailViewed(appId: app.id, appName: app.name)
                 }
         }
-        .dismissableSheet(item: $viewAllCategory) { category in
-            CategoryAppsSheet(category: category, appProvider: appProvider, onSelectApp: { selectedApp = $0 }, onDismiss: { viewAllCategory = nil })
-                .frame(width: 580, height: 600)
-        }
         .dismissableSheet(isPresented: $showPersonaPage) {
             PersonaPage(onDismiss: {
                 showPersonaPage = false
@@ -390,7 +385,7 @@ struct AppsPage: View {
     }
 
     private var hasActiveFilters: Bool {
-        appProvider.selectedCategory != nil
+        appProvider.selectedCategory != nil || viewAllSection != nil
     }
 
     private var selectedCategoryLabel: String {
@@ -401,8 +396,17 @@ struct AppsPage: View {
         return "Category"
     }
 
-    /// Apps for the selected category (from API) or search results
+    /// Apps for the selected category (from API) or search results or "See more" section
     private var filteredApps: [OmiApp] {
+        // "See more" section takes priority
+        if let section = viewAllSection {
+            switch section {
+            case "featured": return appProvider.popularApps
+            case "integrations": return appProvider.integrationApps
+            case "notifications": return appProvider.notificationApps
+            default: return []
+            }
+        }
         if appProvider.selectedCategory != nil {
             return appProvider.categoryFilteredApps ?? []
         }
@@ -411,6 +415,16 @@ struct AppsPage: View {
 
     private var filterResultsTitle: String {
         let apps = filteredApps
+        // "See more" section title
+        if let section = viewAllSection {
+            let title = switch section {
+            case "featured": "Featured"
+            case "integrations": "Integrations"
+            case "notifications": "Realtime Notifications"
+            default: "Apps"
+            }
+            return "\(title) (\(apps.count))"
+        }
         if !searchText.isEmpty {
             return "Search Results (\(apps.count))"
         }
@@ -419,6 +433,26 @@ struct AppsPage: View {
             return "\(category.title) (\(apps.count))"
         }
         return "Results (\(apps.count))"
+    }
+
+    /// Title for the "See more" view based on the selected section
+    private var viewAllSectionTitle: String {
+        switch viewAllSection {
+        case "featured": return "Featured"
+        case "integrations": return "Integrations"
+        case "notifications": return "Realtime Notifications"
+        default: return "Apps"
+        }
+    }
+
+    /// Apps for the "See more" view based on the selected section
+    private var viewAllSectionApps: [OmiApp] {
+        switch viewAllSection {
+        case "featured": return appProvider.popularApps
+        case "integrations": return appProvider.integrationApps
+        case "notifications": return appProvider.notificationApps
+        default: return []
+        }
     }
 
     private var loadingShimmerView: some View {
@@ -543,6 +577,39 @@ struct FilterToggle: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - View All Section Header
+
+struct ViewAllSectionHeader: View {
+    let title: String
+    let count: Int
+    let onBack: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onBack) {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("Back")
+                        .font(.system(size: 13, weight: .medium))
+                }
+                .foregroundColor(OmiColors.textSecondary)
+            }
+            .buttonStyle(.plain)
+
+            Text(title)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundColor(OmiColors.textPrimary)
+
+            Text("(\(count))")
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textTertiary)
+
+            Spacer()
+        }
     }
 }
 
