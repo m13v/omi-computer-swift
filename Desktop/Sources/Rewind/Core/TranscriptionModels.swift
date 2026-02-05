@@ -3,7 +3,7 @@ import GRDB
 
 // MARK: - Transcription Session Status
 
-/// Status of a transcription session
+/// Status of a transcription session (upload/sync status)
 enum TranscriptionSessionStatus: String, Codable, CaseIterable {
     case recording = "recording"
     case pendingUpload = "pending_upload"
@@ -12,10 +12,21 @@ enum TranscriptionSessionStatus: String, Codable, CaseIterable {
     case failed = "failed"
 }
 
+/// Conversation processing status (from backend)
+/// Matches ConversationStatus in APIClient.swift
+enum LocalConversationStatus: String, Codable, CaseIterable {
+    case inProgress = "in_progress"
+    case processing = "processing"
+    case merging = "merging"
+    case completed = "completed"
+    case failed = "failed"
+}
+
 // MARK: - Transcription Session Record
 
 /// Database record for transcription recording sessions
 /// Stores metadata about a transcription session for crash recovery and retry
+/// Also serves as local cache for conversations synced from backend
 struct TranscriptionSessionRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var id: Int64?
     var startedAt: Date
@@ -24,13 +35,34 @@ struct TranscriptionSessionRecord: Codable, FetchableRecord, PersistableRecord, 
     var language: String
     var timezone: String
     var inputDeviceName: String?
-    var status: TranscriptionSessionStatus
+    var status: TranscriptionSessionStatus  // Upload/sync status
     var retryCount: Int
     var lastError: String?
     var backendId: String?                // Server conversation ID
     var backendSynced: Bool
     var createdAt: Date
     var updatedAt: Date
+
+    // MARK: - Structured Data (from ServerConversation.Structured)
+    var title: String?
+    var overview: String?
+    var emoji: String?
+    var category: String?
+    var actionItemsJson: String?          // JSON-encoded [ActionItem]
+    var eventsJson: String?               // JSON-encoded [Event]
+
+    // MARK: - Additional Conversation Data
+    var geolocationJson: String?          // JSON-encoded Geolocation
+    var photosJson: String?               // JSON-encoded [ConversationPhoto]
+    var appsResultsJson: String?          // JSON-encoded [AppResponse]
+
+    // MARK: - Conversation Status & Flags
+    var conversationStatus: LocalConversationStatus  // Backend processing status
+    var discarded: Bool
+    var deleted: Bool
+    var isLocked: Bool
+    var starred: Bool
+    var folderId: String?
 
     static let databaseTableName = "transcription_sessions"
 
@@ -50,7 +82,25 @@ struct TranscriptionSessionRecord: Codable, FetchableRecord, PersistableRecord, 
         backendId: String? = nil,
         backendSynced: Bool = false,
         createdAt: Date = Date(),
-        updatedAt: Date = Date()
+        updatedAt: Date = Date(),
+        // Structured data
+        title: String? = nil,
+        overview: String? = nil,
+        emoji: String? = nil,
+        category: String? = nil,
+        actionItemsJson: String? = nil,
+        eventsJson: String? = nil,
+        // Additional data
+        geolocationJson: String? = nil,
+        photosJson: String? = nil,
+        appsResultsJson: String? = nil,
+        // Status & flags
+        conversationStatus: LocalConversationStatus = .inProgress,
+        discarded: Bool = false,
+        deleted: Bool = false,
+        isLocked: Bool = false,
+        starred: Bool = false,
+        folderId: String? = nil
     ) {
         self.id = id
         self.startedAt = startedAt
@@ -66,6 +116,24 @@ struct TranscriptionSessionRecord: Codable, FetchableRecord, PersistableRecord, 
         self.backendSynced = backendSynced
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+        // Structured data
+        self.title = title
+        self.overview = overview
+        self.emoji = emoji
+        self.category = category
+        self.actionItemsJson = actionItemsJson
+        self.eventsJson = eventsJson
+        // Additional data
+        self.geolocationJson = geolocationJson
+        self.photosJson = photosJson
+        self.appsResultsJson = appsResultsJson
+        // Status & flags
+        self.conversationStatus = conversationStatus
+        self.discarded = discarded
+        self.deleted = deleted
+        self.isLocked = isLocked
+        self.starred = starred
+        self.folderId = folderId
     }
 
     // MARK: - Persistence Callbacks
@@ -108,15 +176,22 @@ struct TranscriptionSessionRecord: Codable, FetchableRecord, PersistableRecord, 
 
 /// Database record for individual transcription segments
 /// Stores the actual transcribed text with speaker and timing info
+/// Also serves as local cache for transcript segments synced from backend
 struct TranscriptionSegmentRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var id: Int64?
     var sessionId: Int64
-    var speaker: Int
+    var speaker: Int                      // Speaker ID (0, 1, 2, etc.)
     var text: String
     var startTime: Double
     var endTime: Double
     var segmentOrder: Int
     var createdAt: Date
+
+    // MARK: - Backend Segment Data (from TranscriptSegment)
+    var segmentId: String?                // Backend segment ID (different from local id)
+    var speakerLabel: String?             // Speaker label (e.g., "SPEAKER_00")
+    var isUser: Bool                      // Whether this segment is from the user
+    var personId: String?                 // Associated person ID (if identified)
 
     static let databaseTableName = "transcription_segments"
 
@@ -130,7 +205,12 @@ struct TranscriptionSegmentRecord: Codable, FetchableRecord, PersistableRecord, 
         startTime: Double,
         endTime: Double,
         segmentOrder: Int,
-        createdAt: Date = Date()
+        createdAt: Date = Date(),
+        // Backend segment data
+        segmentId: String? = nil,
+        speakerLabel: String? = nil,
+        isUser: Bool = false,
+        personId: String? = nil
     ) {
         self.id = id
         self.sessionId = sessionId
@@ -140,6 +220,11 @@ struct TranscriptionSegmentRecord: Codable, FetchableRecord, PersistableRecord, 
         self.endTime = endTime
         self.segmentOrder = segmentOrder
         self.createdAt = createdAt
+        // Backend segment data
+        self.segmentId = segmentId
+        self.speakerLabel = speakerLabel
+        self.isUser = isUser
+        self.personId = personId
     }
 
     // MARK: - Persistence Callbacks
