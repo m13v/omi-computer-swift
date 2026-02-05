@@ -1,6 +1,13 @@
 {
   "releases": [
     {
+      "version": "0.3.1",
+      "date": "2026-02-04",
+      "changes": [
+        "Fixed notifications not appearing when app is in foreground"
+      ]
+    },
+    {
       "version": "0.3.0",
       "date": "2026-02-04",
       "changes": [
