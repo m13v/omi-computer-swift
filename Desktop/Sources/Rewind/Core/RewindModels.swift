@@ -340,6 +340,7 @@ class RewindSettings: ObservableObject {
 
     /// Default apps that should be excluded from screen capture for privacy
     static let defaultExcludedApps: Set<String> = [
+        "Omi Computer",        // Our own app - no point capturing ourselves
         "Passwords",           // macOS Passwords app
         "1Password",           // 1Password (various versions)
         "1Password 7",
