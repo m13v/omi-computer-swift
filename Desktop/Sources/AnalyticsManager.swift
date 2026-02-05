@@ -573,6 +573,16 @@ class AnalyticsManager {
         PostHogManager.shared.notificationDismissed(notificationId: notificationId, title: title, assistantId: assistantId)
     }
 
+    func notificationWillPresent(notificationId: String, title: String) {
+        MixpanelManager.shared.notificationWillPresent(notificationId: notificationId, title: title)
+        PostHogManager.shared.notificationWillPresent(notificationId: notificationId, title: title)
+    }
+
+    func notificationDelegateReady() {
+        MixpanelManager.shared.notificationDelegateReady()
+        PostHogManager.shared.notificationDelegateReady()
+    }
+
     // MARK: - Menu Bar Events
 
     /// Track when user opens the menu bar dropdown
