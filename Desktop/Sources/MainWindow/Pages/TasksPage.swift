@@ -1191,34 +1191,26 @@ struct TaskRow: View {
                     viewModel.editingTask = task
                 }
             } label: {
-                VStack(alignment: .leading, spacing: 6) {
+                // Inline layout: title followed by metadata badges, wrapping if needed
+                FlowLayout(spacing: 6) {
                     Text(task.description)
                         .font(.system(size: 14))
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
-                        .lineLimit(3)
-                        .multilineTextAlignment(.leading)
 
-                    HStack(spacing: 8) {
-                        // Due date badge (color-coded)
-                        if let dueAt = task.dueAt {
-                            DueDateBadge(dueAt: dueAt, isCompleted: task.completed)
-                        }
+                    // Due date badge (color-coded)
+                    if let dueAt = task.dueAt {
+                        DueDateBadgeCompact(dueAt: dueAt, isCompleted: task.completed)
+                    }
 
-                        // Source badge
-                        if let source = task.source {
-                            SourceBadge(source: source, sourceLabel: task.sourceLabel, sourceIcon: task.sourceIcon)
-                        }
+                    // Source badge
+                    if let source = task.source {
+                        SourceBadgeCompact(source: source, sourceLabel: task.sourceLabel, sourceIcon: task.sourceIcon)
+                    }
 
-                        // Priority badge
-                        if let priority = task.priority, priority != "low" {
-                            PriorityBadge(priority: priority)
-                        }
-
-                        // Created date with full timestamp
-                        Text("created: \(task.createdAt.formatted(date: .abbreviated, time: .shortened))")
-                            .font(.system(size: 11))
-                            .foregroundColor(OmiColors.textTertiary)
+                    // Priority badge
+                    if let priority = task.priority, priority != "low" {
+                        PriorityBadgeCompact(priority: priority)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1463,6 +1455,165 @@ struct PriorityBadge: View {
             .font(.system(size: 10, weight: .medium))
             .foregroundColor(badgeColor)
             .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(badgeColor.opacity(0.15))
+            )
+    }
+}
+
+// MARK: - Flow Layout (for inline wrapping)
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = arrangeSubviews(proposal: proposal, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y), proposal: .unspecified)
+        }
+    }
+
+    private func arrangeSubviews(proposal: ProposedViewSize, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        let maxWidth = proposal.width ?? .infinity
+        var positions: [CGPoint] = []
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        var totalWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+
+            if currentX + size.width > maxWidth && currentX > 0 {
+                // Move to next line
+                currentX = 0
+                currentY += lineHeight + spacing
+                lineHeight = 0
+            }
+
+            positions.append(CGPoint(x: currentX, y: currentY))
+            lineHeight = max(lineHeight, size.height)
+            currentX += size.width + spacing
+            totalWidth = max(totalWidth, currentX - spacing)
+        }
+
+        return (CGSize(width: totalWidth, height: currentY + lineHeight), positions)
+    }
+}
+
+// MARK: - Compact Badges (for inline display)
+
+struct DueDateBadgeCompact: View {
+    let dueAt: Date
+    let isCompleted: Bool
+
+    private var badgeInfo: (text: String, color: Color) {
+        let calendar = Calendar.current
+        let now = Date()
+        let startOfToday = calendar.startOfDay(for: now)
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
+        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
+        let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfToday)!
+
+        if isCompleted {
+            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.textTertiary)
+        }
+
+        if dueAt < startOfToday {
+            let formatter = RelativeDateTimeFormatter()
+            formatter.unitsStyle = .short
+            return (formatter.localizedString(for: dueAt, relativeTo: now), Color.red.opacity(0.8))
+        } else if dueAt < startOfTomorrow {
+            return ("Today", .yellow)
+        } else if dueAt < startOfDayAfterTomorrow {
+            return ("Tomorrow", .blue)
+        } else if dueAt < endOfWeek {
+            let weekday = calendar.weekdaySymbols[calendar.component(.weekday, from: dueAt) - 1]
+            return (weekday, .green)
+        } else {
+            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.purplePrimary)
+        }
+    }
+
+    var body: some View {
+        let info = badgeInfo
+        HStack(spacing: 3) {
+            Image(systemName: "calendar")
+                .font(.system(size: 9))
+            Text(info.text)
+                .font(.system(size: 11, weight: .medium))
+        }
+        .foregroundColor(info.color)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(info.color.opacity(0.15))
+        )
+    }
+}
+
+struct SourceBadgeCompact: View {
+    let source: String
+    let sourceLabel: String
+    let sourceIcon: String
+
+    private var badgeColor: Color {
+        switch source {
+        case "screenshot":
+            return .blue
+        case "transcription:omi", "transcription:desktop", "transcription:phone":
+            return .green
+        case "manual":
+            return .orange
+        default:
+            return OmiColors.textTertiary
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Image(systemName: sourceIcon)
+                .font(.system(size: 8))
+            Text(sourceLabel)
+                .font(.system(size: 10, weight: .medium))
+        }
+        .foregroundColor(badgeColor)
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(
+            Capsule()
+                .fill(badgeColor.opacity(0.15))
+        )
+    }
+}
+
+struct PriorityBadgeCompact: View {
+    let priority: String
+
+    private var badgeColor: Color {
+        switch priority {
+        case "high":
+            return .red
+        case "medium":
+            return .orange
+        default:
+            return OmiColors.textTertiary
+        }
+    }
+
+    var body: some View {
+        Text(priority.capitalized)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(badgeColor)
+            .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(
                 Capsule()
