@@ -1,19 +1,89 @@
 import SwiftUI
 import MarkdownUI
+import AppKit
 
 // MARK: - Scroll Position Tracking
 
-private struct ScrollOffsetPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
+/// Detects scroll position changes by observing the underlying NSScrollView
+struct ScrollPositionDetector: NSViewRepresentable {
+    let onScrollPositionChange: (Bool) -> Void  // true if at bottom
 
-private struct ScrollViewHeightPreferenceKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        // Delay to ensure scroll view is in hierarchy
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            context.coordinator.setupScrollObserver(for: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onScrollPositionChange: onScrollPositionChange)
+    }
+
+    class Coordinator: NSObject {
+        let onScrollPositionChange: (Bool) -> Void
+        private var scrollView: NSScrollView?
+        private var observation: NSObjectProtocol?
+
+        init(onScrollPositionChange: @escaping (Bool) -> Void) {
+            self.onScrollPositionChange = onScrollPositionChange
+        }
+
+        func setupScrollObserver(for view: NSView) {
+            // Find the enclosing NSScrollView
+            var current: NSView? = view
+            while let v = current {
+                if let sv = v as? NSScrollView {
+                    scrollView = sv
+                    break
+                }
+                current = v.superview
+            }
+
+            guard let scrollView = scrollView,
+                  let clipView = scrollView.contentView as? NSClipView else {
+                return
+            }
+
+            // Observe bounds changes (scroll events)
+            clipView.postsBoundsChangedNotifications = true
+            observation = NotificationCenter.default.addObserver(
+                forName: NSView.boundsDidChangeNotification,
+                object: clipView,
+                queue: .main
+            ) { [weak self] _ in
+                self?.checkScrollPosition()
+            }
+
+            // Initial check
+            checkScrollPosition()
+        }
+
+        func checkScrollPosition() {
+            guard let scrollView = scrollView,
+                  let documentView = scrollView.documentView else { return }
+
+            let clipBounds = scrollView.contentView.bounds
+            let documentHeight = documentView.frame.height
+            let visibleMaxY = clipBounds.origin.y + clipBounds.height
+            let threshold: CGFloat = 50
+
+            // At bottom if we can see within threshold of the document bottom
+            let isAtBottom = visibleMaxY >= documentHeight - threshold
+
+            DispatchQueue.main.async {
+                self.onScrollPositionChange(isAtBottom)
+            }
+        }
+
+        deinit {
+            if let observation = observation {
+                NotificationCenter.default.removeObserver(observation)
+            }
+        }
     }
 }
 
@@ -28,9 +98,8 @@ struct ChatPage: View {
     @State private var isLoadingCitation = false
     @FocusState private var isInputFocused: Bool
 
-    // Smart scroll state
+    // Smart scroll state - tracks if user has scrolled away from bottom
     @State private var isUserAtBottom = true
-    @State private var scrollViewHeight: CGFloat = 0
 
     var selectedApp: OmiApp? {
         guard let appId = chatProvider.selectedAppId else { return nil }
@@ -333,37 +402,14 @@ struct ChatPage: View {
                     }
                     .padding()
                     .background(
-                        GeometryReader { contentGeometry in
-                            Color.clear
-                                .preference(
-                                    key: ScrollOffsetPreferenceKey.self,
-                                    value: contentGeometry.frame(in: .named("chatScroll")).maxY
-                                )
+                        // Invisible scroll position detector
+                        ScrollPositionDetector { atBottom in
+                            if isUserAtBottom != atBottom {
+                                log("SCROLL: isUserAtBottom changed to \(atBottom)")
+                                isUserAtBottom = atBottom
+                            }
                         }
                     )
-                }
-                .coordinateSpace(name: "chatScroll")
-                .background(
-                    GeometryReader { scrollGeometry in
-                        Color.clear
-                            .preference(
-                                key: ScrollViewHeightPreferenceKey.self,
-                                value: scrollGeometry.size.height
-                            )
-                    }
-                )
-                .onPreferenceChange(ScrollViewHeightPreferenceKey.self) { height in
-                    scrollViewHeight = height
-                }
-                .onPreferenceChange(ScrollOffsetPreferenceKey.self) { contentMaxY in
-                    // User is "at bottom" if content bottom is within 100pt of scroll view bottom
-                    // This threshold allows for some tolerance when content is near the bottom
-                    let threshold: CGFloat = 100
-                    let wasAtBottom = isUserAtBottom
-                    isUserAtBottom = contentMaxY <= scrollViewHeight + threshold
-                    if wasAtBottom != isUserAtBottom {
-                        log("SCROLL: isUserAtBottom changed to \(isUserAtBottom) - contentMaxY: \(contentMaxY), scrollViewHeight: \(scrollViewHeight), threshold: \(threshold)")
-                    }
                 }
                 .onChange(of: chatProvider.messages.count) { oldCount, newCount in
                     log("SCROLL: messages.count changed from \(oldCount) to \(newCount), isUserAtBottom: \(isUserAtBottom)")
