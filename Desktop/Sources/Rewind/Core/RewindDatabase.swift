@@ -1489,4 +1489,35 @@ actor RewindDatabase {
             return (totalCount, indexedCount, oldestDate, newestDate)
         }
     }
+
+    /// Delete all screenshots from a corrupted video chunk
+    /// Returns the number of deleted records
+    func deleteScreenshotsFromVideoChunk(videoChunkPath: String) throws -> Int {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        let deletedCount = try dbQueue.write { db -> Int in
+            // Get count before deletion
+            let count = try Int.fetchOne(
+                db,
+                sql: "SELECT COUNT(*) FROM screenshots WHERE videoChunkPath = ?",
+                arguments: [videoChunkPath]
+            ) ?? 0
+
+            // Delete all records for this chunk
+            try db.execute(
+                sql: "DELETE FROM screenshots WHERE videoChunkPath = ?",
+                arguments: [videoChunkPath]
+            )
+
+            return count
+        }
+
+        if deletedCount > 0 {
+            log("RewindDatabase: Deleted \(deletedCount) screenshots from corrupted chunk: \(videoChunkPath)")
+        }
+
+        return deletedCount
+    }
 }
