@@ -181,7 +181,7 @@ struct ConversationsPage: View {
                         Text("Notes")
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundColor(isNotesPanelVisible ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                    .foregroundColor(isNotesPanelVisible ? OmiColors.textPrimary : OmiColors.textTertiary)
                 }
                 .buttonStyle(.plain)
             }
@@ -290,7 +290,7 @@ struct ConversationsPage: View {
                     }) {
                         Text(isMultiSelectMode ? "Cancel" : "Select")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(isMultiSelectMode ? OmiColors.error : OmiColors.purplePrimary)
+                            .foregroundColor(isMultiSelectMode ? OmiColors.error : OmiColors.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -572,16 +572,16 @@ struct ConversationsPage: View {
                             .font(.system(size: 12, weight: .medium))
                     }
                 }
-                .foregroundColor(appState.selectedDateFilter != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                .foregroundColor(appState.selectedDateFilter != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(appState.selectedDateFilter != nil ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary.opacity(0.6))
+                        .fill(appState.selectedDateFilter != nil ? Color.white : OmiColors.backgroundTertiary.opacity(0.6))
                 )
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
-                        .stroke(appState.selectedDateFilter != nil ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+                        .stroke(appState.selectedDateFilter != nil ? OmiColors.border : Color.clear, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -626,16 +626,16 @@ struct ConversationsPage: View {
                                 .font(.system(size: 12, weight: .medium))
                         }
                     }
-                    .foregroundColor(appState.selectedFolderId != nil ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                    .foregroundColor(appState.selectedFolderId != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(appState.selectedFolderId != nil ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary.opacity(0.6))
+                            .fill(appState.selectedFolderId != nil ? Color.white : OmiColors.backgroundTertiary.opacity(0.6))
                     )
                     .overlay(
                         RoundedRectangle(cornerRadius: 8)
-                            .stroke(appState.selectedFolderId != nil ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1)
+                            .stroke(appState.selectedFolderId != nil ? OmiColors.border : Color.clear, lineWidth: 1)
                     )
                 }
                 .buttonStyle(.plain)
@@ -743,14 +743,14 @@ struct ConversationsPage: View {
                         if appState.selectedFolderId == folder.id {
                             Image(systemName: "checkmark")
                                 .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(OmiColors.purplePrimary)
+                                .foregroundColor(OmiColors.textPrimary)
                         }
                     }
                     .padding(.horizontal, 8)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(appState.selectedFolderId == folder.id ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+                            .fill(appState.selectedFolderId == folder.id ? OmiColors.backgroundTertiary : Color.clear)
                     )
                 }
                 .buttonStyle(.plain)
@@ -802,12 +802,16 @@ struct ConversationsPage: View {
                     Text("Merge")
                         .font(.system(size: 13, weight: .semibold))
                 }
-                .foregroundColor(.white)
+                .foregroundColor(selectedConversationIds.count >= 2 ? OmiColors.textPrimary : OmiColors.textTertiary)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .background(
                     Capsule()
-                        .fill(selectedConversationIds.count >= 2 ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        .fill(selectedConversationIds.count >= 2 ? Color.white : OmiColors.backgroundTertiary)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(selectedConversationIds.count >= 2 ? OmiColors.border : Color.clear, lineWidth: 1)
                 )
             }
             .buttonStyle(.plain)
@@ -1052,12 +1056,16 @@ struct ConversationsPage: View {
                 Text("Stop Recording")
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(.white)
+            .foregroundColor(OmiColors.textPrimary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(OmiColors.purplePrimary)
+                    .fill(Color.white)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(OmiColors.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1073,12 +1081,16 @@ struct ConversationsPage: View {
                 Text("Start Recording")
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(.white)
+            .foregroundColor(OmiColors.textPrimary)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
                 Capsule()
-                    .fill(OmiColors.purplePrimary)
+                    .fill(Color.white)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(OmiColors.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1105,7 +1117,7 @@ private struct TranscriptNotesDivider: View {
 
     var body: some View {
         Rectangle()
-            .fill(isDragging ? OmiColors.purplePrimary : OmiColors.border)
+            .fill(isDragging ? OmiColors.textSecondary : OmiColors.border)
             .frame(width: 1)
             .contentShape(Rectangle().inset(by: -4)) // Larger hit area
             .onHover { hovering in
