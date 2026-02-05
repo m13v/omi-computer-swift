@@ -798,80 +798,17 @@ struct RewindPage: View {
 
         isLoadingFrame = true
 
-        // Track corrupted chunks we've already tried to skip them
-        var triedCorruptedChunks = Set<String>()
-
-        // Helper to check if a screenshot is from a known corrupted chunk
-        func isFromCorruptedChunk(_ screenshot: Screenshot) async -> Bool {
-            guard let chunkPath = screenshot.videoChunkPath else { return false }
-            if triedCorruptedChunks.contains(chunkPath) { return true }
-            if await RewindStorage.shared.isChunkCorrupted(chunkPath) {
-                triedCorruptedChunks.insert(chunkPath)
-                return true
-            }
-            return false
+        // Try to load the current frame
+        if let image = await tryLoadFrame(at: currentIndex) {
+            currentImage = image
+            viewModel.selectScreenshot(screenshots[currentIndex])
+            isLoadingFrame = false
+            return
         }
 
-        // Try to load current frame
-        let currentScreenshot = screenshots[currentIndex]
-        if await !isFromCorruptedChunk(currentScreenshot) {
-            if let image = await tryLoadFrame(at: currentIndex) {
-                currentImage = image
-                viewModel.selectScreenshot(currentScreenshot)
-                isLoadingFrame = false
-                return
-            }
-            // Mark as tried if it was from a video chunk
-            if let chunkPath = currentScreenshot.videoChunkPath {
-                triedCorruptedChunks.insert(chunkPath)
-            }
-        }
-
-        // Current frame failed - search for first valid frame, skipping corrupted chunks
-        for offset in 1..<screenshots.count {
-            // Try forward
-            let forwardIndex = currentIndex + offset
-            if forwardIndex < screenshots.count {
-                let forwardScreenshot = screenshots[forwardIndex]
-                if await !isFromCorruptedChunk(forwardScreenshot) {
-                    if let image = await tryLoadFrame(at: forwardIndex) {
-                        currentIndex = forwardIndex
-                        currentImage = image
-                        viewModel.selectScreenshot(forwardScreenshot)
-                        isLoadingFrame = false
-                        log("RewindPage: Skipped to valid frame at index \(forwardIndex), imageSize=\(image.size), screenshotsCount=\(screenshots.count)")
-                        return
-                    }
-                    if let chunkPath = forwardScreenshot.videoChunkPath {
-                        triedCorruptedChunks.insert(chunkPath)
-                    }
-                }
-            }
-
-            // Try backward
-            let backwardIndex = currentIndex - offset
-            if backwardIndex >= 0 {
-                let backwardScreenshot = screenshots[backwardIndex]
-                if await !isFromCorruptedChunk(backwardScreenshot) {
-                    if let image = await tryLoadFrame(at: backwardIndex) {
-                        currentIndex = backwardIndex
-                        currentImage = image
-                        viewModel.selectScreenshot(backwardScreenshot)
-                        isLoadingFrame = false
-                        log("RewindPage: Skipped to valid frame at index \(backwardIndex)")
-                        return
-                    }
-                    if let chunkPath = backwardScreenshot.videoChunkPath {
-                        triedCorruptedChunks.insert(chunkPath)
-                    }
-                }
-            }
-        }
-
-        // No valid frames found
-        currentImage = nil
+        // Frame failed to load (likely in an unfinalized video chunk).
+        // Do NOT move currentIndex — keep the user's position and show the last valid image.
         isLoadingFrame = false
-        logError("RewindPage: No valid frames found (skipped \(triedCorruptedChunks.count) corrupted chunks)")
     }
 
     /// Try to load a frame at a specific index, returns nil if failed
@@ -889,17 +826,23 @@ struct RewindPage: View {
             }
             return image
         } catch let error as RewindError {
-            // Handle corrupted video chunk - clean it up in background
+            // Handle corrupted video chunk - but don't delete the active chunk being written
             if case .corruptedVideoChunk(let chunkPath) = error {
-                log("RewindPage: Detected corrupted chunk at index \(index): \(chunkPath), cleaning up...")
-                Task {
-                    do {
-                        let deleted = try await RewindStorage.shared.cleanupCorruptedChunk(chunkPath)
-                        log("RewindPage: Cleaned up corrupted chunk, removed \(deleted) entries")
-                        // Refresh the view model data after cleanup
-                        await viewModel.refresh()
-                    } catch {
-                        logError("RewindPage: Failed to cleanup corrupted chunk: \(error.localizedDescription)")
+                let activeChunk = await VideoChunkEncoder.shared.currentChunkPath
+                if chunkPath == activeChunk {
+                    // This chunk is still being recorded — not corrupted, just not finalized yet
+                    log("RewindPage: Frame at index \(index) is in active chunk \(chunkPath), not yet available")
+                } else {
+                    // Truly corrupted (old chunk) - clean it up
+                    log("RewindPage: Detected corrupted chunk at index \(index): \(chunkPath), cleaning up...")
+                    Task {
+                        do {
+                            let deleted = try await RewindStorage.shared.cleanupCorruptedChunk(chunkPath)
+                            log("RewindPage: Cleaned up corrupted chunk, removed \(deleted) entries")
+                            await viewModel.refresh()
+                        } catch {
+                            logError("RewindPage: Failed to cleanup corrupted chunk: \(error.localizedDescription)")
+                        }
                     }
                 }
                 return nil
