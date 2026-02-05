@@ -149,6 +149,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
+        // Initialize NotificationService early to set up UNUserNotificationCenterDelegate
+        // This ensures notifications display properly when app is in foreground
+        _ = NotificationService.shared
+
         // Initialize Sentry for crash reporting and error tracking (including dev builds)
         let isDev = AnalyticsManager.isDevBuild
         SentrySDK.start { options in
