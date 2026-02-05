@@ -175,7 +175,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         setupDockIconObservers()
 
         // Set up menu bar icon with NSStatusBar (more reliable than SwiftUI MenuBarExtra)
-        Task { @MainActor in
+        // Called synchronously on main thread to ensure status item is created before app finishes launching
+        DispatchQueue.main.async {
             self.setupMenuBar()
         }
 
@@ -349,8 +350,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Set up menu bar icon using NSStatusBar (more reliable than SwiftUI MenuBarExtra)
-    @MainActor private func setupMenuBar() {
+    private func setupMenuBar() {
         log("AppDelegate: [MENUBAR] Setting up NSStatusBar menu (macOS \(ProcessInfo.processInfo.operatingSystemVersionString))")
+        log("AppDelegate: [MENUBAR] Thread: \(Thread.isMainThread ? "main" : "background"), statusBar items: \(NSStatusBar.system.thickness)")
 
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
 
@@ -437,6 +439,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         statusBarItem.menu = menu
         menu.delegate = self
         log("AppDelegate: [MENUBAR] Menu bar setup completed - icon visible in status bar")
+
+        // Verify the status item is valid
+        if let button = statusBarItem.button {
+            log("AppDelegate: [MENUBAR] VERIFY - button exists, frame: \(button.frame), isHidden: \(button.isHidden)")
+        } else {
+            log("AppDelegate: [MENUBAR] VERIFY - WARNING: button is nil after setup!")
+        }
     }
 
     @MainActor @objc private func openOmiFromMenu() {

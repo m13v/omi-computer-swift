@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.3.4",
+      "date": "2026-02-05",
+      "changes": [
+        "Fixed menu bar timing issue on macOS Sequoia",
+        "Added menu bar button verification logging"
+      ]
+    },
+    {
       "version": "0.3.3",
       "date": "2026-02-05",
       "changes": [
