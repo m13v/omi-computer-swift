@@ -82,29 +82,19 @@ struct OMIApp: App {
     }
 
     var body: some Scene {
-        // Main desktop window - shows different content based on launch mode
+        // Main desktop window - same view for both modes, sidebar hidden in rewind mode
         Window(windowTitle, id: "main") {
-            Group {
-                if Self.launchMode == .rewind {
-                    RewindOnlyView()
-                } else {
-                    DesktopHomeView()
+            DesktopHomeView()
+                .onAppear {
+                    log("OmiApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
                 }
-            }
-            .onAppear {
-                log("OmiApp: Main window content appeared (mode: \(Self.launchMode.rawValue))")
-            }
         }
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
 
-        // Menu bar - simplified in rewind mode
+        // Menu bar - full menu for both modes
         MenuBarExtra {
-            if Self.launchMode == .rewind {
-                RewindMenuBarView(openMain: { openWindow(id: "main") })
-            } else {
-                MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
-            }
+            MenuBarView(appState: appState, authState: authState, openMain: { openWindow(id: "main") })
         } label: {
             Text(Self.launchMode == .rewind ? "Rewind" : "Omi")
         }
