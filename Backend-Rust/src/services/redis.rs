@@ -177,4 +177,82 @@ impl RedisService {
 
         Ok(result)
     }
+
+    // ============================================================================
+    // APP REVIEWS - matches Python backend redis_db.py
+    // ============================================================================
+
+    /// Review data stored in Redis
+    #[derive(Debug, Clone)]
+    pub struct RedisReview {
+        pub score: i32,
+    }
+
+    /// Get reviews for multiple apps
+    /// Key format: plugins:{app_id}:reviews
+    /// Returns a HashMap of app_id -> HashMap of uid -> review
+    /// Python stores reviews as: {uid: {score: int, review: str, ...}}
+    pub async fn get_apps_reviews(
+        &self,
+        app_ids: &[String],
+    ) -> Result<std::collections::HashMap<String, Vec<RedisReview>>, redis::RedisError> {
+        if app_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+
+        let mut conn = self.get_connection().await?;
+        let keys: Vec<String> = app_ids
+            .iter()
+            .map(|id| format!("plugins:{}:reviews", id))
+            .collect();
+
+        let reviews_data: Vec<Option<String>> = conn.mget(&keys).await?;
+
+        let mut result: std::collections::HashMap<String, Vec<RedisReview>> =
+            std::collections::HashMap::new();
+
+        for (id, data) in app_ids.iter().zip(reviews_data.iter()) {
+            if let Some(raw) = data {
+                // Python stores reviews as a dict: {uid: {score: int, review: str, ...}}
+                // We need to parse this to extract scores
+                let reviews = parse_python_reviews(raw);
+                if !reviews.is_empty() {
+                    result.insert(id.clone(), reviews);
+                }
+            }
+        }
+
+        Ok(result)
+    }
+}
+
+/// Parse Python dict format for reviews
+/// Format: {'uid1': {'score': 5, 'review': 'text', ...}, 'uid2': {...}}
+fn parse_python_reviews(raw: &str) -> Vec<RedisReview> {
+    let mut reviews = Vec::new();
+
+    // Try to parse as JSON first (newer format)
+    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(raw) {
+        if let Some(obj) = parsed.as_object() {
+            for (_uid, review) in obj {
+                if let Some(score) = review.get("score").and_then(|s| s.as_i64()) {
+                    reviews.push(RedisReview { score: score as i32 });
+                }
+            }
+        }
+        return reviews;
+    }
+
+    // Fallback: parse Python dict format using regex
+    // Looking for 'score': <number> patterns
+    let score_regex = regex::Regex::new(r"'score':\s*(\d+)").unwrap();
+    for cap in score_regex.captures_iter(raw) {
+        if let Some(score_match) = cap.get(1) {
+            if let Ok(score) = score_match.as_str().parse::<i32>() {
+                reviews.push(RedisReview { score });
+            }
+        }
+    }
+
+    reviews
 }
