@@ -209,19 +209,4 @@ class TranscriptionRetryService {
         }
     }
 
-    // MARK: - Cleanup
-
-    /// Clean up old completed sessions (call periodically or on app launch)
-    func cleanupOldSessions() async {
-        do {
-            // Delete completed sessions older than 7 days
-            let cutoffDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-            let deletedCount = try await TranscriptionStorage.shared.deleteCompletedSessionsOlderThan(cutoffDate)
-            if deletedCount > 0 {
-                log("TranscriptionRetryService: Cleaned up \(deletedCount) old completed sessions")
-            }
-        } catch {
-            logError("TranscriptionRetryService: Cleanup failed", error: error)
-        }
-    }
 }
