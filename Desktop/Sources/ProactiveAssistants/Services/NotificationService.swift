@@ -48,6 +48,9 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().delegate = self
         // Set up notification categories for tracking
         setupNotificationCategories()
+        // Track that delegate is ready
+        AnalyticsManager.shared.notificationDelegateReady()
+        log("NotificationService: Delegate initialized and ready")
     }
 
     /// Set up notification categories to enable dismiss tracking
@@ -85,6 +88,12 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        // Track that willPresent was called (confirms delegate is working)
+        let notificationId = notification.request.identifier
+        let title = notification.request.content.title
+        Task { @MainActor in
+            AnalyticsManager.shared.notificationWillPresent(notificationId: notificationId, title: title)
+        }
         // Show banner, play sound, and update badge even when app is frontmost
         completionHandler([.banner, .sound, .badge])
     }
