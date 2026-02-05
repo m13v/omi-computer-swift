@@ -355,4 +355,122 @@ actor TranscriptionStorage {
             return (total, pending, failed, completed)
         }
     }
+
+    // MARK: - Backend Sync Operations
+
+    /// Get a session by backend ID
+    func getSessionByBackendId(_ backendId: String) async throws -> TranscriptionSessionRecord? {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try TranscriptionSessionRecord
+                .filter(Column("backendId") == backendId)
+                .fetchOne(database)
+        }
+    }
+
+    /// Upsert a session from a ServerConversation (insert if not exists, update if exists)
+    /// Returns the local session ID
+    @discardableResult
+    func upsertFromServerConversation(_ conversation: ServerConversation) async throws -> Int64 {
+        let db = try await ensureInitialized()
+
+        return try await db.write { database -> Int64 in
+            // Check if session already exists by backendId
+            if var existingSession = try TranscriptionSessionRecord
+                .filter(Column("backendId") == conversation.id)
+                .fetchOne(database) {
+                // Update existing session
+                existingSession.updateFrom(conversation)
+                try existingSession.update(database)
+                log("TranscriptionStorage: Updated session \(existingSession.id!) from backend \(conversation.id)")
+                return existingSession.id!
+            } else {
+                // Insert new session
+                var newSession = TranscriptionSessionRecord.from(conversation)
+                try newSession.insert(database)
+                log("TranscriptionStorage: Inserted new session \(newSession.id!) from backend \(conversation.id)")
+                return newSession.id!
+            }
+        }
+    }
+
+    /// Upsert segments from a ServerConversation
+    /// Deletes existing segments and re-inserts from conversation
+    func upsertSegmentsFromServerConversation(_ conversation: ServerConversation, sessionId: Int64) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            // Delete existing segments for this session
+            try database.execute(
+                sql: "DELETE FROM transcription_segments WHERE sessionId = ?",
+                arguments: [sessionId]
+            )
+
+            // Insert new segments
+            for (index, segment) in conversation.transcriptSegments.enumerated() {
+                var record = TranscriptionSegmentRecord.from(segment, sessionId: sessionId, segmentOrder: index)
+                try record.insert(database)
+            }
+
+            log("TranscriptionStorage: Upserted \(conversation.transcriptSegments.count) segments for session \(sessionId)")
+        }
+    }
+
+    /// Sync a full ServerConversation (session + segments) to local storage
+    @discardableResult
+    func syncServerConversation(_ conversation: ServerConversation) async throws -> Int64 {
+        // First upsert the session
+        let sessionId = try await upsertFromServerConversation(conversation)
+
+        // Then upsert the segments
+        try await upsertSegmentsFromServerConversation(conversation, sessionId: sessionId)
+
+        return sessionId
+    }
+
+    /// Get all sessions synced from backend (for display in Conversations page)
+    func getSyncedSessions(limit: Int = 100, offset: Int = 0) async throws -> [TranscriptionSessionRecord] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try TranscriptionSessionRecord
+                .filter(Column("backendSynced") == true)
+                .filter(Column("deleted") == false)
+                .filter(Column("discarded") == false)
+                .order(Column("startedAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(database)
+        }
+    }
+
+    /// Update starred status for a session
+    func updateStarred(id: Int64, starred: Bool) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            guard var record = try TranscriptionSessionRecord.fetchOne(database, key: id) else {
+                throw TranscriptionStorageError.sessionNotFound
+            }
+
+            record.starred = starred
+            record.updatedAt = Date()
+            try record.update(database)
+        }
+
+        log("TranscriptionStorage: Updated starred=\(starred) for session \(id)")
+    }
+
+    /// Get starred sessions
+    func getStarredSessions() async throws -> [TranscriptionSessionRecord] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try TranscriptionSessionRecord
+                .filter(Column("starred") == true)
+                .filter(Column("deleted") == false)
+                .order(Column("startedAt").desc)
+                .fetchAll(database)
+        }
+    }
 }
