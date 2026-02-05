@@ -225,7 +225,7 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         // Start capture timer (invalidate any orphaned timer first as safety measure)
         captureTimer?.invalidate()
-        captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.captureFrame()
             }
@@ -644,7 +644,7 @@ public class ProactiveAssistantsPlugin: NSObject {
             screenCaptureService = ScreenCaptureService()
 
             // Restart capture timer
-            captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     await self?.captureFrame()
                 }
@@ -783,7 +783,7 @@ public class ProactiveAssistantsPlugin: NSObject {
         captureTimer = nil
 
         // Start recovery timer - check every 1 second if we can capture again
-        captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 await self?.attemptRecovery()
             }
@@ -842,7 +842,7 @@ public class ProactiveAssistantsPlugin: NSObject {
 
             // Restart normal capture timer
             captureTimer?.invalidate()
-            captureTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     await self?.captureFrame()
                 }
