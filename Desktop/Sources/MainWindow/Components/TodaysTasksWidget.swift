@@ -209,16 +209,16 @@ struct TaskRowView: View {
                     .strikethrough(task.completed)
                     .lineLimit(2)
 
-                // Due date chip (subtle red tint if overdue, like Flutter)
+                // Due date chip
                 if showDueDate, let dueAt = task.dueAt {
                     Text(formatDueDate(dueAt))
                         .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(taskIsOverdue ? Color.red.opacity(0.8) : OmiColors.textTertiary)
+                        .foregroundColor(.black)
                         .padding(.horizontal, 6)
                         .padding(.vertical, 2)
                         .background(
                             Capsule()
-                                .fill(taskIsOverdue ? Color.red.opacity(0.12) : OmiColors.backgroundQuaternary.opacity(0.5))
+                                .fill(Color.white)
                         )
                 }
             }
@@ -226,10 +226,16 @@ struct TaskRowView: View {
             Spacer()
 
             // Priority indicator
-            if let priority = task.priority {
-                Circle()
-                    .fill(priorityColor(priority))
-                    .frame(width: 8, height: 8)
+            if let priority = task.priority, priority != "low" {
+                Text(priority.capitalized)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.white)
+                    )
             }
         }
         .padding(.vertical, 6)
@@ -238,15 +244,6 @@ struct TaskRowView: View {
             RoundedRectangle(cornerRadius: 8)
                 .fill(task.completed ? OmiColors.backgroundQuaternary.opacity(0.3) : Color.clear)
         )
-    }
-
-    private func priorityColor(_ priority: String) -> Color {
-        switch priority {
-        case "high": return .red
-        case "medium": return .orange
-        case "low": return .blue
-        default: return OmiColors.textQuaternary
-        }
     }
 
     private func formatDueDate(_ date: Date) -> String {
