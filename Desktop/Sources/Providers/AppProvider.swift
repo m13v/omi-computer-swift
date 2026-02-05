@@ -24,6 +24,11 @@ class AppProvider: ObservableObject {
 
     @Published var errorMessage: String?
     @Published var categoryFilteredApps: [OmiApp]?
+    @Published var hasMoreCategoryApps = false
+    @Published var isLoadingMore = false
+
+    private var categoryFilterOffset = 0
+    private let categoryPageSize = 50
 
     private let apiClient = APIClient.shared
 
@@ -130,16 +135,44 @@ class AppProvider: ObservableObject {
     /// Fetch apps for a specific category from the API
     func fetchAppsForCategory(_ categoryId: String) async {
         isSearching = true
+        categoryFilterOffset = 0
         defer { isSearching = false }
 
         do {
-            let results = try await apiClient.getApps(category: categoryId, limit: 100)
+            let results = try await apiClient.getApps(category: categoryId, limit: categoryPageSize, offset: 0)
             categoryFilteredApps = results
+            hasMoreCategoryApps = results.count >= categoryPageSize
             log("Fetched \(results.count) apps for category \(categoryId)")
         } catch {
             logError("Failed to fetch apps for category \(categoryId)", error: error)
             // Fallback to client-side filtering
             categoryFilteredApps = apps.filter { $0.category == categoryId }
+            hasMoreCategoryApps = false
+        }
+    }
+
+    /// Load more apps for the current category (pagination)
+    func loadMoreCategoryApps() async {
+        guard let categoryId = selectedCategory,
+              hasMoreCategoryApps,
+              !isLoadingMore else { return }
+
+        isLoadingMore = true
+        let newOffset = categoryFilterOffset + categoryPageSize
+        defer { isLoadingMore = false }
+
+        do {
+            let results = try await apiClient.getApps(category: categoryId, limit: categoryPageSize, offset: newOffset)
+            if !results.isEmpty {
+                categoryFilteredApps?.append(contentsOf: results)
+                categoryFilterOffset = newOffset
+                hasMoreCategoryApps = results.count >= categoryPageSize
+                log("Loaded \(results.count) more apps for category \(categoryId)")
+            } else {
+                hasMoreCategoryApps = false
+            }
+        } catch {
+            logError("Failed to load more apps for category \(categoryId)", error: error)
         }
     }
 
@@ -147,6 +180,8 @@ class AppProvider: ObservableObject {
     func clearCategoryFilter() {
         selectedCategory = nil
         categoryFilteredApps = nil
+        categoryFilterOffset = 0
+        hasMoreCategoryApps = false
     }
 
     /// Fetch user's enabled apps
