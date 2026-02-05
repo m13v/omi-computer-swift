@@ -11,6 +11,7 @@ class TaskAssistantSettings {
     private let analysisPromptKey = "taskAnalysisPrompt"
     private let extractionIntervalKey = "taskExtractionInterval"
     private let minConfidenceKey = "taskMinConfidence"
+    private let excludedAppsKey = "taskExcludedApps"
 
     // MARK: - Default Values
 
@@ -282,6 +283,41 @@ class TaskAssistantSettings {
         }
     }
 
+    /// Apps excluded from task extraction (screenshots still captured for other features)
+    var excludedApps: Set<String> {
+        get {
+            if let saved = UserDefaults.standard.array(forKey: excludedAppsKey) as? [String] {
+                return Set(saved)
+            }
+            return []
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: excludedAppsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Check if an app is excluded from task extraction
+    func isAppExcluded(_ appName: String) -> Bool {
+        excludedApps.contains(appName)
+    }
+
+    /// Add an app to the task extraction exclusion list
+    func excludeApp(_ appName: String) {
+        var apps = excludedApps
+        apps.insert(appName)
+        excludedApps = apps
+        log("Task: Excluded app '\(appName)' from task extraction")
+    }
+
+    /// Remove an app from the task extraction exclusion list
+    func includeApp(_ appName: String) {
+        var apps = excludedApps
+        apps.remove(appName)
+        excludedApps = apps
+        log("Task: Included app '\(appName)' for task extraction")
+    }
+
     /// Reset only the analysis prompt to default
     func resetPromptToDefault() {
         UserDefaults.standard.removeObject(forKey: analysisPromptKey)
@@ -294,6 +330,7 @@ class TaskAssistantSettings {
         isEnabled = defaultEnabled
         extractionInterval = defaultExtractionInterval
         minConfidence = defaultMinConfidence
+        excludedApps = []
         resetPromptToDefault()
     }
 }
