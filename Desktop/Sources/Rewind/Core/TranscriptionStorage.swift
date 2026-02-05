@@ -473,4 +473,68 @@ actor TranscriptionStorage {
                 .fetchAll(database)
         }
     }
+
+    /// Get conversations from local storage as ServerConversation objects
+    /// Used for instant display before API fetch completes
+    func getLocalConversations(
+        limit: Int = 50,
+        offset: Int = 0,
+        starredOnly: Bool = false,
+        folderId: String? = nil
+    ) async throws -> [ServerConversation] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = TranscriptionSessionRecord
+                .filter(Column("backendSynced") == true)
+                .filter(Column("deleted") == false)
+                .filter(Column("discarded") == false)
+
+            if starredOnly {
+                query = query.filter(Column("starred") == true)
+            }
+
+            if let folderId = folderId {
+                query = query.filter(Column("folderId") == folderId)
+            }
+
+            let sessions = try query
+                .order(Column("startedAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(database)
+
+            // Convert each session to ServerConversation
+            var conversations: [ServerConversation] = []
+            for session in sessions {
+                let segments = try TranscriptionSegmentRecord
+                    .filter(Column("sessionId") == session.id)
+                    .order(Column("segmentOrder").asc)
+                    .fetchAll(database)
+
+                if let conversation = session.toServerConversation(segments: segments) {
+                    conversations.append(conversation)
+                }
+            }
+
+            return conversations
+        }
+    }
+
+    /// Get count of local conversations
+    func getLocalConversationsCount(starredOnly: Bool = false) async throws -> Int {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = TranscriptionSessionRecord
+                .filter(Column("backendSynced") == true)
+                .filter(Column("deleted") == false)
+                .filter(Column("discarded") == false)
+
+            if starredOnly {
+                query = query.filter(Column("starred") == true)
+            }
+
+            return try query.fetchCount(database)
+        }
+    }
 }
