@@ -330,31 +330,6 @@ actor TranscriptionStorage {
         }
     }
 
-    // MARK: - Cleanup
-
-    /// Delete completed sessions older than the specified date
-    func deleteCompletedSessionsOlderThan(_ date: Date) async throws -> Int {
-        let db = try await ensureInitialized()
-
-        return try await db.write { database in
-            let count = try Int.fetchOne(
-                database,
-                sql: """
-                    SELECT COUNT(*) FROM transcription_sessions
-                    WHERE status = ? AND createdAt < ?
-                    """,
-                arguments: [TranscriptionSessionStatus.completed.rawValue, date]
-            ) ?? 0
-
-            try database.execute(
-                sql: "DELETE FROM transcription_sessions WHERE status = ? AND createdAt < ?",
-                arguments: [TranscriptionSessionStatus.completed.rawValue, date]
-            )
-
-            return count
-        }
-    }
-
     /// Get storage statistics
     func getStats() async throws -> (totalSessions: Int, pendingCount: Int, failedCount: Int, completedCount: Int) {
         let db = try await ensureInitialized()
