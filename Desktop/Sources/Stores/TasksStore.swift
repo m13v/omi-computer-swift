@@ -2,37 +2,51 @@ import SwiftUI
 
 /// Shared store for all tasks - single source of truth
 /// Both Dashboard and Tasks tab observe this store
+///
+/// Tasks are loaded separately for incomplete vs completed to minimize memory usage.
+/// By default, only recent (7 days) incomplete tasks are loaded.
 @MainActor
 class TasksStore: ObservableObject {
     static let shared = TasksStore()
 
     // MARK: - Published State
 
-    @Published var tasks: [TaskActionItem] = []
-    @Published var isLoading = false
+    /// Incomplete tasks (To Do) - loaded with 7-day filter by default
+    @Published var incompleteTasks: [TaskActionItem] = []
+    /// Completed tasks (Done) - loaded on demand when viewing Done tab
+    @Published var completedTasks: [TaskActionItem] = []
+
+    @Published var isLoadingIncomplete = false
+    @Published var isLoadingCompleted = false
     @Published var isLoadingMore = false
-    @Published var hasMoreTasks = true
+    @Published var hasMoreIncompleteTasks = true
+    @Published var hasMoreCompletedTasks = true
     @Published var error: String?
+
+    // Legacy compatibility - combines both lists
+    var tasks: [TaskActionItem] {
+        incompleteTasks + completedTasks
+    }
+
+    var isLoading: Bool {
+        isLoadingIncomplete || isLoadingCompleted
+    }
 
     // MARK: - Private State
 
-    private var currentOffset = 0
-    private let pageSize = 1000
-    private var hasLoadedInitially = false
+    private var incompleteOffset = 0
+    private var completedOffset = 0
+    private let pageSize = 100  // Reduced from 1000 for better performance
+    private var hasLoadedIncomplete = false
+    private var hasLoadedCompleted = false
+    /// Whether we're currently showing all tasks (no date filter) or just recent
+    private var isShowingAllIncompleteTasks = false
 
     // MARK: - Computed Properties (for Dashboard)
 
     /// 7-day cutoff for filtering old tasks (matches Flutter behavior)
     private var sevenDaysAgo: Date {
         Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
-    }
-
-    var incompleteTasks: [TaskActionItem] {
-        tasks.filter { !$0.completed }
-    }
-
-    var completedTasks: [TaskActionItem] {
-        tasks.filter { $0.completed }
     }
 
     /// Overdue tasks (due date in the past but within 7 days)
@@ -96,44 +110,113 @@ class TasksStore: ObservableObject {
 
     // MARK: - Load Tasks
 
-    /// Load all tasks (call this once on app launch or when needed)
+    /// Load incomplete tasks if not already loaded (call this on app launch)
     func loadTasksIfNeeded() async {
-        guard !hasLoadedInitially else { return }
-        await loadTasks()
+        guard !hasLoadedIncomplete else { return }
+        await loadIncompleteTasks(showAll: false)
     }
 
-    /// Force reload all tasks
+    /// Legacy method - loads incomplete tasks with recent filter
     func loadTasks() async {
-        // Prevent concurrent loads
-        guard !isLoading else { return }
+        await loadIncompleteTasks(showAll: isShowingAllIncompleteTasks)
+    }
 
-        isLoading = true
+    /// Load incomplete tasks (To Do)
+    /// - Parameter showAll: If false, only loads tasks from last 7 days. If true, loads all incomplete tasks.
+    func loadIncompleteTasks(showAll: Bool) async {
+        guard !isLoadingIncomplete else { return }
+
+        isLoadingIncomplete = true
         error = nil
-        currentOffset = 0
+        incompleteOffset = 0
+        isShowingAllIncompleteTasks = showAll
+
+        do {
+            // Only filter by date if not showing all tasks
+            let startDate = showAll ? nil : sevenDaysAgo
+
+            let response = try await APIClient.shared.getActionItems(
+                limit: pageSize,
+                offset: 0,
+                completed: false,
+                startDate: startDate
+            )
+            incompleteTasks = response.items
+            hasMoreIncompleteTasks = response.hasMore
+            incompleteOffset = response.items.count
+            hasLoadedIncomplete = true
+            log("TasksStore: Loaded \(response.items.count) incomplete tasks (showAll: \(showAll))")
+        } catch {
+            self.error = error.localizedDescription
+            logError("TasksStore: Failed to load incomplete tasks", error: error)
+        }
+
+        isLoadingIncomplete = false
+    }
+
+    /// Load completed tasks (Done) - called when user views Done tab
+    func loadCompletedTasks() async {
+        guard !isLoadingCompleted else { return }
+
+        isLoadingCompleted = true
+        error = nil
+        completedOffset = 0
 
         do {
             let response = try await APIClient.shared.getActionItems(
                 limit: pageSize,
-                offset: 0
+                offset: 0,
+                completed: true
             )
-            tasks = response.items
-            hasMoreTasks = response.hasMore
-            currentOffset = response.items.count
-            hasLoadedInitially = true
+            completedTasks = response.items
+            hasMoreCompletedTasks = response.hasMore
+            completedOffset = response.items.count
+            hasLoadedCompleted = true
+            log("TasksStore: Loaded \(response.items.count) completed tasks")
         } catch {
             self.error = error.localizedDescription
-            logError("TasksStore: Failed to load tasks", error: error)
+            logError("TasksStore: Failed to load completed tasks", error: error)
         }
 
-        isLoading = false
+        isLoadingCompleted = false
     }
 
-    /// Load more tasks (pagination)
-    func loadMoreIfNeeded(currentTask: TaskActionItem) async {
-        guard hasMoreTasks, !isLoadingMore else { return }
+    /// Load more incomplete tasks (pagination)
+    func loadMoreIncompleteIfNeeded(currentTask: TaskActionItem) async {
+        guard hasMoreIncompleteTasks, !isLoadingMore else { return }
 
-        let thresholdIndex = tasks.index(tasks.endIndex, offsetBy: -10, limitedBy: tasks.startIndex) ?? tasks.startIndex
-        guard let taskIndex = tasks.firstIndex(where: { $0.id == currentTask.id }),
+        let thresholdIndex = incompleteTasks.index(incompleteTasks.endIndex, offsetBy: -10, limitedBy: incompleteTasks.startIndex) ?? incompleteTasks.startIndex
+        guard let taskIndex = incompleteTasks.firstIndex(where: { $0.id == currentTask.id }),
+              taskIndex >= thresholdIndex else {
+            return
+        }
+
+        isLoadingMore = true
+
+        do {
+            let startDate = isShowingAllIncompleteTasks ? nil : sevenDaysAgo
+            let response = try await APIClient.shared.getActionItems(
+                limit: pageSize,
+                offset: incompleteOffset,
+                completed: false,
+                startDate: startDate
+            )
+            incompleteTasks.append(contentsOf: response.items)
+            hasMoreIncompleteTasks = response.hasMore
+            incompleteOffset += response.items.count
+        } catch {
+            logError("TasksStore: Failed to load more incomplete tasks", error: error)
+        }
+
+        isLoadingMore = false
+    }
+
+    /// Load more completed tasks (pagination)
+    func loadMoreCompletedIfNeeded(currentTask: TaskActionItem) async {
+        guard hasMoreCompletedTasks, !isLoadingMore else { return }
+
+        let thresholdIndex = completedTasks.index(completedTasks.endIndex, offsetBy: -10, limitedBy: completedTasks.startIndex) ?? completedTasks.startIndex
+        guard let taskIndex = completedTasks.firstIndex(where: { $0.id == currentTask.id }),
               taskIndex >= thresholdIndex else {
             return
         }
@@ -143,16 +226,26 @@ class TasksStore: ObservableObject {
         do {
             let response = try await APIClient.shared.getActionItems(
                 limit: pageSize,
-                offset: currentOffset
+                offset: completedOffset,
+                completed: true
             )
-            tasks.append(contentsOf: response.items)
-            hasMoreTasks = response.hasMore
-            currentOffset += response.items.count
+            completedTasks.append(contentsOf: response.items)
+            hasMoreCompletedTasks = response.hasMore
+            completedOffset += response.items.count
         } catch {
-            logError("TasksStore: Failed to load more tasks", error: error)
+            logError("TasksStore: Failed to load more completed tasks", error: error)
         }
 
         isLoadingMore = false
+    }
+
+    /// Legacy pagination - routes to appropriate method based on task completion status
+    func loadMoreIfNeeded(currentTask: TaskActionItem) async {
+        if currentTask.completed {
+            await loadMoreCompletedIfNeeded(currentTask: currentTask)
+        } else {
+            await loadMoreIncompleteIfNeeded(currentTask: currentTask)
+        }
     }
 
     // MARK: - Task Actions
@@ -163,8 +256,16 @@ class TasksStore: ObservableObject {
                 id: task.id,
                 completed: !task.completed
             )
-            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                tasks[index] = updated
+
+            // Move task between lists based on new completion status
+            if updated.completed {
+                // Was incomplete, now completed - move to completed list
+                incompleteTasks.removeAll { $0.id == task.id }
+                completedTasks.insert(updated, at: 0)
+            } else {
+                // Was completed, now incomplete - move to incomplete list
+                completedTasks.removeAll { $0.id == task.id }
+                incompleteTasks.insert(updated, at: 0)
             }
         } catch {
             self.error = error.localizedDescription
@@ -180,7 +281,8 @@ class TasksStore: ObservableObject {
                 source: "manual",
                 priority: priority
             )
-            tasks.insert(created, at: 0)
+            // New tasks are incomplete, add to incomplete list
+            incompleteTasks.insert(created, at: 0)
         } catch {
             self.error = error.localizedDescription
             logError("TasksStore: Failed to create task", error: error)
@@ -190,7 +292,12 @@ class TasksStore: ObservableObject {
     func deleteTask(_ task: TaskActionItem) async {
         do {
             try await APIClient.shared.deleteActionItem(id: task.id)
-            tasks.removeAll { $0.id == task.id }
+            // Remove from appropriate list
+            if task.completed {
+                completedTasks.removeAll { $0.id == task.id }
+            } else {
+                incompleteTasks.removeAll { $0.id == task.id }
+            }
         } catch {
             self.error = error.localizedDescription
             logError("TasksStore: Failed to delete task", error: error)
@@ -204,8 +311,15 @@ class TasksStore: ObservableObject {
                 description: description,
                 dueAt: dueAt
             )
-            if let index = tasks.firstIndex(where: { $0.id == task.id }) {
-                tasks[index] = updated
+            // Update in appropriate list
+            if task.completed {
+                if let index = completedTasks.firstIndex(where: { $0.id == task.id }) {
+                    completedTasks[index] = updated
+                }
+            } else {
+                if let index = incompleteTasks.firstIndex(where: { $0.id == task.id }) {
+                    incompleteTasks[index] = updated
+                }
             }
         } catch {
             self.error = error.localizedDescription
@@ -219,7 +333,8 @@ class TasksStore: ObservableObject {
         for id in ids {
             do {
                 try await APIClient.shared.deleteActionItem(id: id)
-                tasks.removeAll { $0.id == id }
+                incompleteTasks.removeAll { $0.id == id }
+                completedTasks.removeAll { $0.id == id }
             } catch {
                 logError("TasksStore: Failed to delete task \(id)", error: error)
             }
