@@ -4,7 +4,7 @@ struct DesktopHomeView: View {
     @StateObject private var appState = AppState()
     @StateObject private var viewModelContainer = ViewModelContainer()
     @ObservedObject private var authState = AuthState.shared
-    @State private var selectedIndex: Int = 0
+    @State private var selectedIndex: Int = OMIApp.launchMode == .rewind ? SidebarNavItem.rewind.rawValue : 0
     @State private var isSidebarCollapsed: Bool = false
 
     // Settings sidebar state
@@ -88,26 +88,34 @@ struct DesktopHomeView: View {
         }
     }
 
+    /// Whether to hide the sidebar (rewind mode)
+    private var hideSidebar: Bool {
+        OMIApp.launchMode == .rewind
+    }
+
     private var mainContent: some View {
         HStack(spacing: 0) {
-            // Show settings sidebar when in settings, otherwise show main sidebar
-            if isInSettings {
-                SettingsSidebar(
-                    selectedSection: $selectedSettingsSection,
-                    onBack: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedIndex = previousIndexBeforeSettings
+            // Show sidebar only in full mode
+            if !hideSidebar {
+                // Show settings sidebar when in settings, otherwise show main sidebar
+                if isInSettings {
+                    SettingsSidebar(
+                        selectedSection: $selectedSettingsSection,
+                        onBack: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                selectedIndex = previousIndexBeforeSettings
+                            }
                         }
-                    }
-                )
-            } else {
-                // Sidebar (with click-through so first click activates items even when window is inactive)
-                SidebarView(
-                    selectedIndex: $selectedIndex,
-                    isCollapsed: $isSidebarCollapsed,
-                    appState: appState
-                )
-                .clickThrough()
+                    )
+                } else {
+                    // Sidebar (with click-through so first click activates items even when window is inactive)
+                    SidebarView(
+                        selectedIndex: $selectedIndex,
+                        isCollapsed: $isSidebarCollapsed,
+                        appState: appState
+                    )
+                    .clickThrough()
+                }
             }
 
             // Main content area with rounded container
