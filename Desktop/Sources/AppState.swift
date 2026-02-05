@@ -1111,6 +1111,20 @@ class AppState: ObservableObject {
             for conv in fetchedConversations where conv.structured.title.isEmpty {
                 log("DEBUG: Conversation \(conv.id) has EMPTY title! overview=\(conv.structured.overview.prefix(50))...")
             }
+
+            // Sync conversations to local database in background
+            Task.detached(priority: .background) {
+                var syncedCount = 0
+                for conversation in fetchedConversations {
+                    do {
+                        try await TranscriptionStorage.shared.syncServerConversation(conversation)
+                        syncedCount += 1
+                    } catch {
+                        log("Conversations: Failed to sync \(conversation.id) to local DB: \(error.localizedDescription)")
+                    }
+                }
+                log("Conversations: Synced \(syncedCount)/\(fetchedConversations.count) to local database")
+            }
         } catch {
             logError("Conversations: Failed to load", error: error)
             conversationsError = error.localizedDescription
