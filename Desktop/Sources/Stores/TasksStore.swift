@@ -204,6 +204,7 @@ class TasksStore: ObservableObject {
         }
 
         isLoadingIncomplete = false
+        NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
     }
 
     /// Load completed tasks (Done) - called when user views Done tab
@@ -231,6 +232,7 @@ class TasksStore: ObservableObject {
         }
 
         isLoadingCompleted = false
+        NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
     }
 
     /// Load more incomplete tasks (pagination)
