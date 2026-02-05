@@ -160,6 +160,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             AuthService.shared.fetchConversations()
         }
 
+        // One-time migration: Enable launch at login for existing users who haven't set it
+        migrateLaunchAtLoginDefault()
+
+        // Track launch at login status once per app launch
+        Task { @MainActor in
+            let isEnabled = LaunchAtLoginManager.shared.isEnabled
+            AnalyticsManager.shared.launchAtLoginStatusChecked(enabled: isEnabled)
+        }
+
         // Register for Apple Events to handle URL scheme
         NSAppleEventManager.shared().setEventHandler(
             self,
@@ -535,6 +544,43 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         Task { @MainActor in
             AuthService.shared.handleOAuthCallback(url: url)
+        }
+    }
+
+    /// One-time migration to enable launch at login for existing users
+    /// Only runs once, and only enables if user hasn't explicitly set a preference
+    private func migrateLaunchAtLoginDefault() {
+        let migrationKey = "didMigrateLaunchAtLoginV1"
+
+        // Skip if migration already done
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else {
+            return
+        }
+
+        // Mark migration as done (do this first to ensure it only runs once)
+        UserDefaults.standard.set(true, forKey: migrationKey)
+
+        // Only enable for users who have completed onboarding (existing users)
+        // New users will get this enabled at the end of onboarding
+        let hasCompletedOnboarding = UserDefaults.standard.bool(forKey: "hasCompletedOnboarding")
+        guard hasCompletedOnboarding else {
+            log("LaunchAtLogin migration: Skipped - user hasn't completed onboarding yet")
+            return
+        }
+
+        // Check current status - only enable if not already registered
+        // This respects users who may have explicitly disabled it via System Settings
+        Task { @MainActor in
+            let manager = LaunchAtLoginManager.shared
+            if !manager.isEnabled {
+                let success = manager.setEnabled(true)
+                log("LaunchAtLogin migration: Enabled for existing user (success: \(success))")
+                if success {
+                    AnalyticsManager.shared.launchAtLoginChanged(enabled: true, source: "migration")
+                }
+            } else {
+                log("LaunchAtLogin migration: Already enabled, skipping")
+            }
         }
     }
 
