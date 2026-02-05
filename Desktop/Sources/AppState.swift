@@ -1070,13 +1070,35 @@ class AppState: ObservableObject {
 
     // MARK: - Conversations
 
-    /// Load conversations from the API
+    /// Load conversations - first from local cache (instant), then from API (background refresh)
     func loadConversations() async {
         guard !isLoadingConversations else { return }
 
         isLoadingConversations = true
         conversationsError = nil
 
+        // Step 1: Load from local cache first (instant display)
+        do {
+            let cachedConversations = try await TranscriptionStorage.shared.getLocalConversations(
+                limit: 50,
+                starredOnly: showStarredOnly,
+                folderId: selectedFolderId
+            )
+
+            if !cachedConversations.isEmpty {
+                conversations = cachedConversations
+                log("Conversations: Loaded \(cachedConversations.count) from local cache (instant)")
+
+                // Get local count
+                let localCount = try await TranscriptionStorage.shared.getLocalConversationsCount(starredOnly: showStarredOnly)
+                totalConversationsCount = localCount
+            }
+        } catch {
+            log("Conversations: Local cache load failed: \(error.localizedDescription)")
+            // Continue to API fetch even if local fails
+        }
+
+        // Step 2: Fetch from API in background to get fresh data
         // Calculate date range if date filter is set
         let startDate: Date?
         let endDate: Date?
@@ -1105,7 +1127,7 @@ class AppState: ObservableObject {
         do {
             let fetchedConversations = try await conversationsTask
             conversations = fetchedConversations
-            log("Conversations: Loaded \(fetchedConversations.count) conversations (starred=\(showStarredOnly), date=\(selectedDateFilter?.description ?? "nil"))")
+            log("Conversations: Refreshed \(fetchedConversations.count) from API (starred=\(showStarredOnly), date=\(selectedDateFilter?.description ?? "nil"))")
 
             // DEBUG: Log any conversations with empty titles
             for conv in fetchedConversations where conv.structured.title.isEmpty {
@@ -1126,18 +1148,23 @@ class AppState: ObservableObject {
                 log("Conversations: Synced \(syncedCount)/\(fetchedConversations.count) to local database")
             }
         } catch {
-            logError("Conversations: Failed to load", error: error)
-            conversationsError = error.localizedDescription
+            logError("Conversations: API fetch failed", error: error)
+            // Only set error if we don't have cached data
+            if conversations.isEmpty {
+                conversationsError = error.localizedDescription
+            } else {
+                log("Conversations: Using cached data after API failure")
+            }
         }
 
-        // Update total count separately (don't fail the whole load if count fails)
+        // Update total count from API (more accurate than local)
         do {
             let count = try await countTask
             totalConversationsCount = count
-            log("Conversations: Total count = \(count)")
+            log("Conversations: Total count from API = \(count)")
         } catch {
-            logError("Conversations: Failed to get count", error: error)
-            // Don't set error - conversations still loaded fine
+            logError("Conversations: Failed to get count from API", error: error)
+            // Keep local count if API fails
         }
 
         isLoadingConversations = false
