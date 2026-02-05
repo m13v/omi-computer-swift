@@ -32,7 +32,10 @@ class AppProvider: ObservableObject {
     func fetchApps() async {
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isLoading = false
+            NotificationCenter.default.post(name: .appsPageDidLoad, object: nil)
+        }
 
         do {
             // Fetch grouped apps and metadata in parallel
