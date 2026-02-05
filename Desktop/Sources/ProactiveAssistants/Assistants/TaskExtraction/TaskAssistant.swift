@@ -113,6 +113,12 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
+        // Skip apps excluded from task extraction
+        let excluded = await MainActor.run { TaskAssistantSettings.shared.isAppExcluded(frame.appName) }
+        if excluded {
+            return nil
+        }
+
         // Store the latest frame - we'll process it when the interval has passed
         let hadPending = pendingFrame != nil
         pendingFrame = frame
