@@ -601,6 +601,17 @@ extension PostHogManager {
         ])
     }
 
+    func notificationWillPresent(notificationId: String, title: String) {
+        track("Notification Will Present", properties: [
+            "notification_id": notificationId,
+            "title": title
+        ])
+    }
+
+    func notificationDelegateReady() {
+        track("Notification Delegate Ready")
+    }
+
     // MARK: - Menu Bar Events
 
     func menuBarOpened() {
