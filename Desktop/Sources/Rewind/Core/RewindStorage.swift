@@ -187,8 +187,9 @@ actor RewindStorage {
     private func extractFrameWithFFmpeg(from videoPath: String, frameOffset: Int) async throws -> NSImage {
         let ffmpegPath = findFFmpegPath()
 
-        // Calculate time offset (1 FPS, so frame N is at N seconds)
-        let timeOffset = Double(frameOffset)
+        // Calculate time offset based on capture frame rate
+        let captureInterval = UserDefaults.standard.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
+        let timeOffset = Double(frameOffset) * captureInterval
 
         // Create a temporary file for the output
         let tempDir = FileManager.default.temporaryDirectory
