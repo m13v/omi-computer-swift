@@ -74,23 +74,21 @@ struct FocusStatCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
+            HStack(alignment: .center, spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 14))
-                    .foregroundColor(color)
+                    .font(.system(size: 16))
+                    .foregroundColor(.white)
 
-                Spacer()
-            }
+                HStack(alignment: .lastTextBaseline, spacing: 2) {
+                    Text(value)
+                        .font(.system(size: 24, weight: .bold))
+                        .foregroundColor(OmiColors.textPrimary)
 
-            HStack(alignment: .lastTextBaseline, spacing: 2) {
-                Text(value)
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                if !unit.isEmpty {
-                    Text(unit)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
+                    if !unit.isEmpty {
+                        Text(unit)
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
                 }
             }
 
