@@ -383,14 +383,20 @@ actor TranscriptionStorage {
                 // Update existing session
                 existingSession.updateFrom(conversation)
                 try existingSession.update(database)
-                log("TranscriptionStorage: Updated session \(existingSession.id!) from backend \(conversation.id)")
-                return existingSession.id!
+                guard let sessionId = existingSession.id else {
+                    throw TranscriptionStorageError.invalidState("Session ID is nil after update")
+                }
+                log("TranscriptionStorage: Updated session \(sessionId) from backend \(conversation.id)")
+                return sessionId
             } else {
-                // Insert new session
-                var newSession = TranscriptionSessionRecord.from(conversation)
-                try newSession.insert(database)
-                log("TranscriptionStorage: Inserted new session \(newSession.id!) from backend \(conversation.id)")
-                return newSession.id!
+                // Insert new session - use inserted() to get record with ID
+                let newSession = TranscriptionSessionRecord.from(conversation)
+                let insertedSession = try newSession.inserted(database)
+                guard let sessionId = insertedSession.id else {
+                    throw TranscriptionStorageError.invalidState("Session ID is nil after insert")
+                }
+                log("TranscriptionStorage: Inserted new session \(sessionId) from backend \(conversation.id)")
+                return sessionId
             }
         }
     }
