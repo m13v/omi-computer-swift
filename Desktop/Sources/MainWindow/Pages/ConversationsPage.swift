@@ -108,6 +108,9 @@ struct ConversationsPage: View {
                 Task {
                     await appState.loadConversations()
                 }
+            } else {
+                // Already loaded, notify sidebar to clear loading indicator
+                NotificationCenter.default.post(name: .conversationsPageDidLoad, object: nil)
             }
             // Load folders
             if appState.folders.isEmpty {
