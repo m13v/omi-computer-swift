@@ -375,6 +375,10 @@ struct ChatPage: View {
                     scrollToBottom(proxy: proxy)
                 }
             }
+            .onAppear {
+                // Scroll to bottom when chat view first appears
+                scrollToBottom(proxy: proxy)
+            }
         }
     }
 
