@@ -132,7 +132,7 @@ struct AppsPage: View {
                             // Show filtered/search results in a flat grid
                             AppGridSection(
                                 title: filterResultsTitle,
-                                apps: appProvider.apps,
+                                apps: filteredApps,
                                 appProvider: appProvider,
                                 onSelectApp: { selectedApp = $0 }
                             )
@@ -264,7 +264,6 @@ struct AppsPage: View {
             Menu {
                 Button(action: {
                     appProvider.selectedCategory = nil
-                    Task { await appProvider.searchApps() }
                 }) {
                     HStack {
                         Text("All Categories")
@@ -279,7 +278,6 @@ struct AppsPage: View {
                 ForEach(appProvider.categories) { category in
                     Button(action: {
                         appProvider.selectedCategory = category.id
-                        Task { await appProvider.searchApps() }
                     }) {
                         HStack {
                             Text(category.title)
@@ -337,7 +335,7 @@ struct AppsPage: View {
     }
 
     private var hasActiveFilters: Bool {
-        appProvider.selectedCategory != nil || appProvider.selectedCapability != nil
+        appProvider.selectedCategory != nil
     }
 
     private var selectedCategoryLabel: String {
@@ -348,15 +346,24 @@ struct AppsPage: View {
         return "Category"
     }
 
+    /// Apps filtered client-side by selected category
+    private var filteredApps: [OmiApp] {
+        if let categoryId = appProvider.selectedCategory {
+            return appProvider.apps.filter { $0.category == categoryId }
+        }
+        return appProvider.apps
+    }
+
     private var filterResultsTitle: String {
+        let apps = filteredApps
         if !searchText.isEmpty {
-            return "Search Results (\(appProvider.apps.count))"
+            return "Search Results (\(apps.count))"
         }
         if let categoryId = appProvider.selectedCategory,
            let category = appProvider.categories.first(where: { $0.id == categoryId }) {
-            return "\(category.title) (\(appProvider.apps.count))"
+            return "\(category.title) (\(apps.count))"
         }
-        return "Results (\(appProvider.apps.count))"
+        return "Results (\(apps.count))"
     }
 
     private var loadingShimmerView: some View {
