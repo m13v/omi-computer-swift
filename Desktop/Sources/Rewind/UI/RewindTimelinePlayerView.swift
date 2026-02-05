@@ -234,9 +234,9 @@ struct RewindTimelinePlayerView: View {
             } label: {
                 Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                     .font(.system(size: 32))
-                    .foregroundColor(.white)
+                    .foregroundColor(OmiColors.textPrimary)
                     .frame(width: 64, height: 64)
-                    .background(OmiColors.purplePrimary)
+                    .background(Color.white)
                     .clipShape(Circle())
             }
             .buttonStyle(.plain)
