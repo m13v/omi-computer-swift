@@ -21,6 +21,8 @@ pub struct GetActionItemsQuery {
     pub offset: usize,
     /// Optional filter: true = completed only, false = pending only, None = all
     pub completed: Option<bool>,
+    /// Optional filter by conversation ID
+    pub conversation_id: Option<String>,
     /// ISO8601 date - filter created_at >= start_date
     pub start_date: Option<String>,
     /// ISO8601 date - filter created_at <= end_date
@@ -77,11 +79,12 @@ async fn get_action_items(
     Query(query): Query<GetActionItemsQuery>,
 ) -> Json<ActionItemsListResponse> {
     tracing::info!(
-        "Getting action items for user {} with limit={}, offset={}, completed={:?}, sort_by={:?}",
+        "Getting action items for user {} with limit={}, offset={}, completed={:?}, conversation_id={:?}, sort_by={:?}",
         user.uid,
         query.limit,
         query.offset,
         query.completed,
+        query.conversation_id,
         query.sort_by
     );
 
@@ -95,6 +98,7 @@ async fn get_action_items(
             fetch_limit,
             query.offset,
             query.completed,
+            query.conversation_id.as_deref(),
             query.start_date.as_deref(),
             query.end_date.as_deref(),
             query.due_start_date.as_deref(),
