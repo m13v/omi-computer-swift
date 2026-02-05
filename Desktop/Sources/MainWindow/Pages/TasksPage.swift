@@ -1671,12 +1671,12 @@ struct DueDateBadgeCompact: View {
             Text(displayText)
                 .font(.system(size: 11, weight: .medium))
         }
-        .foregroundColor(.black)
+        .foregroundColor(OmiColors.textSecondary)
         .padding(.horizontal, 6)
         .padding(.vertical, 2)
         .background(
             Capsule()
-                .fill(Color.white)
+                .fill(OmiColors.backgroundTertiary)
         )
     }
 }
@@ -1693,12 +1693,12 @@ struct SourceBadgeCompact: View {
             Text(sourceLabel)
                 .font(.system(size: 10, weight: .medium))
         }
-        .foregroundColor(.black)
+        .foregroundColor(OmiColors.textSecondary)
         .padding(.horizontal, 5)
         .padding(.vertical, 2)
         .background(
             Capsule()
-                .fill(Color.white)
+                .fill(OmiColors.backgroundTertiary)
         )
     }
 }
@@ -1709,13 +1709,13 @@ struct PriorityBadgeCompact: View {
     var body: some View {
         Text(priority.capitalized)
             .font(.system(size: 10, weight: .medium))
-            .foregroundColor(.black)
+            .foregroundColor(OmiColors.textSecondary)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)
             .background(
                 Capsule()
-                    .fill(Color.white)
-            )
+                    .fill(OmiColors.backgroundTertiary)
+                )
     }
 }
 
