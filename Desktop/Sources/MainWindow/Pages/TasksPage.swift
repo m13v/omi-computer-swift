@@ -1094,6 +1094,11 @@ struct TaskRow: View {
         viewModel.selectedTaskIds.contains(task.id)
     }
 
+    /// Check if task was created less than 1 minute ago (newly added)
+    private var isNewlyCreated: Bool {
+        Date().timeIntervalSince(task.createdAt) < 60
+    }
+
     /// Indent level for this task (0-3)
     private var indentLevel: Int {
         viewModel.getIndentLevel(for: task.id)
@@ -1427,7 +1432,7 @@ struct TaskRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : OmiColors.backgroundPrimary)
+                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundPrimary))
         )
         .opacity(rowOpacity)
         .offset(x: rowOffset)
