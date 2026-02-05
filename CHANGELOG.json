@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.3.3",
+      "date": "2026-02-05",
+      "changes": [
+        "Fixed menu bar icon not appearing on macOS Sequoia",
+        "Enhanced menu bar diagnostics logging"
+      ]
+    },
+    {
       "version": "0.3.2",
       "date": "2026-02-05",
       "changes": [
