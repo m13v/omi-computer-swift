@@ -1056,7 +1056,7 @@ struct ConversationsPage: View {
                 Text("Stop Recording")
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(OmiColors.textPrimary)
+            .foregroundColor(.black)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
@@ -1081,7 +1081,7 @@ struct ConversationsPage: View {
                 Text("Start Recording")
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(OmiColors.textPrimary)
+            .foregroundColor(.black)
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
             .background(
