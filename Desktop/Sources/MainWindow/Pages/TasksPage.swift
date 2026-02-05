@@ -565,11 +565,15 @@ struct TasksPage: View {
                         .font(.system(size: 11, weight: .medium))
                 }
             }
-            .foregroundColor(viewModel.isFiltered ? OmiColors.purplePrimary : OmiColors.textSecondary)
+            .foregroundColor(viewModel.isFiltered ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(viewModel.isFiltered ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundSecondary)
+                    .fill(viewModel.isFiltered ? Color.white : OmiColors.backgroundSecondary)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(viewModel.isFiltered ? OmiColors.border : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -595,11 +599,15 @@ struct TasksPage: View {
                         .font(.system(size: 11, weight: .medium))
                 }
             }
-            .foregroundColor(viewModel.showAllTasks ? OmiColors.purplePrimary : OmiColors.textSecondary)
+            .foregroundColor(viewModel.showAllTasks ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(viewModel.showAllTasks ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundSecondary)
+                    .fill(viewModel.showAllTasks ? Color.white : OmiColors.backgroundSecondary)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(viewModel.showAllTasks ? OmiColors.border : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -698,12 +706,16 @@ struct TasksPage: View {
                 Text("Add Task")
                     .font(.system(size: 13, weight: .medium))
             }
-            .foregroundColor(.white)
+            .foregroundColor(OmiColors.textPrimary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(OmiColors.purplePrimary)
+                    .fill(Color.white)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(OmiColors.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1207,7 +1219,7 @@ struct TaskRow: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(OmiColors.purplePrimary)
+        .background(OmiColors.textSecondary)
         .cornerRadius(8)
     }
 
@@ -1932,7 +1944,7 @@ struct TaskEditSheet: View {
                 }
             }
             .buttonStyle(.borderedProminent)
-            .tint(OmiColors.purplePrimary)
+            .tint(OmiColors.textPrimary)
             .controlSize(.large)
             .disabled(!canSave || isSaving)
         }
@@ -2069,12 +2081,16 @@ struct DateFilterPopover: View {
             } label: {
                 Text("Apply Filter")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.white)
+                    .foregroundColor(OmiColors.textPrimary)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 10)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(OmiColors.purplePrimary)
+                            .fill(Color.white)
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(OmiColors.border, lineWidth: 1)
                     )
             }
             .buttonStyle(.plain)
