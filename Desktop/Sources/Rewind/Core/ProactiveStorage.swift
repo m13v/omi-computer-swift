@@ -325,6 +325,14 @@ actor ProactiveStorage {
         }
     }
 
+    /// Get total count of all focus sessions
+    func getTotalFocusSessionCount() async throws -> Int {
+        let db = try await ensureInitialized()
+        return try await db.read { database in
+            try FocusSessionRecord.fetchCount(database)
+        }
+    }
+
     /// Update focus session sync status
     func updateFocusSessionSyncStatus(id: Int64, backendId: String, synced: Bool) async throws {
         let db = try await ensureInitialized()
