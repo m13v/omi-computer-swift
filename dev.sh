@@ -2,7 +2,7 @@
 set -e
 
 APP_NAME="Omi Computer"
-BUNDLE_ID="com.omi.computer-macos.development"
+BUNDLE_ID="com.omi.computer-macos-dev"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 BACKEND_DIR="$(dirname "$0")/Backend"
