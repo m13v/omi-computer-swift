@@ -350,7 +350,7 @@ struct RewindPage: View {
                     } label: {
                         Image(systemName: "list.bullet")
                             .font(.system(size: 11))
-                            .foregroundColor(searchViewMode == .results ? OmiColors.textPrimary : .white.opacity(0.5))
+                            .foregroundColor(searchViewMode == .results ? .black : .white.opacity(0.5))
                             .frame(width: 28, height: 24)
                             .background(searchViewMode == .results ? Color.white : Color.clear)
                             .cornerRadius(4)
@@ -367,7 +367,7 @@ struct RewindPage: View {
                     } label: {
                         Image(systemName: "timeline.selection")
                             .font(.system(size: 11))
-                            .foregroundColor(searchViewMode == .timeline ? OmiColors.textPrimary : .white.opacity(0.5))
+                            .foregroundColor(searchViewMode == .timeline ? .black : .white.opacity(0.5))
                             .frame(width: 28, height: 24)
                             .background(searchViewMode == .timeline ? Color.white : Color.clear)
                             .cornerRadius(4)
@@ -386,21 +386,21 @@ struct RewindPage: View {
                         .font(.system(size: 11))
                         .foregroundColor(.white.opacity(0.5))
                 }
-
-                // Settings
-                Button {
-                    NotificationCenter.default.post(
-                        name: .navigateToRewindSettings,
-                        object: nil
-                    )
-                } label: {
-                    Image(systemName: "gearshape")
-                        .font(.system(size: 12))
-                        .foregroundColor(.white.opacity(0.6))
-                }
-                .buttonStyle(.plain)
-                .help("Rewind Settings")
             }
+
+            // Settings - always visible
+            Button {
+                NotificationCenter.default.post(
+                    name: .navigateToRewindSettings,
+                    object: nil
+                )
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 12))
+                    .foregroundColor(.white.opacity(0.6))
+            }
+            .buttonStyle(.plain)
+            .help("Rewind Settings")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -560,6 +560,7 @@ struct RewindPage: View {
         )
         .datePickerStyle(.compact)
         .labelsHidden()
+        .fixedSize()
         .colorScheme(.dark)
     }
 
