@@ -372,6 +372,32 @@ actor ProactiveStorage {
         }
     }
 
+    // MARK: - Task Dedup Log
+
+    /// Insert a dedup log record tracking an AI-driven task deletion
+    @discardableResult
+    func insertDedupLogRecord(_ record: TaskDedupLogRecord) async throws -> TaskDedupLogRecord {
+        let db = try await ensureInitialized()
+
+        let inserted = try await db.write { database in
+            try record.inserted(database)
+        }
+        log("ProactiveStorage: Inserted dedup log (deleted: \(record.deletedTaskId), kept: \(record.keptTaskId))")
+        return inserted
+    }
+
+    /// Get dedup log records for review
+    func getDedupLogRecords(limit: Int = 100, offset: Int = 0) async throws -> [TaskDedupLogRecord] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try TaskDedupLogRecord
+                .order(Column("deletedAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(database)
+        }
+    }
+
     // MARK: - Cleanup
 
     /// Delete old extractions (for data retention)
