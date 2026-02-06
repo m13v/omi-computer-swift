@@ -1661,7 +1661,7 @@ class AppState: ObservableObject {
                 prodDefaults.removeObject(forKey: key)
             }
         }
-        if let devDefaults = UserDefaults(suiteName: "com.omi.computer-macos.development") {
+        if let devDefaults = UserDefaults(suiteName: "com.omi.computer-macos-dev") {
             for key in onboardingKeys {
                 devDefaults.removeObject(forKey: key)
             }
@@ -1669,8 +1669,8 @@ class AppState: ObservableObject {
 
         // 6. Reset ALL TCC permissions using tccutil for BOTH bundle IDs
         let bundleIds = [
-            "com.omi.computer-macos",           // Production
-            "com.omi.computer-macos.development" // Development
+            "com.omi.computer-macos",       // Production
+            "com.omi.computer-macos-dev"    // Development
         ]
 
         for id in bundleIds {
