@@ -179,22 +179,22 @@ class MemoriesViewModel: ObservableObject {
         // Skip if there's a pending delete (avoid interfering with undo)
         guard pendingDeleteMemory == nil else { return }
 
-        // Silently reload memories (only reload what we currently have loaded)
+        // Silently sync from API and reload from local cache (local-first pattern)
         do {
             let reloadLimit = max(pageSize, memories.count)
-            let newMemories = try await APIClient.shared.getMemories(limit: reloadLimit, offset: 0)
-            memories = newMemories
-            currentOffset = newMemories.count
-            hasMoreMemories = newMemories.count >= reloadLimit
+            let apiMemories = try await APIClient.shared.getMemories(limit: reloadLimit, offset: 0)
 
-            // Sync to local cache in background
-            Task.detached(priority: .background) {
-                do {
-                    try await MemoryStorage.shared.syncServerMemories(newMemories)
-                } catch {
-                    logError("MemoriesViewModel: Auto-refresh sync failed", error: error)
-                }
-            }
+            // Sync API results to local cache
+            try await MemoryStorage.shared.syncServerMemories(apiMemories)
+
+            // Reload from local cache to get merged data (local + synced)
+            let mergedMemories = try await MemoryStorage.shared.getLocalMemories(
+                limit: reloadLimit,
+                offset: 0
+            )
+            memories = mergedMemories
+            currentOffset = mergedMemories.count
+            hasMoreMemories = mergedMemories.count >= reloadLimit
         } catch {
             // Silently ignore errors during auto-refresh
             logError("MemoriesViewModel: Auto-refresh failed", error: error)
