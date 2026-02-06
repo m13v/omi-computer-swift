@@ -251,54 +251,9 @@ struct ConversationsPage: View {
 
     private var conversationListSection: some View {
         VStack(spacing: 0) {
-            // Section header with search bar
-            VStack(spacing: 8) {
-                HStack {
-                    Text("Past Conversations")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(OmiColors.textSecondary)
-
-                    if searchQuery.isEmpty {
-                        // Show "50" or "50 of 224" when total count is available
-                        if let total = appState.totalConversationsCount, total > appState.conversations.count {
-                            Text("(\(appState.conversations.count) of \(total))")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                        } else {
-                            Text("(\(appState.conversations.count))")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-                    } else {
-                        Text("(\(searchResults.count) results)")
-                            .font(.system(size: 12))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    if appState.isLoadingConversations || isSearching {
-                        ProgressView()
-                            .scaleEffect(0.6)
-                    }
-
-                    // Select button for multi-select mode
-                    Button(action: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isMultiSelectMode.toggle()
-                            if !isMultiSelectMode {
-                                selectedConversationIds.removeAll()
-                            }
-                        }
-                    }) {
-                        Text(isMultiSelectMode ? "Cancel" : "Select")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(isMultiSelectMode ? OmiColors.error : OmiColors.textSecondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                // Search bar (hidden in multi-select mode)
+            // Section header with search bar and filters
+            HStack(spacing: 8) {
+                // Search bar
                 HStack(spacing: 8) {
                     Image(systemName: "magnifyingglass")
                         .font(.system(size: 13))
@@ -338,7 +293,7 @@ struct ConversationsPage: View {
                         .fill(OmiColors.backgroundTertiary.opacity(0.5))
                 )
 
-                // Filter buttons row
+                // Filter buttons
                 filterButtonsRow
             }
             .padding(.horizontal, 16)
@@ -575,7 +530,7 @@ struct ConversationsPage: View {
                             .font(.system(size: 12, weight: .medium))
                     }
                 }
-                .foregroundColor(appState.selectedDateFilter != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
+                .foregroundColor(appState.selectedDateFilter != nil ? .black : OmiColors.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 6)
                 .background(
@@ -629,7 +584,7 @@ struct ConversationsPage: View {
                                 .font(.system(size: 12, weight: .medium))
                         }
                     }
-                    .foregroundColor(appState.selectedFolderId != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
+                    .foregroundColor(appState.selectedFolderId != nil ? .black : OmiColors.textSecondary)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
                     .background(
@@ -648,27 +603,6 @@ struct ConversationsPage: View {
                 }
             }
 
-            Spacer()
-
-            // Compact/Expanded view toggle
-            Button(action: {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isCompactView.toggle()
-                }
-            }) {
-                Image(systemName: isCompactView ? "list.bullet" : "list.bullet.rectangle")
-                    .font(.system(size: 12))
-                    .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(OmiColors.backgroundTertiary.opacity(0.6))
-                    )
-            }
-            .buttonStyle(.plain)
-            .help(isCompactView ? "Show expanded view" : "Show compact view")
-
             // Clear all filters button (only show if any filter is active)
             if appState.showStarredOnly || appState.selectedDateFilter != nil || appState.selectedFolderId != nil {
                 Button(action: {
@@ -676,14 +610,13 @@ struct ConversationsPage: View {
                         await appState.clearFilters()
                     }
                 }) {
-                    Text("Clear")
-                        .font(.system(size: 11, weight: .medium))
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12))
                         .foregroundColor(OmiColors.textTertiary)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.top, 8)
     }
 
     private var datePickerPopover: some View {
