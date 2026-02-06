@@ -1107,6 +1107,8 @@ class AppState: ObservableObject {
 
                 // Stop loading state so UI shows cached data immediately
                 isLoadingConversations = false
+                // Notify sidebar immediately so loading indicator clears with cached data
+                NotificationCenter.default.post(name: .conversationsPageDidLoad, object: nil)
             }
         } catch {
             log("Conversations: Local cache unavailable, falling back to API")
