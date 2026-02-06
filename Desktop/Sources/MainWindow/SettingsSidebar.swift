@@ -96,6 +96,7 @@ struct SettingsSidebarItem: View {
         case .notifications: return "bell"
         case .privacy: return "lock.shield"
         case .account: return "person.circle"
+        case .advanced: return "chart.bar"
         case .about: return "info.circle"
         }
     }
