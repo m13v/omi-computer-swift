@@ -110,8 +110,14 @@ class MemoriesViewModel: ObservableObject {
     @Published var hasMoreMemories = true
     @Published var errorMessage: String?
     @Published var searchText = "" {
-        didSet { recomputeFilteredMemories() }
+        didSet {
+            if oldValue != searchText {
+                Task { await performSearch() }
+            }
+        }
     }
+    @Published private(set) var isSearching = false
+    @Published private(set) var searchResults: [ServerMemory] = []
     @Published var selectedTags: Set<MemoryTag> = [] {
         didSet { recomputeFilteredMemories() }
     }
@@ -204,23 +210,67 @@ class MemoriesViewModel: ObservableObject {
 
     /// Recompute all caches when memories change
     private func recomputeCaches() {
-        // Compute tag counts once
-        var counts: [MemoryTag: Int] = [:]
-        for tag in MemoryTag.allCases {
-            counts[tag] = memories.filter { tag.matches($0) }.count
-        }
-        tagCounts = counts
+        // Recompute filtered memories first (fast, in-memory)
+        recomputeFilteredMemories()
 
-        // Compute unread tips count
+        // Compute unread tips count from loaded memories
         unreadTipsCount = memories.filter { $0.isTip && !$0.isRead }.count
 
-        // Recompute filtered memories
-        recomputeFilteredMemories()
+        // Load true tag counts from SQLite asynchronously
+        Task {
+            await loadTagCountsFromDatabase()
+        }
+    }
+
+    /// Load tag counts from SQLite database (shows true totals, not just loaded items)
+    private func loadTagCountsFromDatabase() async {
+        do {
+            var counts: [MemoryTag: Int] = [:]
+
+            // Get total count (no filters)
+            let totalCount = try await MemoryStorage.shared.getLocalMemoriesCount()
+
+            // Focus tags
+            counts[.focus] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["focus"])
+            counts[.focused] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["focused"])
+            counts[.distracted] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["distracted"])
+
+            // Tips tag
+            counts[.tips] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["tips"])
+
+            // Category counts - need to exclude tips and focus from system
+            let systemTotal = try await MemoryStorage.shared.getLocalMemoriesCount(category: "system")
+            let tipsCount = counts[.tips] ?? 0
+            let focusCount = counts[.focus] ?? 0
+            counts[.system] = max(0, systemTotal - tipsCount - focusCount)
+
+            counts[.interesting] = try await MemoryStorage.shared.getLocalMemoriesCount(category: "interesting")
+            counts[.manual] = try await MemoryStorage.shared.getLocalMemoriesCount(category: "manual")
+
+            // Tip subcategories
+            counts[.productivity] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["productivity"])
+            counts[.health] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["health"])
+            counts[.communication] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["communication"])
+            counts[.learning] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["learning"])
+            counts[.other] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["other"])
+
+            tagCounts = counts
+            log("MemoriesViewModel: Loaded tag counts from database (total: \(totalCount))")
+        } catch {
+            logError("MemoriesViewModel: Failed to load tag counts from database", error: error)
+            // Fall back to in-memory counts
+            var counts: [MemoryTag: Int] = [:]
+            for tag in MemoryTag.allCases {
+                counts[tag] = memories.filter { tag.matches($0) }.count
+            }
+            tagCounts = counts
+        }
     }
 
     /// Recompute filtered memories when search/tags change
     private func recomputeFilteredMemories() {
-        var result = memories
+        // When searching, use search results from SQLite as the source
+        var result = searchText.isEmpty ? memories : searchResults
 
         // Filter by selected tags (OR logic - match any selected tag)
         if !selectedTags.isEmpty {
@@ -229,15 +279,41 @@ class MemoriesViewModel: ObservableObject {
             }
         }
 
-        // Filter by search text
-        if !searchText.isEmpty {
-            result = result.filter { $0.content.localizedCaseInsensitiveContains(searchText) }
-        }
-
         // Sort by date (newest first)
         result.sort { $0.createdAt > $1.createdAt }
 
         filteredMemories = result
+    }
+
+    /// Perform search against SQLite database for efficient full-text search
+    private func performSearch() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // If search is empty, clear results and show all memories
+        if query.isEmpty {
+            searchResults = []
+            isSearching = false
+            recomputeFilteredMemories()
+            return
+        }
+
+        isSearching = true
+
+        do {
+            let results = try await MemoryStorage.shared.searchLocalMemories(
+                query: query,
+                limit: 200
+            )
+            searchResults = results
+            log("MemoriesViewModel: Search for '\(query)' found \(results.count) results")
+        } catch {
+            logError("MemoriesViewModel: Search failed", error: error)
+            // Fall back to in-memory filtering
+            searchResults = memories.filter { $0.content.localizedCaseInsensitiveContains(query) }
+        }
+
+        isSearching = false
+        recomputeFilteredMemories()
     }
 
     // MARK: - API Actions
@@ -741,11 +817,17 @@ struct MemoriesPage: View {
                     .foregroundColor(OmiColors.textPrimary)
 
                 HStack(spacing: 8) {
-                    Text("\(viewModel.memories.count) memories\(viewModel.hasMoreMemories ? "+" : "")")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
+                    if !viewModel.searchText.isEmpty {
+                        Text("\(viewModel.filteredMemories.count) results")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    } else {
+                        Text("\(viewModel.memories.count) memories\(viewModel.hasMoreMemories ? "+" : "")")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
 
-                    if viewModel.unreadTipsCount > 0 {
+                    if viewModel.unreadTipsCount > 0 && viewModel.searchText.isEmpty {
                         Text("\(viewModel.unreadTipsCount) new tips")
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(OmiColors.textSecondary)
@@ -874,8 +956,14 @@ struct MemoriesPage: View {
         HStack(spacing: 10) {
             // Search field
             HStack(spacing: 10) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundColor(OmiColors.textTertiary)
+                if viewModel.isSearching {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(OmiColors.textTertiary)
+                }
 
                 TextField("Search memories...", text: $viewModel.searchText)
                     .textFieldStyle(.plain)
