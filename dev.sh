@@ -67,6 +67,9 @@ done
 # Build debug
 swift build -c debug --package-path Desktop
 
+# Clean old app bundles from build dir
+rm -rf "$BUILD_DIR/Omi Computer.app" "$BUILD_DIR/Omi Beta.app" 2>/dev/null
+
 # Create app bundle
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
