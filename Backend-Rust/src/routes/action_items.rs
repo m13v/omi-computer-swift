@@ -91,13 +91,14 @@ async fn get_action_items(
     Query(query): Query<GetActionItemsQuery>,
 ) -> Json<ActionItemsListResponse> {
     tracing::info!(
-        "Getting action items for user {} with limit={}, offset={}, completed={:?}, conversation_id={:?}, sort_by={:?}",
+        "Getting action items for user {} with limit={}, offset={}, completed={:?}, conversation_id={:?}, sort_by={:?}, deleted={:?}",
         user.uid,
         query.limit,
         query.offset,
         query.completed,
         query.conversation_id,
-        query.sort_by
+        query.sort_by,
+        query.deleted
     );
 
     // Fetch limit + 1 to determine if there are more items
