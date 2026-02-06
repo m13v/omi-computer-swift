@@ -260,11 +260,16 @@ struct ConversationRowView: View {
 
             // Emoji
             Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
-                .font(.system(size: 13))
+                .font(.system(size: 16))
+                .frame(width: 28, height: 28)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(OmiColors.backgroundSecondary)
+                )
 
             // Title
             Text(conversation.title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .medium))
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
 
@@ -304,13 +309,13 @@ struct ConversationRowView: View {
 
             // Time
             Text(formattedTimestamp)
-                .font(.system(size: 11))
+                .font(.system(size: 12))
                 .foregroundColor(OmiColors.textTertiary)
 
             // Duration (hide on hover to make room)
             if !isHovering {
                 Text(conversation.formattedDuration)
-                    .font(.system(size: 10))
+                    .font(.system(size: 11))
                     .foregroundColor(OmiColors.textQuaternary)
             }
         }
@@ -340,12 +345,9 @@ struct ConversationRowView: View {
 
             // Emoji, Title, and overview
             VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(conversation.structured.emoji.isEmpty ? "💬" : conversation.structured.emoji)
-                        .font(.system(size: 14))
-
+                HStack(spacing: 8) {
                     Text(conversation.title)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.system(size: 15, weight: .medium))
                         .foregroundColor(OmiColors.textPrimary)
                         .lineLimit(1)
 
@@ -364,7 +366,7 @@ struct ConversationRowView: View {
 
                 if !conversation.overview.isEmpty {
                     Text(conversation.overview)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
                         .lineLimit(2)
                 }
@@ -393,7 +395,7 @@ struct ConversationRowView: View {
                     }
 
                     Text(formattedTimestamp)
-                        .font(.system(size: 12))
+                        .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
                 }
 
@@ -401,13 +403,13 @@ struct ConversationRowView: View {
                     HStack(spacing: 6) {
                         if let folderName = folderName {
                             Text(folderName)
-                                .font(.system(size: 10, weight: .medium))
+                                .font(.system(size: 11, weight: .medium))
                                 .foregroundColor(OmiColors.textQuaternary)
                                 .lineLimit(1)
                         }
 
                         Text(conversation.formattedDuration)
-                            .font(.system(size: 11))
+                            .font(.system(size: 12))
                             .foregroundColor(OmiColors.textQuaternary)
                     }
                 }
