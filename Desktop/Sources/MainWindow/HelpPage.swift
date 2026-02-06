@@ -17,31 +17,20 @@ struct CrispWebView: NSViewRepresentable {
         let webView = WKWebView(frame: .zero, configuration: config)
         webView.setValue(false, forKey: "drawsBackground")
 
-        let html = """
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-                body { margin: 0; padding: 0; background: transparent; }
-            </style>
-        </head>
-        <body>
-            <script>
-                window.$crisp = [];
-                window.CRISP_WEBSITE_ID = "\(websiteID)";
-                (function(){
-                    var d = document;
-                    var s = d.createElement("script");
-                    s.src = "https://client.crisp.chat/l.js";
-                    s.async = 1;
-                    d.getElementsByTagName("head")[0].appendChild(s);
-                })();
-            </script>
-        </body>
-        </html>
-        """
-        webView.loadHTMLString(html, baseURL: URL(string: "https://omi.me"))
+        var urlString = "https://go.crisp.chat/chat/embed/?website_id=\(websiteID)"
+        if let email = AuthState.shared.userEmail,
+           let encodedEmail = email.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            urlString += "&user_email=\(encodedEmail)"
+        }
+        let name = AuthService.shared.displayName
+        if !name.isEmpty,
+           let encodedName = name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
+            urlString += "&user_nickname=\(encodedName)"
+        }
+
+        if let url = URL(string: urlString) {
+            webView.load(URLRequest(url: url))
+        }
         return webView
     }
 
