@@ -161,6 +161,160 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     static func tags(for group: TaskFilterGroup) -> [TaskFilterTag] {
         allCases.filter { $0.group == group }
     }
+
+    /// Get the raw source value this tag matches
+    var sourceValue: String? {
+        switch self {
+        case .sourceScreen: return "screenshot"
+        case .sourceOmi: return "transcription:omi"
+        case .sourceDesktop: return "transcription:desktop"
+        case .sourceManual: return "manual"
+        case .sourceOmiAnalytics: return "omi-analytics"
+        default: return nil
+        }
+    }
+
+    /// Get the raw category value this tag matches
+    var categoryValue: String? {
+        switch self {
+        case .personal: return "personal"
+        case .work: return "work"
+        case .feature: return "feature"
+        case .bug: return "bug"
+        case .code: return "code"
+        case .research: return "research"
+        case .communication: return "communication"
+        case .finance: return "finance"
+        case .health: return "health"
+        case .other: return "other"
+        default: return nil
+        }
+    }
+
+    /// All known source values
+    static var knownSources: Set<String> {
+        Set(allCases.compactMap { $0.sourceValue })
+    }
+
+    /// All known category values
+    static var knownCategories: Set<String> {
+        Set(allCases.compactMap { $0.categoryValue })
+    }
+}
+
+// MARK: - Dynamic Filter Tag (for unknown sources/categories)
+
+/// Represents a filter tag that was discovered dynamically from task data
+struct DynamicFilterTag: Identifiable, Hashable {
+    let id: String
+    let group: TaskFilterGroup
+    let rawValue: String  // The actual value in the task (e.g., "email:inbound")
+    let displayName: String
+    let icon: String
+
+    /// Create a dynamic tag for an unknown source
+    static func source(_ value: String) -> DynamicFilterTag {
+        DynamicFilterTag(
+            id: "source:\(value)",
+            group: .source,
+            rawValue: value,
+            displayName: formatDisplayName(value),
+            icon: "arrow.right.circle"  // Generic source icon
+        )
+    }
+
+    /// Create a dynamic tag for an unknown category
+    static func category(_ value: String) -> DynamicFilterTag {
+        DynamicFilterTag(
+            id: "category:\(value)",
+            group: .category,
+            rawValue: value,
+            displayName: formatDisplayName(value),
+            icon: "tag"  // Generic category icon
+        )
+    }
+
+    /// Check if a task matches this dynamic tag
+    func matches(_ task: TaskActionItem) -> Bool {
+        switch group {
+        case .source:
+            return task.source == rawValue
+        case .category:
+            return task.category == rawValue
+        default:
+            return false
+        }
+    }
+
+    /// Format a raw value into a display name
+    /// e.g., "omi-analytics" -> "Omi Analytics", "email:inbound" -> "Email Inbound"
+    private static func formatDisplayName(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: ":", with: " ")
+            .replacingOccurrences(of: "-", with: " ")
+            .replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ")
+            .map { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+            .joined(separator: " ")
+    }
+}
+
+// MARK: - Unified Filter Tag (wraps both predefined and dynamic)
+
+enum UnifiedFilterTag: Identifiable, Hashable {
+    case predefined(TaskFilterTag)
+    case dynamic(DynamicFilterTag)
+
+    var id: String {
+        switch self {
+        case .predefined(let tag): return "predefined:\(tag.rawValue)"
+        case .dynamic(let tag): return tag.id
+        }
+    }
+
+    var group: TaskFilterGroup {
+        switch self {
+        case .predefined(let tag): return tag.group
+        case .dynamic(let tag): return tag.group
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case .predefined(let tag): return tag.displayName
+        case .dynamic(let tag): return tag.displayName
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .predefined(let tag): return tag.icon
+        case .dynamic(let tag): return tag.icon
+        }
+    }
+
+    func matches(_ task: TaskActionItem) -> Bool {
+        switch self {
+        case .predefined(let tag): return tag.matches(task)
+        case .dynamic(let tag): return tag.matches(task)
+        }
+    }
+
+    /// Get the raw source value if this is a source filter
+    var sourceValue: String? {
+        switch self {
+        case .predefined(let tag): return tag.sourceValue
+        case .dynamic(let tag): return tag.group == .source ? tag.rawValue : nil
+        }
+    }
+
+    /// Get the raw category value if this is a category filter
+    var categoryValue: String? {
+        switch self {
+        case .predefined(let tag): return tag.categoryValue
+        case .dynamic(let tag): return tag.group == .category ? tag.rawValue : nil
+        }
+    }
 }
 
 // MARK: - Sort Option
@@ -260,9 +414,60 @@ class TasksViewModel: ObservableObject {
     /// Cached tag counts - recomputed when tasks change
     @Published private(set) var tagCounts: [TaskFilterTag: Int] = [:]
 
+    /// Dynamically discovered tags (sources/categories not in predefined list)
+    @Published private(set) var dynamicTags: [DynamicFilterTag] = []
+
+    /// Counts for dynamic tags
+    @Published private(set) var dynamicTagCounts: [String: Int] = [:]
+
+    /// Selected dynamic tags
+    @Published var selectedDynamicTags: Set<DynamicFilterTag> = [] {
+        didSet {
+            if !selectedDynamicTags.isEmpty {
+                Task { await loadFilteredTasksFromDatabase() }
+            } else if selectedTags.isEmpty || !selectedTags.contains(where: { $0.group != .status }) {
+                filteredFromDatabase = []
+                recomputeDisplayCaches()
+            }
+        }
+    }
+
     /// Count tasks for a specific tag
     func tagCount(_ tag: TaskFilterTag) -> Int {
         tagCounts[tag] ?? 0
+    }
+
+    /// Count tasks for a dynamic tag
+    func dynamicTagCount(_ tag: DynamicFilterTag) -> Int {
+        dynamicTagCounts[tag.id] ?? 0
+    }
+
+    /// Get all available tags for a group (predefined + dynamic)
+    func availableTags(for group: TaskFilterGroup) -> [UnifiedFilterTag] {
+        var tags: [UnifiedFilterTag] = []
+
+        // Add predefined tags
+        for tag in TaskFilterTag.tags(for: group) {
+            tags.append(.predefined(tag))
+        }
+
+        // Add dynamic tags for this group
+        for tag in dynamicTags where tag.group == group {
+            tags.append(.dynamic(tag))
+        }
+
+        return tags
+    }
+
+    /// Check if any filters are active (predefined or dynamic)
+    var hasActiveFilters: Bool {
+        !selectedTags.isEmpty || !selectedDynamicTags.isEmpty
+    }
+
+    /// Clear all filters
+    func clearAllFilters() {
+        selectedTags.removeAll()
+        selectedDynamicTags.removeAll()
     }
 
     // Create/Edit task state
@@ -473,16 +678,67 @@ class TasksViewModel: ObservableObject {
         // Recompute display caches first (fast, in-memory)
         recomputeDisplayCaches()
 
+        // Discover dynamic tags from task data
+        discoverDynamicTags()
+
         // Load true counts from SQLite asynchronously
         Task {
             await loadTagCountsFromDatabase()
         }
     }
 
+    /// Discover unknown sources/categories from task data and create dynamic tags
+    private func discoverDynamicTags() {
+        let allTasks = store.incompleteTasks + store.completedTasks
+        var newDynamicTags: [DynamicFilterTag] = []
+        var newDynamicCounts: [String: Int] = [:]
+
+        // Collect all unique sources and categories
+        var allSources: [String: Int] = [:]
+        var allCategories: [String: Int] = [:]
+
+        for task in allTasks {
+            if let source = task.source, !source.isEmpty {
+                allSources[source, default: 0] += 1
+            }
+            if let category = task.category, !category.isEmpty {
+                allCategories[category, default: 0] += 1
+            }
+        }
+
+        // Find sources not in predefined list
+        let knownSources = TaskFilterTag.knownSources
+        for (source, count) in allSources {
+            if !knownSources.contains(source) {
+                let tag = DynamicFilterTag.source(source)
+                newDynamicTags.append(tag)
+                newDynamicCounts[tag.id] = count
+            }
+        }
+
+        // Find categories not in predefined list
+        let knownCategories = TaskFilterTag.knownCategories
+        for (category, count) in allCategories {
+            if !knownCategories.contains(category) {
+                let tag = DynamicFilterTag.category(category)
+                newDynamicTags.append(tag)
+                newDynamicCounts[tag.id] = count
+            }
+        }
+
+        // Sort by count descending
+        newDynamicTags.sort { (dynamicTagCounts[$0.id] ?? 0) > (dynamicTagCounts[$1.id] ?? 0) }
+
+        dynamicTags = newDynamicTags
+        dynamicTagCounts = newDynamicCounts
+    }
+
     /// Load filtered tasks from SQLite when non-status filters are applied
     private func loadFilteredTasksFromDatabase() async {
         let nonStatusTags = selectedTags.filter { $0.group != .status }
-        guard !nonStatusTags.isEmpty else {
+        let hasDynamicFilters = !selectedDynamicTags.isEmpty
+
+        guard !nonStatusTags.isEmpty || hasDynamicFilters else {
             filteredFromDatabase = []
             recomputeDisplayCaches()
             return
@@ -490,11 +746,11 @@ class TasksViewModel: ObservableObject {
 
         isLoadingFiltered = true
 
-        // Extract filter values from tags
+        // Extract filter values from predefined tags
         let tagsByGroup = Dictionary(grouping: nonStatusTags) { $0.group }
 
-        // Get categories
-        let categories: [String]? = tagsByGroup[.category]?.compactMap { tag -> String? in
+        // Get categories from predefined tags
+        var categories: [String] = tagsByGroup[.category]?.compactMap { tag -> String? in
             switch tag {
             case .personal: return "personal"
             case .work: return "work"
@@ -508,10 +764,15 @@ class TasksViewModel: ObservableObject {
             case .other: return "other"
             default: return nil
             }
+        } ?? []
+
+        // Add categories from dynamic tags
+        for tag in selectedDynamicTags where tag.group == .category {
+            categories.append(tag.rawValue)
         }
 
-        // Get sources
-        let sources: [String]? = tagsByGroup[.source]?.compactMap { tag -> String? in
+        // Get sources from predefined tags
+        var sources: [String] = tagsByGroup[.source]?.compactMap { tag -> String? in
             switch tag {
             case .sourceScreen: return "screenshot"
             case .sourceOmi: return "transcription:omi"
@@ -520,6 +781,11 @@ class TasksViewModel: ObservableObject {
             case .sourceOmiAnalytics: return "omi-analytics"
             default: return nil
             }
+        } ?? []
+
+        // Add sources from dynamic tags
+        for tag in selectedDynamicTags where tag.group == .source {
+            sources.append(tag.rawValue)
         }
 
         // Get priorities
@@ -551,8 +817,8 @@ class TasksViewModel: ObservableObject {
                 limit: 500,
                 completedStates: completedStates,
                 includeDeleted: includeDeleted,
-                categories: categories,
-                sources: sources,
+                categories: categories.isEmpty ? nil : categories,
+                sources: sources.isEmpty ? nil : sources,
                 priorities: priorities
             )
             filteredFromDatabase = results
@@ -607,6 +873,37 @@ class TasksViewModel: ObservableObject {
             counts[.priorityLow] = filterCounts.priorities["low"] ?? 0
 
             tagCounts = counts
+
+            // Discover and count dynamic tags from SQLite data
+            var newDynamicTags: [DynamicFilterTag] = []
+            var newDynamicCounts: [String: Int] = [:]
+
+            // Find unknown sources
+            let knownSources = TaskFilterTag.knownSources
+            for (source, count) in filterCounts.sources {
+                if !knownSources.contains(source) && count > 0 {
+                    let tag = DynamicFilterTag.source(source)
+                    newDynamicTags.append(tag)
+                    newDynamicCounts[tag.id] = count
+                }
+            }
+
+            // Find unknown categories
+            let knownCategories = TaskFilterTag.knownCategories
+            for (category, count) in filterCounts.categories {
+                if !knownCategories.contains(category) && count > 0 {
+                    let tag = DynamicFilterTag.category(category)
+                    newDynamicTags.append(tag)
+                    newDynamicCounts[tag.id] = count
+                }
+            }
+
+            // Sort by count descending
+            newDynamicTags.sort { (newDynamicCounts[$0.id] ?? 0) > (newDynamicCounts[$1.id] ?? 0) }
+
+            dynamicTags = newDynamicTags
+            dynamicTagCounts = newDynamicCounts
+
         } catch {
             logError("TasksViewModel: Failed to load tag counts from database", error: error)
             // Fall back to in-memory counts
@@ -623,6 +920,9 @@ class TasksViewModel: ObservableObject {
                 }
             }
             tagCounts = counts
+
+            // Also discover dynamic tags from in-memory tasks
+            discoverDynamicTags()
         }
     }
 
@@ -867,6 +1167,7 @@ struct TasksPage: View {
     // Filter popover state
     @State private var showFilterPopover = false
     @State private var pendingSelectedTags: Set<TaskFilterTag> = []
+    @State private var pendingSelectedDynamicTags: Set<DynamicFilterTag> = []
     @State private var filterSearchText = ""
 
     var body: some View {
@@ -961,16 +1262,22 @@ struct TasksPage: View {
     // MARK: - Filter Dropdown
 
     private var filterLabel: String {
-        if viewModel.selectedTags.isEmpty {
+        let totalCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
+        if totalCount == 0 {
             return "All"
-        } else if viewModel.selectedTags.count == 1 {
-            return viewModel.selectedTags.first!.displayName
+        } else if totalCount == 1 {
+            if let tag = viewModel.selectedTags.first {
+                return tag.displayName
+            } else if let dynamicTag = viewModel.selectedDynamicTags.first {
+                return dynamicTag.displayName
+            }
+            return "1 selected"
         } else {
-            return "\(viewModel.selectedTags.count) selected"
+            return "\(totalCount) selected"
         }
     }
 
-    /// Filtered tags based on search text, grouped by filter group
+    /// Filtered predefined tags based on search text, grouped by filter group
     private func filteredTags(for group: TaskFilterGroup) -> [TaskFilterTag] {
         let tags = TaskFilterTag.tags(for: group)
         if filterSearchText.isEmpty {
@@ -981,9 +1288,21 @@ struct TasksPage: View {
             .sorted { viewModel.tagCount($0) > viewModel.tagCount($1) }
     }
 
+    /// Filtered dynamic tags based on search text, grouped by filter group
+    private func filteredDynamicTags(for group: TaskFilterGroup) -> [DynamicFilterTag] {
+        let tags = viewModel.dynamicTags.filter { $0.group == group }
+        if filterSearchText.isEmpty {
+            return tags.sorted { viewModel.dynamicTagCount($0) > viewModel.dynamicTagCount($1) }
+        }
+        return tags
+            .filter { $0.displayName.localizedCaseInsensitiveContains(filterSearchText) }
+            .sorted { viewModel.dynamicTagCount($0) > viewModel.dynamicTagCount($1) }
+    }
+
     private var filterDropdownButton: some View {
         Button {
             pendingSelectedTags = viewModel.selectedTags
+            pendingSelectedDynamicTags = viewModel.selectedDynamicTags
             filterSearchText = ""
             showFilterPopover = true
         } label: {
@@ -991,18 +1310,18 @@ struct TasksPage: View {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 12))
                 Text(filterLabel)
-                    .font(.system(size: 13, weight: viewModel.selectedTags.isEmpty ? .regular : .medium))
+                    .font(.system(size: 13, weight: viewModel.hasActiveFilters ? .medium : .regular))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10))
             }
-            .foregroundColor(viewModel.selectedTags.isEmpty ? OmiColors.textSecondary : .black)
+            .foregroundColor(viewModel.hasActiveFilters ? .black : OmiColors.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(viewModel.selectedTags.isEmpty ? OmiColors.backgroundSecondary : Color.white)
+            .background(viewModel.hasActiveFilters ? Color.white : OmiColors.backgroundSecondary)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(viewModel.selectedTags.isEmpty ? Color.clear : OmiColors.border, lineWidth: 1)
+                    .stroke(viewModel.hasActiveFilters ? OmiColors.border : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1052,6 +1371,7 @@ struct TasksPage: View {
                     // "All" option
                     Button {
                         pendingSelectedTags.removeAll()
+                        pendingSelectedDynamicTags.removeAll()
                     } label: {
                         HStack {
                             Image(systemName: "tray.full")
@@ -1067,7 +1387,7 @@ struct TasksPage: View {
                                 .padding(.vertical, 2)
                                 .background(OmiColors.backgroundTertiary)
                                 .cornerRadius(4)
-                            if pendingSelectedTags.isEmpty {
+                            if pendingSelectedTags.isEmpty && pendingSelectedDynamicTags.isEmpty {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.white)
@@ -1076,7 +1396,7 @@ struct TasksPage: View {
                         .foregroundColor(OmiColors.textPrimary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 8)
-                        .background(pendingSelectedTags.isEmpty ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+                        .background(pendingSelectedTags.isEmpty && pendingSelectedDynamicTags.isEmpty ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
                         .cornerRadius(6)
                         .contentShape(Rectangle())
                     }
@@ -1085,7 +1405,8 @@ struct TasksPage: View {
                     // Groups
                     ForEach(TaskFilterGroup.allCases, id: \.self) { group in
                         let tags = filteredTags(for: group)
-                        if !tags.isEmpty {
+                        let dynTags = filteredDynamicTags(for: group)
+                        if !tags.isEmpty || !dynTags.isEmpty {
                             Divider()
                                 .padding(.vertical, 4)
 
@@ -1098,7 +1419,7 @@ struct TasksPage: View {
                                 .padding(.vertical, 4)
                                 .frame(maxWidth: .infinity, alignment: .leading)
 
-                            // Tags in group
+                            // Predefined tags in group
                             ForEach(tags) { tag in
                                 let isSelected = pendingSelectedTags.contains(tag)
                                 let count = viewModel.tagCount(tag)
@@ -1108,6 +1429,48 @@ struct TasksPage: View {
                                         pendingSelectedTags.remove(tag)
                                     } else {
                                         pendingSelectedTags.insert(tag)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: tag.icon)
+                                            .font(.system(size: 12))
+                                            .frame(width: 20)
+                                        Text(tag.displayName)
+                                            .font(.system(size: 13))
+                                        Spacer()
+                                        Text("\(count)")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(OmiColors.textTertiary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(OmiColors.backgroundTertiary)
+                                            .cornerRadius(4)
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.white)
+                                        }
+                                    }
+                                    .foregroundColor(OmiColors.textPrimary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(isSelected ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+                                    .cornerRadius(6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+
+                            // Dynamic tags for this group (discovered from task data)
+                            ForEach(filteredDynamicTags(for: group)) { tag in
+                                let isSelected = pendingSelectedDynamicTags.contains(tag)
+                                let count = viewModel.dynamicTagCount(tag)
+
+                                Button {
+                                    if isSelected {
+                                        pendingSelectedDynamicTags.remove(tag)
+                                    } else {
+                                        pendingSelectedDynamicTags.insert(tag)
                                     }
                                 } label: {
                                     HStack {
@@ -1154,6 +1517,7 @@ struct TasksPage: View {
             HStack(spacing: 8) {
                 Button {
                     pendingSelectedTags.removeAll()
+                    pendingSelectedDynamicTags.removeAll()
                 } label: {
                     Text("Clear")
                         .font(.system(size: 13, weight: .medium))
@@ -1167,6 +1531,7 @@ struct TasksPage: View {
 
                 Button {
                     viewModel.selectedTags = pendingSelectedTags
+                    viewModel.selectedDynamicTags = pendingSelectedDynamicTags
                     showFilterPopover = false
                 } label: {
                     Text("Apply")
@@ -1379,23 +1744,23 @@ struct TasksPage: View {
 
     private var emptyView: some View {
         VStack(spacing: 16) {
-            Image(systemName: viewModel.selectedTags.isEmpty ? "tray.fill" : "line.3.horizontal.decrease")
+            Image(systemName: viewModel.hasActiveFilters ? "line.3.horizontal.decrease" : "tray.fill")
                 .font(.system(size: 48))
                 .foregroundColor(OmiColors.textTertiary)
 
-            Text(viewModel.selectedTags.isEmpty ? "All Caught Up!" : "No Matching Tasks")
+            Text(viewModel.hasActiveFilters ? "No Matching Tasks" : "All Caught Up!")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
 
-            Text(viewModel.selectedTags.isEmpty ? "You have no tasks yet" : "Try adjusting your filters")
+            Text(viewModel.hasActiveFilters ? "Try adjusting your filters" : "You have no tasks yet")
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
 
-            if !viewModel.selectedTags.isEmpty {
+            if viewModel.hasActiveFilters {
                 Button("Clear Filters") {
                     withAnimation {
-                        viewModel.selectedTags.removeAll()
+                        viewModel.clearAllFilters()
                     }
                 }
                 .buttonStyle(.bordered)
