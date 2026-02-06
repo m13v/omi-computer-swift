@@ -192,6 +192,10 @@ class TasksStore: ObservableObject {
     func loadTasksIfNeeded() async {
         guard !hasLoadedIncomplete else { return }
         await loadIncompleteTasks(showAll: false)
+        // Also load deleted tasks in background so the filter count is ready
+        if !hasLoadedDeleted {
+            await loadDeletedTasks()
+        }
     }
 
     /// Legacy method - loads incomplete tasks with recent filter
