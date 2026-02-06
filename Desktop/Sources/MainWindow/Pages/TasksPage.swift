@@ -182,6 +182,17 @@ class TasksViewModel: ObservableObject {
     // Use shared TasksStore as single source of truth
     private let store = TasksStore.shared
 
+    // Search state - searches SQLite directly
+    @Published var searchText = "" {
+        didSet {
+            if oldValue != searchText {
+                Task { await performSearch() }
+            }
+        }
+    }
+    @Published private(set) var isSearching = false
+    @Published private(set) var searchResults: [TaskActionItem] = []
+
     // UI-specific state
     @Published var showCompleted = false {
         didSet {
@@ -444,34 +455,118 @@ class TasksViewModel: ObservableObject {
 
     /// Recompute all caches when tasks change
     private func recomputeAllCaches() {
-        // Counts come directly from store
-        todoCount = store.incompleteTasks.count
-        doneCount = store.completedTasks.count
+        // Recompute display caches first (fast, in-memory)
+        recomputeDisplayCaches()
 
-        // Recompute tag counts from all tasks (incomplete + completed)
-        let allTasks = store.incompleteTasks + store.completedTasks
-        var counts: [TaskFilterTag: Int] = [:]
-        for tag in TaskFilterTag.allCases {
-            if tag == .removedByAI {
-                // Deleted tasks come from a separate list
-                counts[tag] = store.deletedTasks.count
-            } else {
-                counts[tag] = allTasks.filter { tag.matches($0) }.count
-            }
+        // Load true counts from SQLite asynchronously
+        Task {
+            await loadTagCountsFromDatabase()
         }
-        tagCounts = counts
+    }
 
-        // Recompute display caches
+    /// Load tag counts from SQLite database (shows true totals, not just loaded items)
+    private func loadTagCountsFromDatabase() async {
+        do {
+            let filterCounts = try await ActionItemStorage.shared.getFilterCounts()
+
+            // Update counts on main actor
+            todoCount = filterCounts.todo
+            doneCount = filterCounts.done
+
+            var counts: [TaskFilterTag: Int] = [:]
+
+            // Status counts
+            counts[.todo] = filterCounts.todo
+            counts[.done] = filterCounts.done
+            counts[.removedByAI] = filterCounts.deleted
+
+            // Category counts
+            counts[.personal] = filterCounts.categories["personal"] ?? 0
+            counts[.work] = filterCounts.categories["work"] ?? 0
+            counts[.feature] = filterCounts.categories["feature"] ?? 0
+            counts[.bug] = filterCounts.categories["bug"] ?? 0
+            counts[.code] = filterCounts.categories["code"] ?? 0
+            counts[.research] = filterCounts.categories["research"] ?? 0
+            counts[.communication] = filterCounts.categories["communication"] ?? 0
+            counts[.finance] = filterCounts.categories["finance"] ?? 0
+            counts[.health] = filterCounts.categories["health"] ?? 0
+            counts[.other] = filterCounts.categories["other"] ?? 0
+
+            // Source counts
+            counts[.sourceScreen] = filterCounts.sources["screenshot"] ?? 0
+            counts[.sourceOmi] = filterCounts.sources["transcription:omi"] ?? 0
+            counts[.sourceDesktop] = filterCounts.sources["transcription:desktop"] ?? 0
+            counts[.sourceManual] = filterCounts.sources["manual"] ?? 0
+
+            // Priority counts
+            counts[.priorityHigh] = filterCounts.priorities["high"] ?? 0
+            counts[.priorityMedium] = filterCounts.priorities["medium"] ?? 0
+            counts[.priorityLow] = filterCounts.priorities["low"] ?? 0
+
+            tagCounts = counts
+        } catch {
+            logError("TasksViewModel: Failed to load tag counts from database", error: error)
+            // Fall back to in-memory counts
+            let allTasks = store.incompleteTasks + store.completedTasks
+            todoCount = store.incompleteTasks.count
+            doneCount = store.completedTasks.count
+
+            var counts: [TaskFilterTag: Int] = [:]
+            for tag in TaskFilterTag.allCases {
+                if tag == .removedByAI {
+                    counts[tag] = store.deletedTasks.count
+                } else {
+                    counts[tag] = allTasks.filter { tag.matches($0) }.count
+                }
+            }
+            tagCounts = counts
+        }
+    }
+
+    /// Perform search against SQLite database
+    private func performSearch() async {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if query.isEmpty {
+            searchResults = []
+            recomputeDisplayCaches()
+            return
+        }
+
+        isSearching = true
+
+        do {
+            // Search across all tasks in SQLite
+            let results = try await ActionItemStorage.shared.searchLocalActionItems(
+                query: query,
+                limit: 200,  // Higher limit for search
+                completed: nil,  // Search all
+                includeDeleted: selectedTags.contains(.removedByAI)
+            )
+            searchResults = results
+            log("TasksViewModel: Search found \(results.count) tasks for '\(query)'")
+        } catch {
+            logError("TasksViewModel: Search failed", error: error)
+            searchResults = []
+        }
+
+        isSearching = false
         recomputeDisplayCaches()
     }
 
     /// Recompute display-related caches when filters or sort change
     private func recomputeDisplayCaches() {
-        // Get tasks from appropriate list based on status filter
-        let sourceTasks = getSourceTasks()
+        // If searching, use search results
+        let sourceTasks: [TaskActionItem]
+        if !searchText.isEmpty {
+            sourceTasks = searchResults
+        } else {
+            // Get tasks from appropriate list based on status filter
+            sourceTasks = getSourceTasks()
+        }
 
-        // Apply tag filters (category, source, priority)
-        let filteredTasks = applyTagFilters(sourceTasks)
+        // Apply tag filters (category, source, priority) - skip status filters if searching
+        let filteredTasks = searchText.isEmpty ? applyTagFilters(sourceTasks) : applyNonStatusTagFilters(sourceTasks)
 
         // Sort and store
         displayTasks = sortTasks(filteredTasks)
@@ -486,6 +581,22 @@ class TasksViewModel: ObservableObject {
             result[category, default: []].append(task)
         }
         categorizedTasks = result
+    }
+
+    /// Apply only non-status tag filters (for search results which already include all statuses)
+    private func applyNonStatusTagFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+        let nonStatusTags = selectedTags.filter { $0.group != .status }
+        guard !nonStatusTags.isEmpty else { return tasks }
+
+        let tagsByGroup = Dictionary(grouping: nonStatusTags) { $0.group }
+
+        return tasks.filter { task in
+            for (_, groupTags) in tagsByGroup {
+                let matchesGroup = groupTags.contains { $0.matches(task) }
+                if !matchesGroup { return false }
+            }
+            return true
+        }
     }
 
     // MARK: - Category Helpers
@@ -661,28 +772,68 @@ struct TasksPage: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        HStack(spacing: 12) {
-            if !viewModel.isMultiSelectMode {
-                filterDropdownButton
-            } else {
-                multiSelectControls
-            }
+        VStack(spacing: 12) {
+            // Search bar
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
 
-            Spacer()
+                TextField("Search tasks...", text: $viewModel.searchText)
+                    .textFieldStyle(.plain)
+                    .foregroundColor(OmiColors.textPrimary)
 
-            if viewModel.isMultiSelectMode {
-                if !viewModel.selectedTaskIds.isEmpty {
-                    deleteSelectedButton
+                if !viewModel.searchText.isEmpty {
+                    Button {
+                        viewModel.searchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
                 }
-            } else {
-                addTaskButton
-            }
 
-            if viewModel.isMultiSelectMode {
-                cancelMultiSelectButton
-            } else {
-                sortDropdown
-                taskSettingsButton
+                if viewModel.isSearching {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(OmiColors.backgroundSecondary)
+            .cornerRadius(8)
+
+            // Filter and actions row
+            HStack(spacing: 12) {
+                if !viewModel.isMultiSelectMode {
+                    filterDropdownButton
+                } else {
+                    multiSelectControls
+                }
+
+                // Show search result count when searching
+                if !viewModel.searchText.isEmpty {
+                    Text("\(viewModel.searchResults.count) results")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+
+                if viewModel.isMultiSelectMode {
+                    if !viewModel.selectedTaskIds.isEmpty {
+                        deleteSelectedButton
+                    }
+                } else {
+                    addTaskButton
+                }
+
+                if viewModel.isMultiSelectMode {
+                    cancelMultiSelectButton
+                } else {
+                    sortDropdown
+                    taskSettingsButton
+                }
             }
         }
         .padding(.horizontal, 16)
