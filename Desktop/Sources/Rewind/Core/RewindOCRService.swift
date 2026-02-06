@@ -1,6 +1,7 @@
 import Foundation
 import Vision
 import AppKit
+import Sentry
 
 /// Represents a text block with its bounding box (in normalized coordinates 0-1)
 struct OCRTextBlock: Codable, Equatable {
@@ -76,6 +77,45 @@ actor RewindOCRService {
 
     private init() {}
 
+    // MARK: - Frame Deduplication
+
+    private var lastFrameFingerprint: Int?
+
+    /// Track last-logged OCR mode to only log on change
+    private var lastLoggedOCRMode: String?
+
+    /// Compute a fast fingerprint of a CGImage by scaling to 128x128 grayscale and hashing pixel data
+    static func fingerprint(of cgImage: CGImage) -> Int? {
+        let size = 128
+        let bytesPerRow = size
+        let totalBytes = size * size
+
+        guard let context = CGContext(
+            data: nil,
+            width: size,
+            height: size,
+            bitsPerComponent: 8,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceGray(),
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
+        ) else { return nil }
+
+        context.interpolationQuality = .low
+        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+
+        guard let data = context.data else { return nil }
+        let buffer = UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: totalBytes)
+        return Data(buffer).hashValue
+    }
+
+    /// Check if a frame should skip OCR because it's identical to the previous frame
+    func shouldSkipOCR(for cgImage: CGImage) async -> Bool {
+        guard let fingerprint = Self.fingerprint(of: cgImage) else { return false }
+        let isDuplicate = (fingerprint == lastFrameFingerprint)
+        lastFrameFingerprint = fingerprint
+        return isDuplicate
+    }
+
     // MARK: - Text Extraction with Bounding Boxes
 
     /// Extract text with bounding boxes from JPEG image data using Apple Vision
@@ -94,6 +134,19 @@ actor RewindOCRService {
 
     /// Extract text with bounding boxes from a CGImage
     func extractTextWithBounds(from cgImage: CGImage) async throws -> OCRResult {
+        let useFastOCR = UserDefaults.standard.object(forKey: "rewindOCRFast") as? Bool ?? true
+        let modeName = useFastOCR ? "fast" : "accurate"
+        let recognitionLevel: VNRequestTextRecognitionLevel = useFastOCR ? .fast : .accurate
+
+        // Log OCR mode once, then only on change; set Sentry tag for queryability
+        if modeName != lastLoggedOCRMode {
+            log("RewindOCRService: OCR mode set to \(modeName)")
+            SentrySDK.configureScope { scope in
+                scope.setTag(value: modeName, key: "ocr_mode")
+            }
+            lastLoggedOCRMode = modeName
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             let request = VNRecognizeTextRequest { request, error in
                 if let error = error {
@@ -133,9 +186,8 @@ actor RewindOCRService {
                 continuation.resume(returning: result)
             }
 
-            // Configure for accuracy over speed
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
+            request.recognitionLevel = recognitionLevel
+            request.usesLanguageCorrection = false
             request.recognitionLanguages = ["en-US"]
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
