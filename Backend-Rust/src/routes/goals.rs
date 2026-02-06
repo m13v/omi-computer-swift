@@ -183,8 +183,7 @@ pub fn goals_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/goals/all", get(get_all_goals))
         .route("/v1/goals", post(create_goal))
-        .route("/v1/goals/{id}", patch(update_goal))
-        .route("/v1/goals/{id}/progress", patch(update_goal_progress))
-        .route("/v1/goals/{id}/history", get(get_goal_history))
-        .route("/v1/goals/{id}", delete(delete_goal))
+        .route("/v1/goals/:id", patch(update_goal).delete(delete_goal))
+        .route("/v1/goals/:id/progress", patch(update_goal_progress))
+        .route("/v1/goals/:id/history", get(get_goal_history))
 }
