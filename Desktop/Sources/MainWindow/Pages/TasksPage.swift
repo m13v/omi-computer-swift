@@ -583,9 +583,8 @@ class TasksViewModel: ObservableObject {
         showingCreateTask = false
     }
 
-    func updateTaskDetails(_ task: TaskActionItem, description: String?, dueAt: Date?, priority: String?) async {
-        await store.updateTask(task, description: description, dueAt: dueAt)
-        editingTask = nil
+    func updateTaskDetails(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
+        await store.updateTask(task, description: description, dueAt: dueAt, priority: priority)
     }
 }
 
@@ -618,17 +617,9 @@ struct TasksPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
         .dismissableSheet(isPresented: $viewModel.showingCreateTask) {
-            TaskEditSheet(
-                mode: .create,
+            TaskCreateSheet(
                 viewModel: viewModel,
                 onDismiss: { viewModel.showingCreateTask = false }
-            )
-        }
-        .dismissableSheet(item: $viewModel.editingTask) { task in
-            TaskEditSheet(
-                mode: .edit(task),
-                viewModel: viewModel,
-                onDismiss: { viewModel.editingTask = nil }
             )
         }
         .onAppear {
@@ -708,7 +699,7 @@ struct TasksPage: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10))
             }
-            .foregroundColor(viewModel.selectedTags.isEmpty ? OmiColors.textSecondary : OmiColors.textPrimary)
+            .foregroundColor(viewModel.selectedTags.isEmpty ? OmiColors.textSecondary : .black)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(viewModel.selectedTags.isEmpty ? OmiColors.backgroundSecondary : Color.white)
@@ -1294,6 +1285,18 @@ struct TaskRow: View {
     @State private var rowOffset: CGFloat = 0
     @State private var showAgentDetail = false
 
+    // Inline editing state
+    @State private var isEditing = false
+    @State private var editText = ""
+    @FocusState private var isTextFieldFocused: Bool
+
+    // Inline due date popover
+    @State private var showDatePicker = false
+    @State private var editDueDate: Date = Date()
+
+    // Inline priority popover
+    @State private var showPriorityPicker = false
+
     // Swipe gesture state
     @State private var swipeOffset: CGFloat = 0
     @State private var isDragging = false
@@ -1560,50 +1563,102 @@ struct TaskRow: View {
                 .buttonStyle(.plain)
             }
 
-            // Task content (tappable for editing or selection)
-            Button {
-                if viewModel.isMultiSelectMode {
-                    viewModel.toggleTaskSelection(task)
-                } else {
-                    viewModel.editingTask = task
-                }
-            } label: {
-                // Inline layout: title followed by metadata badges, wrapping if needed
+            // Task content - inline editable
+            if isEditing && !viewModel.isMultiSelectMode {
+                // Inline text field
+                TextField("Task description", text: $editText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textPrimary)
+                    .lineLimit(1...4)
+                    .focused($isTextFieldFocused)
+                    .onSubmit {
+                        commitEdit()
+                    }
+                    .onChange(of: isTextFieldFocused) { _, focused in
+                        if !focused {
+                            commitEdit()
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                // Display mode - click to edit
                 FlowLayout(spacing: 6) {
+                    // Task text - clickable to enter edit mode
                     Text(task.description)
                         .font(.system(size: 14))
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
+                        .onTapGesture {
+                            if viewModel.isMultiSelectMode {
+                                viewModel.toggleTaskSelection(task)
+                            } else {
+                                startEditing()
+                            }
+                        }
 
-                    // Category badge (classification like feature, bug, code, etc.)
+                    // Category badge
                     if let taskCategory = task.category {
                         TaskClassificationBadge(category: taskCategory)
                     }
 
-                    // Agent status indicator (for code-related tasks with active agents)
+                    // Agent status indicator
                     if task.shouldTriggerAgent {
                         AgentStatusIndicator(taskId: task.id)
                     }
 
-                    // Due date badge (color-coded)
+                    // Due date badge - clickable
                     if let dueAt = task.dueAt {
-                        DueDateBadgeCompact(dueAt: dueAt, isCompleted: task.completed)
+                        DueDateBadgeInteractive(
+                            dueAt: dueAt,
+                            isCompleted: task.completed,
+                            showDatePicker: $showDatePicker,
+                            editDueDate: $editDueDate
+                        )
+                    } else if isHovering && !task.completed {
+                        // Show "add date" button on hover
+                        Button {
+                            editDueDate = Date()
+                            showDatePicker = true
+                        } label: {
+                            HStack(spacing: 3) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 8))
+                                Image(systemName: "calendar")
+                                    .font(.system(size: 9))
+                            }
+                            .foregroundColor(OmiColors.textTertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(OmiColors.backgroundTertiary))
+                        }
+                        .buttonStyle(.plain)
+                        .popover(isPresented: $showDatePicker) {
+                            dueDatePopover
+                        }
                     }
 
-                    // Source badge
+                    // Source badge (read-only)
                     if let source = task.source {
                         SourceBadgeCompact(source: source, sourceLabel: task.sourceLabel, sourceIcon: task.sourceIcon)
                     }
 
-                    // Priority badge
-                    if let priority = task.priority, priority != "low" {
-                        PriorityBadgeCompact(priority: priority)
-                    }
+                    // Priority badge - clickable
+                    PriorityBadgeInteractive(
+                        priority: task.priority,
+                        isCompleted: task.completed,
+                        isHovering: isHovering,
+                        showPriorityPicker: $showPriorityPicker,
+                        onPriorityChange: { newPriority in
+                            Task {
+                                await viewModel.updateTaskDetails(task, priority: newPriority)
+                            }
+                        }
+                    )
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
 
             Spacer(minLength: 0)
 
@@ -1699,6 +1754,60 @@ struct TaskRow: View {
                 NSCursor.pop()
             }
         }
+    }
+
+    // MARK: - Inline Editing
+
+    private func startEditing() {
+        editText = task.description
+        isEditing = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            isTextFieldFocused = true
+        }
+    }
+
+    private func commitEdit() {
+        let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
+        isEditing = false
+        isTextFieldFocused = false
+
+        guard !trimmed.isEmpty, trimmed != task.description else { return }
+
+        Task {
+            await viewModel.updateTaskDetails(task, description: trimmed)
+        }
+    }
+
+    // MARK: - Due Date Popover
+
+    private var dueDatePopover: some View {
+        VStack(spacing: 12) {
+            DatePicker(
+                "Due Date",
+                selection: $editDueDate,
+                displayedComponents: [.date, .hourAndMinute]
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+
+            HStack(spacing: 8) {
+                Button("Cancel") {
+                    showDatePicker = false
+                }
+                .buttonStyle(.bordered)
+
+                Button("Save") {
+                    showDatePicker = false
+                    Task {
+                        await viewModel.updateTaskDetails(task, dueAt: editDueDate)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(OmiColors.textPrimary)
+            }
+        }
+        .padding(16)
+        .frame(width: 300)
     }
 
     private func handleToggle() {
@@ -1866,11 +1975,15 @@ struct PriorityBadge: View {
 
 // FlowLayout is defined in AppsPage.swift
 
-// MARK: - Compact Badges (for inline display)
+// MARK: - Interactive Badges
 
-struct DueDateBadgeCompact: View {
+struct DueDateBadgeInteractive: View {
     let dueAt: Date
     let isCompleted: Bool
+    @Binding var showDatePicker: Bool
+    @Binding var editDueDate: Date
+
+    @State private var isHovering = false
 
     private var displayText: String {
         let calendar = Calendar.current
@@ -1900,19 +2013,136 @@ struct DueDateBadgeCompact: View {
     }
 
     var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "calendar")
-                .font(.system(size: 9))
-            Text(displayText)
-                .font(.system(size: 11, weight: .medium))
+        Button {
+            editDueDate = dueAt
+            showDatePicker = true
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "calendar")
+                    .font(.system(size: 9))
+                Text(displayText)
+                    .font(.system(size: 11, weight: .medium))
+                if isHovering {
+                    Image(systemName: "pencil")
+                        .font(.system(size: 8))
+                }
+            }
+            .foregroundColor(isHovering ? OmiColors.textPrimary : OmiColors.textSecondary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(
+                Capsule()
+                    .fill(isHovering ? OmiColors.backgroundTertiary.opacity(0.8) : OmiColors.backgroundTertiary)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(isHovering ? OmiColors.textTertiary.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
         }
-        .foregroundColor(OmiColors.textSecondary)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            Capsule()
-                .fill(OmiColors.backgroundTertiary)
-        )
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovering = hovering
+        }
+    }
+}
+
+struct PriorityBadgeInteractive: View {
+    let priority: String?
+    let isCompleted: Bool
+    let isHovering: Bool  // Row hover state
+    @Binding var showPriorityPicker: Bool
+    let onPriorityChange: (String) -> Void
+
+    @State private var badgeHovering = false
+
+    private var badgeColor: Color {
+        switch priority {
+        case "high": return .red
+        case "medium": return .orange
+        case "low": return OmiColors.textTertiary
+        default: return OmiColors.textTertiary
+        }
+    }
+
+    private var label: String {
+        priority?.capitalized ?? "Priority"
+    }
+
+    var body: some View {
+        // Show if task has a priority, or show "add priority" on hover
+        if priority != nil || (isHovering && !isCompleted) {
+            Button {
+                showPriorityPicker = true
+            } label: {
+                HStack(spacing: 3) {
+                    if priority != nil {
+                        Image(systemName: priority == "high" ? "flag.fill" : "flag")
+                            .font(.system(size: 8))
+                    } else {
+                        Image(systemName: "plus")
+                            .font(.system(size: 8))
+                    }
+                    Text(label)
+                        .font(.system(size: 10, weight: .medium))
+                    if badgeHovering && priority != nil {
+                        Image(systemName: "pencil")
+                            .font(.system(size: 7))
+                    }
+                }
+                .foregroundColor(badgeHovering ? badgeColor : (priority != nil ? OmiColors.textSecondary : OmiColors.textTertiary))
+                .padding(.horizontal, 5)
+                .padding(.vertical, 2)
+                .background(
+                    Capsule()
+                        .fill(badgeHovering ? badgeColor.opacity(0.15) : OmiColors.backgroundTertiary)
+                )
+                .overlay(
+                    Capsule()
+                        .stroke(badgeHovering ? badgeColor.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                badgeHovering = hovering
+            }
+            .popover(isPresented: $showPriorityPicker) {
+                VStack(spacing: 4) {
+                    ForEach(["high", "medium", "low"], id: \.self) { value in
+                        let color: Color = value == "high" ? .red : value == "medium" ? .orange : OmiColors.textTertiary
+                        let isSelected = priority == value
+
+                        Button {
+                            showPriorityPicker = false
+                            onPriorityChange(value)
+                        } label: {
+                            HStack {
+                                Image(systemName: value == "high" ? "flag.fill" : "flag")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(color)
+                                    .frame(width: 20)
+                                Text(value.capitalized)
+                                    .font(.system(size: 13))
+                                    .foregroundColor(OmiColors.textPrimary)
+                                Spacer()
+                                if isSelected {
+                                    Image(systemName: "checkmark")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .foregroundColor(color)
+                                }
+                            }
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(isSelected ? color.opacity(0.1) : Color.clear)
+                            .cornerRadius(6)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(8)
+                .frame(width: 180)
+            }
+        }
     }
 }
 
@@ -1938,21 +2168,6 @@ struct SourceBadgeCompact: View {
     }
 }
 
-struct PriorityBadgeCompact: View {
-    let priority: String
-
-    var body: some View {
-        Text(priority.capitalized)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(OmiColors.textSecondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(OmiColors.backgroundTertiary)
-                )
-    }
-}
 
 // MARK: - Task Edit Sheet
 
