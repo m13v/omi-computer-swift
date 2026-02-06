@@ -32,17 +32,19 @@ actor ActionItemStorage {
     // MARK: - Local-First Read Operations
 
     /// Get action items from local cache for instant display
+    /// Returns TaskActionItem for full UI compatibility
     func getLocalActionItems(
         limit: Int = 50,
         offset: Int = 0,
         completed: Bool? = nil,
-        includeDeleted: Bool = false
-    ) async throws -> [ActionItem] {
+        includeDeleted: Bool = false,
+        startDate: Date? = nil
+    ) async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
 
         return try await db.read { database in
-            var query = ActionItemRecord
-                .filter(Column("backendSynced") == true)  // Only show synced items
+            var query = ActionItemRecord.all()
+            // Show ALL local items (synced or not) for local-first experience
 
             if !includeDeleted {
                 query = query.filter(Column("deleted") == false)
@@ -50,6 +52,11 @@ actor ActionItemStorage {
 
             if let completed = completed {
                 query = query.filter(Column("completed") == completed)
+            }
+
+            // Filter by start date (for 7-day filter)
+            if let startDate = startDate {
+                query = query.filter(Column("createdAt") >= startDate)
             }
 
             let records = try query
@@ -57,20 +64,21 @@ actor ActionItemStorage {
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
-            return records.compactMap { $0.toActionItem() }
+            return records.map { $0.toTaskActionItem() }
         }
     }
 
     /// Get count of local action items
     func getLocalActionItemsCount(
         completed: Bool? = nil,
-        includeDeleted: Bool = false
+        includeDeleted: Bool = false,
+        startDate: Date? = nil
     ) async throws -> Int {
         let db = try await ensureInitialized()
 
         return try await db.read { database in
-            var query = ActionItemRecord
-                .filter(Column("backendSynced") == true)
+            var query = ActionItemRecord.all()
+            // Count ALL local items (synced or not) for local-first experience
 
             if !includeDeleted {
                 query = query.filter(Column("deleted") == false)
@@ -78,6 +86,10 @@ actor ActionItemStorage {
 
             if let completed = completed {
                 query = query.filter(Column("completed") == completed)
+            }
+
+            if let startDate = startDate {
+                query = query.filter(Column("createdAt") >= startDate)
             }
 
             return try query.fetchCount(database)
@@ -151,6 +163,27 @@ actor ActionItemStorage {
         }
 
         log("ActionItemStorage: Synced \(items.count) action items from backend")
+    }
+
+    /// Sync multiple TaskActionItems to local storage (batch upsert with full data)
+    func syncTaskActionItems(_ items: [TaskActionItem]) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            for item in items {
+                if var existingRecord = try ActionItemRecord
+                    .filter(Column("backendId") == item.id)
+                    .fetchOne(database) {
+                    existingRecord.updateFrom(item)
+                    try existingRecord.update(database)
+                } else {
+                    var newRecord = ActionItemRecord.from(item)
+                    try newRecord.insert(database)
+                }
+            }
+        }
+
+        log("ActionItemStorage: Synced \(items.count) task action items from backend")
     }
 
     // MARK: - Local Extraction Operations
