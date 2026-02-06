@@ -49,6 +49,9 @@ pub struct ActionItemDB {
     /// ID of the task that was kept instead of this one
     #[serde(default)]
     pub kept_task_id: Option<String>,
+    /// Category: "work", "personal", "health", "finance", "education", "shopping", "social", "travel", "home", "other"
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 /// Request body for updating an action item
@@ -60,6 +63,10 @@ pub struct UpdateActionItemRequest {
     pub description: Option<String>,
     /// New due date
     pub due_at: Option<DateTime<Utc>>,
+    /// New priority: "high", "medium", "low"
+    pub priority: Option<String>,
+    /// New category: "work", "personal", "health", etc.
+    pub category: Option<String>,
 }
 
 /// Response for action item status operations
@@ -94,4 +101,6 @@ pub struct CreateActionItemRequest {
     pub priority: Option<String>,
     /// JSON metadata string: {"source_app": "Safari", "confidence": 0.85}
     pub metadata: Option<String>,
+    /// Category: "work", "personal", "health", "finance", etc.
+    pub category: Option<String>,
 }
