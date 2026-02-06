@@ -1,16 +1,56 @@
 import SwiftUI
 
 struct FocusSummaryWidget: View {
-    let stats: FocusDayStats
+    let todayStats: FocusDayStats
+    let totalStats: FocusDayStats
+
+    @State private var selectedTab: FocusTab = .total
+
+    enum FocusTab: String, CaseIterable {
+        case today = "Today"
+        case total = "Total"
+    }
+
+    private var stats: FocusDayStats {
+        selectedTab == .today ? todayStats : totalStats
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            // Header
+            // Header with tabs
             HStack {
                 Text("Focus")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
+
                 Spacer()
+
+                // Tab picker
+                HStack(spacing: 0) {
+                    ForEach(FocusTab.allCases, id: \.self) { tab in
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.15)) {
+                                selectedTab = tab
+                            }
+                        }) {
+                            Text(tab.rawValue)
+                                .font(.system(size: 11, weight: selectedTab == tab ? .semibold : .regular))
+                                .foregroundColor(selectedTab == tab ? OmiColors.textPrimary : OmiColors.textTertiary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(selectedTab == tab ? OmiColors.backgroundQuaternary.opacity(0.6) : Color.clear)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(2)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(OmiColors.backgroundTertiary.opacity(0.5))
+                )
             }
 
             // Stats row - all in one line
@@ -104,15 +144,26 @@ struct FocusStatCard: View {
 }
 
 #Preview {
-    FocusSummaryWidget(stats: FocusDayStats(
-        date: Date(),
-        focusedMinutes: 45,
-        distractedMinutes: 15,
-        sessionCount: 8,
-        focusedCount: 6,
-        distractedCount: 2,
-        topDistractions: []
-    ))
+    FocusSummaryWidget(
+        todayStats: FocusDayStats(
+            date: Date(),
+            focusedMinutes: 45,
+            distractedMinutes: 15,
+            sessionCount: 8,
+            focusedCount: 6,
+            distractedCount: 2,
+            topDistractions: []
+        ),
+        totalStats: FocusDayStats(
+            date: Date(),
+            focusedMinutes: 320,
+            distractedMinutes: 80,
+            sessionCount: 52,
+            focusedCount: 40,
+            distractedCount: 12,
+            topDistractions: []
+        )
+    )
     .padding()
     .background(OmiColors.backgroundPrimary)
 }
