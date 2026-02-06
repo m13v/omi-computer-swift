@@ -349,7 +349,7 @@ struct MicrophonePermissionSection: View {
             VStack(alignment: .leading, spacing: 12) {
                 instructionStep(number: 1, text: "Click \"Grant Access\" below - a system dialog will appear")
                 instructionStep(number: 2, text: "Click \"OK\" to allow microphone access")
-                instructionStep(number: 3, text: "If no dialog appears, find \"Omi Computer\" in Settings and enable it")
+                instructionStep(number: 3, text: "If no dialog appears, find \"\(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi")\" in Settings and enable it")
             }
 
             Button(action: {
@@ -469,7 +469,7 @@ struct ScreenRecordingPermissionSection: View {
 
                     VStack(alignment: .leading, spacing: 12) {
                         instructionStep(number: 1, text: "Click \"Open Settings\" below - this will make Omi appear in the list")
-                        instructionStep(number: 2, text: "Find \"Omi Computer\" in the Screen Recording list")
+                        instructionStep(number: 2, text: "Find \"\(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi")\" in the Screen Recording list")
                         instructionStep(number: 3, text: "Toggle the switch to enable screen recording")
                         instructionStep(number: 4, text: "Return to Omi - permission will update automatically")
                     }
