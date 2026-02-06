@@ -165,6 +165,8 @@ struct DesktopHomeView: View {
                         PermissionsPage(appState: appState)
                     case 11:
                         DeviceSettingsPage()
+                    case 12:
+                        HelpPage()
                     default:
                         DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
                     }
