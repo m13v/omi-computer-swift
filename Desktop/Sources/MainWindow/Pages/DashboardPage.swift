@@ -125,6 +125,11 @@ class DashboardViewModel: ObservableObject {
     }
 
     func updateGoalProgress(_ goal: Goal, currentValue: Double) async {
+        // Optimistically update local value immediately so slider doesn't snap back
+        if let index = goals.firstIndex(where: { $0.id == goal.id }) {
+            goals[index].currentValue = currentValue
+        }
+
         do {
             let updated = try await APIClient.shared.updateGoalProgress(
                 goalId: goal.id,
