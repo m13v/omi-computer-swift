@@ -1767,9 +1767,13 @@ struct FlowLayout: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         let result = FlowResult(in: bounds.width, subviews: subviews, spacing: spacing)
         for (index, subview) in subviews.enumerated() {
+            let idealSize = subview.sizeThatFits(.unspecified)
+            let subProposal: ProposedViewSize = idealSize.width > bounds.width
+                ? ProposedViewSize(width: bounds.width, height: nil)
+                : .unspecified
             subview.place(at: CGPoint(x: bounds.minX + result.positions[index].x,
                                        y: bounds.minY + result.positions[index].y),
-                          proposal: .unspecified)
+                          proposal: subProposal)
         }
     }
 
@@ -1783,7 +1787,12 @@ struct FlowLayout: Layout {
             var rowHeight: CGFloat = 0
 
             for subview in subviews {
-                let size = subview.sizeThatFits(.unspecified)
+                var size = subview.sizeThatFits(.unspecified)
+
+                // Constrain oversized items to available width
+                if size.width > maxWidth {
+                    size = subview.sizeThatFits(ProposedViewSize(width: maxWidth, height: nil))
+                }
 
                 if x + size.width > maxWidth && x > 0 {
                     x = 0
@@ -1794,7 +1803,7 @@ struct FlowLayout: Layout {
                 positions.append(CGPoint(x: x, y: y))
                 rowHeight = max(rowHeight, size.height)
                 x += size.width + spacing
-                self.size.width = max(self.size.width, x)
+                self.size.width = max(self.size.width, min(x, maxWidth))
             }
 
             self.size.height = y + rowHeight
