@@ -449,9 +449,10 @@ actor FocusAssistant: ProactiveAssistant {
 
     // MARK: - Storage
 
-    /// Save focus session to SQLite and sync to backend
+    /// Save focus session to SQLite (both tables) and sync to backend
     private func saveFocusSessionToSQLite(analysis: ScreenAnalysis, screenshotId: Int64?) async {
-        let record = FocusSessionRecord(
+        // Save to focus_sessions table (for detailed tracking)
+        let focusRecord = FocusSessionRecord(
             screenshotId: screenshotId,
             status: analysis.status.rawValue,
             appOrSite: analysis.appOrSite,
@@ -459,22 +460,88 @@ actor FocusAssistant: ProactiveAssistant {
             message: analysis.message
         )
 
+        var focusSessionId: Int64?
         do {
-            let inserted = try await ProactiveStorage.shared.insertFocusSession(record)
-            log("Focus: Saved to SQLite (id: \(inserted.id ?? -1), status: \(analysis.status.rawValue))")
+            let inserted = try await ProactiveStorage.shared.insertFocusSession(focusRecord)
+            focusSessionId = inserted.id
+            log("Focus: Saved to focus_sessions (id: \(inserted.id ?? -1), status: \(analysis.status.rawValue))")
+        } catch {
+            logError("Focus: Failed to save to focus_sessions", error: error)
+        }
 
-            // Sync to backend
-            if let backendId = await syncFocusSessionToBackend(analysis: analysis) {
-                if let recordId = inserted.id {
+        // Save to unified memories table (for search/filter)
+        let memoryId = await saveFocusToMemoriesTable(analysis: analysis, screenshotId: screenshotId)
+
+        // Sync to backend once and update both tables with backendId
+        if let backendId = await syncFocusSessionToBackend(analysis: analysis) {
+            // Update focus_sessions table
+            if let recordId = focusSessionId {
+                do {
                     try await ProactiveStorage.shared.updateFocusSessionSyncStatus(
                         id: recordId,
                         backendId: backendId,
                         synced: true
                     )
+                } catch {
+                    logError("Focus: Failed to update focus_sessions sync status", error: error)
                 }
             }
+
+            // Update memories table
+            if let memId = memoryId {
+                do {
+                    try await MemoryStorage.shared.markSynced(id: memId, backendId: backendId)
+                } catch {
+                    logError("Focus: Failed to update memories sync status", error: error)
+                }
+            }
+        }
+    }
+
+    /// Save focus event to unified memories table for search/filter
+    /// Returns the inserted memory ID if successful
+    private func saveFocusToMemoriesTable(analysis: ScreenAnalysis, screenshotId: Int64?) async -> Int64? {
+        // Build content for the memory
+        let statusText = analysis.status == .focused ? "Focused" : "Distracted"
+        let content = "\(statusText) on \(analysis.appOrSite): \(analysis.description)"
+
+        // Build tags: ["focus", "focused"/"distracted", "app:{appName}"]
+        let statusTag = analysis.status == .focused ? "focused" : "distracted"
+        let appTag = "app:\(analysis.appOrSite)"
+        var tags = ["focus", statusTag, appTag]
+
+        // Add message indicator if present
+        if let message = analysis.message, !message.isEmpty {
+            tags.append("has-message")
+        }
+
+        // Encode tags as JSON
+        let tagsJson: String?
+        if let data = try? JSONEncoder().encode(tags),
+           let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        } else {
+            tagsJson = nil
+        }
+
+        let memoryRecord = MemoryRecord(
+            backendSynced: false,
+            content: content,
+            category: "system",
+            tagsJson: tagsJson,
+            source: "desktop",
+            screenshotId: screenshotId,
+            sourceApp: analysis.appOrSite,
+            contextSummary: analysis.description
+        )
+
+        do {
+            let insertedMemory = try await MemoryStorage.shared.insertLocalMemory(memoryRecord)
+            log("Focus: Saved to memories (id: \(insertedMemory.id ?? -1)) with tags \(tags)")
+            return insertedMemory.id
         } catch {
-            logError("Focus: Failed to save to SQLite", error: error)
+            logError("Focus: Failed to save to memories table", error: error)
+            return nil
         }
     }
 
