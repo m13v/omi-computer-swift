@@ -128,7 +128,6 @@ trap cleanup EXIT
 # Kill existing instances
 echo "Killing existing instances..."
 pkill "$BINARY_NAME" 2>/dev/null || true
-pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 
@@ -175,7 +174,6 @@ echo "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi.app"
     "/Applications/Omi Computer.app"
-    "/Applications/Omi Beta.app"
     "/Applications/Omi Dev.app"
     "$APP_BUNDLE"  # Local build folder
     "$HOME/Desktop/Omi.app"
@@ -196,10 +194,6 @@ find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi.app" -type d 2>/dev/
     rm -rf "$app"
 done
 find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Computer.app" -type d 2>/dev/null | while read app; do
-    echo "  Removing: $app"
-    rm -rf "$app"
-done
-find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Beta.app" -type d 2>/dev/null | while read app; do
     echo "  Removing: $app"
     rm -rf "$app"
 done
@@ -302,7 +296,7 @@ echo "Building app..."
 swift build -c debug --package-path Desktop
 
 # Remove old app bundles to avoid permission issues with signed apps
-rm -rf "$APP_BUNDLE" "$BUILD_DIR/Omi Computer.app" "$BUILD_DIR/Omi Beta.app"
+rm -rf "$APP_BUNDLE" "$BUILD_DIR/Omi Computer.app"
 
 # Create app bundle
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
