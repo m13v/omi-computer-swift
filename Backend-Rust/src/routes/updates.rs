@@ -179,8 +179,8 @@ async fn download_redirect(State(state): State<AppState>) -> impl IntoResponse {
         Ok(releases) => {
             if let Some(latest) = releases.into_iter().filter(|r| r.is_live).next() {
                 // Convert ZIP URL to DMG URL
-                // e.g., .../Omi.zip -> .../Omi.Computer.dmg
-                let dmg_url = latest.download_url.replace("Omi.zip", "Omi.Computer.dmg");
+                // e.g., .../Omi.zip -> .../Omi.Beta.dmg
+                let dmg_url = latest.download_url.replace("Omi.zip", "Omi.Beta.dmg");
                 tracing::info!("Redirecting download to: {}", dmg_url);
                 axum::response::Redirect::temporary(&dmg_url).into_response()
             } else {
