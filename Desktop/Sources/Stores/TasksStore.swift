@@ -50,6 +50,17 @@ class TasksStore: ObservableObject {
     private var isShowingAllIncompleteTasks = false
     private var cancellables = Set<AnyCancellable>()
 
+    /// Whether the tasks page (or dashboard) is currently visible.
+    /// Auto-refresh only runs when active to avoid unnecessary API calls.
+    var isActive = false {
+        didSet {
+            if isActive && !oldValue && hasLoadedIncomplete {
+                // Refresh immediately when becoming active
+                Task { await refreshTasksIfNeeded() }
+            }
+        }
+    }
+
     // MARK: - Computed Properties (for Dashboard)
 
     /// 7-day cutoff for filtering old tasks (matches Flutter behavior)
@@ -119,8 +130,8 @@ class TasksStore: ObservableObject {
     // MARK: - Initialization
 
     private init() {
-        // Auto-refresh tasks every 3 seconds
-        Timer.publish(every: 3.0, on: .main, in: .common)
+        // Auto-refresh tasks every 30 seconds
+        Timer.publish(every: 30.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 Task { await self?.refreshTasksIfNeeded() }
@@ -131,6 +142,9 @@ class TasksStore: ObservableObject {
     /// Refresh tasks if already loaded (for auto-refresh)
     /// Uses local-first pattern: sync API to cache, then reload from cache
     private func refreshTasksIfNeeded() async {
+        // Skip if page is not visible
+        guard isActive else { return }
+
         // Skip if currently loading
         guard !isLoadingIncomplete, !isLoadingCompleted, !isLoadingDeleted, !isLoadingMore else { return }
 
