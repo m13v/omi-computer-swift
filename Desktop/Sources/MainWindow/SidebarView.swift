@@ -382,6 +382,12 @@ struct SidebarView: View {
                 checkForDeferredUnlockAnimation()
             }
         }
+        .onChange(of: selectedIndex) { _, _ in
+            // Check tier eligibility on page navigation (at most once per day)
+            Task {
+                await TierManager.shared.checkTierIfNeeded()
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
             syncMonitoringState()
         }
