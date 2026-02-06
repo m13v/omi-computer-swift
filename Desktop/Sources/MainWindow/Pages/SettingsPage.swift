@@ -399,189 +399,6 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Multiple Chat Sessions toggle
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "bubble.left.and.bubble.right")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 24, height: 24)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Multiple Chat Sessions")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text(multiChatEnabled
-                             ? "Create separate chat threads"
-                             : "Single chat synced with mobile app")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Toggle("", isOn: $multiChatEnabled)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-            }
-
-            // Conversation View toggle
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: conversationsCompactView ? "list.bullet" : "list.bullet.rectangle")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 24, height: 24)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Compact Conversations")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text(conversationsCompactView
-                             ? "Showing compact conversation list"
-                             : "Showing expanded conversation list")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Toggle("", isOn: $conversationsCompactView)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-            }
-
-            // Launch at Login toggle
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "power")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 24, height: 24)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Launch at Login")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text(launchAtLoginManager.statusDescription)
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Toggle("", isOn: Binding(
-                        get: { launchAtLoginManager.isEnabled },
-                        set: { newValue in
-                            if launchAtLoginManager.setEnabled(newValue) {
-                                AnalyticsManager.shared.launchAtLoginChanged(enabled: newValue, source: "user")
-                            }
-                        }
-                    ))
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                }
-            }
-
-            // Export Logs
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 24, height: 24)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Export Logs")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Save app logs for troubleshooting")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    HStack(spacing: 8) {
-                        Button(action: copyLogsToClipboard) {
-                            Text(logsCopied ? "Copied!" : "Copy")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(logsCopied ? OmiColors.success : OmiColors.textPrimary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(logsCopied ? OmiColors.success.opacity(0.15) : OmiColors.backgroundTertiary)
-                                )
-                                .animation(.easeInOut(duration: 0.2), value: logsCopied)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: exportLogs) {
-                            Text("Export")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(OmiColors.purplePrimary)
-                                )
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-
-            // Reset Onboarding
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "arrow.counterclockwise")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .frame(width: 24, height: 24)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Reset Onboarding")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Restart setup wizard and reset permissions")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Button(action: { showResetOnboardingAlert = true }) {
-                        Text("Reset")
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(.black)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 6)
-                            .background(
-                                RoundedRectangle(cornerRadius: 6)
-                                    .fill(.white)
-                            )
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .alert("Reset Onboarding?", isPresented: $showResetOnboardingAlert) {
-                Button("Cancel", role: .cancel) { }
-                Button("Reset & Restart", role: .destructive) {
-                    appState.resetOnboardingAndRestart()
-                }
-            } message: {
-                Text("This will reset all permissions and restart the app. You'll need to grant permissions again during setup.")
-            }
-
         }
     }
 
@@ -1513,15 +1330,7 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    if isLoadingStats {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .controlSize(.small)
-                            Spacer()
-                        }
-                        .padding(.vertical, 8)
-                    } else if let stats = advancedStats {
+                    if let stats = advancedStats {
                         statRow(label: "Conversations", value: stats.conversations)
                         statRow(label: "Apps Installed", value: stats.appsInstalled)
                         if isLoadingChatMessages {
@@ -1543,6 +1352,17 @@ struct SettingsContentView: View {
                         statRow(label: "Tasks (Removed)", value: stats.tasksDeleted)
                         statRow(label: "Goals", value: stats.goalsCount)
                         statRow(label: "Memories", value: stats.memoriesTotal)
+                    } else if isLoadingStats {
+                        statRowLoading(label: "Conversations")
+                        statRowLoading(label: "Apps Installed")
+                        statRowLoading(label: "AI Chat Messages")
+                        statRowLoading(label: "Screenshots")
+                        statRowLoading(label: "Focus Sessions")
+                        statRowLoading(label: "Tasks (To Do)")
+                        statRowLoading(label: "Tasks (Done)")
+                        statRowLoading(label: "Tasks (Removed)")
+                        statRowLoading(label: "Goals")
+                        statRowLoading(label: "Memories")
                     } else {
                         Text("Unable to load stats")
                             .font(.system(size: 13))
@@ -1916,6 +1736,189 @@ struct SettingsContentView: View {
                     }
                 }
             }
+
+            // Multiple Chat Sessions toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "bubble.left.and.bubble.right")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Multiple Chat Sessions")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(multiChatEnabled
+                             ? "Create separate chat threads"
+                             : "Single chat synced with mobile app")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $multiChatEnabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+
+            // Conversation View toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: conversationsCompactView ? "list.bullet" : "list.bullet.rectangle")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Compact Conversations")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(conversationsCompactView
+                             ? "Showing compact conversation list"
+                             : "Showing expanded conversation list")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $conversationsCompactView)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+
+            // Launch at Login toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "power")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Launch at Login")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(launchAtLoginManager.statusDescription)
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { launchAtLoginManager.isEnabled },
+                        set: { newValue in
+                            if launchAtLoginManager.setEnabled(newValue) {
+                                AnalyticsManager.shared.launchAtLoginChanged(enabled: newValue, source: "user")
+                            }
+                        }
+                    ))
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+
+            // Export Logs
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "doc.text")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Export Logs")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Save app logs for troubleshooting")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    HStack(spacing: 8) {
+                        Button(action: copyLogsToClipboard) {
+                            Text(logsCopied ? "Copied!" : "Copy")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(logsCopied ? OmiColors.success : OmiColors.textPrimary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(logsCopied ? OmiColors.success.opacity(0.15) : OmiColors.backgroundTertiary)
+                                )
+                                .animation(.easeInOut(duration: 0.2), value: logsCopied)
+                        }
+                        .buttonStyle(.plain)
+
+                        Button(action: exportLogs) {
+                            Text("Export")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 6)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .fill(OmiColors.purplePrimary)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // Reset Onboarding
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Reset Onboarding")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Restart setup wizard and reset permissions")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Button(action: { showResetOnboardingAlert = true }) {
+                        Text("Reset")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.black)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(.white)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .alert("Reset Onboarding?", isPresented: $showResetOnboardingAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Reset & Restart", role: .destructive) {
+                    appState.resetOnboardingAndRestart()
+                }
+            } message: {
+                Text("This will reset all permissions and restart the app. You'll need to grant permissions again during setup.")
+            }
         }
         .task {
             await loadAdvancedStats()
@@ -2013,6 +2016,19 @@ struct SettingsContentView: View {
             Text(formatNumber(value))
                 .font(.system(size: 14, weight: .medium).monospacedDigit())
                 .foregroundColor(OmiColors.textPrimary)
+        }
+    }
+
+    private func statRowLoading(label: String) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textSecondary)
+
+            Spacer()
+
+            ProgressView()
+                .controlSize(.mini)
         }
     }
 
