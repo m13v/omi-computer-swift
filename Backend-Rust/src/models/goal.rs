@@ -161,6 +161,35 @@ pub struct DailyScoreQuery {
     pub date: Option<String>,
 }
 
+/// A single progress history entry for a goal
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GoalHistoryEntry {
+    /// Date in YYYY-MM-DD format
+    pub date: String,
+    /// The progress value recorded
+    pub value: f64,
+    /// When the entry was recorded
+    pub recorded_at: DateTime<Utc>,
+}
+
+/// Query parameters for goal history
+#[derive(Debug, Clone, Deserialize)]
+pub struct GoalHistoryQuery {
+    /// Number of days of history to return (default 30)
+    #[serde(default = "default_history_days")]
+    pub days: u32,
+}
+
+fn default_history_days() -> u32 {
+    30
+}
+
+/// Response wrapper for goal history
+#[derive(Debug, Clone, Serialize)]
+pub struct GoalHistoryResponse {
+    pub history: Vec<GoalHistoryEntry>,
+}
+
 /// Response wrapper for goals list
 #[derive(Debug, Clone, Serialize)]
 pub struct GoalsListResponse {
