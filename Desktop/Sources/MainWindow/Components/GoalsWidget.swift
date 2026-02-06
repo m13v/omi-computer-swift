@@ -220,7 +220,7 @@ struct GoalRowView: View {
             .onTapGesture { onTap() }
 
             // Content
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Text(goal.title)
                         .font(.system(size: 13, weight: .medium))
@@ -251,31 +251,28 @@ struct GoalRowView: View {
                 // Progress bar with drag gesture
                 GeometryReader { geometry in
                     ZStack(alignment: .leading) {
-                        // Background
-                        RoundedRectangle(cornerRadius: isDragging ? 4 : 2)
-                            .fill(OmiColors.backgroundTertiary.opacity(0.5))
-                            .frame(height: isDragging ? 8 : 4)
+                        // Background track - visible light gray
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(Color.white.opacity(0.12))
+                            .frame(height: isDragging ? 8 : 6)
 
                         // Progress fill
-                        RoundedRectangle(cornerRadius: isDragging ? 4 : 2)
+                        RoundedRectangle(cornerRadius: 3)
                             .fill(progressColor)
                             .frame(
                                 width: max(0, geometry.size.width * displayProgress),
-                                height: isDragging ? 8 : 4
+                                height: isDragging ? 8 : 6
                             )
 
-                        // Drag thumb (visible on hover or drag)
-                        if isHovering || isDragging {
-                            Circle()
-                                .fill(progressColor)
-                                .frame(width: 14, height: 14)
-                                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
-                                .offset(x: max(0, min(geometry.size.width * displayProgress - 7, geometry.size.width - 14)))
-                        }
+                        // Drag thumb - always visible
+                        Circle()
+                            .fill(.white)
+                            .frame(width: 14, height: 14)
+                            .shadow(color: .black.opacity(0.25), radius: 2, y: 1)
+                            .offset(x: max(0, min(geometry.size.width * displayProgress - 7, geometry.size.width - 14)))
                     }
-                    .frame(height: isDragging ? 8 : 4)
                     .frame(maxHeight: .infinity)
-                    .contentShape(Rectangle().size(width: geometry.size.width, height: 20))
+                    .contentShape(Rectangle())
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { value in
@@ -287,7 +284,6 @@ struct GoalRowView: View {
                                 if let dv = dragValue {
                                     let finalValue = goal.minValue + dv * (goal.maxValue - goal.minValue)
                                     let clampedValue = max(goal.minValue, min(finalValue, goal.maxValue))
-                                    // Round to nearest integer for cleaner values
                                     let roundedValue = (clampedValue * 10).rounded() / 10
                                     onUpdateProgress(roundedValue)
                                 }
@@ -296,7 +292,7 @@ struct GoalRowView: View {
                             }
                     )
                 }
-                .frame(height: isDragging ? 14 : 4)
+                .frame(height: 18)
                 .animation(.easeInOut(duration: 0.15), value: isDragging)
             }
         }
