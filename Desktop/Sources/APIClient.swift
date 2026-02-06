@@ -1694,7 +1694,7 @@ extension APIClient {
             throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
         }
 
-        return try JSONDecoder().decode(Goal.self, from: data)
+        return try decoder.decode(Goal.self, from: data)
     }
 
     /// Deletes a goal
