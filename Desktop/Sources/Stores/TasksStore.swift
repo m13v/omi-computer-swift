@@ -16,12 +16,16 @@ class TasksStore: ObservableObject {
     @Published var incompleteTasks: [TaskActionItem] = []
     /// Completed tasks (Done) - loaded on demand when viewing Done tab
     @Published var completedTasks: [TaskActionItem] = []
+    /// Soft-deleted tasks (Removed by AI) - loaded on demand when viewing filter
+    @Published var deletedTasks: [TaskActionItem] = []
 
     @Published var isLoadingIncomplete = false
     @Published var isLoadingCompleted = false
+    @Published var isLoadingDeleted = false
     @Published var isLoadingMore = false
     @Published var hasMoreIncompleteTasks = true
     @Published var hasMoreCompletedTasks = true
+    @Published var hasMoreDeletedTasks = true
     @Published var error: String?
 
     // Legacy compatibility - combines both lists
@@ -30,16 +34,18 @@ class TasksStore: ObservableObject {
     }
 
     var isLoading: Bool {
-        isLoadingIncomplete || isLoadingCompleted
+        isLoadingIncomplete || isLoadingCompleted || isLoadingDeleted
     }
 
     // MARK: - Private State
 
     private var incompleteOffset = 0
     private var completedOffset = 0
+    private var deletedOffset = 0
     private let pageSize = 100  // Reduced from 1000 for better performance
     private var hasLoadedIncomplete = false
     private var hasLoadedCompleted = false
+    private var hasLoadedDeleted = false
     /// Whether we're currently showing all tasks (no date filter) or just recent
     private var isShowingAllIncompleteTasks = false
     private var cancellables = Set<AnyCancellable>()
@@ -106,6 +112,10 @@ class TasksStore: ObservableObject {
         completedTasks.count
     }
 
+    var deletedCount: Int {
+        deletedTasks.count
+    }
+
     // MARK: - Initialization
 
     private init() {
@@ -121,7 +131,7 @@ class TasksStore: ObservableObject {
     /// Refresh tasks if already loaded (for auto-refresh)
     private func refreshTasksIfNeeded() async {
         // Skip if currently loading
-        guard !isLoadingIncomplete, !isLoadingCompleted, !isLoadingMore else { return }
+        guard !isLoadingIncomplete, !isLoadingCompleted, !isLoadingDeleted, !isLoadingMore else { return }
 
         // Only refresh if we've already loaded tasks
         guard hasLoadedIncomplete else { return }
@@ -156,6 +166,22 @@ class TasksStore: ObservableObject {
                 completedOffset = response.items.count
             } catch {
                 logError("TasksStore: Auto-refresh completed tasks failed", error: error)
+            }
+        }
+
+        // Also refresh deleted if loaded
+        if hasLoadedDeleted {
+            do {
+                let response = try await APIClient.shared.getActionItems(
+                    limit: pageSize,
+                    offset: 0,
+                    deleted: true
+                )
+                deletedTasks = response.items
+                hasMoreDeletedTasks = response.hasMore
+                deletedOffset = response.items.count
+            } catch {
+                logError("TasksStore: Auto-refresh deleted tasks failed", error: error)
             }
         }
     }
@@ -232,6 +258,34 @@ class TasksStore: ObservableObject {
         }
 
         isLoadingCompleted = false
+        NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
+    }
+
+    /// Load deleted tasks (Removed by AI) - called when user views the filter
+    func loadDeletedTasks() async {
+        guard !isLoadingDeleted else { return }
+
+        isLoadingDeleted = true
+        error = nil
+        deletedOffset = 0
+
+        do {
+            let response = try await APIClient.shared.getActionItems(
+                limit: pageSize,
+                offset: 0,
+                deleted: true
+            )
+            deletedTasks = response.items
+            hasMoreDeletedTasks = response.hasMore
+            deletedOffset = response.items.count
+            hasLoadedDeleted = true
+            log("TasksStore: Loaded \(response.items.count) deleted tasks")
+        } catch {
+            self.error = error.localizedDescription
+            logError("TasksStore: Failed to load deleted tasks", error: error)
+        }
+
+        isLoadingDeleted = false
         NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
     }
 
