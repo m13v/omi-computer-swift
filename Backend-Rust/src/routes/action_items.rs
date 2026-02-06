@@ -73,6 +73,7 @@ async fn create_action_item(
             request.source.as_deref(),
             request.priority.as_deref(),
             request.metadata.as_deref(),
+            request.category.as_deref(),
         )
         .await
     {
@@ -173,6 +174,8 @@ async fn update_action_item(
             request.completed,
             request.description.as_deref(),
             request.due_at,
+            request.priority.as_deref(),
+            request.category.as_deref(),
         )
         .await
     {
@@ -208,6 +211,7 @@ async fn batch_create_action_items(
                 item_request.source.as_deref(),
                 item_request.priority.as_deref(),
                 item_request.metadata.as_deref(),
+                item_request.category.as_deref(),
             )
             .await
         {
