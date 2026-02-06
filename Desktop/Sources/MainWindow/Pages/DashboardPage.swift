@@ -14,6 +14,8 @@ class DashboardViewModel: ObservableObject {
     @Published var error: String?
 
     private var cancellables = Set<AnyCancellable>()
+    private var lastGoalRefreshTime: Date = .distantPast
+    private let goalsCacheKey = "omi.goals.cache"
 
     // Computed properties that delegate to TasksStore
     var overdueTasks: [TaskActionItem] { tasksStore.overdueTasks }
@@ -28,6 +30,9 @@ class DashboardViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        // Load cached goals immediately for instant display
+        loadGoalsFromCache()
     }
 
     func loadDashboardData() async {
@@ -55,8 +60,42 @@ class DashboardViewModel: ObservableObject {
     private func loadGoals() async {
         do {
             goals = try await APIClient.shared.getGoals()
+            lastGoalRefreshTime = Date()
+            saveGoalsToCache()
         } catch {
             logError("Failed to load goals", error: error)
+        }
+    }
+
+    /// Refresh goals with 30-second debounce (for app lifecycle events)
+    func refreshGoals() {
+        let now = Date()
+        guard now.timeIntervalSince(lastGoalRefreshTime) > 30 else { return }
+        Task {
+            await loadGoals()
+        }
+    }
+
+    // MARK: - Goals Cache
+
+    private func loadGoalsFromCache() {
+        guard let data = UserDefaults.standard.data(forKey: goalsCacheKey) else { return }
+        do {
+            let cached = try JSONDecoder().decode([Goal].self, from: data)
+            if goals.isEmpty {
+                goals = cached
+            }
+        } catch {
+            logError("Failed to load goals from cache", error: error)
+        }
+    }
+
+    private func saveGoalsToCache() {
+        do {
+            let data = try JSONEncoder().encode(goals)
+            UserDefaults.standard.set(data, forKey: goalsCacheKey)
+        } catch {
+            logError("Failed to save goals to cache", error: error)
         }
     }
 
@@ -79,6 +118,7 @@ class DashboardViewModel: ObservableObject {
             if goals.count > 3 {
                 goals = Array(goals.prefix(3))
             }
+            saveGoalsToCache()
         } catch {
             logError("Failed to create goal", error: error)
         }
@@ -93,6 +133,7 @@ class DashboardViewModel: ObservableObject {
             if let index = goals.firstIndex(where: { $0.id == goal.id }) {
                 goals[index] = updated
             }
+            saveGoalsToCache()
         } catch {
             logError("Failed to update goal progress", error: error)
         }
@@ -102,6 +143,7 @@ class DashboardViewModel: ObservableObject {
         do {
             try await APIClient.shared.deleteGoal(id: goal.id)
             goals.removeAll { $0.id == goal.id }
+            saveGoalsToCache()
         } catch {
             logError("Failed to delete goal", error: error)
         }
@@ -203,6 +245,9 @@ struct DashboardPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            viewModel.refreshGoals()
+        }
     }
 
     private var formattedDate: String {
