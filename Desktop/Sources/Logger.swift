@@ -88,7 +88,7 @@ func measurePerfAsync<T>(_ name: String, logCPU: Bool = false, _ block: () async
 }
 
 /// Check if this is a development build
-private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.contains(".development") == true
+private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.hasSuffix("-dev") == true
 
 /// Write to log file, stdout, and Sentry breadcrumbs
 func log(_ message: String) {
