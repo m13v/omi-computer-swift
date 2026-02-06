@@ -232,8 +232,6 @@ class TasksViewModel: ObservableObject {
 
     // Create/Edit task state
     @Published var showingCreateTask = false
-    @Published var editingTask: TaskActionItem? = nil
-
     // Multi-select state
     @Published var isMultiSelectMode = false
     @Published var selectedTaskIds: Set<String> = []
@@ -1633,9 +1631,6 @@ struct TaskRow: View {
                             .background(Capsule().fill(OmiColors.backgroundTertiary))
                         }
                         .buttonStyle(.plain)
-                        .popover(isPresented: $showDatePicker) {
-                            dueDatePopover
-                        }
                     }
 
                     // Source badge (read-only)
@@ -1658,6 +1653,9 @@ struct TaskRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+                .popover(isPresented: $showDatePicker) {
+                    dueDatePopover
+                }
             }
 
             Spacer(minLength: 0)
@@ -1847,129 +1845,6 @@ struct TaskRow: View {
                 await self.viewModel.toggleTask(self.task)
             }
         }
-    }
-}
-
-// MARK: - Due Date Badge
-
-struct DueDateBadge: View {
-    let dueAt: Date
-    let isCompleted: Bool
-
-    private var badgeInfo: (text: String, color: Color) {
-        let calendar = Calendar.current
-        let now = Date()
-        let startOfToday = calendar.startOfDay(for: now)
-        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
-        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
-        let endOfWeek = calendar.date(byAdding: .day, value: 7, to: startOfToday)!
-
-        if isCompleted {
-            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.textTertiary)
-        }
-
-        if dueAt < startOfToday {
-            // Show relative date for overdue tasks with subtle red (like Flutter)
-            let formatter = RelativeDateTimeFormatter()
-            formatter.unitsStyle = .short
-            return (formatter.localizedString(for: dueAt, relativeTo: now), Color.red.opacity(0.8))
-        } else if dueAt < startOfTomorrow {
-            return ("Today", .yellow)
-        } else if dueAt < startOfDayAfterTomorrow {
-            return ("Tomorrow", .blue)
-        } else if dueAt < endOfWeek {
-            let weekday = calendar.weekdaySymbols[calendar.component(.weekday, from: dueAt) - 1]
-            return (weekday, .green)
-        } else {
-            return (dueAt.formatted(date: .abbreviated, time: .omitted), OmiColors.purplePrimary)
-        }
-    }
-
-    var body: some View {
-        let info = badgeInfo
-        HStack(spacing: 4) {
-            Image(systemName: "calendar")
-                .font(.system(size: 10))
-            Text("due: \(info.text)")
-                .font(.system(size: 11, weight: .medium))
-        }
-        .foregroundColor(info.color)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(
-            Capsule()
-                .fill(info.color.opacity(0.15))
-        )
-    }
-}
-
-// MARK: - Source Badge
-
-struct SourceBadge: View {
-    let source: String
-    let sourceLabel: String
-    let sourceIcon: String
-
-    private var badgeColor: Color {
-        switch source {
-        case "screenshot":
-            return .blue
-        case "transcription:omi", "transcription:desktop", "transcription:phone":
-            return .green
-        case "manual":
-            return .orange
-        default:
-            return OmiColors.textTertiary
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: sourceIcon)
-                .font(.system(size: 9))
-            Text(sourceLabel)
-                .font(.system(size: 10, weight: .medium))
-        }
-        .foregroundColor(badgeColor)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            Capsule()
-                .fill(badgeColor.opacity(0.15))
-        )
-    }
-}
-
-// MARK: - Priority Badge
-
-struct PriorityBadge: View {
-    let priority: String
-
-    private var badgeColor: Color {
-        switch priority {
-        case "high":
-            return .red
-        case "medium":
-            return .orange
-        default:
-            return OmiColors.textTertiary
-        }
-    }
-
-    private var label: String {
-        priority.capitalized
-    }
-
-    var body: some View {
-        Text(label)
-            .font(.system(size: 10, weight: .medium))
-            .foregroundColor(badgeColor)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(badgeColor.opacity(0.15))
-            )
     }
 }
 
@@ -2169,22 +2044,9 @@ struct SourceBadgeCompact: View {
 }
 
 
-// MARK: - Task Edit Sheet
+// MARK: - Task Create Sheet
 
-enum TaskEditMode: Identifiable {
-    case create
-    case edit(TaskActionItem)
-
-    var id: String {
-        switch self {
-        case .create: return "create"
-        case .edit(let task): return task.id
-        }
-    }
-}
-
-struct TaskEditSheet: View {
-    let mode: TaskEditMode
+struct TaskCreateSheet: View {
     @ObservedObject var viewModel: TasksViewModel
     var onDismiss: (() -> Void)? = nil
 
@@ -2204,23 +2066,22 @@ struct TaskEditSheet: View {
         }
     }
 
-    private var isEditing: Bool {
-        if case .edit = mode { return true }
-        return false
-    }
-
     private var canSave: Bool {
         !description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
-
-    private var title: String {
-        isEditing ? "Edit Task" : "New Task"
     }
 
     var body: some View {
         VStack(spacing: 0) {
             // Header
-            sheetHeader
+            HStack {
+                Text("New Task")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+                Spacer()
+                DismissButton(action: dismissSheet)
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
 
             Divider()
                 .background(OmiColors.border)
@@ -2229,13 +2090,59 @@ struct TaskEditSheet: View {
             ScrollView {
                 VStack(spacing: 20) {
                     // Description field
-                    descriptionField
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Description")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
 
-                    // Due date picker
-                    dueDateSection
+                        TextField("What needs to be done?", text: $description, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .lineLimit(3...6)
+                            .padding(12)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(OmiColors.backgroundSecondary)
+                            )
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(OmiColors.border, lineWidth: 1)
+                            )
+                    }
 
-                    // Priority picker
-                    prioritySection
+                    // Due date
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Due Date")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Spacer()
+                            Toggle("", isOn: $hasDueDate)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .controlSize(.small)
+                        }
+                        if hasDueDate {
+                            DatePicker("", selection: $dueDate, displayedComponents: [.date, .hourAndMinute])
+                                .datePickerStyle(.graphical)
+                                .labelsHidden()
+                                .padding(12)
+                                .background(RoundedRectangle(cornerRadius: 8).fill(OmiColors.backgroundSecondary))
+                        }
+                    }
+
+                    // Priority
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Priority")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                        HStack(spacing: 8) {
+                            createPriorityButton(label: "None", value: nil)
+                            createPriorityButton(label: "Low", value: "low", color: OmiColors.textTertiary)
+                            createPriorityButton(label: "Medium", value: "medium", color: .orange)
+                            createPriorityButton(label: "High", value: "high", color: .red)
+                        }
+                    }
                 }
                 .padding(20)
             }
@@ -2243,114 +2150,34 @@ struct TaskEditSheet: View {
             Divider()
                 .background(OmiColors.border)
 
-            // Footer with buttons
-            sheetFooter
+            // Footer
+            HStack(spacing: 12) {
+                Button("Cancel") { dismissSheet() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+
+                Button {
+                    Task { await createTask() }
+                } label: {
+                    if isSaving {
+                        ProgressView().controlSize(.small).frame(width: 60)
+                    } else {
+                        Text("Create").frame(width: 60)
+                    }
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(OmiColors.textPrimary)
+                .controlSize(.large)
+                .disabled(!canSave || isSaving)
+            }
+            .padding(20)
         }
         .frame(width: 420, height: 380)
         .background(OmiColors.backgroundPrimary)
-        .onAppear {
-            if case .edit(let task) = mode {
-                description = task.description
-                if let due = task.dueAt {
-                    hasDueDate = true
-                    dueDate = due
-                }
-                priority = task.priority
-            }
-        }
     }
 
-    private var sheetHeader: some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
-
-            Spacer()
-
-            DismissButton(action: dismissSheet)
-        }
-        .padding(.horizontal, 20)
-        .padding(.vertical, 16)
-    }
-
-    private var descriptionField: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Description")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(OmiColors.textSecondary)
-
-            TextField("What needs to be done?", text: $description, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .lineLimit(3...6)
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(OmiColors.backgroundSecondary)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(OmiColors.border, lineWidth: 1)
-                )
-
-            Text("\(description.count)/200")
-                .font(.system(size: 11))
-                .foregroundColor(description.count > 200 ? .red : OmiColors.textTertiary)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-    }
-
-    private var dueDateSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Due Date")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(OmiColors.textSecondary)
-
-                Spacer()
-
-                Toggle("", isOn: $hasDueDate)
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .controlSize(.small)
-            }
-
-            if hasDueDate {
-                DatePicker(
-                    "",
-                    selection: $dueDate,
-                    displayedComponents: [.date, .hourAndMinute]
-                )
-                .datePickerStyle(.graphical)
-                .labelsHidden()
-                .padding(12)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(OmiColors.backgroundSecondary)
-                )
-            }
-        }
-    }
-
-    private var prioritySection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Priority")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundColor(OmiColors.textSecondary)
-
-            HStack(spacing: 8) {
-                priorityButton(label: "None", value: nil)
-                priorityButton(label: "Low", value: "low", color: OmiColors.textTertiary)
-                priorityButton(label: "Medium", value: "medium", color: .orange)
-                priorityButton(label: "High", value: "high", color: .red)
-            }
-        }
-    }
-
-    private func priorityButton(label: String, value: String?, color: Color = OmiColors.textSecondary) -> some View {
+    private func createPriorityButton(label: String, value: String?, color: Color = OmiColors.textSecondary) -> some View {
         let isSelected = priority == value
-
         return Button {
             priority = value
         } label: {
@@ -2371,60 +2198,11 @@ struct TaskEditSheet: View {
         .buttonStyle(.plain)
     }
 
-    private var sheetFooter: some View {
-        HStack(spacing: 12) {
-            Button("Cancel") {
-                dismissSheet()
-            }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-
-            Button {
-                Task {
-                    await saveTask()
-                }
-            } label: {
-                if isSaving {
-                    ProgressView()
-                        .controlSize(.small)
-                        .frame(width: 60)
-                } else {
-                    Text(isEditing ? "Save" : "Create")
-                        .frame(width: 60)
-                }
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(OmiColors.textPrimary)
-            .controlSize(.large)
-            .disabled(!canSave || isSaving)
-        }
-        .padding(20)
-    }
-
-    private func saveTask() async {
-        let trimmedDescription = description.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedDescription.isEmpty else { return }
-
+    private func createTask() async {
+        let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
         isSaving = true
-
-        let finalDueDate = hasDueDate ? dueDate : nil
-
-        switch mode {
-        case .create:
-            await viewModel.createTask(
-                description: trimmedDescription,
-                dueAt: finalDueDate,
-                priority: priority
-            )
-        case .edit(let task):
-            await viewModel.updateTaskDetails(
-                task,
-                description: trimmedDescription,
-                dueAt: finalDueDate,
-                priority: priority
-            )
-        }
-
+        await viewModel.createTask(description: trimmed, dueAt: hasDueDate ? dueDate : nil, priority: priority)
         isSaving = false
         dismissSheet()
     }
