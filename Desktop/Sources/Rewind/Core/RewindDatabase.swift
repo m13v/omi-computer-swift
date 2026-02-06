@@ -73,18 +73,12 @@ actor RewindDatabase {
         let dbPath = omiDir.appendingPathComponent("omi.db").path
         log("RewindDatabase: Opening database at \(dbPath)")
 
-        // Check for and handle database corruption before opening
+        // Clean up stale WAL files that can cause disk I/O errors (SQLite error 10)
+        // Skip the pre-open corruption check — it opens a separate DatabaseQueue that causes
+        // lock contention with the main connection's PRAGMA journal_mode = WAL.
+        // Post-migration verifyDatabaseIntegrity() already runs quick_check(1).
         if FileManager.default.fileExists(atPath: dbPath) {
-            // First, try to clean up stale WAL/SHM files that can cause disk I/O errors (SQLite error 10)
-            // This is a common issue when the app crashes and leaves behind WAL files
             cleanupStaleWALFiles(at: dbPath)
-
-            let isCorrupted = await checkDatabaseCorruption(at: dbPath)
-            if isCorrupted {
-                log("RewindDatabase: Database corruption detected, attempting recovery...")
-                try await handleCorruptedDatabase(at: dbPath, in: omiDir)
-                didRecoverFromCorruption = true
-            }
         }
 
         var config = Configuration()
