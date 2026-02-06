@@ -6,10 +6,12 @@ struct DesktopHomeView: View {
     @ObservedObject private var authState = AuthState.shared
     @State private var selectedIndex: Int = {
         if OMIApp.launchMode == .rewind { return SidebarNavItem.rewind.rawValue }
-        if UserDefaults.standard.bool(forKey: "tierGatingEnabled") { return SidebarNavItem.conversations.rawValue }
-        return 0
+        let tier = UserDefaults.standard.integer(forKey: "currentTierLevel")
+        if tier == 0 || tier >= 5 { return SidebarNavItem.dashboard.rawValue }
+        return SidebarNavItem.conversations.rawValue
     }()
     @State private var isSidebarCollapsed: Bool = false
+    @AppStorage("currentTierLevel") private var currentTierLevel = 0
 
     // Settings sidebar state
     @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .general
@@ -89,6 +91,30 @@ struct DesktopHomeView: View {
                     }
                 }
             }
+            // Redirect if current page isn't visible at current tier
+            redirectIfPageHidden()
+        }
+        .onChange(of: currentTierLevel) { _, _ in
+            redirectIfPageHidden()
+        }
+    }
+
+    /// Redirect to conversations if current page isn't visible at the current tier level
+    private func redirectIfPageHidden() {
+        // Tier 0 or tier 6+ shows everything — no redirect needed
+        guard currentTierLevel > 0 && currentTierLevel < 6 else { return }
+        // Don't redirect from settings/permissions/device/help pages
+        let nonMainPages: Set<Int> = [SidebarNavItem.settings.rawValue, SidebarNavItem.permissions.rawValue, SidebarNavItem.device.rawValue, SidebarNavItem.help.rawValue]
+        guard !nonMainPages.contains(selectedIndex) else { return }
+
+        var visibleRawValues: Set<Int> = [SidebarNavItem.conversations.rawValue, SidebarNavItem.rewind.rawValue]
+        if currentTierLevel >= 2 { visibleRawValues.insert(SidebarNavItem.memories.rawValue) }
+        if currentTierLevel >= 3 { visibleRawValues.insert(SidebarNavItem.tasks.rawValue) }
+        if currentTierLevel >= 4 { visibleRawValues.insert(SidebarNavItem.chat.rawValue) }
+        if currentTierLevel >= 5 { visibleRawValues.insert(SidebarNavItem.dashboard.rawValue) }
+
+        if !visibleRawValues.contains(selectedIndex) {
+            selectedIndex = SidebarNavItem.conversations.rawValue
         }
     }
 
@@ -142,7 +168,7 @@ struct DesktopHomeView: View {
                 Group {
                     switch selectedIndex {
                     case 0:
-                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
+                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel, appState: appState, selectedIndex: $selectedIndex)
                     case 1:
                         ConversationsPage(appState: appState)
                     case 2:
@@ -168,7 +194,7 @@ struct DesktopHomeView: View {
                     case 12:
                         HelpPage()
                     default:
-                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel)
+                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel, appState: appState, selectedIndex: $selectedIndex)
                     }
                 }
                 .id(selectedIndex)
