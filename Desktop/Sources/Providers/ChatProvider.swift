@@ -838,6 +838,12 @@ class ChatProvider: ObservableObject {
             }
 
             log("Chat response complete")
+
+            // Fire-and-forget: check if user's message mentions goal progress
+            let chatText = trimmedText
+            Task.detached(priority: .background) {
+                await GoalsAIService.shared.extractProgressFromAllGoals(text: chatText)
+            }
         } catch {
             // Remove AI message placeholder on error
             messages.removeAll { $0.id == aiMessageId }
