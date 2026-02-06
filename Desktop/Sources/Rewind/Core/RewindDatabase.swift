@@ -850,6 +850,135 @@ actor RewindDatabase {
                           on: "task_dedup_log", columns: ["deletedAt"])
         }
 
+        // Migration 14: Create unified memories table for local-first pattern
+        // Stores all memories (extracted, advice/tips, focus-tagged) with bidirectional sync
+        migrator.registerMigration("createMemoriesTable") { db in
+            try db.create(table: "memories") { t in
+                t.autoIncrementedPrimaryKey("id")
+
+                // Backend sync fields
+                t.column("backendId", .text).unique()       // Server memory ID
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+
+                // Core ServerMemory fields
+                t.column("content", .text).notNull()
+                t.column("category", .text).notNull()       // system, interesting, manual
+                t.column("tagsJson", .text)                 // JSON array: ["tips"], ["focus", "focused"]
+                t.column("visibility", .text).notNull().defaults(to: "private")
+                t.column("reviewed", .boolean).notNull().defaults(to: false)
+                t.column("userReview", .boolean)
+                t.column("manuallyAdded", .boolean).notNull().defaults(to: false)
+                t.column("scoring", .text)
+                t.column("source", .text)                   // desktop, omi, screenshot, phone
+                t.column("conversationId", .text)
+
+                // Desktop extraction fields
+                t.column("screenshotId", .integer)
+                    .references("screenshots", onDelete: .setNull)
+                t.column("confidence", .double)
+                t.column("reasoning", .text)
+                t.column("sourceApp", .text)
+                t.column("contextSummary", .text)
+                t.column("currentActivity", .text)
+                t.column("inputDeviceName", .text)
+
+                // Status flags
+                t.column("isRead", .boolean).notNull().defaults(to: false)
+                t.column("isDismissed", .boolean).notNull().defaults(to: false)
+                t.column("deleted", .boolean).notNull().defaults(to: false)
+
+                // Timestamps
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // Indexes for common queries
+            try db.create(index: "idx_memories_backend_id", on: "memories", columns: ["backendId"])
+            try db.create(index: "idx_memories_created", on: "memories", columns: ["createdAt"])
+            try db.create(index: "idx_memories_category", on: "memories", columns: ["category"])
+            try db.create(index: "idx_memories_synced", on: "memories", columns: ["backendSynced"])
+            try db.create(index: "idx_memories_screenshot", on: "memories", columns: ["screenshotId"])
+            try db.create(index: "idx_memories_deleted", on: "memories", columns: ["deleted"])
+
+            // Migrate existing memories from proactive_extractions
+            try db.execute(sql: """
+                INSERT INTO memories (
+                    backendId, backendSynced, content, category, tagsJson, visibility,
+                    reviewed, manuallyAdded, source, screenshotId, confidence, reasoning,
+                    sourceApp, contextSummary, isRead, isDismissed, deleted, createdAt, updatedAt
+                )
+                SELECT
+                    backendId, backendSynced, content,
+                    CASE WHEN category IS NULL THEN 'system' ELSE category END,
+                    CASE
+                        WHEN type = 'advice' THEN json_array('tips', COALESCE(category, 'other'))
+                        ELSE NULL
+                    END,
+                    'private',
+                    0, 0, 'screenshot', screenshotId, confidence, reasoning,
+                    sourceApp, contextSummary, isRead, isDismissed, 0, createdAt, updatedAt
+                FROM proactive_extractions
+                WHERE type IN ('memory', 'advice')
+            """)
+        }
+
+        // Migration 15: Create action_items table for tasks with bidirectional sync
+        migrator.registerMigration("createActionItemsTable") { db in
+            try db.create(table: "action_items") { t in
+                t.autoIncrementedPrimaryKey("id")
+
+                // Backend sync fields
+                t.column("backendId", .text).unique()       // Server action item ID
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+
+                // Core ActionItem fields
+                t.column("description", .text).notNull()
+                t.column("completed", .boolean).notNull().defaults(to: false)
+                t.column("deleted", .boolean).notNull().defaults(to: false)
+                t.column("source", .text)                   // screenshot, conversation, omi
+                t.column("conversationId", .text)
+                t.column("priority", .text)                 // high, medium, low
+                t.column("category", .text)
+                t.column("dueAt", .datetime)
+
+                // Desktop extraction fields
+                t.column("screenshotId", .integer)
+                    .references("screenshots", onDelete: .setNull)
+                t.column("confidence", .double)
+                t.column("sourceApp", .text)
+                t.column("contextSummary", .text)
+                t.column("currentActivity", .text)
+                t.column("metadataJson", .text)             // Additional extraction metadata
+
+                // Timestamps
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // Indexes for common queries
+            try db.create(index: "idx_action_items_backend_id", on: "action_items", columns: ["backendId"])
+            try db.create(index: "idx_action_items_created", on: "action_items", columns: ["createdAt"])
+            try db.create(index: "idx_action_items_completed", on: "action_items", columns: ["completed"])
+            try db.create(index: "idx_action_items_synced", on: "action_items", columns: ["backendSynced"])
+            try db.create(index: "idx_action_items_deleted", on: "action_items", columns: ["deleted"])
+            try db.create(index: "idx_action_items_due", on: "action_items", columns: ["dueAt"])
+
+            // Migrate existing tasks from proactive_extractions
+            try db.execute(sql: """
+                INSERT INTO action_items (
+                    backendId, backendSynced, description, completed, deleted, source,
+                    priority, category, screenshotId, confidence, sourceApp, contextSummary,
+                    createdAt, updatedAt
+                )
+                SELECT
+                    backendId, backendSynced, content, 0, 0, 'screenshot',
+                    priority, category, screenshotId, confidence, sourceApp, contextSummary,
+                    createdAt, updatedAt
+                FROM proactive_extractions
+                WHERE type = 'task'
+            """)
+        }
+
         try migrator.migrate(queue)
     }
 
