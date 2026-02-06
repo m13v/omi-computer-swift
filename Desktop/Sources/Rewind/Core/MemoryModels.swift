@@ -253,14 +253,16 @@ extension MemoryRecord {
     }
 
     /// Convert to ServerMemory for UI display
+    /// Uses backendId if available, otherwise generates a local ID for unsynced memories
     func toServerMemory() -> ServerMemory? {
-        guard let backendId = backendId else { return nil }
+        // Use backendId if available, otherwise use local ID prefixed with "local_"
+        let memoryId = backendId ?? "local_\(id ?? 0)"
 
         // Parse category
         let memoryCategory = MemoryCategory(rawValue: category) ?? .system
 
         return ServerMemory(
-            id: backendId,
+            id: memoryId,
             content: content,
             category: memoryCategory,
             createdAt: createdAt,
