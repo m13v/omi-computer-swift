@@ -594,6 +594,11 @@ class TasksViewModel: ObservableObject {
 struct TasksPage: View {
     @ObservedObject var viewModel: TasksViewModel
 
+    // Filter popover state
+    @State private var showFilterPopover = false
+    @State private var pendingSelectedTags: Set<TaskFilterTag> = []
+    @State private var filterSearchText = ""
+
     var body: some View {
         VStack(spacing: 0) {
             // Header with filter toggle and sort
@@ -638,27 +643,22 @@ struct TasksPage: View {
 
     private var headerView: some View {
         HStack(spacing: 12) {
-            // To Do / Done toggle
             if !viewModel.isMultiSelectMode {
-                filterToggle
+                filterDropdownButton
             } else {
-                // Multi-select controls
                 multiSelectControls
             }
 
             Spacer()
 
             if viewModel.isMultiSelectMode {
-                // Delete selected button
                 if !viewModel.selectedTaskIds.isEmpty {
                     deleteSelectedButton
                 }
             } else {
-                // Add Task button
                 addTaskButton
             }
 
-            // Sort dropdown and settings
             if viewModel.isMultiSelectMode {
                 cancelMultiSelectButton
             } else {
@@ -671,62 +671,230 @@ struct TasksPage: View {
         .padding(.bottom, 12)
     }
 
-    private var dateFilterButton: some View {
-        Button {
-            viewModel.showingDateFilter.toggle()
-        } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "calendar")
-                    .font(.system(size: 12))
-                if viewModel.isFiltered {
-                    Text("Filtered")
-                        .font(.system(size: 11, weight: .medium))
-                }
-            }
-            .foregroundColor(viewModel.isFiltered ? OmiColors.textPrimary : OmiColors.textSecondary)
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(viewModel.isFiltered ? Color.white : OmiColors.backgroundSecondary)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(viewModel.isFiltered ? OmiColors.border : Color.clear, lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-        .popover(isPresented: $viewModel.showingDateFilter) {
-            DateFilterPopover(viewModel: viewModel)
+    // MARK: - Filter Dropdown
+
+    private var filterLabel: String {
+        if viewModel.selectedTags.isEmpty {
+            return "All"
+        } else if viewModel.selectedTags.count == 1 {
+            return viewModel.selectedTags.first!.displayName
+        } else {
+            return "\(viewModel.selectedTags.count) selected"
         }
     }
 
-    private var showAllTasksToggle: some View {
+    /// Filtered tags based on search text, grouped by filter group
+    private func filteredTags(for group: TaskFilterGroup) -> [TaskFilterTag] {
+        let tags = TaskFilterTag.tags(for: group)
+        if filterSearchText.isEmpty {
+            return tags.sorted { viewModel.tagCount($0) > viewModel.tagCount($1) }
+        }
+        return tags
+            .filter { $0.displayName.localizedCaseInsensitiveContains(filterSearchText) }
+            .sorted { viewModel.tagCount($0) > viewModel.tagCount($1) }
+    }
+
+    private var filterDropdownButton: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                viewModel.showAllTasks.toggle()
-            }
+            pendingSelectedTags = viewModel.selectedTags
+            filterSearchText = ""
+            showFilterPopover = true
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: viewModel.showAllTasks ? "eye.fill" : "eye.slash")
+            HStack(spacing: 6) {
+                Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 12))
-                if viewModel.showAllTasks {
-                    Text("All")
-                        .font(.system(size: 11, weight: .medium))
-                }
+                Text(filterLabel)
+                    .font(.system(size: 13, weight: viewModel.selectedTags.isEmpty ? .regular : .medium))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10))
             }
-            .foregroundColor(viewModel.showAllTasks ? OmiColors.textPrimary : OmiColors.textSecondary)
-            .padding(8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(viewModel.showAllTasks ? Color.white : OmiColors.backgroundSecondary)
-            )
+            .foregroundColor(viewModel.selectedTags.isEmpty ? OmiColors.textSecondary : OmiColors.textPrimary)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(viewModel.selectedTags.isEmpty ? OmiColors.backgroundSecondary : Color.white)
+            .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(viewModel.showAllTasks ? OmiColors.border : Color.clear, lineWidth: 1)
+                    .stroke(viewModel.selectedTags.isEmpty ? Color.clear : OmiColors.border, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
-        .help(viewModel.showAllTasks ? "Showing all tasks" : "Showing recent tasks (7 days). Click to show older tasks.")
+        .popover(isPresented: $showFilterPopover, arrowEdge: .bottom) {
+            filterPopover
+        }
+    }
+
+    private var filterPopover: some View {
+        VStack(spacing: 0) {
+            // Search field
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundColor(OmiColors.textTertiary)
+                    .font(.system(size: 12))
+
+                TextField("Search filters...", text: $filterSearchText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                if !filterSearchText.isEmpty {
+                    Button {
+                        filterSearchText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(OmiColors.textTertiary)
+                            .font(.system(size: 12))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(OmiColors.backgroundTertiary)
+            .cornerRadius(6)
+            .padding(.horizontal, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            Divider()
+                .padding(.horizontal, 12)
+
+            // Tag list grouped by filter group
+            ScrollView {
+                VStack(spacing: 2) {
+                    // "All" option
+                    Button {
+                        pendingSelectedTags.removeAll()
+                    } label: {
+                        HStack {
+                            Image(systemName: "tray.full")
+                                .font(.system(size: 12))
+                                .frame(width: 20)
+                            Text("All")
+                                .font(.system(size: 13))
+                            Spacer()
+                            Text("\(viewModel.todoCount + viewModel.doneCount)")
+                                .font(.system(size: 11))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(OmiColors.backgroundTertiary)
+                                .cornerRadius(4)
+                            if pendingSelectedTags.isEmpty {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(pendingSelectedTags.isEmpty ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+
+                    // Groups
+                    ForEach(TaskFilterGroup.allCases, id: \.self) { group in
+                        let tags = filteredTags(for: group)
+                        if !tags.isEmpty {
+                            Divider()
+                                .padding(.vertical, 4)
+
+                            // Group header
+                            Text(group.rawValue)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .textCase(.uppercase)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+
+                            // Tags in group
+                            ForEach(tags) { tag in
+                                let isSelected = pendingSelectedTags.contains(tag)
+                                let count = viewModel.tagCount(tag)
+
+                                Button {
+                                    if isSelected {
+                                        pendingSelectedTags.remove(tag)
+                                    } else {
+                                        pendingSelectedTags.insert(tag)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: tag.icon)
+                                            .font(.system(size: 12))
+                                            .frame(width: 20)
+                                        Text(tag.displayName)
+                                            .font(.system(size: 13))
+                                        Spacer()
+                                        Text("\(count)")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(OmiColors.textTertiary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(OmiColors.backgroundTertiary)
+                                            .cornerRadius(4)
+                                        if isSelected {
+                                            Image(systemName: "checkmark")
+                                                .font(.system(size: 12, weight: .medium))
+                                                .foregroundColor(.white)
+                                        }
+                                    }
+                                    .foregroundColor(OmiColors.textPrimary)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 8)
+                                    .background(isSelected ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+                                    .cornerRadius(6)
+                                    .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .frame(maxHeight: 350)
+
+            Divider()
+                .padding(.horizontal, 12)
+
+            // Action buttons
+            HStack(spacing: 8) {
+                Button {
+                    pendingSelectedTags.removeAll()
+                } label: {
+                    Text("Clear")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    viewModel.selectedTags = pendingSelectedTags
+                    showFilterPopover = false
+                } label: {
+                    Text("Apply")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.white)
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(12)
+        }
+        .frame(width: 280)
     }
 
     private var multiSelectControls: some View {
@@ -836,55 +1004,6 @@ struct TasksPage: View {
         .buttonStyle(.plain)
     }
 
-    private var filterToggle: some View {
-        HStack(spacing: 2) {
-            filterButton(title: "To Do", count: viewModel.todoCount, isSelected: !viewModel.showCompleted) {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    viewModel.showCompleted = false
-                }
-            }
-
-            filterButton(title: "Done", count: viewModel.doneCount, isSelected: viewModel.showCompleted) {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    viewModel.showCompleted = true
-                }
-            }
-        }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(OmiColors.backgroundSecondary)
-        )
-    }
-
-    private func filterButton(title: String, count: Int, isSelected: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-
-                if count > 0 {
-                    Text("\(count)")
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(isSelected ? OmiColors.textPrimary.opacity(0.15) : OmiColors.textTertiary.opacity(0.1))
-                        )
-                }
-            }
-            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? OmiColors.backgroundTertiary : Color.clear)
-            )
-        }
-        .buttonStyle(.plain)
-    }
 
     private var sortDropdown: some View {
         Menu {
