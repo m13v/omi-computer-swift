@@ -16,12 +16,10 @@ actor TaskDeduplicationService {
     private let startupDelaySeconds: TimeInterval = 60  // 60s delay at app launch
     private let cooldownSeconds: TimeInterval = 1800    // 30-min cooldown
     private let minimumTaskCount = 3
-    private let batchSize = 50
-    private let batchOverlap = 10
 
     private init() {
         do {
-            self.geminiClient = try GeminiClient(model: "gemini-2.0-flash")
+            self.geminiClient = try GeminiClient(model: "gemini-3-pro-preview")
         } catch {
             log("TaskDedup: Failed to initialize GeminiClient: \(error)")
             self.geminiClient = nil
@@ -94,25 +92,13 @@ actor TaskDeduplicationService {
 
         log("TaskDedup: Analyzing \(tasks.count) tasks for duplicates")
 
-        // 2. Process in batches
-        var totalDeleted = 0
-
-        if tasks.count <= batchSize {
-            totalDeleted += await processBatch(tasks: tasks, client: client)
-        } else {
-            var offset = 0
-            while offset < tasks.count {
-                let end = min(offset + batchSize, tasks.count)
-                let batch = Array(tasks[offset..<end])
-                totalDeleted += await processBatch(tasks: batch, client: client)
-                offset += batchSize - batchOverlap
-            }
-        }
+        // 2. Send all tasks to Gemini in a single call
+        let totalDeleted = await analyzeAndDeleteDuplicates(tasks: tasks, client: client)
 
         log("TaskDedup: Run complete. Deleted \(totalDeleted) duplicate tasks.")
     }
 
-    private func processBatch(tasks: [TaskActionItem], client: GeminiClient) async -> Int {
+    private func analyzeAndDeleteDuplicates(tasks: [TaskActionItem], client: GeminiClient) async -> Int {
         // Build task list for prompt
         let taskDescriptions = tasks.map { task -> String in
             var parts = ["ID: \(task.id)", "Description: \(task.description)"]
