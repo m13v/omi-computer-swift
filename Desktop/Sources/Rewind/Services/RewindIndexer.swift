@@ -7,6 +7,19 @@ actor RewindIndexer {
     static let shared = RewindIndexer()
 
     private var isInitialized = false
+    private var isInitializing = false
+
+    /// OCR frequency: only run OCR every Nth frame to reduce CPU
+    private var framesSinceLastOCR = 0
+    private let ocrEveryNthFrame = 3
+
+    /// OCR stats for periodic logging
+    private var statsTotalFrames = 0
+    private var statsOCRRan = 0
+    private var statsSkippedFrequency = 0
+    private var statsSkippedDedup = 0
+    private var statsLastLogTime = Date()
+    private let statsLogInterval: TimeInterval = 60
 
     /// Backoff state for initialization retries
     private var initFailureCount = 0
@@ -19,7 +32,9 @@ actor RewindIndexer {
 
     /// Initialize all Rewind services
     func initialize() async throws {
-        guard !isInitialized else { return }
+        guard !isInitialized, !isInitializing else { return }
+        isInitializing = true
+        defer { isInitializing = false }
 
         log("RewindIndexer: Initializing...")
 
@@ -60,6 +75,29 @@ actor RewindIndexer {
         }
     }
 
+    // MARK: - OCR Stats
+
+    private enum OCROutcome { case ran, skippedFrequency, skippedDedup }
+
+    private func recordOCROutcome(_ outcome: OCROutcome) {
+        statsTotalFrames += 1
+        switch outcome {
+        case .ran: statsOCRRan += 1
+        case .skippedFrequency: statsSkippedFrequency += 1
+        case .skippedDedup: statsSkippedDedup += 1
+        }
+
+        let now = Date()
+        if now.timeIntervalSince(statsLastLogTime) >= statsLogInterval {
+            log("RewindIndexer: Last \(Int(statsLogInterval))s — \(statsTotalFrames) frames, \(statsOCRRan) OCR'd, \(statsSkippedFrequency) skipped (frequency), \(statsSkippedDedup) skipped (dedup)")
+            statsTotalFrames = 0
+            statsOCRRan = 0
+            statsSkippedFrequency = 0
+            statsSkippedDedup = 0
+            statsLastLogTime = now
+        }
+    }
+
     // MARK: - Frame Processing
 
     /// Process a captured frame from ProactiveAssistantsPlugin
@@ -82,20 +120,31 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
-            // Run OCR directly on the JPEG data (avoids video extraction issues)
+            // OCR gating: only run every Nth frame and skip duplicate screens
             var ocrText: String?
             var ocrDataJson: String?
             var isIndexed = false
 
-            do {
-                let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
-                ocrText = ocrResult.fullText
-                if let data = try? JSONEncoder().encode(ocrResult) {
-                    ocrDataJson = String(data: data, encoding: .utf8)
+            framesSinceLastOCR += 1
+            if framesSinceLastOCR < ocrEveryNthFrame {
+                recordOCROutcome(.skippedFrequency)
+            } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
+                recordOCROutcome(.skippedDedup)
+            } else {
+                framesSinceLastOCR = 0
+                recordOCROutcome(.ran)
+                do {
+                    let ocrResult = try await Task(priority: .utility) {
+                        try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
+                    }.value
+                    ocrText = ocrResult.fullText
+                    if let data = try? JSONEncoder().encode(ocrResult) {
+                        ocrDataJson = String(data: data, encoding: .utf8)
+                    }
+                    isIndexed = true
+                } catch {
+                    logError("RewindIndexer: OCR failed for frame: \(error)")
                 }
-                isIndexed = true
-            } catch {
-                logError("RewindIndexer: OCR failed for frame: \(error)")
             }
 
             // Create database record with video reference and OCR results
@@ -134,20 +183,31 @@ actor RewindIndexer {
                 timestamp: captureTime
             )
 
-            // Run OCR directly on the CGImage (no JPEG decode needed)
+            // OCR gating: only run every Nth frame and skip duplicate screens
             var ocrText: String?
             var ocrDataJson: String?
             var isIndexed = false
 
-            do {
-                let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: cgImage)
-                ocrText = ocrResult.fullText
-                if let data = try? JSONEncoder().encode(ocrResult) {
-                    ocrDataJson = String(data: data, encoding: .utf8)
+            framesSinceLastOCR += 1
+            if framesSinceLastOCR < ocrEveryNthFrame {
+                recordOCROutcome(.skippedFrequency)
+            } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
+                recordOCROutcome(.skippedDedup)
+            } else {
+                framesSinceLastOCR = 0
+                recordOCROutcome(.ran)
+                do {
+                    let ocrResult = try await Task(priority: .utility) {
+                        try await RewindOCRService.shared.extractTextWithBounds(from: cgImage)
+                    }.value
+                    ocrText = ocrResult.fullText
+                    if let data = try? JSONEncoder().encode(ocrResult) {
+                        ocrDataJson = String(data: data, encoding: .utf8)
+                    }
+                    isIndexed = true
+                } catch {
+                    logError("RewindIndexer: OCR failed for CGImage frame: \(error)")
                 }
-                isIndexed = true
-            } catch {
-                logError("RewindIndexer: OCR failed for CGImage frame: \(error)")
             }
 
             let screenshot = Screenshot(
@@ -192,20 +252,31 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
-            // Run OCR directly on the JPEG data (avoids video extraction issues)
+            // OCR gating: only run every Nth frame and skip duplicate screens
             var ocrText: String?
             var ocrDataJson: String?
             var isIndexed = false
 
-            do {
-                let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
-                ocrText = ocrResult.fullText
-                if let data = try? JSONEncoder().encode(ocrResult) {
-                    ocrDataJson = String(data: data, encoding: .utf8)
+            framesSinceLastOCR += 1
+            if framesSinceLastOCR < ocrEveryNthFrame {
+                recordOCROutcome(.skippedFrequency)
+            } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
+                recordOCROutcome(.skippedDedup)
+            } else {
+                framesSinceLastOCR = 0
+                recordOCROutcome(.ran)
+                do {
+                    let ocrResult = try await Task(priority: .utility) {
+                        try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
+                    }.value
+                    ocrText = ocrResult.fullText
+                    if let data = try? JSONEncoder().encode(ocrResult) {
+                        ocrDataJson = String(data: data, encoding: .utf8)
+                    }
+                    isIndexed = true
+                } catch {
+                    logError("RewindIndexer: OCR failed for frame with metadata: \(error)")
                 }
-                isIndexed = true
-            } catch {
-                logError("RewindIndexer: OCR failed for frame with metadata: \(error)")
             }
 
             // Encode tasks and advice as JSON
