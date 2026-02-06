@@ -186,6 +186,15 @@ class MemoriesViewModel: ObservableObject {
             memories = newMemories
             currentOffset = newMemories.count
             hasMoreMemories = newMemories.count >= reloadLimit
+
+            // Sync to local cache in background
+            Task.detached(priority: .background) {
+                do {
+                    try await MemoryStorage.shared.syncServerMemories(newMemories)
+                } catch {
+                    logError("MemoriesViewModel: Auto-refresh sync failed", error: error)
+                }
+            }
         } catch {
             // Silently ignore errors during auto-refresh
             logError("MemoriesViewModel: Auto-refresh failed", error: error)
@@ -232,6 +241,11 @@ class MemoriesViewModel: ObservableObject {
 
     // MARK: - API Actions
 
+    /// Load memories using local-first pattern:
+    /// 1. Load from local cache first (instant display)
+    /// 2. Fetch from API in background
+    /// 3. Update UI with API data
+    /// 4. Sync to local cache in background
     func loadMemories() async {
         guard !isLoading else { return }
 
@@ -239,16 +253,49 @@ class MemoriesViewModel: ObservableObject {
         errorMessage = nil
         currentOffset = 0
 
+        // Step 1: Load from local cache first for instant display
         do {
-            let newMemories = try await APIClient.shared.getMemories(limit: pageSize, offset: 0)
-            memories = newMemories
-            currentOffset = newMemories.count
-            hasMoreMemories = newMemories.count >= pageSize
-            hasLoadedInitially = true
-            log("MemoriesViewModel: Loaded \(newMemories.count) memories")
+            let cachedMemories = try await MemoryStorage.shared.getLocalMemories(
+                limit: pageSize,
+                offset: 0
+            )
+
+            if !cachedMemories.isEmpty {
+                memories = cachedMemories
+                currentOffset = cachedMemories.count
+                hasMoreMemories = cachedMemories.count >= pageSize
+                isLoading = false  // Show cached data immediately
+                log("MemoriesViewModel: Loaded \(cachedMemories.count) memories from local cache")
+            }
         } catch {
-            errorMessage = error.localizedDescription
-            logError("Failed to load memories", error: error)
+            logError("MemoriesViewModel: Failed to load from local cache", error: error)
+            // Continue to API fetch even if cache fails
+        }
+
+        // Step 2: Fetch from API in background
+        do {
+            let fetchedMemories = try await APIClient.shared.getMemories(limit: pageSize, offset: 0)
+            memories = fetchedMemories
+            currentOffset = fetchedMemories.count
+            hasMoreMemories = fetchedMemories.count >= pageSize
+            hasLoadedInitially = true
+            log("MemoriesViewModel: Loaded \(fetchedMemories.count) memories from API")
+
+            // Step 3: Sync to local cache in background (don't block UI)
+            Task.detached(priority: .background) {
+                do {
+                    try await MemoryStorage.shared.syncServerMemories(fetchedMemories)
+                    log("MemoriesViewModel: Synced \(fetchedMemories.count) memories to local cache")
+                } catch {
+                    logError("MemoriesViewModel: Failed to sync memories to local cache", error: error)
+                }
+            }
+        } catch {
+            // Only show error if we don't have cached data
+            if memories.isEmpty {
+                errorMessage = error.localizedDescription
+            }
+            logError("Failed to load memories from API", error: error)
         }
 
         isLoading = false
