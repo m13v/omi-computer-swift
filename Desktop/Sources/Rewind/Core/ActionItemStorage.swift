@@ -33,12 +33,16 @@ actor ActionItemStorage {
 
     /// Get action items from local cache for instant display
     /// Returns TaskActionItem for full UI compatibility
+    /// Supports filtering by category, source, and priority for efficient SQLite queries
     func getLocalActionItems(
         limit: Int = 50,
         offset: Int = 0,
         completed: Bool? = nil,
         includeDeleted: Bool = false,
-        startDate: Date? = nil
+        startDate: Date? = nil,
+        category: String? = nil,
+        source: String? = nil,
+        priority: String? = nil
     ) async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
 
@@ -57,6 +61,21 @@ actor ActionItemStorage {
             // Filter by start date (for 7-day filter)
             if let startDate = startDate {
                 query = query.filter(Column("createdAt") >= startDate)
+            }
+
+            // Filter by category
+            if let category = category {
+                query = query.filter(Column("category") == category)
+            }
+
+            // Filter by source
+            if let source = source {
+                query = query.filter(Column("source") == source)
+            }
+
+            // Filter by priority
+            if let priority = priority {
+                query = query.filter(Column("priority") == priority)
             }
 
             let records = try query
@@ -93,6 +112,58 @@ actor ActionItemStorage {
             }
 
             return try query.fetchCount(database)
+        }
+    }
+
+    /// Get action items with multiple filter values (OR within groups, AND between groups)
+    /// Used when user selects multiple filters in the UI
+    func getFilteredActionItems(
+        limit: Int = 200,
+        offset: Int = 0,
+        completedStates: [Bool]? = nil,  // e.g., [true, false] for both done and todo
+        includeDeleted: Bool = false,
+        categories: [String]? = nil,     // OR logic: matches any category
+        sources: [String]? = nil,        // OR logic: matches any source
+        priorities: [String]? = nil      // OR logic: matches any priority
+    ) async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = ActionItemRecord.all()
+
+            if !includeDeleted {
+                query = query.filter(Column("deleted") == false)
+            }
+
+            // Filter by completed states (OR logic)
+            if let states = completedStates, !states.isEmpty {
+                if states.count == 1 {
+                    query = query.filter(Column("completed") == states[0])
+                }
+                // If both true and false, no filter needed (show all)
+            }
+
+            // Filter by categories (OR logic)
+            if let categories = categories, !categories.isEmpty {
+                query = query.filter(categories.contains(Column("category")))
+            }
+
+            // Filter by sources (OR logic)
+            if let sources = sources, !sources.isEmpty {
+                query = query.filter(sources.contains(Column("source")))
+            }
+
+            // Filter by priorities (OR logic)
+            if let priorities = priorities, !priorities.isEmpty {
+                query = query.filter(priorities.contains(Column("priority")))
+            }
+
+            let records = try query
+                .order(Column("createdAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(database)
+
+            return records.map { $0.toTaskActionItem() }
         }
     }
 
@@ -296,8 +367,7 @@ actor ActionItemStorage {
                 }
                 return recordId
             } else {
-                var newRecord = ActionItemRecord.from(item, conversationId: conversationId)
-                try newRecord.insert(database)
+                let newRecord = try ActionItemRecord.from(item, conversationId: conversationId).inserted(database)
                 guard let recordId = newRecord.id else {
                     throw ActionItemStorageError.syncFailed("Record ID is nil after insert")
                 }
