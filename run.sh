@@ -29,8 +29,9 @@ substep() {
 }
 
 # App configuration
-APP_NAME="Omi Computer"
-BUNDLE_ID="com.omi.computer-macos-dev"
+BINARY_NAME="Omi Computer"  # Package.swift target — binary paths, pkill, CFBundleExecutable
+APP_NAME="Omi Dev"
+BUNDLE_ID="com.omi.desktop-dev"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
@@ -56,7 +57,7 @@ cleanup() {
 trap cleanup EXIT
 
 step "Killing existing instances..."
-pkill "$APP_NAME" 2>/dev/null || true
+pkill "$BINARY_NAME" 2>/dev/null || true
 pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
@@ -67,6 +68,8 @@ rm -f /tmp/omi.log 2>/dev/null || true
 step "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi Computer.app"
+    "/Applications/Omi Beta.app"
+    "/Applications/Omi Dev.app"
     "/Applications/Omi.app/Contents/MacOS/Omi Computer.app"
     "$HOME/Desktop/Omi.app"
     "$HOME/Downloads/Omi.app"
@@ -143,11 +146,11 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
-substep "Copying binary ($(du -h "Desktop/.build/debug/$APP_NAME" 2>/dev/null | cut -f1))"
-cp -f "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+substep "Copying binary ($(du -h "Desktop/.build/debug/$BINARY_NAME" 2>/dev/null | cut -f1))"
+cp -f "Desktop/.build/debug/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 
 substep "Adding rpath for Frameworks"
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" 2>/dev/null || true
 
 # Copy Sparkle framework
 SPARKLE_FRAMEWORK="Desktop/.build/arm64-apple-macosx/debug/Sparkle.framework"
@@ -159,9 +162,10 @@ fi
 
 substep "Copying Info.plist"
 cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
 substep "Copying GoogleService-Info.plist"
 cp -f Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
@@ -228,7 +232,7 @@ echo "Using backend: $TUNNEL_URL"
 echo "========================================"
 echo ""
 
-open "$APP_BUNDLE" || "$APP_BUNDLE/Contents/MacOS/$APP_NAME" &
+open "$APP_BUNDLE" || "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" &
 
 # Wait for backend process (keeps script running and shows logs)
 echo "Press Ctrl+C to stop all services..."
