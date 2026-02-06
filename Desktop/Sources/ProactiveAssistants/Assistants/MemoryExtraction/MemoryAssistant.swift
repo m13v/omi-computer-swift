@@ -168,10 +168,7 @@ actor MemoryAssistant: ProactiveAssistant {
             // Update SQLite record with backend ID
             if let recordId = extractionRecord?.id {
                 do {
-                    try await ProactiveStorage.shared.updateExtraction(
-                        id: recordId,
-                        updates: ExtractionUpdate(backendId: backendId, backendSynced: true)
-                    )
+                    try await MemoryStorage.shared.markSynced(id: recordId, backendId: backendId)
                 } catch {
                     logError("Memory: Failed to update sync status", error: error)
                 }
@@ -199,24 +196,28 @@ actor MemoryAssistant: ProactiveAssistant {
         ])
     }
 
-    /// Save extracted memory to SQLite
+    /// Save extracted memory to SQLite using MemoryStorage
     private func saveMemoryToSQLite(
         memory: ExtractedMemory,
         screenshotId: Int64?,
         contextSummary: String
-    ) async -> ProactiveExtractionRecord? {
-        let record = ProactiveExtractionRecord(
-            screenshotId: screenshotId,
-            type: .memory,
+    ) async -> MemoryRecord? {
+        // Convert ExtractedMemory category to MemoryCategory string
+        let category = memory.category == .interesting ? "interesting" : "system"
+
+        let record = MemoryRecord(
+            backendSynced: false,
             content: memory.content,
-            category: memory.category.rawValue,
+            category: category,
+            screenshotId: screenshotId,
             confidence: memory.confidence,
             sourceApp: memory.sourceApp,
-            contextSummary: contextSummary
+            contextSummary: contextSummary,
+            source: "desktop"
         )
 
         do {
-            let inserted = try await ProactiveStorage.shared.insertExtraction(record)
+            let inserted = try await MemoryStorage.shared.insertLocalMemory(record)
             log("Memory: Saved to SQLite (id: \(inserted.id ?? -1))")
             return inserted
         } catch {
