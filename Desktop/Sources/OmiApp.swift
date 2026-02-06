@@ -135,6 +135,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         AnalyticsManager.shared.initialize()
         AnalyticsManager.shared.appLaunched()
         AnalyticsManager.shared.trackDisplayInfo()
+
+        // Tier gating: migrate old boolean key to new 6-tier system
+        TierManager.migrateExistingUsersIfNeeded()
+
+        // New users start at tier 1 (Conversations + Rewind only)
+        // Note: hasLaunchedBefore is also set by trackFirstLaunchIfNeeded(), but that
+        // skips dev builds. Set it here too so tier doesn't reset on every dev launch.
+        if !UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
+            UserDefaults.standard.set(true, forKey: "hasLaunchedBefore")
+            UserDefaults.standard.set(1, forKey: "currentTierLevel")
+            UserDefaults.standard.set(1, forKey: "lastSeenTierLevel")
+        }
+
         AnalyticsManager.shared.trackFirstLaunchIfNeeded()
 
         // Start resource monitoring (memory, CPU, disk)
@@ -158,6 +171,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             // Fetch conversations on startup
             AuthService.shared.fetchConversations()
+
+            // Check tier eligibility (at most once per day)
+            Task {
+                await TierManager.shared.checkTierIfNeeded()
+            }
         }
 
         // One-time migration: Enable launch at login for existing users who haven't set it
