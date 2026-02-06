@@ -64,7 +64,20 @@ Add a new entry at the **top** of the `releases` array in `CHANGELOG.json`:
 
 The release script reads the first entry and uses it for both GitHub release notes and Sparkle appcast.
 
-### Step 4: Run the release
+### Step 4: Pre-flight checks
+
+Before running release.sh, verify prerequisites are ready:
+
+```bash
+# Docker must be running (needed for Cloud Run backend deploy)
+if ! docker info &>/dev/null; then
+  open -a Docker
+  echo "Waiting for Docker to start..."
+  for i in {1..30}; do docker info &>/dev/null && break; sleep 2; done
+fi
+```
+
+### Step 5: Run the release
 
 ```bash
 ./release.sh [version]
@@ -72,7 +85,7 @@ The release script reads the first entry and uses it for both GitHub release not
 
 If no version specified, it auto-increments the patch version.
 
-### Step 5: Verify the release
+### Step 6: Verify the release
 
 After release completes successfully:
 1. Download the DMG from GitHub
@@ -112,6 +125,12 @@ This is common - Apple's CDN can be slow. **DO NOT** manually retry staple.
 
 ### GitHub/GCloud auth expires
 - Run `gh auth login` or `gcloud auth login`
+- Re-run release.sh
+
+### Docker not running
+- release.sh step 1 deploys the Rust backend to Cloud Run via Docker
+- Start Docker Desktop: `open -a Docker`
+- Wait for it to be ready: `docker info`
 - Re-run release.sh
 
 ### Build fails
