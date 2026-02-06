@@ -140,7 +140,7 @@ extension ActionItemRecord {
             contextSummary: nil,
             currentActivity: nil,
             metadataJson: nil,
-            createdAt: item.createdAt,
+            createdAt: Date(),
             updatedAt: Date()
         )
     }
@@ -156,15 +156,11 @@ extension ActionItemRecord {
     }
 
     /// Convert to ActionItem for UI display
-    func toActionItem() -> ActionItem? {
-        guard let backendId = backendId else { return nil }
-
+    func toActionItem() -> ActionItem {
         return ActionItem(
-            id: backendId,
             description: description,
             completed: completed,
-            deleted: deleted,
-            createdAt: createdAt
+            deleted: deleted
         )
     }
 }
