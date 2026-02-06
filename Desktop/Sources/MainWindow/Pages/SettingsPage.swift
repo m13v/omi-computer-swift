@@ -1919,6 +1919,11 @@ struct SettingsContentView: View {
             } message: {
                 Text("This will reset all permissions and restart the app. You'll need to grant permissions again during setup.")
             }
+
+            // Task Agent Settings
+            settingsCard {
+                TaskAgentSettingsView()
+            }
         }
         .task {
             await loadAdvancedStats()
