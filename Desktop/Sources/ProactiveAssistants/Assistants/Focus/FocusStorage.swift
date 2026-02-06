@@ -157,6 +157,40 @@ class FocusStorage: ObservableObject {
         return sessions.filter { calendar.isDate($0.createdAt, inSameDayAs: today) }
     }
 
+    /// Get all-time statistics
+    var allTimeStats: FocusDayStats {
+        var focusedCount = 0
+        var distractedCount = 0
+        var distractionMap: [String: (seconds: Int, count: Int)] = [:]
+
+        for session in sessions {
+            switch session.status {
+            case .focused:
+                focusedCount += 1
+            case .distracted:
+                distractedCount += 1
+                let current = distractionMap[session.appOrSite] ?? (0, 0)
+                let seconds = session.durationSeconds ?? 60
+                distractionMap[session.appOrSite] = (current.seconds + seconds, current.count + 1)
+            }
+        }
+
+        let topDistractions = distractionMap
+            .map { (appOrSite: $0.key, totalSeconds: $0.value.seconds, count: $0.value.count) }
+            .sorted { $0.totalSeconds > $1.totalSeconds }
+            .prefix(5)
+
+        return FocusDayStats(
+            date: Date(),
+            focusedMinutes: focusedCount,
+            distractedMinutes: distractedCount,
+            sessionCount: sessions.count,
+            focusedCount: focusedCount,
+            distractedCount: distractedCount,
+            topDistractions: Array(topDistractions)
+        )
+    }
+
     /// Get today's statistics
     var todayStats: FocusDayStats {
         let todayList = todaySessions
