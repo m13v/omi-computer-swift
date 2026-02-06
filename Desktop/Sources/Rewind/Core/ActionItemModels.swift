@@ -145,6 +145,30 @@ extension ActionItemRecord {
         )
     }
 
+    /// Create a local record from a TaskActionItem (for caching API responses with full data)
+    static func from(_ item: TaskActionItem) -> ActionItemRecord {
+        return ActionItemRecord(
+            backendId: item.id,
+            backendSynced: true,
+            description: item.description,
+            completed: item.completed,
+            deleted: item.deleted ?? false,
+            source: item.source,
+            conversationId: item.conversationId,
+            priority: item.priority,
+            category: item.category,
+            dueAt: item.dueAt,
+            screenshotId: nil,
+            confidence: nil,
+            sourceApp: nil,
+            contextSummary: nil,
+            currentActivity: nil,
+            metadataJson: item.metadata,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt ?? item.createdAt
+        )
+    }
+
     /// Update this record from an ActionItem (preserving local id and screenshotId)
     mutating func updateFrom(_ item: ActionItem) {
         self.backendId = item.id
@@ -155,12 +179,55 @@ extension ActionItemRecord {
         self.updatedAt = Date()
     }
 
-    /// Convert to ActionItem for UI display
+    /// Update this record from a TaskActionItem (preserving local id and screenshotId)
+    mutating func updateFrom(_ item: TaskActionItem) {
+        self.backendId = item.id
+        self.backendSynced = true
+        self.description = item.description
+        self.completed = item.completed
+        self.deleted = item.deleted ?? false
+        self.source = item.source
+        self.conversationId = item.conversationId
+        self.priority = item.priority
+        self.category = item.category
+        self.dueAt = item.dueAt
+        self.metadataJson = item.metadata
+        self.updatedAt = item.updatedAt ?? Date()
+    }
+
+    /// Convert to ActionItem for UI display (simplified)
     func toActionItem() -> ActionItem {
         return ActionItem(
             description: description,
             completed: completed,
             deleted: deleted
+        )
+    }
+
+    /// Convert to TaskActionItem for UI display (full data)
+    /// Uses backendId if available, otherwise generates a local ID
+    func toTaskActionItem() -> TaskActionItem {
+        // Use backendId if available, otherwise use local ID prefixed with "local_"
+        let taskId = backendId ?? "local_\(id ?? 0)"
+
+        return TaskActionItem(
+            id: taskId,
+            description: description,
+            completed: completed,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            dueAt: dueAt,
+            completedAt: nil,  // Not stored locally
+            conversationId: conversationId,
+            source: source,
+            priority: priority,
+            metadata: metadataJson,
+            category: category,
+            deleted: deleted,
+            deletedBy: nil,  // Not stored locally
+            deletedAt: nil,  // Not stored locally
+            deletedReason: nil,  // Not stored locally
+            keptTaskId: nil  // Not stored locally
         )
     }
 }
