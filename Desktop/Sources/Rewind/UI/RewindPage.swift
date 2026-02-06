@@ -12,6 +12,7 @@ struct RewindPage: View {
     @State private var isPlaying = false
     @State private var playbackSpeed: Double = 1.0
     @State private var playbackTimer: Timer?
+    @State private var showDatePicker = false
 
     @State private var searchViewMode: SearchViewMode? = nil
     @State private var selectedGroupIndex: Int = 0
@@ -548,20 +549,38 @@ struct RewindPage: View {
     // MARK: - Date Picker Controls
 
     private var datePickerControls: some View {
-        DatePicker(
-            "",
-            selection: Binding(
-                get: { viewModel.selectedDate },
-                set: { newDate in
-                    Task { await viewModel.filterByDate(newDate) }
-                }
-            ),
-            displayedComponents: [.date]
-        )
-        .datePickerStyle(.compact)
-        .labelsHidden()
-        .fixedSize()
-        .colorScheme(.dark)
+        Button {
+            showDatePicker.toggle()
+        } label: {
+            HStack(spacing: 6) {
+                Text(viewModel.selectedDate.formatted(.dateTime.month().day().year()))
+                    .font(.system(size: 12))
+                    .foregroundColor(.white)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 8, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(Color.white.opacity(0.15))
+            .cornerRadius(6)
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showDatePicker) {
+            DatePicker(
+                "",
+                selection: Binding(
+                    get: { viewModel.selectedDate },
+                    set: { newDate in
+                        Task { await viewModel.filterByDate(newDate) }
+                    }
+                ),
+                displayedComponents: [.date]
+            )
+            .datePickerStyle(.graphical)
+            .labelsHidden()
+            .padding(8)
+        }
     }
 
     // MARK: - Frame Display
