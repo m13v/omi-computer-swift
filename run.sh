@@ -66,6 +66,8 @@ lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 rm -f /tmp/omi.log 2>/dev/null || true
 
 step "Cleaning up conflicting app bundles..."
+# Clean old build names from local build dir
+rm -rf "$BUILD_DIR/Omi Computer.app" "$BUILD_DIR/Omi Beta.app" 2>/dev/null
 CONFLICTING_APPS=(
     "/Applications/Omi Computer.app"
     "/Applications/Omi Beta.app"
