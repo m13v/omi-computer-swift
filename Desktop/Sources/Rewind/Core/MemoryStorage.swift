@@ -45,7 +45,7 @@ actor MemoryStorage {
         return try await db.read { database in
             var query = MemoryRecord
                 .filter(Column("deleted") == false)
-                .filter(Column("backendSynced") == true)  // Only show synced memories
+                // Show ALL local memories (synced or not) for local-first experience
 
             if !includeDismissed {
                 query = query.filter(Column("isDismissed") == false)
@@ -83,7 +83,7 @@ actor MemoryStorage {
         return try await db.read { database in
             var query = MemoryRecord
                 .filter(Column("deleted") == false)
-                .filter(Column("backendSynced") == true)
+                // Count ALL local memories (synced or not) for local-first experience
 
             if !includeDismissed {
                 query = query.filter(Column("isDismissed") == false)
