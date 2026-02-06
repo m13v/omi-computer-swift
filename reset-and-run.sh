@@ -97,6 +97,9 @@ set -e
 # Clear system OPENAI_API_KEY so .env takes precedence
 unset OPENAI_API_KEY
 
+# Use Xcode's default toolchain to match the SDK version
+unset TOOLCHAINS
+
 # App configuration
 BINARY_NAME="Omi Computer"  # Package.swift target — binary paths, pkill, CFBundleExecutable
 APP_NAME="Omi Dev"
@@ -293,7 +296,7 @@ done
 
 # Build debug
 echo "Building app..."
-swift build -c debug --package-path Desktop
+xcrun swift build -c debug --package-path Desktop
 
 # Remove old app bundles to avoid permission issues with signed apps
 rm -rf "$APP_BUNDLE" "$BUILD_DIR/Omi Computer.app"
