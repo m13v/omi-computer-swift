@@ -90,7 +90,7 @@ set -e
 #   swift -e 'import CoreGraphics; print(CGPreflightScreenCaptureAccess())'
 #
 # Manually reset all TCC for a bundle:
-#   tccutil reset All com.omi.computer-macos-dev
+#   tccutil reset All com.omi.desktop-dev
 #
 ###############################################################################
 
@@ -98,8 +98,9 @@ set -e
 unset OPENAI_API_KEY
 
 # App configuration
-APP_NAME="Omi Computer"
-BUNDLE_ID="com.omi.computer-macos-dev"
+BINARY_NAME="Omi Computer"  # Package.swift target — binary paths, pkill, CFBundleExecutable
+APP_NAME="Omi Dev"
+BUNDLE_ID="com.omi.desktop-dev"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
@@ -126,7 +127,7 @@ trap cleanup EXIT
 
 # Kill existing instances
 echo "Killing existing instances..."
-pkill "$APP_NAME" 2>/dev/null || true
+pkill "$BINARY_NAME" 2>/dev/null || true
 pkill "Omi" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
@@ -143,7 +144,7 @@ rm -f /tmp/omi.log 2>/dev/null || true
 # but doesn't actually reset anything.
 #
 # We reset BOTH bundle IDs:
-# - Development: com.omi.computer-macos-dev (this script's builds)
+# - Development: com.omi.desktop-dev (this script's builds)
 # - Production: com.omi.computer-macos (release DMG builds)
 #
 # Using "reset All" instead of individual services (ScreenCapture, Microphone, etc.)
@@ -158,6 +159,7 @@ tccutil reset All "$BUNDLE_ID_PROD" 2>/dev/null || true
 # Note: System TCC database (Screen Recording) is SIP-protected and cannot be
 # modified this way - only tccutil can reset it
 sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';" 2>/dev/null || true
+sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.desktop%';" 2>/dev/null || true
 
 # =============================================================================
 # STEP 3: DELETE ALL CONFLICTING APP BUNDLES
@@ -173,6 +175,8 @@ echo "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi.app"
     "/Applications/Omi Computer.app"
+    "/Applications/Omi Beta.app"
+    "/Applications/Omi Dev.app"
     "$APP_BUNDLE"  # Local build folder
     "$HOME/Desktop/Omi.app"
     "$HOME/Downloads/Omi.app"
@@ -192,6 +196,14 @@ find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi.app" -type d 2>/dev/
     rm -rf "$app"
 done
 find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Computer.app" -type d 2>/dev/null | while read app; do
+    echo "  Removing: $app"
+    rm -rf "$app"
+done
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Beta.app" -type d 2>/dev/null | while read app; do
+    echo "  Removing: $app"
+    rm -rf "$app"
+done
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Dev.app" -type d 2>/dev/null | while read app; do
     echo "  Removing: $app"
     rm -rf "$app"
 done
@@ -297,10 +309,10 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy binary
-cp "Desktop/.build/debug/$APP_NAME" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "Desktop/.build/debug/$BINARY_NAME" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 
 # Add rpath for Frameworks folder (needed for Sparkle)
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" 2>/dev/null || true
 
 # Copy Sparkle framework (keep original signatures intact)
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
@@ -320,9 +332,10 @@ fi
 
 # Copy and fix Info.plist
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy GoogleService-Info.plist for Firebase
 cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
@@ -398,7 +411,7 @@ echo ""
 # Remove quarantine and start app from /Applications
 echo "Starting app..."
 xattr -cr "$APP_PATH"
-open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$APP_NAME" &
+open "$APP_PATH" || "$APP_PATH/Contents/MacOS/$BINARY_NAME" &
 
 # Wait for backend process (keeps script running and shows logs)
 echo "Press Ctrl+C to stop all services..."
