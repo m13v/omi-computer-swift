@@ -68,6 +68,9 @@ struct SidebarView: View {
     // State for Get Omi Widget (shown when no device is paired, dismissible)
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
 
+    // Tier gating
+    @AppStorage("tierGatingEnabled") private var tierGatingEnabled = false
+
     // Toggle states for quick controls
     @AppStorage("screenAnalysisEnabled") private var screenAnalysisEnabled = true
     @State private var isMonitoring = false
@@ -95,6 +98,14 @@ struct SidebarView: View {
         isCollapsed ? collapsedWidth : expandedWidth
     }
 
+    /// Sidebar items filtered by tier gating
+    private var visibleMainItems: [SidebarNavItem] {
+        if tierGatingEnabled {
+            return SidebarNavItem.mainItems.filter { [.conversations, .rewind].contains($0) }
+        }
+        return SidebarNavItem.mainItems
+    }
+
     /// Color for focus status indicator (green = focused, orange = distracted, nil = no status)
     private var focusStatusColor: Color? {
         guard let status = focusStorage.currentStatus else { return nil }
@@ -120,7 +131,7 @@ struct SidebarView: View {
                 // Main navigation section
                 VStack(alignment: .leading, spacing: 0) {
                     // Main navigation items
-                    ForEach(SidebarNavItem.mainItems, id: \.rawValue) { item in
+                    ForEach(visibleMainItems, id: \.rawValue) { item in
                         if item == .conversations {
                             // Conversations - icon shows audio activity when recording
                             NavItemWithStatusView(
