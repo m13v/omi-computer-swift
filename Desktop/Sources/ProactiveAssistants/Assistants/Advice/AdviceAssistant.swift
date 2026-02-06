@@ -177,27 +177,43 @@ actor AdviceAssistant: ProactiveAssistant {
         ])
     }
 
-    /// Save advice to SQLite
+    /// Save advice to SQLite using MemoryStorage with tips tags
     private func saveAdviceToSQLite(
         advice: ExtractedAdvice,
         screenshotId: Int64?,
         contextSummary: String,
         currentActivity: String
-    ) async -> ProactiveExtractionRecord? {
-        let record = ProactiveExtractionRecord(
-            screenshotId: screenshotId,
-            type: .advice,
+    ) async -> MemoryRecord? {
+        // Build tags: ["tips", "<category>"]
+        let categoryTag = advice.category.rawValue.lowercased()
+        let tags = ["tips", categoryTag]
+
+        // Encode tags as JSON
+        let tagsJson: String?
+        if let data = try? JSONEncoder().encode(tags),
+           let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        } else {
+            tagsJson = nil
+        }
+
+        let record = MemoryRecord(
+            backendSynced: false,
             content: advice.advice,
-            category: advice.category.rawValue,
+            category: "system",  // Tips are stored as system category with tags
+            tagsJson: tagsJson,
+            screenshotId: screenshotId,
             confidence: advice.confidence,
             reasoning: advice.reasoning,
             sourceApp: advice.sourceApp,
-            contextSummary: contextSummary
+            contextSummary: contextSummary,
+            currentActivity: currentActivity,
+            source: "screenshot"
         )
 
         do {
-            let inserted = try await ProactiveStorage.shared.insertExtraction(record)
-            log("Advice: Saved to SQLite (id: \(inserted.id ?? -1))")
+            let inserted = try await MemoryStorage.shared.insertLocalMemory(record)
+            log("Advice: Saved to SQLite (id: \(inserted.id ?? -1)) with tags \(tags)")
             return inserted
         } catch {
             logError("Advice: Failed to save to SQLite", error: error)
