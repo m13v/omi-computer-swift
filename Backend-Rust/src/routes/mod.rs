@@ -17,6 +17,7 @@ pub mod memories;
 pub mod messages;
 pub mod personas;
 pub mod updates;
+pub mod stats;
 pub mod users;
 
 pub use action_items::action_items_routes;
@@ -35,5 +36,6 @@ pub use knowledge_graph::knowledge_graph_routes;
 pub use memories::memories_routes;
 pub use messages::messages_routes;
 pub use personas::personas_routes;
+pub use stats::stats_routes;
 pub use updates::updates_routes;
 pub use users::users_routes;
