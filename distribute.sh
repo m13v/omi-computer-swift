@@ -2,7 +2,7 @@
 set -e
 
 # Distribution configuration
-APP_NAME="Omi Computer"
+APP_NAME="Omi Beta"
 BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
