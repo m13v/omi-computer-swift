@@ -60,6 +60,12 @@ struct ConversationRowView: View {
         return formatter.string(from: displayDate)
     }
 
+    /// Folder name for inline display
+    private var folderName: String? {
+        guard let folderId = conversation.folderId else { return nil }
+        return folders.first(where: { $0.id == folderId })?.name
+    }
+
     /// Label for the conversation source
     private var sourceLabel: String {
         switch conversation.source {
@@ -288,6 +294,14 @@ struct ConversationRowView: View {
                     .foregroundColor(OmiColors.textQuaternary)
             }
 
+            // Folder label
+            if !isHovering, let folderName = folderName {
+                Text(folderName)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(OmiColors.textQuaternary)
+                    .lineLimit(1)
+            }
+
             // Time
             Text(formattedTimestamp)
                 .font(.system(size: 11))
@@ -384,9 +398,18 @@ struct ConversationRowView: View {
                 }
 
                 if !isHovering {
-                    Text(conversation.formattedDuration)
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textQuaternary)
+                    HStack(spacing: 6) {
+                        if let folderName = folderName {
+                            Text(folderName)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(OmiColors.textQuaternary)
+                                .lineLimit(1)
+                        }
+
+                        Text(conversation.formattedDuration)
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textQuaternary)
+                    }
                 }
             }
         }
