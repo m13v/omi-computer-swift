@@ -396,13 +396,26 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Set up the button with icon
         if let button = statusBarItem.button {
-            let iconName = OMIApp.launchMode == .rewind ? "clock.arrow.circlepath" : "waveform.circle.fill"
-            if let icon = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
+            if OMIApp.launchMode == .rewind {
+                // Rewind mode uses SF Symbol
+                if let icon = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Omi Rewind") {
+                    icon.isTemplate = true
+                    button.image = icon
+                    log("AppDelegate: [MENUBAR] Rewind icon set successfully")
+                }
+            } else if let iconURL = Bundle.resourceBundle.url(forResource: "app_launcher_icon", withExtension: "png"),
+                      let icon = NSImage(contentsOf: iconURL) {
                 icon.isTemplate = true
+                icon.size = NSSize(width: 18, height: 18)
                 button.image = icon
-                log("AppDelegate: [MENUBAR] Icon '\(iconName)' set successfully")
+                log("AppDelegate: [MENUBAR] Custom app_launcher_icon set successfully")
             } else {
-                log("AppDelegate: [MENUBAR] WARNING - Failed to load SF Symbol '\(iconName)'")
+                // Fallback to SF Symbol
+                if let icon = NSImage(systemSymbolName: "waveform.circle.fill", accessibilityDescription: "Omi") {
+                    icon.isTemplate = true
+                    button.image = icon
+                }
+                log("AppDelegate: [MENUBAR] WARNING - Failed to load app_launcher_icon, using fallback")
             }
             button.toolTip = OMIApp.launchMode == .rewind ? "Omi Rewind" : "Omi Computer"
         } else {
