@@ -15,7 +15,7 @@ use crate::encryption;
 use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
     ChatSessionDB, Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
-    FocusStats, FocusStatus, GoalDB, GoalType, Memory, MemoryCategory, MemoryDB, MessageDB,
+    FocusStats, FocusStatus, GoalDB, GoalHistoryEntry, GoalType, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, PersonaDB, Structured, TranscriptSegment, TranscriptionPreferences, UserProfile,
 };
 
@@ -6095,14 +6095,132 @@ impl FirestoreService {
         Ok(goal)
     }
 
-    /// Update goal progress (current_value)
+    /// Update goal progress (current_value) and record history
     pub async fn update_goal_progress(
         &self,
         uid: &str,
         goal_id: &str,
         current_value: f64,
     ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
-        self.update_goal(uid, goal_id, None, None, Some(current_value), None, None, None, None).await
+        let goal = self.update_goal(uid, goal_id, None, None, Some(current_value), None, None, None, None).await?;
+
+        // Also save history entry (inline, fast write)
+        if let Err(e) = self.save_goal_progress_history(uid, goal_id, current_value).await {
+            tracing::warn!("Failed to save goal progress history: {}", e);
+        }
+
+        Ok(goal)
+    }
+
+    /// Save a progress history entry for a goal
+    /// Writes to goals/{goal_id}/goal_history/{YYYY-MM-DD}
+    pub async fn save_goal_progress_history(
+        &self,
+        uid: &str,
+        goal_id: &str,
+        value: f64,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let now = Utc::now();
+        let date_key = now.format("%Y-%m-%d").to_string();
+
+        let url = format!(
+            "{}/{}/{}/{}/{}/goal_history/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            GOALS_SUBCOLLECTION,
+            goal_id,
+            date_key
+        );
+
+        let doc = json!({
+            "fields": {
+                "date": {"stringValue": &date_key},
+                "value": {"doubleValue": value},
+                "recorded_at": {"timestampValue": now.to_rfc3339()}
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore save goal history error: {}", error_text).into());
+        }
+
+        tracing::debug!("Saved goal history for {}/{}: {} on {}", uid, goal_id, value, date_key);
+        Ok(())
+    }
+
+    /// Get progress history for a goal
+    pub async fn get_goal_history(
+        &self,
+        uid: &str,
+        goal_id: &str,
+        days: u32,
+    ) -> Result<Vec<GoalHistoryEntry>, Box<dyn std::error::Error + Send + Sync>> {
+        use crate::models::GoalHistoryEntry;
+
+        // Query the goal_history subcollection
+        let parent = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            GOALS_SUBCOLLECTION,
+            goal_id
+        );
+
+        let cutoff = Utc::now() - chrono::TimeDelta::days(days as i64);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": "goal_history"}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "recorded_at"},
+                        "op": "GREATER_THAN_OR_EQUAL",
+                        "value": {"timestampValue": cutoff.to_rfc3339()}
+                    }
+                },
+                "orderBy": [{"field": {"fieldPath": "recorded_at"}, "direction": "DESCENDING"}],
+                "limit": days as i64
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query goal history error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut history = Vec::new();
+
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Some(fields) = doc.get("fields") {
+                    let date = self.parse_string(fields, "date").unwrap_or_default();
+                    let value = self.parse_double(fields, "value").unwrap_or(0.0);
+                    let recorded_at = self.parse_timestamp_optional(fields, "recorded_at").unwrap_or_else(Utc::now);
+                    history.push(GoalHistoryEntry { date, value, recorded_at });
+                }
+            }
+        }
+
+        tracing::info!("Found {} history entries for goal {}", history.len(), goal_id);
+        Ok(history)
     }
 
     /// Delete a goal
