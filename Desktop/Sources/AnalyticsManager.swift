@@ -8,10 +8,10 @@ import Mixpanel
 class AnalyticsManager {
     static let shared = AnalyticsManager()
 
-    /// Returns true if this is a development build (bundle ID contains ".development")
+    /// Returns true if this is a development build (bundle ID ends with "-dev")
     /// Development builds don't send analytics to avoid polluting production data
     nonisolated static var isDevBuild: Bool {
-        Bundle.main.bundleIdentifier?.contains(".development") == true
+        Bundle.main.bundleIdentifier?.hasSuffix("-dev") == true
     }
 
     private init() {}
