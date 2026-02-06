@@ -60,6 +60,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     case sourceOmi
     case sourceDesktop
     case sourceManual
+    case sourceOmiAnalytics
 
     // Priority
     case priorityHigh
@@ -72,7 +73,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo, .done, .removedByAI: return .status
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
-        case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual: return .source
+        case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual, .sourceOmiAnalytics: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
         }
     }
@@ -96,6 +97,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .sourceOmi: return "OMI"
         case .sourceDesktop: return "Desktop"
         case .sourceManual: return "Manual"
+        case .sourceOmiAnalytics: return "OMI Analytics"
         case .priorityHigh: return "High"
         case .priorityMedium: return "Medium"
         case .priorityLow: return "Low"
@@ -121,6 +123,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .sourceOmi: return "waveform"
         case .sourceDesktop: return "desktopcomputer"
         case .sourceManual: return "square.and.pencil"
+        case .sourceOmiAnalytics: return "chart.bar.fill"
         case .priorityHigh: return "flag.fill"
         case .priorityMedium: return "flag"
         case .priorityLow: return "flag"
@@ -147,6 +150,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .sourceOmi: return task.source == "transcription:omi"
         case .sourceDesktop: return task.source == "transcription:desktop"
         case .sourceManual: return task.source == "manual"
+        case .sourceOmiAnalytics: return task.source == "omi-analytics"
         case .priorityHigh: return task.priority == "high"
         case .priorityMedium: return task.priority == "medium"
         case .priorityLow: return task.priority == "low"
@@ -513,6 +517,7 @@ class TasksViewModel: ObservableObject {
             case .sourceOmi: return "transcription:omi"
             case .sourceDesktop: return "transcription:desktop"
             case .sourceManual: return "manual"
+            case .sourceOmiAnalytics: return "omi-analytics"
             default: return nil
             }
         }
@@ -594,6 +599,7 @@ class TasksViewModel: ObservableObject {
             counts[.sourceOmi] = filterCounts.sources["transcription:omi"] ?? 0
             counts[.sourceDesktop] = filterCounts.sources["transcription:desktop"] ?? 0
             counts[.sourceManual] = filterCounts.sources["manual"] ?? 0
+            counts[.sourceOmiAnalytics] = filterCounts.sources["omi-analytics"] ?? 0
 
             // Priority counts
             counts[.priorityHigh] = filterCounts.priorities["high"] ?? 0
