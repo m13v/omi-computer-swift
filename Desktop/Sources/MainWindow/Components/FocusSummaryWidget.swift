@@ -128,6 +128,8 @@ struct FocusStatCard: View {
                     }
                 }
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
 
             Text(title)
                 .font(.system(size: 10))
