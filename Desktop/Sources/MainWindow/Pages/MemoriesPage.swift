@@ -1754,6 +1754,8 @@ struct MemoryDetailSheet: View {
     var onDismiss: (() -> Void)? = nil
 
     @Environment(\.dismiss) private var environmentDismiss
+    @State private var isEditingContent = false
+    @State private var editContentText = ""
 
     private func dismissSheet() {
         if let onDismiss = onDismiss {
@@ -1766,7 +1768,7 @@ struct MemoryDetailSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                // Header with tags
+                // Header with tags, visibility toggle, delete, and dismiss
                 HStack(spacing: 8) {
                     if memory.isTip {
                         tagBadge("Tips", "lightbulb.fill", OmiColors.warning)
@@ -1779,14 +1781,96 @@ struct MemoryDetailSheet: View {
 
                     Spacer()
 
+                    // Public toggle
+                    HStack(spacing: 6) {
+                        Text("Public")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
+                        if viewModel.isTogglingVisibility {
+                            ProgressView()
+                                .scaleEffect(0.7)
+                        } else {
+                            Toggle("", isOn: Binding(
+                                get: { memory.isPublic },
+                                set: { _ in
+                                    Task { await viewModel.toggleVisibility(memory) }
+                                }
+                            ))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                        }
+                    }
+
+                    // Delete icon
+                    Button {
+                        NSApp.keyWindow?.makeFirstResponder(nil)
+                        Task { @MainActor in
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                            dismissSheet()
+                            await viewModel.deleteMemory(memory)
+                        }
+                    } label: {
+                        Image(systemName: "trash")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.error)
+                    }
+                    .buttonStyle(.plain)
+
                     DismissButton(action: dismissSheet)
                 }
 
-                // Content
-                Text(memory.content)
-                    .font(.system(size: 15))
-                    .foregroundColor(OmiColors.textPrimary)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Content (click to edit)
+                if isEditingContent {
+                    VStack(alignment: .trailing, spacing: 8) {
+                        TextEditor(text: $editContentText)
+                            .font(.system(size: 15))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .scrollContentBackground(.hidden)
+                            .padding(8)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
+                            .frame(minHeight: 80)
+
+                        HStack(spacing: 8) {
+                            Button {
+                                isEditingContent = false
+                            } label: {
+                                Text("Cancel")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(OmiColors.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+
+                            Button {
+                                viewModel.editText = editContentText
+                                Task {
+                                    await viewModel.saveEditedMemory(memory)
+                                    isEditingContent = false
+                                }
+                            } label: {
+                                Text("Save")
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundColor(.black)
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                    .background(Color.white)
+                                    .cornerRadius(6)
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(editContentText.isEmpty)
+                        }
+                    }
+                } else {
+                    Text(memory.content)
+                        .font(.system(size: 15))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            editContentText = memory.content
+                            isEditingContent = true
+                        }
+                }
 
                 // Reasoning
                 if let reasoning = memory.reasoning, !reasoning.isEmpty {
@@ -1899,58 +1983,6 @@ struct MemoryDetailSheet: View {
 
                 // Action Buttons
                 VStack(spacing: 10) {
-                    // Edit button
-                    MemoryActionRow(
-                        icon: "pencil",
-                        title: "Edit Memory",
-                        iconColor: OmiColors.textPrimary,
-                        textColor: OmiColors.textPrimary,
-                        backgroundColor: OmiColors.backgroundTertiary
-                    ) {
-                        let memoryToEdit = memory
-                        // Dismiss first, then open edit sheet after sheet animation completes
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 150_000_000) // 150ms before dismiss
-                            dismissSheet()
-                            // Wait for sheet dismiss animation to complete (~300ms)
-                            try? await Task.sleep(nanoseconds: 350_000_000) // 350ms after dismiss
-                            viewModel.editingMemory = memoryToEdit
-                            viewModel.editText = memoryToEdit.content
-                        }
-                    }
-
-                    // Visibility toggle
-                    HStack {
-                        Image(systemName: memory.isPublic ? "globe" : "lock")
-                            .foregroundColor(memory.isPublic ? OmiColors.success : OmiColors.textTertiary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Public")
-                                .font(.system(size: 14))
-                                .foregroundColor(OmiColors.textPrimary)
-                            Text(memory.isPublic ? "Visible in your persona" : "Only you can see this")
-                                .font(.system(size: 11))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-                        Spacer()
-                        if viewModel.isTogglingVisibility {
-                            ProgressView()
-                                .scaleEffect(0.7)
-                        } else {
-                            Toggle("", isOn: Binding(
-                                get: { memory.isPublic },
-                                set: { _ in
-                                    Task { await viewModel.toggleVisibility(memory) }
-                                }
-                            ))
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                        }
-                    }
-                    .padding(12)
-                    .background(OmiColors.backgroundTertiary)
-                    .cornerRadius(8)
-
                     // Mark as read (for unread tips)
                     if memory.isTip && !memory.isRead {
                         MemoryActionRow(
@@ -1985,22 +2017,6 @@ struct MemoryDetailSheet: View {
                                 dismissSheet()
                                 await viewModel.navigateToConversation(id: conversationId)
                             }
-                        }
-                    }
-
-                    // Delete button
-                    MemoryActionRow(
-                        icon: "trash",
-                        title: "Delete Memory",
-                        iconColor: OmiColors.error,
-                        textColor: OmiColors.error,
-                        backgroundColor: OmiColors.error.opacity(0.1)
-                    ) {
-                        NSApp.keyWindow?.makeFirstResponder(nil)
-                        Task { @MainActor in
-                            try? await Task.sleep(nanoseconds: 100_000_000)
-                            dismissSheet()
-                            await viewModel.deleteMemory(memory)
                         }
                     }
                 }
@@ -2146,7 +2162,7 @@ struct AddMemorySheet: View {
                 } label: {
                     Text("Save")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(viewModel.newMemoryText.isEmpty ? OmiColors.textTertiary : OmiColors.textPrimary)
+                        .foregroundColor(viewModel.newMemoryText.isEmpty ? OmiColors.textTertiary : .black)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
                         .background(viewModel.newMemoryText.isEmpty ? OmiColors.backgroundTertiary : Color.white)
@@ -2218,7 +2234,7 @@ struct EditMemorySheet: View {
                 } label: {
                     Text("Save")
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(viewModel.editText.isEmpty ? OmiColors.textTertiary : OmiColors.textPrimary)
+                        .foregroundColor(viewModel.editText.isEmpty ? OmiColors.textTertiary : .black)
                         .padding(.horizontal, 20)
                         .padding(.vertical, 8)
                         .background(viewModel.editText.isEmpty ? OmiColors.backgroundTertiary : Color.white)
