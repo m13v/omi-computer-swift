@@ -337,6 +337,14 @@ struct SidebarView: View {
             syncMonitoringState()
             appState.checkAllPermissions()
         }
+        .onChange(of: tierGatingEnabled) { _, enabled in
+            if enabled {
+                let visibleRawValues: Set<Int> = [SidebarNavItem.conversations.rawValue, SidebarNavItem.rewind.rawValue]
+                if !visibleRawValues.contains(selectedIndex) {
+                    selectedIndex = SidebarNavItem.conversations.rawValue
+                }
+            }
+        }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
             syncMonitoringState()
         }
