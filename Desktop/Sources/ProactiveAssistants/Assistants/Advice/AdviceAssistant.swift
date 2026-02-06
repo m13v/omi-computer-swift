@@ -202,13 +202,13 @@ actor AdviceAssistant: ProactiveAssistant {
             content: advice.advice,
             category: "system",  // Tips are stored as system category with tags
             tagsJson: tagsJson,
+            source: "screenshot",
             screenshotId: screenshotId,
             confidence: advice.confidence,
             reasoning: advice.reasoning,
             sourceApp: advice.sourceApp,
             contextSummary: contextSummary,
-            currentActivity: currentActivity,
-            source: "screenshot"
+            currentActivity: currentActivity
         )
 
         do {
