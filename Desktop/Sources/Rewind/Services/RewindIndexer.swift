@@ -123,6 +123,56 @@ actor RewindIndexer {
         }
     }
 
+    /// Process a frame directly from a CGImage (macOS 14+ path, avoids JPEG decode round-trip)
+    func processFrame(cgImage: CGImage, appName: String, windowTitle: String?, captureTime: Date) async {
+        guard await ensureInitialized() else { return }
+
+        do {
+            // Add frame to video encoder (CGImage directly, no decode needed)
+            let encodedFrame = try await VideoChunkEncoder.shared.addFrame(
+                image: cgImage,
+                timestamp: captureTime
+            )
+
+            // Run OCR directly on the CGImage (no JPEG decode needed)
+            var ocrText: String?
+            var ocrDataJson: String?
+            var isIndexed = false
+
+            do {
+                let ocrResult = try await RewindOCRService.shared.extractTextWithBounds(from: cgImage)
+                ocrText = ocrResult.fullText
+                if let data = try? JSONEncoder().encode(ocrResult) {
+                    ocrDataJson = String(data: data, encoding: .utf8)
+                }
+                isIndexed = true
+            } catch {
+                logError("RewindIndexer: OCR failed for CGImage frame: \(error)")
+            }
+
+            let screenshot = Screenshot(
+                timestamp: captureTime,
+                appName: appName,
+                windowTitle: windowTitle,
+                imagePath: "",
+                videoChunkPath: encodedFrame?.videoChunkPath,
+                frameOffset: encodedFrame?.frameOffset,
+                ocrText: ocrText,
+                ocrDataJson: ocrDataJson,
+                isIndexed: isIndexed
+            )
+
+            try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            DispatchQueue.main.async {
+                NotificationCenter.default.post(name: .rewindFrameCaptured, object: nil)
+            }
+
+        } catch {
+            logError("RewindIndexer: Failed to process CGImage frame: \(error)")
+        }
+    }
+
     /// Process a frame with additional metadata (focus status, etc.)
     func processFrame(_ frame: CapturedFrame, focusStatus: String?, extractedTasks: [String]?, advice: String?) async {
         guard await ensureInitialized() else { return }
