@@ -238,9 +238,20 @@ class TasksViewModel: ObservableObject {
                     }
                 }
             }
-            recomputeDisplayCaches()
+            // When non-status filters are applied, query SQLite directly
+            let hasNonStatusFilters = selectedTags.contains(where: { $0.group != .status })
+            if hasNonStatusFilters {
+                Task { await loadFilteredTasksFromDatabase() }
+            } else {
+                filteredFromDatabase = []
+                recomputeDisplayCaches()
+            }
         }
     }
+
+    /// Tasks loaded from SQLite with filters applied
+    @Published private(set) var filteredFromDatabase: [TaskActionItem] = []
+    @Published private(set) var isLoadingFiltered = false
 
     /// Cached tag counts - recomputed when tasks change
     @Published private(set) var tagCounts: [TaskFilterTag: Int] = [:]
@@ -464,6 +475,92 @@ class TasksViewModel: ObservableObject {
         }
     }
 
+    /// Load filtered tasks from SQLite when non-status filters are applied
+    private func loadFilteredTasksFromDatabase() async {
+        let nonStatusTags = selectedTags.filter { $0.group != .status }
+        guard !nonStatusTags.isEmpty else {
+            filteredFromDatabase = []
+            recomputeDisplayCaches()
+            return
+        }
+
+        isLoadingFiltered = true
+
+        // Extract filter values from tags
+        let tagsByGroup = Dictionary(grouping: nonStatusTags) { $0.group }
+
+        // Get categories
+        let categories: [String]? = tagsByGroup[.category]?.compactMap { tag -> String? in
+            switch tag {
+            case .personal: return "personal"
+            case .work: return "work"
+            case .feature: return "feature"
+            case .bug: return "bug"
+            case .code: return "code"
+            case .research: return "research"
+            case .communication: return "communication"
+            case .finance: return "finance"
+            case .health: return "health"
+            case .other: return "other"
+            default: return nil
+            }
+        }
+
+        // Get sources
+        let sources: [String]? = tagsByGroup[.source]?.compactMap { tag -> String? in
+            switch tag {
+            case .sourceScreen: return "screenshot"
+            case .sourceOmi: return "transcription:omi"
+            case .sourceDesktop: return "transcription:desktop"
+            case .sourceManual: return "manual"
+            default: return nil
+            }
+        }
+
+        // Get priorities
+        let priorities: [String]? = tagsByGroup[.priority]?.compactMap { tag -> String? in
+            switch tag {
+            case .priorityHigh: return "high"
+            case .priorityMedium: return "medium"
+            case .priorityLow: return "low"
+            default: return nil
+            }
+        }
+
+        // Determine completed states from status filters
+        let statusTags = selectedTags.filter { $0.group == .status }
+        let completedStates: [Bool]?
+        if statusTags.isEmpty {
+            completedStates = nil  // Show all
+        } else {
+            var states: [Bool] = []
+            if statusTags.contains(.todo) { states.append(false) }
+            if statusTags.contains(.done) { states.append(true) }
+            completedStates = states.isEmpty ? nil : states
+        }
+
+        let includeDeleted = statusTags.contains(.removedByAI)
+
+        do {
+            let results = try await ActionItemStorage.shared.getFilteredActionItems(
+                limit: 500,
+                completedStates: completedStates,
+                includeDeleted: includeDeleted,
+                categories: categories,
+                sources: sources,
+                priorities: priorities
+            )
+            filteredFromDatabase = results
+            log("TasksViewModel: Loaded \(results.count) filtered tasks from SQLite")
+        } catch {
+            logError("TasksViewModel: Failed to load filtered tasks", error: error)
+            filteredFromDatabase = []
+        }
+
+        isLoadingFiltered = false
+        recomputeDisplayCaches()
+    }
+
     /// Load tag counts from SQLite database (shows true totals, not just loaded items)
     private func loadTagCountsFromDatabase() async {
         do {
@@ -556,17 +653,33 @@ class TasksViewModel: ObservableObject {
 
     /// Recompute display-related caches when filters or sort change
     private func recomputeDisplayCaches() {
-        // If searching, use search results
+        // Determine the source of tasks based on current state
         let sourceTasks: [TaskActionItem]
+
         if !searchText.isEmpty {
+            // Searching: use search results from SQLite
             sourceTasks = searchResults
+        } else if !filteredFromDatabase.isEmpty {
+            // Non-status filters applied: use SQLite filtered results
+            sourceTasks = filteredFromDatabase
         } else {
-            // Get tasks from appropriate list based on status filter
+            // No filters or only status filters: use in-memory store arrays
             sourceTasks = getSourceTasks()
         }
 
-        // Apply tag filters (category, source, priority) - skip status filters if searching
-        let filteredTasks = searchText.isEmpty ? applyTagFilters(sourceTasks) : applyNonStatusTagFilters(sourceTasks)
+        // Apply status filters to SQLite results (if needed)
+        // Note: Non-status filters are already applied by SQLite query
+        let hasNonStatusFilters = selectedTags.contains(where: { $0.group != .status })
+        let filteredTasks: [TaskActionItem]
+        if !searchText.isEmpty {
+            filteredTasks = applyNonStatusTagFilters(sourceTasks)
+        } else if hasNonStatusFilters {
+            // SQLite already filtered by category/source/priority
+            // But we may still need to apply status filters
+            filteredTasks = applyStatusFilters(sourceTasks)
+        } else {
+            filteredTasks = applyTagFilters(sourceTasks)
+        }
 
         // Sort and store
         displayTasks = sortTasks(filteredTasks)
@@ -581,6 +694,19 @@ class TasksViewModel: ObservableObject {
             result[category, default: []].append(task)
         }
         categorizedTasks = result
+    }
+
+    /// Apply only status filters (todo/done/deleted)
+    private func applyStatusFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+        let statusTags = selectedTags.filter { $0.group == .status }
+        guard !statusTags.isEmpty else { return tasks }
+
+        return tasks.filter { task in
+            if statusTags.contains(.removedByAI) && task.deleted == true { return true }
+            if statusTags.contains(.done) && task.completed { return true }
+            if statusTags.contains(.todo) && !task.completed && task.deleted != true { return true }
+            return false
+        }
     }
 
     /// Apply only non-status tag filters (for search results which already include all statuses)
@@ -793,7 +919,7 @@ struct TasksPage: View {
                     .buttonStyle(.plain)
                 }
 
-                if viewModel.isSearching {
+                if viewModel.isSearching || viewModel.isLoadingFiltered {
                     ProgressView()
                         .scaleEffect(0.7)
                 }
