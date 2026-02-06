@@ -389,6 +389,16 @@ extension APIClient {
         return response.count
     }
 
+    /// Gets the count of AI chat messages from PostHog
+    func getChatMessageCount() async throws -> Int {
+        struct CountResponse: Decodable {
+            let count: Int
+        }
+
+        let response: CountResponse = try await get("v1/users/stats/chat-messages")
+        return response.count
+    }
+
     /// Merges multiple conversations into a new conversation
     func mergeConversations(ids: [String], reprocess: Bool = true) async throws -> MergeConversationsResponse {
         struct MergeRequest: Encodable {
