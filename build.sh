@@ -46,6 +46,15 @@ cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 /usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
+# Copy resource bundle (contains app assets like herologo.png, omi-with-rope-no-padding.webp, etc.)
+SWIFT_BUILD_DIR=$(swift build -c release --package-path Desktop --show-bin-path)
+if [ -d "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" ]; then
+    cp -R "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" "$APP_BUNDLE/Contents/Resources/"
+    echo "Copied resource bundle"
+else
+    echo "Warning: Resource bundle not found at $SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle"
+fi
+
 # Copy .env.app file (app runtime secrets only)
 if [ -f ".env.app" ]; then
     cp ".env.app" "$APP_BUNDLE/Contents/Resources/.env"
