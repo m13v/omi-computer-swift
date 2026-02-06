@@ -1670,6 +1670,12 @@ extension APIClient {
         try await delete("v1/goals/\(id)")
     }
 
+    /// Gets progress history for a goal
+    func getGoalHistory(goalId: String, days: Int = 30) async throws -> [GoalHistoryEntry] {
+        let response: GoalHistoryResponse = try await get("v1/goals/\(goalId)/history?days=\(days)")
+        return response.history
+    }
+
     /// Gets the daily score for a specific date (defaults to today)
     func getDailyScore(date: Date? = nil) async throws -> DailyScore {
         var endpoint = "v1/daily-score"
@@ -1910,6 +1916,21 @@ struct Goal: Codable, Identifiable {
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(title, forKey: .title)
+        try container.encode(goalType, forKey: .goalType)
+        try container.encode(targetValue, forKey: .targetValue)
+        try container.encode(currentValue, forKey: .currentValue)
+        try container.encode(minValue, forKey: .minValue)
+        try container.encode(maxValue, forKey: .maxValue)
+        try container.encodeIfPresent(unit, forKey: .unit)
+        try container.encode(isActive, forKey: .isActive)
+        try container.encode(createdAt, forKey: .createdAt)
+        try container.encode(updatedAt, forKey: .updatedAt)
+    }
+
     /// Progress as a percentage (0-100)
     var progress: Double {
         guard maxValue != minValue else { return 0 }
@@ -1938,6 +1959,25 @@ struct Goal: Codable, Identifiable {
 /// Response wrapper for goals list
 struct GoalsListResponse: Codable {
     let goals: [Goal]
+}
+
+/// A single progress history entry for a goal
+struct GoalHistoryEntry: Codable, Identifiable {
+    let date: String
+    let value: Double
+    let recordedAt: Date
+
+    var id: String { date }
+
+    enum CodingKeys: String, CodingKey {
+        case date, value
+        case recordedAt = "recorded_at"
+    }
+}
+
+/// Response wrapper for goal history
+struct GoalHistoryResponse: Codable {
+    let history: [GoalHistoryEntry]
 }
 
 /// Daily score calculation result
