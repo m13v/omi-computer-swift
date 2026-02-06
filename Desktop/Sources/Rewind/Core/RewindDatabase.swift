@@ -901,8 +901,11 @@ actor RewindDatabase {
             try db.create(index: "idx_memories_deleted", on: "memories", columns: ["deleted"])
 
             // Migrate existing memories from proactive_extractions
+            // Use INSERT OR IGNORE to handle duplicate backendIds gracefully
+            // For records with NULL backendId (unsynced), we insert all of them
+            // For records with non-NULL backendId (synced), we keep only the first one per backendId
             try db.execute(sql: """
-                INSERT INTO memories (
+                INSERT OR IGNORE INTO memories (
                     backendId, backendSynced, content, category, tagsJson, visibility,
                     reviewed, manuallyAdded, source, screenshotId, confidence, reasoning,
                     sourceApp, contextSummary, isRead, isDismissed, deleted, createdAt, updatedAt
@@ -919,6 +922,7 @@ actor RewindDatabase {
                     sourceApp, contextSummary, isRead, isDismissed, 0, createdAt, updatedAt
                 FROM proactive_extractions
                 WHERE type IN ('memory', 'advice')
+                ORDER BY createdAt DESC
             """)
         }
 
@@ -964,8 +968,9 @@ actor RewindDatabase {
             try db.create(index: "idx_action_items_due", on: "action_items", columns: ["dueAt"])
 
             // Migrate existing tasks from proactive_extractions
+            // Use INSERT OR IGNORE to handle duplicate backendIds gracefully
             try db.execute(sql: """
-                INSERT INTO action_items (
+                INSERT OR IGNORE INTO action_items (
                     backendId, backendSynced, description, completed, deleted, source,
                     priority, category, screenshotId, confidence, sourceApp, contextSummary,
                     createdAt, updatedAt
@@ -976,6 +981,7 @@ actor RewindDatabase {
                     createdAt, updatedAt
                 FROM proactive_extractions
                 WHERE type = 'task'
+                ORDER BY createdAt DESC
             """)
         }
 
