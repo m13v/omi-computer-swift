@@ -132,7 +132,8 @@ class TaskAgentManager: ObservableObject {
 
     /// Update prompt and restart agent
     func updatePromptAndRestart(taskId: String, newPrompt: String, context: TaskAgentContext) async throws {
-        guard var session = activeSessions[taskId] else { return }
+        guard let session = activeSessions[taskId] else { return }
+        let sessionName = session.sessionName
 
         logMessage("TaskAgentManager: Restarting agent for task \(taskId) with new prompt")
 
@@ -141,26 +142,25 @@ class TaskAgentManager: ObservableObject {
         pollingTasks[taskId] = nil
 
         // Kill existing session
-        killTmuxSession(sessionName: session.sessionName)
+        killTmuxSession(sessionName: sessionName)
 
-        // Update session
+        // Update session directly in activeSessions
         await MainActor.run {
-            session.prompt = newPrompt
-            session.startedAt = Date()
-            session.status = .pending
-            session.output = nil
-            session.plan = nil
-            session.completedAt = nil
-            activeSessions[taskId] = session
+            activeSessions[taskId]?.prompt = newPrompt
+            activeSessions[taskId]?.startedAt = Date()
+            activeSessions[taskId]?.status = .pending
+            activeSessions[taskId]?.output = nil
+            activeSessions[taskId]?.plan = nil
+            activeSessions[taskId]?.completedAt = nil
         }
 
-        try await launchTmuxSession(sessionName: session.sessionName, prompt: newPrompt, workingDir: context.workingDirectory)
+        try await launchTmuxSession(sessionName: sessionName, prompt: newPrompt, workingDir: context.workingDirectory)
 
         await MainActor.run {
             activeSessions[taskId]?.status = .processing
         }
 
-        startPolling(taskId: taskId, sessionName: session.sessionName)
+        startPolling(taskId: taskId, sessionName: sessionName)
     }
 
     /// Stop and remove agent session
