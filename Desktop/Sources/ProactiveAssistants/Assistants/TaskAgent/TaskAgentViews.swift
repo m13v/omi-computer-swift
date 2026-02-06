@@ -9,25 +9,25 @@ struct TaskClassificationBadge: View {
     private var displayInfo: (label: String, icon: String, color: Color) {
         switch category.lowercased() {
         case "personal":
-            return ("Personal", "person.fill", Color(hex: "#8B5CF6"))
+            return ("Personal", "person.fill", Color(hex: 0x8B5CF6))
         case "work":
-            return ("Work", "briefcase.fill", Color(hex: "#3B82F6"))
+            return ("Work", "briefcase.fill", Color(hex: 0x3B82F6))
         case "feature":
-            return ("Feature", "sparkles", Color(hex: "#10B981"))
+            return ("Feature", "sparkles", Color(hex: 0x10B981))
         case "bug":
-            return ("Bug", "ladybug.fill", Color(hex: "#EF4444"))
+            return ("Bug", "ladybug.fill", Color(hex: 0xEF4444))
         case "code":
-            return ("Code", "chevron.left.forwardslash.chevron.right", Color(hex: "#F59E0B"))
+            return ("Code", "chevron.left.forwardslash.chevron.right", Color(hex: 0xF59E0B))
         case "research":
-            return ("Research", "magnifyingglass", Color(hex: "#6366F1"))
+            return ("Research", "magnifyingglass", Color(hex: 0x6366F1))
         case "communication":
-            return ("Comms", "message.fill", Color(hex: "#EC4899"))
+            return ("Comms", "message.fill", Color(hex: 0xEC4899))
         case "finance":
-            return ("Finance", "dollarsign.circle.fill", Color(hex: "#14B8A6"))
+            return ("Finance", "dollarsign.circle.fill", Color(hex: 0x14B8A6))
         case "health":
-            return ("Health", "heart.fill", Color(hex: "#F43F5E"))
+            return ("Health", "heart.fill", Color(hex: 0xF43F5E))
         default:
-            return ("Other", "folder.fill", Color(hex: "#6B7280"))
+            return ("Other", "folder.fill", Color(hex: 0x6B7280))
         }
     }
 
@@ -179,9 +179,7 @@ struct AgentLaunchButton: View {
 
         Task {
             do {
-                let context = TaskAgentContext(
-                    contextSummary: task.contextSummary
-                )
+                let context = TaskAgentContext()
                 try await manager.launchAgent(for: task, context: context)
             } catch {
                 errorMessage = error.localizedDescription
@@ -612,9 +610,7 @@ struct TaskAgentDetailView: View {
         isRestarting = true
 
         do {
-            let context = TaskAgentContext(
-                contextSummary: task.contextSummary
-            )
+            let context = TaskAgentContext()
             try await manager.updatePromptAndRestart(
                 taskId: task.id,
                 newPrompt: editedPrompt,
@@ -629,33 +625,6 @@ struct TaskAgentDetailView: View {
     }
 }
 
-// MARK: - Color Extension
-
-extension Color {
-    init(hex: String) {
-        let hex = hex.trimmingCharacters(in: CharacterSet.alphanumerics.inverted)
-        var int: UInt64 = 0
-        Scanner(string: hex).scanHexInt64(&int)
-        let a, r, g, b: UInt64
-        switch hex.count {
-        case 3: // RGB (12-bit)
-            (a, r, g, b) = (255, (int >> 8) * 17, (int >> 4 & 0xF) * 17, (int & 0xF) * 17)
-        case 6: // RGB (24-bit)
-            (a, r, g, b) = (255, int >> 16, int >> 8 & 0xFF, int & 0xFF)
-        case 8: // ARGB (32-bit)
-            (a, r, g, b) = (int >> 24, int >> 16 & 0xFF, int >> 8 & 0xFF, int & 0xFF)
-        default:
-            (a, r, g, b) = (1, 1, 1, 0)
-        }
-        self.init(
-            .sRGB,
-            red: Double(r) / 255,
-            green: Double(g) / 255,
-            blue: Double(b) / 255,
-            opacity: Double(a) / 255
-        )
-    }
-}
 
 // MARK: - Preview
 
