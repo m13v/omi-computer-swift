@@ -1,6 +1,7 @@
 import AppKit
 import CoreGraphics
 import Foundation
+import ImageIO
 import ScreenCaptureKit
 
 final class ScreenCaptureService: Sendable {
@@ -422,6 +423,58 @@ final class ScreenCaptureService: Sendable {
         }
     }
 
+    // MARK: - CGImage Capture (macOS 14+)
+
+    /// Capture the active window and return the raw CGImage (no JPEG encoding).
+    /// Use this on macOS 14+ to avoid redundant encode/decode round-trips.
+    @available(macOS 14.0, *)
+    func captureActiveWindowCGImage() async -> CGImage? {
+        guard let windowID = Self.getActiveWindowID() else {
+            log("No active window ID found")
+            return nil
+        }
+
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: true
+            )
+
+            guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                log("Window not found in SCShareableContent")
+                return nil
+            }
+
+            let filter = SCContentFilter(desktopIndependentWindow: window)
+            let config = SCStreamConfiguration()
+            config.scalesToFit = true
+            let windowWidth = window.frame.width
+            let windowHeight = window.frame.height
+            let aspectRatio = windowWidth / windowHeight
+            var configWidth = min(windowWidth, maxSize)
+            var configHeight = configWidth / aspectRatio
+            if configHeight > maxSize {
+                configHeight = maxSize
+                configWidth = configHeight * aspectRatio
+            }
+            config.width = Int(configWidth)
+            config.height = Int(configHeight)
+
+            return try await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: config
+            )
+        } catch {
+            logError("ScreenCaptureKit CGImage error", error: error)
+            return nil
+        }
+    }
+
+    /// Encode a CGImage to JPEG data. Public wrapper for use by callers that need JPEG once.
+    func encodeJPEG(from cgImage: CGImage) -> Data? {
+        return jpegData(from: cgImage)
+    }
+
     // MARK: - Synchronous Capture (Legacy)
 
     /// Capture the active window and return as JPEG data (synchronous - legacy)
@@ -494,13 +547,18 @@ final class ScreenCaptureService: Sendable {
         return newImage
     }
 
-    /// Convert CGImage to JPEG data
+    /// Convert CGImage to JPEG data using CGImageDestination (avoids NSImage→TIFF round-trip)
     private func jpegData(from cgImage: CGImage) -> Data? {
-        let nsImage = NSImage(cgImage: cgImage, size: NSSize(
-            width: cgImage.width,
-            height: cgImage.height
-        ))
-        return jpegData(from: nsImage)
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, "public.jpeg" as CFString, 1, nil) else {
+            return nil
+        }
+        let options: [CFString: Any] = [kCGImageDestinationLossyCompressionQuality: jpegQuality]
+        CGImageDestinationAddImage(destination, cgImage, options as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else {
+            return nil
+        }
+        return data as Data
     }
 
     /// Convert NSImage to JPEG data
