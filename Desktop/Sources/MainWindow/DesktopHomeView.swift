@@ -4,7 +4,11 @@ struct DesktopHomeView: View {
     @StateObject private var appState = AppState()
     @StateObject private var viewModelContainer = ViewModelContainer()
     @ObservedObject private var authState = AuthState.shared
-    @State private var selectedIndex: Int = OMIApp.launchMode == .rewind ? SidebarNavItem.rewind.rawValue : 0
+    @State private var selectedIndex: Int = {
+        if OMIApp.launchMode == .rewind { return SidebarNavItem.rewind.rawValue }
+        if UserDefaults.standard.bool(forKey: "tierGatingEnabled") { return SidebarNavItem.conversations.rawValue }
+        return 0
+    }()
     @State private var isSidebarCollapsed: Bool = false
 
     // Settings sidebar state
