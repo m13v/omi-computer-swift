@@ -1379,6 +1379,14 @@ class AppState: ObservableObject {
                 durationSeconds: durationSeconds
             )
 
+            // Fire-and-forget: extract goal progress from conversation transcript
+            let transcriptText = segmentsToUpload.map { $0.text }.joined(separator: " ")
+            if transcriptText.count >= 10 {
+                Task.detached(priority: .background) {
+                    await GoalsAIService.shared.extractProgressFromAllGoals(text: transcriptText)
+                }
+            }
+
             return .saved
         } catch {
             logError("Transcription: Failed to save conversation", error: error)
