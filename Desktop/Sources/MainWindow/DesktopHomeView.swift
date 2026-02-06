@@ -24,7 +24,25 @@ struct DesktopHomeView: View {
 
     var body: some View {
         Group {
-            if !authState.isSignedIn {
+            if authState.isRestoringAuth {
+                // State 0: Restoring auth session - show loading
+                VStack(spacing: 16) {
+                    if let iconURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                       let nsImage = NSImage(contentsOf: iconURL) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 64, height: 64)
+                    }
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white.opacity(0.6))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .onAppear {
+                    log("DesktopHomeView: Showing auth loading splash")
+                }
+            } else if !authState.isSignedIn {
                 // State 1: Not signed in - show sign in
                 SignInView(authState: authState)
                     .onAppear {
