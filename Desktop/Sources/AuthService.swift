@@ -90,6 +90,14 @@ class AuthService {
         isConfigured = true
         restoreAuthState()
         setupAuthStateListener()
+
+        // Timeout: if auth isn't restored within 5 seconds, stop showing loading
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            if AuthState.shared.isRestoringAuth {
+                NSLog("OMI AUTH: Auth restore timed out after 5s, clearing loading state")
+                AuthState.shared.isRestoringAuth = false
+            }
+        }
     }
 
     // MARK: - Auth Persistence (UserDefaults for dev builds)
@@ -113,11 +121,10 @@ class AuthService {
             // Check if Firebase also has a current user (session might still be valid)
             if let currentUser = Auth.auth().currentUser {
                 NSLog("OMI AUTH: Restored auth state from Firebase - uid: %@", currentUser.uid)
-                // Update synchronously since we're called from main thread
                 DispatchQueue.main.async {
                     self.isSignedIn = true
                     AuthState.shared.userEmail = currentUser.email ?? savedEmail
-                    // Load name from Firebase Auth displayName if we don't have it locally
+                    AuthState.shared.isRestoringAuth = false
                     self.loadNameFromFirebaseIfNeeded()
                 }
             } else {
@@ -135,14 +142,17 @@ class AuthService {
                     }
                 }
 
-                // Update synchronously since we're called from main thread
                 DispatchQueue.main.async {
                     self.isSignedIn = true
                     AuthState.shared.userEmail = savedEmail
+                    AuthState.shared.isRestoringAuth = false
                 }
             }
         } else {
             NSLog("OMI AUTH: No saved auth state found")
+            DispatchQueue.main.async {
+                AuthState.shared.isRestoringAuth = false
+            }
         }
     }
 
@@ -155,6 +165,7 @@ class AuthService {
                     // Firebase has a user - trust it
                     self?.isSignedIn = true
                     AuthState.shared.userEmail = user?.email
+                    AuthState.shared.isRestoringAuth = false
                     self?.saveAuthState(isSignedIn: true, email: user?.email, userId: user?.uid)
                     // Load name from Firebase Auth displayName if we don't have it locally
                     self?.loadNameFromFirebaseIfNeeded()
@@ -165,6 +176,7 @@ class AuthService {
                         // No saved session either - user is truly signed out
                         self?.isSignedIn = false
                         AuthState.shared.userEmail = nil
+                        AuthState.shared.isRestoringAuth = false
                     }
                     // If savedSignedIn is true, don't overwrite - keep the saved session
                 }
