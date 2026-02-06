@@ -43,6 +43,8 @@ pub struct GetActionItemsQuery {
     pub due_end_date: Option<String>,
     /// Sort field: "due_at", "created_at", "priority" (default: created_at DESC)
     pub sort_by: Option<String>,
+    /// If true, return ONLY soft-deleted items. Default: exclude deleted items.
+    pub deleted: Option<bool>,
 }
 
 fn default_limit() -> usize {
@@ -114,6 +116,7 @@ async fn get_action_items(
             query.due_start_date.as_deref(),
             query.due_end_date.as_deref(),
             query.sort_by.as_deref(),
+            query.deleted,
         )
         .await
     {
