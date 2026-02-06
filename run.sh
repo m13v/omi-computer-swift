@@ -30,7 +30,7 @@ substep() {
 
 # App configuration
 APP_NAME="Omi Computer"
-BUNDLE_ID="com.omi.computer-macos.development"
+BUNDLE_ID="com.omi.computer-macos-dev"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
@@ -67,6 +67,7 @@ rm -f /tmp/omi.log 2>/dev/null || true
 step "Cleaning up conflicting app bundles..."
 CONFLICTING_APPS=(
     "/Applications/Omi Computer.app"
+    "/Applications/Omi.app/Contents/MacOS/Omi Computer.app"
     "$HOME/Desktop/Omi.app"
     "$HOME/Downloads/Omi.app"
     "$(dirname "$0")/../omi/app/build/macos/Build/Products/Debug/Omi.app"
@@ -80,6 +81,8 @@ for app in "${CONFLICTING_APPS[@]}"; do
         rm -rf "$app"
     fi
 done
+# Also remove any "Omi Computer.app" nested inside Flutter builds (any config: Debug/Release/Release-prod/etc.)
+find "$(dirname "$0")/../omi/app/build" -name "Omi Computer.app" -type d -exec rm -rf {} + 2>/dev/null || true
 
 step "Starting Cloudflare tunnel..."
 cloudflared tunnel run omi-computer-dev &
