@@ -673,6 +673,15 @@ extension MixpanelManager {
         ])
     }
 
+    // MARK: - Tier Events
+
+    func tierChanged(tier: Int, reason: String) {
+        track("Tier Changed", properties: [
+            "tier": tier,
+            "reason": reason
+        ])
+    }
+
     // MARK: - Display Info
 
     func displayInfoTracked(info: [String: Any]) {
