@@ -24,7 +24,8 @@ fi
 # =============================================================================
 
 # Configuration
-APP_NAME="Omi Computer"
+BINARY_NAME="Omi Computer"  # Package.swift target — binary paths, lipo, CFBundleExecutable
+APP_NAME="Omi Beta"
 BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
@@ -254,8 +255,8 @@ echo "  Building for x86_64..."
 xcrun swift build -c release --package-path Desktop --triple x86_64-apple-macosx
 
 # Get binary paths for each architecture
-ARM64_BINARY="Desktop/.build/arm64-apple-macosx/release/$APP_NAME"
-X86_64_BINARY="Desktop/.build/x86_64-apple-macosx/release/$APP_NAME"
+ARM64_BINARY="Desktop/.build/arm64-apple-macosx/release/$BINARY_NAME"
+X86_64_BINARY="Desktop/.build/x86_64-apple-macosx/release/$BINARY_NAME"
 
 if [ ! -f "$ARM64_BINARY" ]; then
     echo "Error: arm64 binary not found at $ARM64_BINARY"
@@ -273,11 +274,11 @@ mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
 # Create universal binary with lipo
 echo "  Creating universal binary with lipo..."
-lipo -create "$ARM64_BINARY" "$X86_64_BINARY" -output "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+lipo -create "$ARM64_BINARY" "$X86_64_BINARY" -output "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 
 # Verify universal binary
 echo "  Verifying universal binary..."
-file "$APP_BUNDLE/Contents/MacOS/$APP_NAME" | grep -q "universal binary" || {
+file "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" | grep -q "universal binary" || {
     echo "Error: Failed to create universal binary"
     exit 1
 }
@@ -295,7 +296,7 @@ else
 fi
 
 # Add rpath for embedded frameworks (required for Sparkle to be found at runtime)
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 echo "  Added Frameworks rpath"
 
 # Copy icon if exists
@@ -317,9 +318,10 @@ else
 fi
 
 # Update Info.plist with version and bundle info
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
@@ -423,7 +425,7 @@ rm -f "$DMG_PATH"
 STAGING_DIR="/tmp/omi-dmg-staging-$$"
 rm -rf "$STAGING_DIR"
 mkdir -p "$STAGING_DIR"
-DMG_APP_NAME="Omi Computer"
+DMG_APP_NAME="$APP_NAME"
 ditto "$APP_BUNDLE" "$STAGING_DIR/$DMG_APP_NAME.app"
 STAGED_APP="$STAGING_DIR/$DMG_APP_NAME.app"
 
@@ -442,7 +444,7 @@ if command -v create-dmg &> /dev/null; then
     fi
 
     create-dmg \
-        --volname "Omi Computer" \
+        --volname "$APP_NAME" \
         --volicon "$STAGED_APP/Contents/Resources/AppIcon.icns" \
         --window-pos 200 120 \
         --window-size 610 365 \
@@ -457,7 +459,7 @@ if command -v create-dmg &> /dev/null; then
 else
     # Fallback to basic hdiutil if create-dmg not available
     echo "  Warning: create-dmg not found, using basic DMG creation"
-    hdiutil create -volname "Omi Computer" \
+    hdiutil create -volname "$APP_NAME" \
         -srcfolder "$STAGED_APP" \
         -ov -format UDZO \
         "$DMG_PATH"
