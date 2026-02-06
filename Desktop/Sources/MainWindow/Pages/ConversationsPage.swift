@@ -43,7 +43,7 @@ struct ConversationsPage: View {
     @AppStorage("transcriptNotesPanelRatio") private var notesPanelRatio: Double = 0.65
 
     // Compact view mode - persisted preference
-    @AppStorage("conversationsCompactView") private var isCompactView = true
+    @AppStorage("conversationsCompactView") private var isCompactView = false
 
     // Search state
     @State private var searchQuery: String = ""
