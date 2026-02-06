@@ -4,8 +4,19 @@
       "version": "0.3.4",
       "date": "2026-02-05",
       "changes": [
-        "Fixed menu bar timing issue on macOS Sequoia",
-        "Added menu bar button verification logging"
+        "Local-first sync: tasks, memories, and conversations now work offline",
+        "Task AI agent with automatic category classification",
+        "AI-powered task deduplication removes duplicates automatically",
+        "Goal progress history tracking with interactive drag-to-update",
+        "Optimized screen capture pipeline for lower CPU usage on macOS 14+",
+        "SQLite-based search for faster memory and task filtering",
+        "Apps page redesign with category filtering and pagination",
+        "Auto-refresh for tasks, memories, and timeline views",
+        "Bulk memory management actions",
+        "Task priority and category support",
+        "Launch at login enabled by default for new users",
+        "Fixed database corruption issues with WAL file cleanup",
+        "Corrupted video chunk detection and automatic recovery"
       ]
     },
     {
