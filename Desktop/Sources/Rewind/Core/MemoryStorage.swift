@@ -103,6 +103,85 @@ actor MemoryStorage {
         }
     }
 
+    /// Search memories by content text (case-insensitive)
+    /// Queries SQLite directly for efficient full-database search
+    func searchLocalMemories(
+        query searchText: String,
+        limit: Int = 100,
+        offset: Int = 0,
+        category: String? = nil,
+        tags: [String]? = nil,
+        includeDismissed: Bool = false
+    ) async throws -> [ServerMemory] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = MemoryRecord
+                .filter(Column("deleted") == false)
+
+            if !includeDismissed {
+                query = query.filter(Column("isDismissed") == false)
+            }
+
+            // Search in content (case-insensitive)
+            if !searchText.isEmpty {
+                query = query.filter(Column("content").like("%\(searchText)%"))
+            }
+
+            if let category = category {
+                query = query.filter(Column("category") == category)
+            }
+
+            if let tags = tags, !tags.isEmpty {
+                for tag in tags {
+                    query = query.filter(Column("tagsJson").like("%\"\(tag)\"%"))
+                }
+            }
+
+            let records = try query
+                .order(Column("createdAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(database)
+
+            return records.compactMap { $0.toServerMemory() }
+        }
+    }
+
+    /// Get count of memories matching search query
+    func searchLocalMemoriesCount(
+        query searchText: String,
+        category: String? = nil,
+        tags: [String]? = nil,
+        includeDismissed: Bool = false
+    ) async throws -> Int {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = MemoryRecord
+                .filter(Column("deleted") == false)
+
+            if !includeDismissed {
+                query = query.filter(Column("isDismissed") == false)
+            }
+
+            if !searchText.isEmpty {
+                query = query.filter(Column("content").like("%\(searchText)%"))
+            }
+
+            if let category = category {
+                query = query.filter(Column("category") == category)
+            }
+
+            if let tags = tags, !tags.isEmpty {
+                for tag in tags {
+                    query = query.filter(Column("tagsJson").like("%\"\(tag)\"%"))
+                }
+            }
+
+            return try query.fetchCount(database)
+        }
+    }
+
     /// Get a memory by local ID
     func getMemory(id: Int64) async throws -> MemoryRecord? {
         let db = try await ensureInitialized()
