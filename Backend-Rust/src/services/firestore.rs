@@ -1838,6 +1838,8 @@ impl FirestoreService {
                 doc.get("document")
                     .and_then(|d| self.parse_action_item(d).ok())
             })
+            // Filter out soft-deleted tasks (deleted == true)
+            .filter(|item| item.deleted != Some(true))
             .collect();
 
         // Enrich action items that have conversation_id but no source
@@ -2080,6 +2082,65 @@ impl FirestoreService {
 
         tracing::info!("Deleted action item {} for user {}", item_id, uid);
         Ok(())
+    }
+
+    /// Soft-delete an action item (mark as deleted without removing from Firestore)
+    pub async fn soft_delete_action_item(
+        &self,
+        uid: &str,
+        item_id: &str,
+        deleted_by: &str,
+        reason: &str,
+        kept_task_id: &str,
+    ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
+        let field_paths = vec![
+            "deleted", "deleted_by", "deleted_at", "deleted_reason", "kept_task_id", "updated_at",
+        ];
+
+        let fields = json!({
+            "deleted": {"booleanValue": true},
+            "deleted_by": {"stringValue": deleted_by},
+            "deleted_at": {"timestampValue": Utc::now().to_rfc3339()},
+            "deleted_reason": {"stringValue": reason},
+            "kept_task_id": {"stringValue": kept_task_id},
+            "updated_at": {"timestampValue": Utc::now().to_rfc3339()}
+        });
+
+        let update_mask = field_paths
+            .iter()
+            .map(|p| format!("updateMask.fieldPaths={}", p))
+            .collect::<Vec<_>>()
+            .join("&");
+
+        let url = format!(
+            "{}/{}/{}/{}/{}?{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            ACTION_ITEMS_SUBCOLLECTION,
+            item_id,
+            update_mask
+        );
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore soft-delete error: {}", error_text).into());
+        }
+
+        let updated_doc: Value = response.json().await?;
+        let action_item = self.parse_action_item(&updated_doc)?;
+
+        tracing::info!("Soft-deleted action item {} for user {} (by: {}, reason: {})", item_id, uid, deleted_by, reason);
+        Ok(action_item)
     }
 
     /// Save action items to Firestore
@@ -3027,6 +3088,11 @@ impl FirestoreService {
             source: self.parse_string(fields, "source"),
             priority: self.parse_string(fields, "priority"),
             metadata: self.parse_string(fields, "metadata"),
+            deleted: self.parse_bool(fields, "deleted").ok(),
+            deleted_by: self.parse_string(fields, "deleted_by"),
+            deleted_at: self.parse_timestamp_optional(fields, "deleted_at"),
+            deleted_reason: self.parse_string(fields, "deleted_reason"),
+            kept_task_id: self.parse_string(fields, "kept_task_id"),
         })
     }
 
