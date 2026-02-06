@@ -9,9 +9,6 @@ struct RewindPage: View {
     @State private var currentIndex: Int = 0
     @State private var currentImage: NSImage?
     @State private var isLoadingFrame = false
-    @State private var isPlaying = false
-    @State private var playbackSpeed: Double = 1.0
-    @State private var playbackTimer: Timer?
     @State private var showDatePicker = false
 
     @State private var searchViewMode: SearchViewMode? = nil
@@ -163,10 +160,6 @@ struct RewindPage: View {
                 }
             }
             return .ignored
-        }
-        .onKeyPress(.space) {
-            togglePlayback()
-            return .handled
         }
         // Global scroll wheel handler - works anywhere on the page
         .onScrollWheel { delta in
@@ -671,7 +664,7 @@ struct RewindPage: View {
                 }
             )
 
-            // Single compact control bar: legend | playback | position/timestamp | scroll hint
+            // Compact control bar: legend | position/timestamp | scroll hint
             HStack(spacing: 12) {
                 // Left: Legend indicators
                 HStack(spacing: 12) {
@@ -696,77 +689,6 @@ struct RewindPage: View {
                                 .foregroundColor(.white.opacity(0.4))
                         }
                     }
-                }
-
-                Spacer()
-
-                // Center: Compact playback controls
-                HStack(spacing: 12) {
-                    Button { seekToIndex(screenshots.count - 1) } label: {
-                        Image(systemName: "backward.end.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { previousFrame() } label: {
-                        Image(systemName: "backward.frame.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { togglePlayback() } label: {
-                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                            .font(.system(size: 14))
-                            .foregroundColor(OmiColors.textPrimary)
-                            .frame(width: 32, height: 32)
-                            .background(Color.white)
-                            .clipShape(Circle())
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { nextFrame() } label: {
-                        Image(systemName: "forward.frame.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(.white)
-                    }
-                    .buttonStyle(.plain)
-
-                    Button { seekToIndex(0) } label: {
-                        Image(systemName: "forward.end.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.7))
-                    }
-                    .buttonStyle(.plain)
-
-                    // Playback speed
-                    Menu {
-                        ForEach([0.5, 1.0, 2.0, 4.0, 8.0], id: \.self) { speed in
-                            Button {
-                                playbackSpeed = speed
-                                if isPlaying {
-                                    restartPlayback()
-                                }
-                            } label: {
-                                HStack {
-                                    Text("\(speed, specifier: "%.1f")x")
-                                    if playbackSpeed == speed {
-                                        Image(systemName: "checkmark")
-                                    }
-                                }
-                            }
-                        }
-                    } label: {
-                        Text("\(playbackSpeed, specifier: "%.0f")x")
-                            .font(.system(size: 10, weight: .medium, design: .monospaced))
-                            .foregroundColor(.white.opacity(0.7))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 4)
-                            .background(Color.white.opacity(0.1))
-                            .cornerRadius(4)
-                    }
-                    .buttonStyle(.plain)
                 }
 
                 Spacer()
@@ -892,40 +814,6 @@ struct RewindPage: View {
         seekToIndex(currentIndex + 1)
     }
 
-    private func togglePlayback() {
-        if isPlaying {
-            stopPlayback()
-        } else {
-            startPlayback()
-        }
-    }
-
-    private func startPlayback() {
-        guard !isPlaying, !viewModel.screenshots.isEmpty else { return }
-        isPlaying = true
-
-        let interval = 1.0 / playbackSpeed
-        playbackTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [self] _ in
-            Task { @MainActor in
-                if currentIndex > 0 {
-                    nextFrame()
-                } else {
-                    stopPlayback()
-                }
-            }
-        }
-    }
-
-    private func stopPlayback() {
-        isPlaying = false
-        playbackTimer?.invalidate()
-        playbackTimer = nil
-    }
-
-    private func restartPlayback() {
-        stopPlayback()
-        startPlayback()
-    }
 
     // MARK: - Empty States
 
