@@ -945,23 +945,6 @@ struct TasksPage: View {
         .buttonStyle(.plain)
     }
 
-    private var multiSelectToggleButton: some View {
-        Button {
-            viewModel.toggleMultiSelectMode()
-        } label: {
-            Image(systemName: "checklist")
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textSecondary)
-                .padding(8)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(OmiColors.backgroundSecondary)
-                )
-        }
-        .buttonStyle(.plain)
-        .help("Select multiple tasks")
-    }
-
     private var cancelMultiSelectButton: some View {
         Button {
             viewModel.toggleMultiSelectMode()
@@ -1109,42 +1092,23 @@ struct TasksPage: View {
 
     private var emptyView: some View {
         VStack(spacing: 16) {
-            Image(systemName: emptyViewIcon)
+            Image(systemName: viewModel.selectedTags.isEmpty ? "tray.fill" : "line.3.horizontal.decrease")
                 .font(.system(size: 48))
                 .foregroundColor(OmiColors.textTertiary)
 
-            Text(emptyViewTitle)
+            Text(viewModel.selectedTags.isEmpty ? "All Caught Up!" : "No Matching Tasks")
                 .font(.system(size: 24, weight: .semibold))
                 .foregroundColor(OmiColors.textPrimary)
 
-            Text(emptyViewMessage)
+            Text(viewModel.selectedTags.isEmpty ? "You have no tasks yet" : "Try adjusting your filters")
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
 
-            if viewModel.showCompleted && viewModel.todoCount > 0 {
-                Button("View To Do") {
+            if !viewModel.selectedTags.isEmpty {
+                Button("Clear Filters") {
                     withAnimation {
-                        viewModel.showCompleted = false
-                    }
-                }
-                .buttonStyle(.bordered)
-                .tint(OmiColors.textSecondary)
-                .padding(.top, 8)
-            } else if !viewModel.showCompleted && !viewModel.showAllTasks {
-                // Offer to show all tasks (including older ones)
-                Button("Show Older Tasks") {
-                    withAnimation {
-                        viewModel.showAllTasks = true
-                    }
-                }
-                .buttonStyle(.bordered)
-                .tint(OmiColors.textSecondary)
-                .padding(.top, 8)
-            } else if !viewModel.showCompleted && viewModel.doneCount > 0 {
-                Button("View Done") {
-                    withAnimation {
-                        viewModel.showCompleted = true
+                        viewModel.selectedTags.removeAll()
                     }
                 }
                 .buttonStyle(.bordered)
@@ -1155,31 +1119,15 @@ struct TasksPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private var emptyViewIcon: String {
-        viewModel.showCompleted ? "checkmark.circle.fill" : "tray.fill"
-    }
-
-    private var emptyViewTitle: String {
-        viewModel.showCompleted ? "No Completed Tasks" : "All Caught Up!"
-    }
-
-    private var emptyViewMessage: String {
-        if viewModel.displayTasks.isEmpty && !viewModel.showAllTasks {
-            return "No recent tasks. Try showing older tasks."
-        }
-        if viewModel.showCompleted {
-            return "Complete a task to see it here"
-        }
-        return "You have no pending tasks"
-    }
-
     // MARK: - Tasks List View
 
     private var tasksListView: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 // Show tasks grouped by category when sorting by due date
-                if viewModel.sortOption == .dueDate && !viewModel.showCompleted && !viewModel.isMultiSelectMode {
+                // Show category grouping when sorting by due date and not viewing only completed tasks
+                let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
+                if viewModel.sortOption == .dueDate && !onlyDone && !viewModel.isMultiSelectMode {
                     ForEach(TaskCategory.allCases, id: \.self) { category in
                         let tasksInCategory = viewModel.categorizedTasks[category] ?? []
                         if !tasksInCategory.isEmpty {
@@ -2267,134 +2215,3 @@ struct TaskEditSheet: View {
     }
 }
 
-// MARK: - Date Filter Popover
-
-struct DateFilterPopover: View {
-    @ObservedObject var viewModel: TasksViewModel
-
-    @State private var hasStartDate: Bool = false
-    @State private var startDate: Date = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-    @State private var hasEndDate: Bool = false
-    @State private var endDate: Date = Date()
-
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        VStack(spacing: 16) {
-            // Header
-            HStack {
-                Text("Filter by Date")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                Spacer()
-
-                if viewModel.isFiltered {
-                    Button {
-                        viewModel.clearDateFilter()
-                        dismiss()
-                    } label: {
-                        Text("Clear")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.red)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            Divider()
-
-            // Start date
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("From")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-
-                    Spacer()
-
-                    Toggle("", isOn: $hasStartDate)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .controlSize(.mini)
-                }
-
-                if hasStartDate {
-                    DatePicker(
-                        "",
-                        selection: $startDate,
-                        displayedComponents: [.date]
-                    )
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
-                }
-            }
-
-            // End date
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("To")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-
-                    Spacer()
-
-                    Toggle("", isOn: $hasEndDate)
-                        .toggleStyle(.switch)
-                        .labelsHidden()
-                        .controlSize(.mini)
-                }
-
-                if hasEndDate {
-                    DatePicker(
-                        "",
-                        selection: $endDate,
-                        displayedComponents: [.date]
-                    )
-                    .datePickerStyle(.compact)
-                    .labelsHidden()
-                }
-            }
-
-            Divider()
-
-            // Apply button
-            Button {
-                viewModel.applyDateFilter(
-                    startDate: hasStartDate ? startDate : nil,
-                    endDate: hasEndDate ? endDate : nil
-                )
-                dismiss()
-            } label: {
-                Text("Apply Filter")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.black)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.white)
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(OmiColors.border, lineWidth: 1)
-                    )
-            }
-            .buttonStyle(.plain)
-            .disabled(!hasStartDate && !hasEndDate)
-            .opacity(!hasStartDate && !hasEndDate ? 0.5 : 1)
-        }
-        .padding(16)
-        .frame(width: 280)
-        .onAppear {
-            if let start = viewModel.filterStartDate {
-                hasStartDate = true
-                startDate = start
-            }
-            if let end = viewModel.filterEndDate {
-                hasEndDate = true
-                endDate = end
-            }
-        }
-    }
-}
