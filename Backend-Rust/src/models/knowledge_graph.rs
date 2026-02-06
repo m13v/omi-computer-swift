@@ -128,6 +128,7 @@ pub struct KnowledgeGraphResponse {
 
 /// Request to rebuild the knowledge graph from memories
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct RebuildGraphRequest {
     /// Optional limit on number of memories to process (default 500)
     pub limit: Option<usize>,
