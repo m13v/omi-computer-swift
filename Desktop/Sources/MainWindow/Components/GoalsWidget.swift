@@ -164,9 +164,19 @@ struct GoalRowView: View {
     var onGetAdvice: (() -> Void)? = nil
 
     @State private var isHovering = false
+    @State private var isDragging = false
+    @State private var dragValue: Double? = nil
+
+    /// The progress fraction (0-1) to display, using drag value when active
+    private var displayProgress: Double {
+        if let dv = dragValue {
+            return min(max(dv, 0), 1)
+        }
+        return min(goal.progress / 100.0, 1.0)
+    }
 
     private var progressColor: Color {
-        let progress = goal.progress / 100.0  // Convert to 0-1 range
+        let progress = displayProgress
         if progress >= 0.8 {
             return Color(red: 0.133, green: 0.773, blue: 0.369) // #22C55E Green
         } else if progress >= 0.6 {
@@ -180,10 +190,17 @@ struct GoalRowView: View {
         }
     }
 
-    private var progressText: String {
-        let current = goal.currentValue == goal.currentValue.rounded()
-            ? String(format: "%.0f", goal.currentValue)
-            : String(format: "%.1f", goal.currentValue)
+    private var dragProgressText: String {
+        let currentVal: Double
+        if let dv = dragValue {
+            let raw = goal.minValue + dv * (goal.maxValue - goal.minValue)
+            currentVal = max(goal.minValue, min(raw, goal.maxValue))
+        } else {
+            currentVal = goal.currentValue
+        }
+        let current = currentVal == currentVal.rounded()
+            ? String(format: "%.0f", currentVal)
+            : String(format: "%.1f", currentVal)
         let target = goal.targetValue == goal.targetValue.rounded()
             ? String(format: "%.0f", goal.targetValue)
             : String(format: "%.1f", goal.targetValue)
@@ -191,69 +208,104 @@ struct GoalRowView: View {
     }
 
     var body: some View {
-        Button(action: onTap) {
-            HStack(spacing: 12) {
-                // Emoji icon
-                ZStack {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(OmiColors.backgroundTertiary.opacity(0.6))
-                        .frame(width: 32, height: 32)
-                    Text(goalEmoji)
-                        .font(.system(size: 16))
-                }
-
-                // Content
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        Text(goal.title)
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-                            .lineLimit(1)
-
-                        Spacer()
-
-                        // Advice button (shown on hover)
-                        if isHovering, let onGetAdvice = onGetAdvice {
-                            Button(action: onGetAdvice) {
-                                Image(systemName: "lightbulb.fill")
-                                    .font(.system(size: 11))
-                                    .foregroundColor(.yellow)
-                            }
-                            .buttonStyle(.plain)
-                            .transition(.opacity)
-                        }
-
-                        // Progress value (current/target)
-                        Text(progressText)
-                            .font(.system(size: 11))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    // Progress bar
-                    GeometryReader { geometry in
-                        ZStack(alignment: .leading) {
-                            // Background
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(OmiColors.backgroundTertiary.opacity(0.5))
-                                .frame(height: 4)
-
-                            // Progress
-                            RoundedRectangle(cornerRadius: 2)
-                                .fill(progressColor)
-                                .frame(width: max(0, geometry.size.width * min(goal.progress / 100, 1.0)), height: 4)
-                        }
-                    }
-                    .frame(height: 4)
-                }
+        HStack(spacing: 12) {
+            // Emoji icon - tapping opens edit sheet
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(OmiColors.backgroundTertiary.opacity(0.6))
+                    .frame(width: 32, height: 32)
+                Text(goalEmoji)
+                    .font(.system(size: 16))
             }
-            .padding(.vertical, 8)
-            .padding(.horizontal, 12)
-            .background(
-                RoundedRectangle(cornerRadius: 10)
-                    .fill(OmiColors.backgroundTertiary.opacity(isHovering ? 0.5 : 0.3))
-            )
+            .onTapGesture { onTap() }
+
+            // Content
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text(goal.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textPrimary)
+                        .lineLimit(1)
+                        .onTapGesture { onTap() }
+
+                    Spacer()
+
+                    // Advice button (shown on hover)
+                    if isHovering, let onGetAdvice = onGetAdvice {
+                        Button(action: onGetAdvice) {
+                            Image(systemName: "lightbulb.fill")
+                                .font(.system(size: 11))
+                                .foregroundColor(.yellow)
+                        }
+                        .buttonStyle(.plain)
+                        .transition(.opacity)
+                    }
+
+                    // Progress value (current/target)
+                    Text(dragProgressText)
+                        .font(.system(size: 11))
+                        .foregroundColor(isDragging ? OmiColors.textPrimary : OmiColors.textTertiary)
+                        .animation(.easeInOut(duration: 0.15), value: isDragging)
+                }
+
+                // Progress bar with drag gesture
+                GeometryReader { geometry in
+                    ZStack(alignment: .leading) {
+                        // Background
+                        RoundedRectangle(cornerRadius: isDragging ? 4 : 2)
+                            .fill(OmiColors.backgroundTertiary.opacity(0.5))
+                            .frame(height: isDragging ? 8 : 4)
+
+                        // Progress fill
+                        RoundedRectangle(cornerRadius: isDragging ? 4 : 2)
+                            .fill(progressColor)
+                            .frame(
+                                width: max(0, geometry.size.width * displayProgress),
+                                height: isDragging ? 8 : 4
+                            )
+
+                        // Drag thumb (visible on hover or drag)
+                        if isHovering || isDragging {
+                            Circle()
+                                .fill(progressColor)
+                                .frame(width: 14, height: 14)
+                                .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                                .offset(x: max(0, min(geometry.size.width * displayProgress - 7, geometry.size.width - 14)))
+                        }
+                    }
+                    .frame(height: isDragging ? 8 : 4)
+                    .frame(maxHeight: .infinity)
+                    .contentShape(Rectangle().size(width: geometry.size.width, height: 20))
+                    .gesture(
+                        DragGesture(minimumDistance: 0)
+                            .onChanged { value in
+                                isDragging = true
+                                let fraction = value.location.x / geometry.size.width
+                                dragValue = min(max(fraction, 0), 1)
+                            }
+                            .onEnded { _ in
+                                if let dv = dragValue {
+                                    let finalValue = goal.minValue + dv * (goal.maxValue - goal.minValue)
+                                    let clampedValue = max(goal.minValue, min(finalValue, goal.maxValue))
+                                    // Round to nearest integer for cleaner values
+                                    let roundedValue = (clampedValue * 10).rounded() / 10
+                                    onUpdateProgress(roundedValue)
+                                }
+                                isDragging = false
+                                dragValue = nil
+                            }
+                    )
+                }
+                .frame(height: isDragging ? 14 : 4)
+                .animation(.easeInOut(duration: 0.15), value: isDragging)
+            }
         }
-        .buttonStyle(.plain)
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(OmiColors.backgroundTertiary.opacity(isHovering ? 0.5 : 0.3))
+        )
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
