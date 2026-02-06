@@ -1427,7 +1427,8 @@ extension APIClient {
         endDate: Date? = nil,
         dueStartDate: Date? = nil,
         dueEndDate: Date? = nil,
-        sortBy: String? = nil
+        sortBy: String? = nil,
+        deleted: Bool? = nil
     ) async throws -> ActionItemsListResponse {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -1459,6 +1460,10 @@ extension APIClient {
 
         if let sortBy = sortBy {
             queryItems.append("sort_by=\(sortBy)")
+        }
+
+        if let deleted = deleted {
+            queryItems.append("deleted=\(deleted)")
         }
 
         let endpoint = "v1/action-items?\(queryItems.joined(separator: "&"))"
