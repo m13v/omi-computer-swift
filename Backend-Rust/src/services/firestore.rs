@@ -1704,6 +1704,7 @@ impl FirestoreService {
         due_start_date: Option<&str>,
         due_end_date: Option<&str>,
         sort_by: Option<&str>,
+        include_deleted: Option<bool>,
     ) -> Result<Vec<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
         let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
 
@@ -1838,8 +1839,16 @@ impl FirestoreService {
                 doc.get("document")
                     .and_then(|d| self.parse_action_item(d).ok())
             })
-            // Filter out soft-deleted tasks (deleted == true)
-            .filter(|item| item.deleted != Some(true))
+            // Filter based on deleted status
+            .filter(|item| {
+                if include_deleted == Some(true) {
+                    // Return ONLY deleted items
+                    item.deleted == Some(true)
+                } else {
+                    // Default: exclude deleted items
+                    item.deleted != Some(true)
+                }
+            })
             .collect();
 
         // Enrich action items that have conversation_id but no source
