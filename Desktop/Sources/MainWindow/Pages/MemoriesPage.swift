@@ -284,23 +284,34 @@ class MemoriesViewModel: ObservableObject {
             // Continue to API fetch even if cache fails
         }
 
-        // Step 2: Fetch from API in background
+        // Step 2: Fetch from API in background and sync to local cache
         do {
             let fetchedMemories = try await APIClient.shared.getMemories(limit: pageSize, offset: 0)
-            memories = fetchedMemories
-            currentOffset = fetchedMemories.count
-            hasMoreMemories = fetchedMemories.count >= pageSize
             hasLoadedInitially = true
-            log("MemoriesViewModel: Loaded \(fetchedMemories.count) memories from API")
+            log("MemoriesViewModel: Fetched \(fetchedMemories.count) memories from API")
 
-            // Step 3: Sync to local cache in background (don't block UI)
-            Task.detached(priority: .background) {
-                do {
-                    try await MemoryStorage.shared.syncServerMemories(fetchedMemories)
-                    log("MemoriesViewModel: Synced \(fetchedMemories.count) memories to local cache")
-                } catch {
-                    logError("MemoriesViewModel: Failed to sync memories to local cache", error: error)
-                }
+            // Step 3: Sync API results to local cache, then reload from cache
+            // This ensures we show ALL local data (including locally-created memories)
+            // merged with any updates from the server
+            do {
+                try await MemoryStorage.shared.syncServerMemories(fetchedMemories)
+                log("MemoriesViewModel: Synced \(fetchedMemories.count) memories to local cache")
+
+                // Reload from local cache to get merged data
+                let mergedMemories = try await MemoryStorage.shared.getLocalMemories(
+                    limit: pageSize,
+                    offset: 0
+                )
+                memories = mergedMemories
+                currentOffset = mergedMemories.count
+                hasMoreMemories = mergedMemories.count >= pageSize
+                log("MemoriesViewModel: Showing \(mergedMemories.count) memories from merged local cache")
+            } catch {
+                logError("MemoriesViewModel: Failed to sync/reload from local cache", error: error)
+                // Fall back to API data if sync fails
+                memories = fetchedMemories
+                currentOffset = fetchedMemories.count
+                hasMoreMemories = fetchedMemories.count >= pageSize
             }
         } catch {
             // Only show error if we don't have cached data
@@ -328,26 +339,43 @@ class MemoriesViewModel: ObservableObject {
     }
 
     /// Explicitly load more memories (for button tap)
+    /// Uses local-first: try local cache first, then API
     func loadMore() async {
         guard hasMoreMemories, !isLoading, !isLoadingMore else { return }
 
         isLoadingMore = true
 
+        // Step 1: Try to load more from local cache first
+        do {
+            let moreFromCache = try await MemoryStorage.shared.getLocalMemories(
+                limit: pageSize,
+                offset: currentOffset
+            )
+
+            if !moreFromCache.isEmpty {
+                memories.append(contentsOf: moreFromCache)
+                currentOffset += moreFromCache.count
+                hasMoreMemories = moreFromCache.count >= pageSize
+                log("MemoriesViewModel: Loaded \(moreFromCache.count) more from local cache (total: \(memories.count))")
+                isLoadingMore = false
+                return
+            }
+        } catch {
+            log("MemoriesViewModel: Local cache pagination failed, trying API")
+        }
+
+        // Step 2: If local cache is exhausted, fetch from API
         do {
             let newMemories = try await APIClient.shared.getMemories(limit: pageSize, offset: currentOffset)
+
+            // Sync to local cache first
+            try await MemoryStorage.shared.syncServerMemories(newMemories)
+
+            // Then append to display
             memories.append(contentsOf: newMemories)
             currentOffset += newMemories.count
             hasMoreMemories = newMemories.count >= pageSize
-            log("MemoriesViewModel: Loaded \(newMemories.count) more memories (total: \(memories.count))")
-
-            // Sync new memories to local cache in background
-            Task.detached(priority: .background) {
-                do {
-                    try await MemoryStorage.shared.syncServerMemories(newMemories)
-                } catch {
-                    logError("MemoriesViewModel: Failed to sync new memories to local cache", error: error)
-                }
-            }
+            log("MemoriesViewModel: Loaded \(newMemories.count) more from API (total: \(memories.count))")
         } catch {
             logError("Failed to load more memories", error: error)
         }
