@@ -10,8 +10,8 @@ use axum::{
 
 use crate::auth::AuthUser;
 use crate::models::{
-    CreateGoalRequest, GoalDB, GoalStatusResponse, GoalType, GoalsListResponse,
-    UpdateGoalProgressQuery, UpdateGoalRequest,
+    CreateGoalRequest, GoalDB, GoalHistoryQuery, GoalHistoryResponse, GoalStatusResponse, GoalType,
+    GoalsListResponse, UpdateGoalProgressQuery, UpdateGoalRequest,
 };
 use crate::AppState;
 
@@ -132,6 +132,33 @@ async fn update_goal_progress(
     }
 }
 
+/// GET /v1/goals/:id/history - Get progress history for a goal
+async fn get_goal_history(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(goal_id): Path<String>,
+    Query(query): Query<GoalHistoryQuery>,
+) -> Result<Json<GoalHistoryResponse>, StatusCode> {
+    tracing::info!(
+        "Getting history for goal {} (days={}) for user {}",
+        goal_id,
+        query.days,
+        user.uid
+    );
+
+    match state
+        .firestore
+        .get_goal_history(&user.uid, &goal_id, query.days)
+        .await
+    {
+        Ok(history) => Ok(Json(GoalHistoryResponse { history })),
+        Err(e) => {
+            tracing::error!("Failed to get goal history: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 /// DELETE /v1/goals/:id - Delete a goal
 async fn delete_goal(
     State(state): State<AppState>,
@@ -158,5 +185,6 @@ pub fn goals_routes() -> Router<AppState> {
         .route("/v1/goals", post(create_goal))
         .route("/v1/goals/{id}", patch(update_goal))
         .route("/v1/goals/{id}/progress", patch(update_goal_progress))
+        .route("/v1/goals/{id}/history", get(get_goal_history))
         .route("/v1/goals/{id}", delete(delete_goal))
 }
