@@ -1811,13 +1811,15 @@ struct SettingsContentView: View {
     // MARK: - Advanced Section
 
     struct UserStats {
+        let conversations: Int
+        let appsInstalled: Int
+        let screenshotsTotal: Int
         let focusSessions: Int
         let tasksTodo: Int
         let tasksDone: Int
         let tasksDeleted: Int
         let goalsCount: Int
         let memoriesTotal: Int
-        let screenshotsTotal: Int
     }
 
     private var advancedSection: some View {
@@ -1848,13 +1850,15 @@ struct SettingsContentView: View {
                         }
                         .padding(.vertical, 8)
                     } else if let stats = advancedStats {
+                        statRow(label: "Conversations", value: stats.conversations)
+                        statRow(label: "Apps Installed", value: stats.appsInstalled)
+                        statRow(label: "Screenshots", value: stats.screenshotsTotal)
                         statRow(label: "Focus Sessions", value: stats.focusSessions)
                         statRow(label: "Tasks (To Do)", value: stats.tasksTodo)
                         statRow(label: "Tasks (Done)", value: stats.tasksDone)
                         statRow(label: "Tasks (Removed)", value: stats.tasksDeleted)
                         statRow(label: "Goals", value: stats.goalsCount)
                         statRow(label: "Memories", value: stats.memoriesTotal)
-                        statRow(label: "Screenshots", value: stats.screenshotsTotal)
                     } else {
                         Text("Unable to load stats")
                             .font(.system(size: 13))
@@ -1967,11 +1971,15 @@ struct SettingsContentView: View {
         defer { isLoadingStats = false }
 
         do {
+            async let conversationsCount = APIClient.shared.getConversationsCount()
+            async let installedApps = APIClient.shared.searchApps(installedOnly: true)
             async let focusCount = ProactiveStorage.shared.getTotalFocusSessionCount()
             async let filterCounts = ActionItemStorage.shared.getFilterCounts()
             async let goals = APIClient.shared.getGoals()
             async let memoryStats = MemoryStorage.shared.getStats()
 
+            let cc = try await conversationsCount
+            let ia = try await installedApps
             let fc = try await focusCount
             let filters = try await filterCounts
             let g = try await goals
@@ -1985,13 +1993,15 @@ struct SettingsContentView: View {
             }
 
             advancedStats = UserStats(
+                conversations: cc,
+                appsInstalled: ia.count,
+                screenshotsTotal: screenshotCount,
                 focusSessions: fc,
                 tasksTodo: filters.todo,
                 tasksDone: filters.done,
                 tasksDeleted: filters.deleted,
                 goalsCount: g.count,
-                memoriesTotal: ms.total,
-                screenshotsTotal: screenshotCount
+                memoriesTotal: ms.total
             )
         } catch {
             print("SETTINGS: Failed to load advanced stats: \(error)")
