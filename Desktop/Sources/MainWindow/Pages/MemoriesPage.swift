@@ -192,6 +192,7 @@ class MemoriesViewModel: ObservableObject {
                 limit: reloadLimit,
                 offset: 0
             )
+            log("MemoriesViewModel: Auto-refresh showing \(mergedMemories.count) memories (API had \(apiMemories.count))")
             memories = mergedMemories
             currentOffset = mergedMemories.count
             hasMoreMemories = mergedMemories.count >= reloadLimit
