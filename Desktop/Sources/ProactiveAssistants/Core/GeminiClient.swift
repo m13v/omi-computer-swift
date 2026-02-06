@@ -171,7 +171,30 @@ actor GeminiClient {
         self.model = model
     }
 
+    /// Check if an error is transient and worth retrying
+    private func isTransientError(_ error: Error) -> Bool {
+        if let geminiError = error as? GeminiClientError {
+            switch geminiError {
+            case .apiError(let message):
+                let lower = message.lowercased()
+                return lower.contains("service unavailable")
+                    || lower.contains("overloaded")
+                    || lower.contains("resource exhausted")
+                    || lower.contains("503")
+                    || lower.contains("429")
+                    || lower.contains("internal error")
+            case .networkError:
+                return true
+            case .invalidResponse, .missingAPIKey:
+                return false
+            }
+        }
+        // URLSession network errors are transient
+        return (error as NSError).domain == NSURLErrorDomain
+    }
+
     /// Send a request to the Gemini API with an image
+    /// Retries up to 2 times for transient errors (3 total attempts).
     /// - Parameters:
     ///   - prompt: Text prompt to send
     ///   - imageData: JPEG image data to analyze
@@ -184,44 +207,64 @@ actor GeminiClient {
         systemPrompt: String,
         responseSchema: GeminiRequest.GenerationConfig.ResponseSchema
     ) async throws -> String {
-        let base64Data = imageData.base64EncodedString()
+        let maxRetries = 2
+        var lastError: Error?
 
-        let request = GeminiRequest(
-            contents: [
-                GeminiRequest.Content(parts: [
-                    GeminiRequest.Part(text: prompt),
-                    GeminiRequest.Part(mimeType: "image/jpeg", data: base64Data)
-                ])
-            ],
-            systemInstruction: GeminiRequest.SystemInstruction(
-                parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
-            ),
-            generationConfig: GeminiRequest.GenerationConfig(
-                responseMimeType: "application/json",
-                responseSchema: responseSchema
-            )
-        )
+        for attempt in 0...maxRetries {
+            do {
+                let base64Data = imageData.base64EncodedString()
 
-        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.timeoutInterval = 300
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+                let request = GeminiRequest(
+                    contents: [
+                        GeminiRequest.Content(parts: [
+                            GeminiRequest.Part(text: prompt),
+                            GeminiRequest.Part(mimeType: "image/jpeg", data: base64Data)
+                        ])
+                    ],
+                    systemInstruction: GeminiRequest.SystemInstruction(
+                        parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
+                    ),
+                    generationConfig: GeminiRequest.GenerationConfig(
+                        responseMimeType: "application/json",
+                        responseSchema: responseSchema
+                    )
+                )
 
-        let (data, _) = try await URLSession.shared.data(for: urlRequest)
+                let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "POST"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                urlRequest.timeoutInterval = 300
+                urlRequest.httpBody = try JSONEncoder().encode(request)
 
-        let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+                let (data, _) = try await URLSession.shared.data(for: urlRequest)
 
-        if let error = response.error {
-            throw GeminiClientError.apiError(error.message)
+                let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+
+                if let error = response.error {
+                    throw GeminiClientError.apiError(error.message)
+                }
+
+                guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+                    throw GeminiClientError.invalidResponse
+                }
+
+                return text
+            } catch {
+                lastError = error
+
+                // Don't retry non-transient errors (e.g. safety filter / invalidResponse)
+                guard attempt < maxRetries && isTransientError(error) else {
+                    throw error
+                }
+
+                // Backoff: 1s after first failure, 2s after second
+                let backoffSeconds = UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
         }
 
-        guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-            throw GeminiClientError.invalidResponse
-        }
-
-        return text
+        throw lastError!
     }
 
     /// Send a text-only request to the Gemini API
