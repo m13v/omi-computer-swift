@@ -154,6 +154,43 @@ struct FocusSessionRecord: Codable, FetchableRecord, PersistableRecord, Identifi
     }
 }
 
+// MARK: - Task Dedup Log Record
+
+/// Database record for AI-driven task deduplication deletions
+struct TaskDedupLogRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
+    var id: Int64?
+    var deletedTaskId: String
+    var deletedDescription: String
+    var keptTaskId: String
+    var keptDescription: String
+    var reason: String
+    var deletedAt: Date
+
+    static let databaseTableName = "task_dedup_log"
+
+    init(
+        id: Int64? = nil,
+        deletedTaskId: String,
+        deletedDescription: String,
+        keptTaskId: String,
+        keptDescription: String,
+        reason: String,
+        deletedAt: Date = Date()
+    ) {
+        self.id = id
+        self.deletedTaskId = deletedTaskId
+        self.deletedDescription = deletedDescription
+        self.keptTaskId = keptTaskId
+        self.keptDescription = keptDescription
+        self.reason = reason
+        self.deletedAt = deletedAt
+    }
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
 // MARK: - Screenshot Extensions for Relationships
 
 extension Screenshot {
