@@ -93,6 +93,14 @@ struct DesktopHomeView: View {
         OMIApp.launchMode == .rewind
     }
 
+    /// Update store auto-refresh based on which page is visible
+    private func updateStoreActivity(for index: Int) {
+        viewModelContainer.tasksStore.isActive =
+            index == SidebarNavItem.dashboard.rawValue || index == SidebarNavItem.tasks.rawValue
+        viewModelContainer.memoriesViewModel.isActive =
+            index == SidebarNavItem.memories.rawValue
+    }
+
     private var mainContent: some View {
         HStack(spacing: 0) {
             // Show settings sidebar when in settings (always visible, even in rewind mode)
@@ -197,6 +205,11 @@ struct DesktopHomeView: View {
             if newValue == SidebarNavItem.settings.rawValue && oldValue != SidebarNavItem.settings.rawValue {
                 previousIndexBeforeSettings = oldValue
             }
+            // Only auto-refresh stores when their pages are visible
+            updateStoreActivity(for: newValue)
+        }
+        .onAppear {
+            updateStoreActivity(for: selectedIndex)
         }
     }
 }
