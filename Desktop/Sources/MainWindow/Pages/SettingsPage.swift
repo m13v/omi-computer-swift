@@ -92,6 +92,8 @@ struct SettingsContentView: View {
     // Advanced stats
     @State private var advancedStats: UserStats?
     @State private var isLoadingStats = false
+    @State private var chatMessageCount: Int?
+    @State private var isLoadingChatMessages = false
 
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
@@ -157,8 +159,6 @@ struct SettingsContentView: View {
         case about = "About"
     }
 
-    // Track if showing developer settings sub-view
-    @State private var showingDeveloperSettings: Bool = false
     @State private var showResetOnboardingAlert: Bool = false
 
     init(appState: AppState, selectedSection: Binding<SettingsSection>) {
@@ -199,31 +199,27 @@ struct SettingsContentView: View {
         VStack(spacing: 24) {
             // Section content
             Group {
-                if showingDeveloperSettings {
-                    developerSettingsSection
-                } else {
-                    switch selectedSection {
-                    case .general:
-                        generalSection
-                    case .device:
-                        DeviceSettingsPage()
-                    case .focus:
-                        FocusPage()
-                    case .rewind:
-                        rewindSection
-                    case .transcription:
-                        transcriptionSection
-                    case .notifications:
-                        notificationsSection
-                    case .privacy:
-                        privacySection
-                    case .account:
-                        accountSection
-                    case .advanced:
-                        advancedSection
-                    case .about:
-                        aboutSection
-                    }
+                switch selectedSection {
+                case .general:
+                    generalSection
+                case .device:
+                    DeviceSettingsPage()
+                case .focus:
+                    FocusPage()
+                case .rewind:
+                    rewindSection
+                case .transcription:
+                    transcriptionSection
+                case .notifications:
+                    notificationsSection
+                case .privacy:
+                    privacySection
+                case .account:
+                    accountSection
+                case .advanced:
+                    advancedSection
+                case .about:
+                    aboutSection
                 }
             }
             .id(selectedSection)
@@ -246,7 +242,7 @@ struct SettingsContentView: View {
             isTranscribing = newValue
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTaskSettings)) { _ in
-            showingDeveloperSettings = true
+            selectedSection = .advanced
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Refresh notification permission when app becomes active (user may have changed it in System Settings)
@@ -1294,79 +1290,291 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Developer Settings Button
+        }
+    }
+
+    // MARK: - Privacy Section
+
+    private var privacySection: some View {
+        VStack(spacing: 20) {
+            // Recording Permission
             settingsCard {
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showingDeveloperSettings = true
-                    }
-                }) {
-                    HStack(spacing: 16) {
-                        Image(systemName: "gearshape.2.fill")
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "mic.fill")
                             .font(.system(size: 16))
-                            .foregroundColor(OmiColors.textTertiary)
+                            .foregroundColor(OmiColors.purplePrimary)
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Developer Settings")
+                            Text("Store Recordings")
                                 .font(.system(size: 15, weight: .medium))
                                 .foregroundColor(OmiColors.textPrimary)
 
-                            Text("Advanced configuration options")
+                            Text("Allow Omi to store audio recordings of your conversations")
                                 .font(.system(size: 13))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
 
                         Spacer()
 
-                        Image(systemName: "chevron.right")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(OmiColors.textTertiary)
+                        Toggle("", isOn: $recordingPermissionEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: recordingPermissionEnabled) { _, newValue in
+                                updateRecordingPermission(newValue)
+                            }
                     }
                 }
-                .buttonStyle(.plain)
+            }
+
+            // Private Cloud Sync
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "cloud.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Private Cloud Sync")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Sync your data securely to your private cloud storage")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $privateCloudSyncEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: privateCloudSyncEnabled) { _, newValue in
+                                updatePrivateCloudSync(newValue)
+                            }
+                    }
+                }
+            }
+
+            // Data Management
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "shield.lefthalf.filled")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.purplePrimary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Data & Privacy")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Manage your data and privacy settings")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Button("Manage") {
+                        if let url = URL(string: "https://omi.me/privacy") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
             }
         }
     }
 
-    // MARK: - Developer Settings Section
+    // MARK: - Account Section
 
-    private var developerSettingsSection: some View {
+    private var accountSection: some View {
         VStack(spacing: 20) {
-            // Back button header
-            HStack {
-                Button(action: {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showingDeveloperSettings = false
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: "person.circle.fill")
+                        .font(.system(size: 40))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(AuthService.shared.displayName.isEmpty ? "User" : AuthService.shared.displayName)
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        if let email = AuthState.shared.userEmail {
+                            Text(email)
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
                     }
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                        Text("Back")
-                            .font(.system(size: 14, weight: .medium))
+
+                    Spacer()
+
+                    Button("Sign Out") {
+                        ProactiveAssistantsPlugin.shared.stopMonitoring()
+                        try? AuthService.shared.signOut()
                     }
-                    .foregroundColor(OmiColors.purplePrimary)
+                    .buttonStyle(.bordered)
                 }
-                .buttonStyle(.plain)
-
-                Spacer()
-
-                Text("Developer Settings")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
-                Spacer()
-
-                // Spacer to balance the back button
-                HStack(spacing: 6) {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                    Text("Back")
-                        .font(.system(size: 14, weight: .medium))
-                }
-                .opacity(0)
             }
-            .padding(.bottom, 8)
+
+//            settingsCard {
+//                HStack(spacing: 16) {
+//                    Image(systemName: "bolt.fill")
+//                        .font(.system(size: 16))
+//                        .foregroundColor(.yellow)
+//
+//                    VStack(alignment: .leading, spacing: 4) {
+//                        Text("Upgrade to Pro")
+//                            .font(.system(size: 15, weight: .medium))
+//                            .foregroundColor(OmiColors.textPrimary)
+//
+//                        Text("Unlock all features and unlimited usage")
+//                            .font(.system(size: 13))
+//                            .foregroundColor(OmiColors.textTertiary)
+//                    }
+//
+//                    Spacer()
+//
+//                    Button("Upgrade") {
+//                        if let url = URL(string: "https://omi.me/pricing") {
+//                            NSWorkspace.shared.open(url)
+//                        }
+//                    }
+//                    .buttonStyle(.borderedProminent)
+//                    .tint(OmiColors.purplePrimary)
+//                }
+//            }
+        }
+    }
+
+    // MARK: - About Section
+
+    // MARK: - Advanced Section
+
+    struct UserStats {
+        let conversations: Int
+        let appsInstalled: Int
+        let screenshotsTotal: Int
+        let focusSessions: Int
+        let tasksTodo: Int
+        let tasksDone: Int
+        let tasksDeleted: Int
+        let goalsCount: Int
+        let memoriesTotal: Int
+    }
+
+    private var advancedSection: some View {
+        VStack(spacing: 20) {
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "chart.bar")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Your Stats")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    if isLoadingStats {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    } else if let stats = advancedStats {
+                        statRow(label: "Conversations", value: stats.conversations)
+                        statRow(label: "Apps Installed", value: stats.appsInstalled)
+                        if isLoadingChatMessages {
+                            HStack {
+                                Text("AI Chat Messages")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Spacer()
+                                ProgressView()
+                                    .controlSize(.mini)
+                            }
+                        } else if let count = chatMessageCount {
+                            statRow(label: "AI Chat Messages", value: count)
+                        }
+                        statRow(label: "Screenshots", value: stats.screenshotsTotal)
+                        statRow(label: "Focus Sessions", value: stats.focusSessions)
+                        statRow(label: "Tasks (To Do)", value: stats.tasksTodo)
+                        statRow(label: "Tasks (Done)", value: stats.tasksDone)
+                        statRow(label: "Tasks (Removed)", value: stats.tasksDeleted)
+                        statRow(label: "Goals", value: stats.goalsCount)
+                        statRow(label: "Memories", value: stats.memoriesTotal)
+                    } else {
+                        Text("Unable to load stats")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+            }
+            // Feature Tiers card
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Feature Tiers")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Enable Tier Gating", subtitle: "Only show tier 1 features in the sidebar") {
+                        Toggle("", isOn: $tierGatingEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Tier 1
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Tier 1 (Basic)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        tierFeatureRow(name: "Conversations", unlocked: true)
+                        tierFeatureRow(name: "Rewind", unlocked: true)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Locked features
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Unlocked Later")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        tierFeatureRow(name: "Dashboard", unlocked: false)
+                        tierFeatureRow(name: "AI Chat", unlocked: false)
+                        tierFeatureRow(name: "Memories", unlocked: false)
+                        tierFeatureRow(name: "Tasks", unlocked: false)
+                        tierFeatureRow(name: "Apps", unlocked: false)
+                    }
+                }
+            }
 
             // Focus Assistant Settings
             settingsCard {
@@ -1648,281 +1856,11 @@ struct SettingsContentView: View {
                 }
             }
         }
-    }
-
-    // MARK: - Privacy Section
-
-    private var privacySection: some View {
-        VStack(spacing: 20) {
-            // Recording Permission
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "mic.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Store Recordings")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(OmiColors.textPrimary)
-
-                            Text("Allow Omi to store audio recordings of your conversations")
-                                .font(.system(size: 13))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $recordingPermissionEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: recordingPermissionEnabled) { _, newValue in
-                                updateRecordingPermission(newValue)
-                            }
-                    }
-                }
-            }
-
-            // Private Cloud Sync
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "cloud.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Private Cloud Sync")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(OmiColors.textPrimary)
-
-                            Text("Sync your data securely to your private cloud storage")
-                                .font(.system(size: 13))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-
-                        Spacer()
-
-                        Toggle("", isOn: $privateCloudSyncEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: privateCloudSyncEnabled) { _, newValue in
-                                updatePrivateCloudSync(newValue)
-                            }
-                    }
-                }
-            }
-
-            // Data Management
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.purplePrimary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Data & Privacy")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Manage your data and privacy settings")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    Spacer()
-
-                    Button("Manage") {
-                        if let url = URL(string: "https://omi.me/privacy") {
-                            NSWorkspace.shared.open(url)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-        }
-    }
-
-    // MARK: - Account Section
-
-    private var accountSection: some View {
-        VStack(spacing: 20) {
-            settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "person.circle.fill")
-                        .font(.system(size: 40))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(AuthService.shared.displayName.isEmpty ? "User" : AuthService.shared.displayName)
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        if let email = AuthState.shared.userEmail {
-                            Text(email)
-                                .font(.system(size: 13))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-                    }
-
-                    Spacer()
-
-                    Button("Sign Out") {
-                        ProactiveAssistantsPlugin.shared.stopMonitoring()
-                        try? AuthService.shared.signOut()
-                    }
-                    .buttonStyle(.bordered)
-                }
-            }
-
-//            settingsCard {
-//                HStack(spacing: 16) {
-//                    Image(systemName: "bolt.fill")
-//                        .font(.system(size: 16))
-//                        .foregroundColor(.yellow)
-//
-//                    VStack(alignment: .leading, spacing: 4) {
-//                        Text("Upgrade to Pro")
-//                            .font(.system(size: 15, weight: .medium))
-//                            .foregroundColor(OmiColors.textPrimary)
-//
-//                        Text("Unlock all features and unlimited usage")
-//                            .font(.system(size: 13))
-//                            .foregroundColor(OmiColors.textTertiary)
-//                    }
-//
-//                    Spacer()
-//
-//                    Button("Upgrade") {
-//                        if let url = URL(string: "https://omi.me/pricing") {
-//                            NSWorkspace.shared.open(url)
-//                        }
-//                    }
-//                    .buttonStyle(.borderedProminent)
-//                    .tint(OmiColors.purplePrimary)
-//                }
-//            }
-        }
-    }
-
-    // MARK: - About Section
-
-    // MARK: - Advanced Section
-
-    struct UserStats {
-        let conversations: Int
-        let appsInstalled: Int
-        let screenshotsTotal: Int
-        let focusSessions: Int
-        let tasksTodo: Int
-        let tasksDone: Int
-        let tasksDeleted: Int
-        let goalsCount: Int
-        let memoriesTotal: Int
-    }
-
-    private var advancedSection: some View {
-        VStack(spacing: 20) {
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "chart.bar")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Your Stats")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-                    }
-
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
-
-                    if isLoadingStats {
-                        HStack {
-                            Spacer()
-                            ProgressView()
-                                .controlSize(.small)
-                            Spacer()
-                        }
-                        .padding(.vertical, 8)
-                    } else if let stats = advancedStats {
-                        statRow(label: "Conversations", value: stats.conversations)
-                        statRow(label: "Apps Installed", value: stats.appsInstalled)
-                        statRow(label: "Screenshots", value: stats.screenshotsTotal)
-                        statRow(label: "Focus Sessions", value: stats.focusSessions)
-                        statRow(label: "Tasks (To Do)", value: stats.tasksTodo)
-                        statRow(label: "Tasks (Done)", value: stats.tasksDone)
-                        statRow(label: "Tasks (Removed)", value: stats.tasksDeleted)
-                        statRow(label: "Goals", value: stats.goalsCount)
-                        statRow(label: "Memories", value: stats.memoriesTotal)
-                    } else {
-                        Text("Unable to load stats")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
-                    }
-                }
-            }
-            // Feature Tiers card
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack(spacing: 10) {
-                        Image(systemName: "lock.shield")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Feature Tiers")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-                    }
-
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
-
-                    settingRow(title: "Enable Tier Gating", subtitle: "Only show tier 1 features in the sidebar") {
-                        Toggle("", isOn: $tierGatingEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                    }
-
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
-
-                    // Tier 1
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Tier 1 (Basic)")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        tierFeatureRow(name: "Conversations", unlocked: true)
-                        tierFeatureRow(name: "Rewind", unlocked: true)
-                    }
-
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
-
-                    // Locked features
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Unlocked Later")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(OmiColors.textTertiary)
-
-                        tierFeatureRow(name: "Dashboard", unlocked: false)
-                        tierFeatureRow(name: "AI Chat", unlocked: false)
-                        tierFeatureRow(name: "Memories", unlocked: false)
-                        tierFeatureRow(name: "Tasks", unlocked: false)
-                        tierFeatureRow(name: "Apps", unlocked: false)
-                    }
-                }
-            }
-        }
         .task {
             await loadAdvancedStats()
+        }
+        .task {
+            await loadChatMessageCount()
         }
     }
 
@@ -2005,6 +1943,17 @@ struct SettingsContentView: View {
             )
         } catch {
             print("SETTINGS: Failed to load advanced stats: \(error)")
+        }
+    }
+
+    private func loadChatMessageCount() async {
+        isLoadingChatMessages = true
+        defer { isLoadingChatMessages = false }
+
+        do {
+            chatMessageCount = try await APIClient.shared.getChatMessageCount()
+        } catch {
+            chatMessageCount = 0
         }
     }
 
