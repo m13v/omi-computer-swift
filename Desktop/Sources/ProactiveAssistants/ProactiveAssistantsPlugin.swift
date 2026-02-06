@@ -442,9 +442,60 @@ public class ProactiveAssistantsPlugin: NSObject {
         let appName = realAppName ?? currentApp
 
         // Always capture frames (other features may need them)
-        if let jpegData = await screenCaptureService.captureActiveWindowAsync(),
+        // macOS 14+: capture CGImage directly, encode JPEG once for assistants,
+        // pass CGImage to RewindIndexer (avoids redundant encode/decode round-trips)
+        if #available(macOS 14.0, *) {
+            if let cgImage = await screenCaptureService.captureActiveWindowCGImage(),
+               let appName = appName {
+                if !lastCaptureSucceeded {
+                    log("Screen capture recovered after \(consecutiveFailures) failures")
+                }
+                consecutiveFailures = 0
+                lastCaptureSucceeded = true
+
+                frameCount += 1
+                let captureTime = Date()
+
+                // Encode JPEG once for assistants
+                if let jpegData = screenCaptureService.encodeJPEG(from: cgImage) {
+                    let frame = CapturedFrame(
+                        jpegData: jpegData,
+                        appName: appName,
+                        windowTitle: currentWindowTitle,
+                        frameNumber: frameCount,
+                        captureTime: captureTime
+                    )
+
+                    if !isInDelayPeriod {
+                        AssistantCoordinator.shared.distributeFrame(frame)
+                    }
+                }
+
+                // Pass CGImage directly to RewindIndexer (no JPEG decode needed)
+                Task {
+                    await RewindIndexer.shared.processFrame(
+                        cgImage: cgImage,
+                        appName: appName,
+                        windowTitle: currentWindowTitle,
+                        captureTime: captureTime
+                    )
+                }
+            } else {
+                consecutiveFailures += 1
+                lastCaptureSucceeded = false
+
+                if consecutiveFailures == 1 || consecutiveFailures % 5 == 0 {
+                    log("ProactiveAssistantsPlugin: Capture failed (\(consecutiveFailures) consecutive), frontmost: \(getFrontmostAppInfo())")
+                }
+
+                if consecutiveFailures >= maxConsecutiveFailures {
+                    handleRepeatedCaptureFailures()
+                }
+                return
+            }
+        } else if let jpegData = await screenCaptureService.captureActiveWindowAsync(),
            let appName = appName {
-            // Reset failure counter on success
+            // macOS 13.x fallback: existing JPEG-based path
             if !lastCaptureSucceeded {
                 log("Screen capture recovered after \(consecutiveFailures) failures")
             }
@@ -460,12 +511,10 @@ public class ProactiveAssistantsPlugin: NSObject {
                 frameNumber: frameCount
             )
 
-            // Only distribute to assistants if not in delay period
             if !isInDelayPeriod {
                 AssistantCoordinator.shared.distributeFrame(frame)
             }
 
-            // Store frame for Rewind search (independent of delay period)
             Task {
                 await RewindIndexer.shared.processFrame(frame)
             }
