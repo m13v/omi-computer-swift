@@ -86,6 +86,13 @@ struct SettingsContentView: View {
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
 
+    // Tier gating
+    @AppStorage("tierGatingEnabled") private var tierGatingEnabled = false
+
+    // Advanced stats
+    @State private var advancedStats: UserStats?
+    @State private var isLoadingStats = false
+
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
 
@@ -146,6 +153,7 @@ struct SettingsContentView: View {
         case notifications = "Notifications"
         case privacy = "Privacy"
         case account = "Account"
+        case advanced = "Advanced"
         case about = "About"
     }
 
@@ -211,6 +219,8 @@ struct SettingsContentView: View {
                         privacySection
                     case .account:
                         accountSection
+                    case .advanced:
+                        advancedSection
                     case .about:
                         aboutSection
                     }
@@ -1793,6 +1803,198 @@ struct SettingsContentView: View {
 //                    .tint(OmiColors.purplePrimary)
 //                }
 //            }
+        }
+    }
+
+    // MARK: - About Section
+
+    // MARK: - Advanced Section
+
+    struct UserStats {
+        let focusSessions: Int
+        let tasksTodo: Int
+        let tasksDone: Int
+        let tasksDeleted: Int
+        let goalsCount: Int
+        let memoriesTotal: Int
+        let screenshotsTotal: Int
+    }
+
+    private var advancedSection: some View {
+        VStack(spacing: 20) {
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "chart.bar")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Your Stats")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    if isLoadingStats {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                            Spacer()
+                        }
+                        .padding(.vertical, 8)
+                    } else if let stats = advancedStats {
+                        statRow(label: "Focus Sessions", value: stats.focusSessions)
+                        statRow(label: "Tasks (To Do)", value: stats.tasksTodo)
+                        statRow(label: "Tasks (Done)", value: stats.tasksDone)
+                        statRow(label: "Tasks (Removed)", value: stats.tasksDeleted)
+                        statRow(label: "Goals", value: stats.goalsCount)
+                        statRow(label: "Memories", value: stats.memoriesTotal)
+                        statRow(label: "Screenshots", value: stats.screenshotsTotal)
+                    } else {
+                        Text("Unable to load stats")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+            }
+            // Feature Tiers card
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Feature Tiers")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Enable Tier Gating", subtitle: "Only show tier 1 features in the sidebar") {
+                        Toggle("", isOn: $tierGatingEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Tier 1
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Tier 1 (Basic)")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        tierFeatureRow(name: "Conversations", unlocked: true)
+                        tierFeatureRow(name: "Rewind", unlocked: true)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Locked features
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Unlocked Later")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        tierFeatureRow(name: "Dashboard", unlocked: false)
+                        tierFeatureRow(name: "AI Chat", unlocked: false)
+                        tierFeatureRow(name: "Memories", unlocked: false)
+                        tierFeatureRow(name: "Tasks", unlocked: false)
+                        tierFeatureRow(name: "Apps", unlocked: false)
+                    }
+                }
+            }
+        }
+        .task {
+            await loadAdvancedStats()
+        }
+    }
+
+    private func tierFeatureRow(name: String, unlocked: Bool) -> some View {
+        HStack {
+            Text(name)
+                .font(.system(size: 14))
+                .foregroundColor(unlocked ? OmiColors.textSecondary : OmiColors.textTertiary)
+
+            Spacer()
+
+            if unlocked {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.green)
+            } else {
+                Image(systemName: "lock.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textTertiary)
+            }
+        }
+    }
+
+    private func statRow(label: String, value: Int) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(size: 14))
+                .foregroundColor(OmiColors.textSecondary)
+
+            Spacer()
+
+            Text(formatNumber(value))
+                .font(.system(size: 14, weight: .medium).monospacedDigit())
+                .foregroundColor(OmiColors.textPrimary)
+        }
+    }
+
+    private func formatNumber(_ n: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        return formatter.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+
+    private func loadAdvancedStats() async {
+        isLoadingStats = true
+        defer { isLoadingStats = false }
+
+        do {
+            async let focusCount = ProactiveStorage.shared.getTotalFocusSessionCount()
+            async let filterCounts = ActionItemStorage.shared.getFilterCounts()
+            async let goals = APIClient.shared.getGoals()
+            async let memoryStats = MemoryStorage.shared.getStats()
+
+            let fc = try await focusCount
+            let filters = try await filterCounts
+            let g = try await goals
+            let ms = try await memoryStats
+
+            let screenshotCount: Int
+            do {
+                screenshotCount = try RewindDatabase.shared.getScreenshotCount()
+            } catch {
+                screenshotCount = 0
+            }
+
+            advancedStats = UserStats(
+                focusSessions: fc,
+                tasksTodo: filters.todo,
+                tasksDone: filters.done,
+                tasksDeleted: filters.deleted,
+                goalsCount: g.count,
+                memoriesTotal: ms.total,
+                screenshotsTotal: screenshotCount
+            )
+        } catch {
+            print("SETTINGS: Failed to load advanced stats: \(error)")
         }
     }
 
