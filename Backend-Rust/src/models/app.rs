@@ -454,6 +454,7 @@ pub struct AppsV2Response {
 
 /// Query parameters for v2/apps
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)]
 pub struct AppsV2Query {
     #[serde(default)]
     pub capability: Option<String>,
