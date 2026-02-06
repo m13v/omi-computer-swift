@@ -2295,9 +2295,20 @@ struct TaskRow: View {
                         TaskClassificationBadge(category: taskCategory)
                     }
 
-                    // Agent status indicator
+                    // Agent status indicator and detail button
                     if task.shouldTriggerAgent {
                         AgentStatusIndicator(taskId: task.id)
+
+                        Button {
+                            showAgentDetail = true
+                        } label: {
+                            Image(systemName: "terminal")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("View Agent Details")
                     }
 
                     // Due date badge - clickable
@@ -2355,23 +2366,9 @@ struct TaskRow: View {
 
             Spacer(minLength: 0)
 
-            // Hover actions: agent, indent controls, and delete (not for deleted tasks)
+            // Hover actions: indent controls and delete (not for deleted tasks)
             if isHovering && !viewModel.isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
-                    // Agent button (for code-related tasks)
-                    if task.shouldTriggerAgent {
-                        Button {
-                            showAgentDetail = true
-                        } label: {
-                            Image(systemName: "terminal")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                                .frame(width: 24, height: 24)
-                        }
-                        .buttonStyle(.plain)
-                        .help("View Agent Details")
-                    }
-
                     // Outdent button (decrease indent)
                     if indentLevel > 0 {
                         Button {
