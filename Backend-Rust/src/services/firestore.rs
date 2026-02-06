@@ -1985,6 +1985,8 @@ impl FirestoreService {
         completed: Option<bool>,
         description: Option<&str>,
         due_at: Option<DateTime<Utc>>,
+        priority: Option<&str>,
+        category: Option<&str>,
     ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
         // Build update mask and fields
         let mut field_paths: Vec<&str> = vec!["updated_at"];
@@ -2014,6 +2016,16 @@ impl FirestoreService {
         if let Some(due) = due_at {
             field_paths.push("due_at");
             fields["due_at"] = json!({"timestampValue": due.to_rfc3339()});
+        }
+
+        if let Some(pri) = priority {
+            field_paths.push("priority");
+            fields["priority"] = json!({"stringValue": pri});
+        }
+
+        if let Some(cat) = category {
+            field_paths.push("category");
+            fields["category"] = json!({"stringValue": cat});
         }
 
         let update_mask = field_paths
@@ -2219,6 +2231,7 @@ impl FirestoreService {
         source: Option<&str>,
         priority: Option<&str>,
         metadata: Option<&str>,
+        category: Option<&str>,
     ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
         let item_id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -2252,6 +2265,10 @@ impl FirestoreService {
 
         if let Some(meta) = metadata {
             fields["metadata"] = json!({"stringValue": meta});
+        }
+
+        if let Some(cat) = category {
+            fields["category"] = json!({"stringValue": cat});
         }
 
         let doc = json!({"fields": fields});
@@ -3102,6 +3119,7 @@ impl FirestoreService {
             deleted_at: self.parse_timestamp_optional(fields, "deleted_at"),
             deleted_reason: self.parse_string(fields, "deleted_reason"),
             kept_task_id: self.parse_string(fields, "kept_task_id"),
+            category: self.parse_string(fields, "category"),
         })
     }
 
