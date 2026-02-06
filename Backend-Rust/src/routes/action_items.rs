@@ -14,6 +14,16 @@ use crate::models::{ActionItemDB, ActionItemsListResponse, ActionItemStatusRespo
 use crate::AppState;
 
 #[derive(Deserialize)]
+pub struct SoftDeleteActionItemRequest {
+    /// Who is deleting: "ai_dedup", "user"
+    pub deleted_by: String,
+    /// Reason for deletion
+    pub reason: String,
+    /// ID of the task that was kept instead
+    pub kept_task_id: String,
+}
+
+#[derive(Deserialize)]
 pub struct GetActionItemsQuery {
     #[serde(default = "default_limit")]
     pub limit: usize,
@@ -227,6 +237,40 @@ async fn delete_action_item(
     }
 }
 
+/// POST /v1/action-items/{id}/soft-delete - Soft-delete an action item (mark as deleted)
+async fn soft_delete_action_item(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Path(item_id): Path<String>,
+    Json(request): Json<SoftDeleteActionItemRequest>,
+) -> Result<Json<ActionItemDB>, StatusCode> {
+    tracing::info!(
+        "Soft-deleting action item {} for user {} (by: {}, reason: {})",
+        item_id,
+        user.uid,
+        request.deleted_by,
+        request.reason
+    );
+
+    match state
+        .firestore
+        .soft_delete_action_item(
+            &user.uid,
+            &item_id,
+            &request.deleted_by,
+            &request.reason,
+            &request.kept_task_id,
+        )
+        .await
+    {
+        Ok(item) => Ok(Json(item)),
+        Err(e) => {
+            tracing::error!("Failed to soft-delete action item: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub fn action_items_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/action-items", get(get_action_items).post(create_action_item))
@@ -234,5 +278,9 @@ pub fn action_items_routes() -> Router<AppState> {
         .route(
             "/v1/action-items/:id",
             get(get_action_item_by_id).patch(update_action_item).delete(delete_action_item),
+        )
+        .route(
+            "/v1/action-items/:id/soft-delete",
+            axum::routing::post(soft_delete_action_item),
         )
 }
