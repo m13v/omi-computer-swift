@@ -1078,12 +1078,24 @@ class AppState: ObservableObject {
         conversationsError = nil
 
         // Step 1: Load from local cache first (instant display)
+        // Use timeout to avoid blocking UI if database is initializing (e.g. recovery)
         do {
-            let cachedConversations = try await TranscriptionStorage.shared.getLocalConversations(
-                limit: 50,
-                starredOnly: showStarredOnly,
-                folderId: selectedFolderId
-            )
+            let cachedConversations = try await withThrowingTaskGroup(of: [ServerConversation].self) { group in
+                group.addTask {
+                    try await TranscriptionStorage.shared.getLocalConversations(
+                        limit: 50,
+                        starredOnly: self.showStarredOnly,
+                        folderId: self.selectedFolderId
+                    )
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 3_000_000_000) // 3 second timeout
+                    throw CancellationError()
+                }
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
+            }
 
             if !cachedConversations.isEmpty {
                 conversations = cachedConversations
@@ -1097,7 +1109,7 @@ class AppState: ObservableObject {
                 isLoadingConversations = false
             }
         } catch {
-            log("Conversations: Local cache load failed: \(error.localizedDescription)")
+            log("Conversations: Local cache unavailable, falling back to API")
             // Continue to API fetch even if local fails
         }
 
