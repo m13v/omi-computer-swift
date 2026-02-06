@@ -16,6 +16,7 @@ DerivedData/
 **/google-credentials.json
 .claude/settings.json
 .claude/skills/firebase/SKILL.md
+.claude/skills/local-backend-test/
 
 # macOS
 .DS_Store
