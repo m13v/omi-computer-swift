@@ -209,11 +209,11 @@ actor MemoryAssistant: ProactiveAssistant {
             backendSynced: false,
             content: memory.content,
             category: category,
+            source: "desktop",
             screenshotId: screenshotId,
             confidence: memory.confidence,
             sourceApp: memory.sourceApp,
-            contextSummary: contextSummary,
-            source: "desktop"
+            contextSummary: contextSummary
         )
 
         do {
