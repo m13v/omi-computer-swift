@@ -188,6 +188,8 @@ public class ProactiveAssistantsPlugin: NSObject {
                 AssistantCoordinator.shared.register(task)
             }
 
+            Task { await TaskDeduplicationService.shared.start() }
+
             adviceAssistant = try AdviceAssistant()
 
             if let advice = adviceAssistant {
@@ -277,6 +279,7 @@ public class ProactiveAssistantsPlugin: NSObject {
                 await task.stop()
             }
         }
+        Task { await TaskDeduplicationService.shared.stop() }
         if let advice = adviceAssistant {
             Task {
                 await advice.stop()
