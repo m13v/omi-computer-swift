@@ -149,14 +149,25 @@ actor AdviceAssistant: ProactiveAssistant {
         }
 
         // Save to SQLite first
-        _ = await saveAdviceToSQLite(
+        let extractionRecord = await saveAdviceToSQLite(
             advice: advice,
             screenshotId: screenshotId,
             contextSummary: adviceResult.contextSummary,
             currentActivity: adviceResult.currentActivity
         )
 
-        // Save to AdviceStorage which syncs to backend as a memory with tags
+        // Sync to backend and update local record with backendId
+        if let backendId = await syncAdviceToBackend(advice: advice, adviceResult: adviceResult) {
+            if let recordId = extractionRecord?.id {
+                do {
+                    try await MemoryStorage.shared.markSynced(id: recordId, backendId: backendId)
+                } catch {
+                    logError("Advice: Failed to update sync status", error: error)
+                }
+            }
+        }
+
+        // Also update AdviceStorage cache (for UI display)
         await MainActor.run {
             AdviceStorage.shared.addAdvice(adviceResult)
         }
@@ -217,6 +228,34 @@ actor AdviceAssistant: ProactiveAssistant {
             return inserted
         } catch {
             logError("Advice: Failed to save to SQLite", error: error)
+            return nil
+        }
+    }
+
+    /// Sync advice to backend API, returns backend ID if successful
+    private func syncAdviceToBackend(advice: ExtractedAdvice, adviceResult: AdviceExtractionResult) async -> String? {
+        do {
+            // Build tags: ["tips", "<category>"]
+            let categoryTag = advice.category.rawValue.lowercased()
+            let tags = ["tips", categoryTag]
+
+            let response = try await APIClient.shared.createMemory(
+                content: advice.advice,
+                visibility: "private",
+                category: .system,
+                confidence: advice.confidence,
+                sourceApp: advice.sourceApp,
+                contextSummary: adviceResult.contextSummary,
+                tags: tags,
+                reasoning: advice.reasoning,
+                currentActivity: adviceResult.currentActivity,
+                source: "screenshot"
+            )
+
+            log("Advice: Synced to backend (id: \(response.id))")
+            return response.id
+        } catch {
+            logError("Advice: Failed to sync to backend", error: error)
             return nil
         }
     }
