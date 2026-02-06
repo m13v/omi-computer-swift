@@ -358,12 +358,13 @@ class TasksStore: ObservableObject {
         }
     }
 
-    func updateTask(_ task: TaskActionItem, description: String?, dueAt: Date?) async {
+    func updateTask(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
         do {
             let updated = try await APIClient.shared.updateActionItem(
                 id: task.id,
                 description: description,
-                dueAt: dueAt
+                dueAt: dueAt,
+                priority: priority
             )
             // Update in appropriate list
             if task.completed {
