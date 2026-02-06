@@ -898,12 +898,18 @@ struct TasksPage: View {
     // MARK: - Header View
 
     private var headerView: some View {
-        VStack(spacing: 12) {
-            // Search bar
+        HStack(spacing: 10) {
+            // Search field
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 14))
-                    .foregroundColor(OmiColors.textTertiary)
+                if viewModel.isSearching || viewModel.isLoadingFiltered {
+                    ProgressView()
+                        .scaleEffect(0.7)
+                        .frame(width: 14, height: 14)
+                } else {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
 
                 TextField("Search tasks...", text: $viewModel.searchText)
                     .textFieldStyle(.plain)
@@ -918,48 +924,27 @@ struct TasksPage: View {
                     }
                     .buttonStyle(.plain)
                 }
-
-                if viewModel.isSearching || viewModel.isLoadingFiltered {
-                    ProgressView()
-                        .scaleEffect(0.7)
-                }
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(8)
 
-            // Filter and actions row
-            HStack(spacing: 12) {
-                if !viewModel.isMultiSelectMode {
-                    filterDropdownButton
-                } else {
-                    multiSelectControls
-                }
+            if !viewModel.isMultiSelectMode {
+                filterDropdownButton
+            } else {
+                multiSelectControls
+            }
 
-                // Show search result count when searching
-                if !viewModel.searchText.isEmpty {
-                    Text("\(viewModel.searchResults.count) results")
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
+            if viewModel.isMultiSelectMode {
+                if !viewModel.selectedTaskIds.isEmpty {
+                    deleteSelectedButton
                 }
-
-                Spacer()
-
-                if viewModel.isMultiSelectMode {
-                    if !viewModel.selectedTaskIds.isEmpty {
-                        deleteSelectedButton
-                    }
-                } else {
-                    addTaskButton
-                }
-
-                if viewModel.isMultiSelectMode {
-                    cancelMultiSelectButton
-                } else {
-                    sortDropdown
-                    taskSettingsButton
-                }
+                cancelMultiSelectButton
+            } else {
+                addTaskButton
+                sortDropdown
+                taskSettingsButton
             }
         }
         .padding(.horizontal, 16)
