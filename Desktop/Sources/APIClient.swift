@@ -1475,15 +1475,17 @@ extension APIClient {
         id: String,
         completed: Bool? = nil,
         description: String? = nil,
-        dueAt: Date? = nil
+        dueAt: Date? = nil,
+        priority: String? = nil
     ) async throws -> TaskActionItem {
         struct UpdateRequest: Encodable {
             let completed: Bool?
             let description: String?
             let dueAt: String?
+            let priority: String?
 
             enum CodingKeys: String, CodingKey {
-                case completed, description
+                case completed, description, priority
                 case dueAt = "due_at"
             }
         }
@@ -1494,7 +1496,8 @@ extension APIClient {
         let request = UpdateRequest(
             completed: completed,
             description: description,
-            dueAt: dueAt.map { formatter.string(from: $0) }
+            dueAt: dueAt.map { formatter.string(from: $0) },
+            priority: priority
         )
 
         return try await patch("v1/action-items/\(id)", body: request)
