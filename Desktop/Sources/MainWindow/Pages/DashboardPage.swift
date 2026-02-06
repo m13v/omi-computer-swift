@@ -125,10 +125,13 @@ class DashboardViewModel: ObservableObject {
     }
 
     func updateGoalProgress(_ goal: Goal, currentValue: Double) async {
-        // Optimistically update local value immediately so slider doesn't snap back
+        log("Goals: Updating '\(goal.title)' progress to \(currentValue)")
+
+        // Optimistically update local value and cache immediately
         if let index = goals.firstIndex(where: { $0.id == goal.id }) {
             goals[index].currentValue = currentValue
         }
+        saveGoalsToCache()
 
         do {
             let updated = try await APIClient.shared.updateGoalProgress(
@@ -139,6 +142,7 @@ class DashboardViewModel: ObservableObject {
                 goals[index] = updated
             }
             saveGoalsToCache()
+            log("Goals: Updated '\(goal.title)' progress confirmed by API")
         } catch {
             logError("Failed to update goal progress", error: error)
         }
