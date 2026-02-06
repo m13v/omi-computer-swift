@@ -14,6 +14,7 @@ enum SidebarNavItem: Int, CaseIterable {
     case settings = 9
     case permissions = 10
     case device = 11
+    case help = 12
 
     var title: String {
         switch self {
@@ -29,6 +30,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .settings: return "Settings"
         case .permissions: return "Permissions"
         case .device: return "Device"
+        case .help: return "Help from Founder"
         }
     }
 
@@ -46,6 +48,7 @@ enum SidebarNavItem: Int, CaseIterable {
         case .settings: return "gearshape.fill"
         case .permissions: return "exclamationmark.triangle.fill"
         case .device: return "wave.3.right.circle.fill"
+        case .help: return "bubble.left.fill"
         }
     }
 
@@ -266,15 +269,28 @@ struct SidebarView: View {
                         }
                     )
 
-                    BottomNavItemView(
-                        icon: "questionmark.circle.fill",
-                        label: "Help",
+                    // Help from Founder - uses custom Crisp icon
+                    NavItemView(
+                        icon: SidebarNavItem.help.icon,
+                        label: SidebarNavItem.help.title,
+                        isSelected: selectedIndex == SidebarNavItem.help.rawValue,
                         isCollapsed: isCollapsed,
                         iconWidth: iconWidth,
-                        onTap: {
-                            if let url = URL(string: "https://help.omi.me") {
-                                NSWorkspace.shared.open(url)
+                        customIcon: {
+                            if let iconUrl = Bundle.resourceBundle.url(forResource: "crisp-icon", withExtension: "png"),
+                               let iconImage = NSImage(contentsOf: iconUrl) {
+                                return AnyView(
+                                    Image(nsImage: iconImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fit)
+                                        .frame(width: iconWidth, height: iconWidth)
+                                )
                             }
+                            return nil
+                        }(),
+                        onTap: {
+                            selectedIndex = SidebarNavItem.help.rawValue
+                            AnalyticsManager.shared.tabChanged(tabName: SidebarNavItem.help.title)
                         }
                     )
 
@@ -1039,6 +1055,7 @@ struct NavItemView: View {
     var badge: Int = 0
     var statusColor: Color? = nil
     var isLoading: Bool = false
+    var customIcon: AnyView? = nil
     let onTap: () -> Void
 
     @State private var isHovered = false
@@ -1050,6 +1067,8 @@ struct NavItemView: View {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: iconWidth, height: 17)
+                } else if let customIcon = customIcon {
+                    customIcon
                 } else {
                     Image(systemName: icon)
                         .font(.system(size: 17))
