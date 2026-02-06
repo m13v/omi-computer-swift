@@ -184,6 +184,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // One-time migration: Enable launch at login for existing users who haven't set it
         migrateLaunchAtLoginDefault()
 
+        // One-time migration: Rename app bundle from "Omi Computer.app" to "Omi Beta.app"
+        migrateAppNameToBeta()
+
         // Track launch at login status once per app launch
         Task { @MainActor in
             let isEnabled = LaunchAtLoginManager.shared.isEnabled
@@ -420,7 +423,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 log("AppDelegate: [MENUBAR] WARNING - Failed to load app_launcher_icon, using fallback")
             }
-            button.toolTip = OMIApp.launchMode == .rewind ? "Omi Rewind" : "Omi Computer"
+            let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi"
+            button.toolTip = OMIApp.launchMode == .rewind ? "Omi Rewind" : displayName
         } else {
             log("AppDelegate: [MENUBAR] WARNING - statusBarItem.button is nil")
         }
@@ -615,6 +619,44 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } else {
                 log("LaunchAtLogin migration: Already enabled, skipping")
             }
+        }
+    }
+
+    private func migrateAppNameToBeta() {
+        let key = "didMigrateAppNameToBetaV1"
+        guard !UserDefaults.standard.bool(forKey: key) else { return }
+        UserDefaults.standard.set(true, forKey: key)
+
+        let currentPath = Bundle.main.bundlePath
+        guard currentPath.hasSuffix("Omi Computer.app") else { return }
+
+        let dir = (currentPath as NSString).deletingLastPathComponent
+        let newPath = dir + "/Omi Beta.app"
+        guard !FileManager.default.fileExists(atPath: newPath) else { return }
+
+        do {
+            try FileManager.default.moveItem(atPath: currentPath, toPath: newPath)
+            log("App rename migration: moved to \(newPath)")
+
+            // Re-register with Launch Services
+            let lsregister = Process()
+            lsregister.executableURL = URL(fileURLWithPath:
+                "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
+            lsregister.arguments = ["-f", newPath]
+            try? lsregister.run()
+            lsregister.waitUntilExit()
+
+            // Relaunch from new path
+            let relaunch = Process()
+            relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            relaunch.arguments = [newPath]
+            try? relaunch.run()
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                NSApp.terminate(nil)
+            }
+        } catch {
+            log("App rename migration failed: \(error.localizedDescription)")
         }
     }
 
