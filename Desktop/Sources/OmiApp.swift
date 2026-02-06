@@ -75,7 +75,8 @@ struct OMIApp: App {
     /// Window title with version number (different for rewind mode)
     private var windowTitle: String {
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-        let baseName = Self.launchMode == .rewind ? "Omi Rewind" : "Omi"
+        let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi"
+        let baseName = Self.launchMode == .rewind ? "Omi Rewind" : displayName
         return version.isEmpty ? baseName : "\(baseName) v\(version)"
     }
 
@@ -400,6 +401,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         log("AppDelegate: [MENUBAR] NSStatusItem created successfully")
 
+        let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi"
+
         // Set up the button with icon
         if let button = statusBarItem.button {
             if OMIApp.launchMode == .rewind {
@@ -423,7 +426,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
                 log("AppDelegate: [MENUBAR] WARNING - Failed to load app_launcher_icon, using fallback")
             }
-            let displayName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi"
             button.toolTip = OMIApp.launchMode == .rewind ? "Omi Rewind" : displayName
         } else {
             log("AppDelegate: [MENUBAR] WARNING - statusBarItem.button is nil")
@@ -432,8 +434,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Create menu
         let menu = NSMenu()
 
-        // Open Omi item
-        let openItem = NSMenuItem(title: "Open Omi", action: #selector(openOmiFromMenu), keyEquivalent: "o")
+        // Open app item
+        let openItem = NSMenuItem(title: "Open \(displayName)", action: #selector(openOmiFromMenu), keyEquivalent: "o")
         openItem.target = self
         menu.addItem(openItem)
 
