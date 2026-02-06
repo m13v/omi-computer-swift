@@ -7,7 +7,7 @@ class ResourceMonitor {
     static let shared = ResourceMonitor()
 
     /// Check if this is a development build (avoids Sentry calls in dev)
-    private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.contains(".development") == true
+    private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.hasSuffix("-dev") == true
 
     // MARK: - Configuration
 
