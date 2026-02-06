@@ -52,7 +52,7 @@ class TaskAgentManager: ObservableObject {
     }
 
     private init() {
-        log("TaskAgentManager: Initialized")
+        logMessage("TaskAgentManager: Initialized")
     }
 
     // MARK: - Public API
@@ -77,14 +77,14 @@ class TaskAgentManager: ObservableObject {
     /// Launch agent for a task
     func launchAgent(for task: TaskActionItem, context: TaskAgentContext) async throws {
         guard !hasSession(for: task.id) else {
-            log("TaskAgentManager: Session already exists for task \(task.id)")
+            logMessage("TaskAgentManager: Session already exists for task \(task.id)")
             return
         }
 
         let sessionName = "omi-task-\(task.id.prefix(8))"
         let prompt = buildPrompt(for: task, context: context)
 
-        log("TaskAgentManager: Launching agent for task \(task.id) (\(task.description ?? ""))")
+        logMessage("TaskAgentManager: Launching agent for task \(task.id) (\(task.description))")
 
         // Create session entry
         let session = AgentSession(
@@ -112,7 +112,7 @@ class TaskAgentManager: ObservableObject {
             // Start polling for completion
             startPolling(taskId: task.id, sessionName: sessionName)
         } catch {
-            log("TaskAgentManager: Failed to launch agent - \(error)")
+            logMessage("TaskAgentManager: Failed to launch agent - \(error)")
             await MainActor.run {
                 activeSessions[task.id]?.status = .failed
             }
@@ -123,10 +123,10 @@ class TaskAgentManager: ObservableObject {
     /// Open session in Terminal
     func openInTerminal(taskId: String) {
         guard let session = activeSessions[taskId] else {
-            log("TaskAgentManager: No session found for task \(taskId)")
+            logMessage("TaskAgentManager: No session found for task \(taskId)")
             return
         }
-        log("TaskAgentManager: Opening terminal for \(session.sessionName)")
+        logMessage("TaskAgentManager: Opening terminal for \(session.sessionName)")
         openTmuxSessionInTerminal(sessionName: session.sessionName)
     }
 
@@ -134,7 +134,7 @@ class TaskAgentManager: ObservableObject {
     func updatePromptAndRestart(taskId: String, newPrompt: String, context: TaskAgentContext) async throws {
         guard var session = activeSessions[taskId] else { return }
 
-        log("TaskAgentManager: Restarting agent for task \(taskId) with new prompt")
+        logMessage("TaskAgentManager: Restarting agent for task \(taskId) with new prompt")
 
         // Cancel existing polling
         pollingTasks[taskId]?.cancel()
@@ -167,7 +167,7 @@ class TaskAgentManager: ObservableObject {
     func stopAgent(taskId: String) {
         guard let session = activeSessions[taskId] else { return }
 
-        log("TaskAgentManager: Stopping agent for task \(taskId)")
+        logMessage("TaskAgentManager: Stopping agent for task \(taskId)")
 
         // Cancel polling
         pollingTasks[taskId]?.cancel()
@@ -191,7 +191,7 @@ class TaskAgentManager: ObservableObject {
 
     private func buildPrompt(for task: TaskActionItem, context: TaskAgentContext) -> String {
         var prompt = """
-        # Task: \(task.description ?? "Untitled task")
+        # Task: \(task.description)
 
         Category: \(task.category ?? "unknown")
         Priority: \(task.priority ?? "medium")
@@ -285,11 +285,11 @@ class TaskAgentManager: ObservableObject {
 
         guard process.terminationStatus == 0 else {
             let output = String(data: pipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-            log("TaskAgentManager: tmux launch failed - \(output)")
+            logMessage("TaskAgentManager: tmux launch failed - \(output)")
             throw AgentError.launchFailed(output)
         }
 
-        log("TaskAgentManager: Launched tmux session '\(sessionName)'")
+        logMessage("TaskAgentManager: Launched tmux session '\(sessionName)'")
 
         // Wait for Claude to initialize
         try await Task.sleep(nanoseconds: 3_000_000_000) // 3 seconds
@@ -321,7 +321,7 @@ class TaskAgentManager: ObservableObject {
                         self.activeSessions[taskId]?.plan = self.extractPlan(from: output)
                         self.activeSessions[taskId]?.completedAt = Date()
                     }
-                    log("TaskAgentManager: Session completed for task \(taskId)")
+                    logMessage("TaskAgentManager: Session completed for task \(taskId)")
                     break
                 }
 
@@ -332,7 +332,7 @@ class TaskAgentManager: ObservableObject {
                             self.activeSessions[taskId]?.status = .failed
                         }
                     }
-                    log("TaskAgentManager: Session died for task \(taskId)")
+                    logMessage("TaskAgentManager: Session died for task \(taskId)")
                     break
                 }
             }
@@ -420,8 +420,8 @@ class TaskAgentManager: ObservableObject {
         process.waitUntilExit()
     }
 
-    private func log(_ message: String) {
-        ProactiveLogger.shared.log(message)
+    private func logMessage(_ message: String) {
+        log(message)
     }
 
     // MARK: - Errors
