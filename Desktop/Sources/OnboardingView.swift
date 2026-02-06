@@ -226,8 +226,8 @@ struct OnboardingView: View {
                 // Buttons
                 buttonSection
             }
-            .frame(width: currentStep == 5 && !appState.hasScreenRecordingPermission ? 500 : 420)
-            .frame(height: currentStep == 5 && !appState.hasScreenRecordingPermission ? 520 : 420)
+            .frame(width: (currentStep == 3 && !appState.hasNotificationPermission) || (currentStep == 5 && !appState.hasScreenRecordingPermission) ? 500 : 420)
+            .frame(height: (currentStep == 3 && !appState.hasNotificationPermission) || (currentStep == 5 && !appState.hasScreenRecordingPermission) ? 520 : 420)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(OmiColors.backgroundSecondary)
@@ -295,14 +295,7 @@ struct OnboardingView: View {
         case 2:
             languageStepView
         case 3:
-            stepView(
-                icon: appState.hasNotificationPermission ? "checkmark.circle.fill" : "bell.badge",
-                iconColor: appState.hasNotificationPermission ? .white : OmiColors.purplePrimary,
-                title: "Notifications",
-                description: appState.hasNotificationPermission
-                    ? "Notifications are enabled! You'll receive focus alerts from Omi."
-                    : "Omi sends you gentle notifications when it detects you're getting distracted from your work."
-            )
+            notificationStepView
         case 4:
             stepView(
                 icon: appState.hasAutomationPermission ? "checkmark.circle.fill" : "gearshape.2",
@@ -809,6 +802,44 @@ struct OnboardingView: View {
         }
         // User will manually grant permission in System Settings
         // No automatic restart needed - they can grant it directly there
+    }
+
+    // MARK: - Notification Step with Tutorial GIF
+
+    private var notificationStepView: some View {
+        VStack(spacing: 12) {
+            if appState.hasNotificationPermission {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.white)
+
+                Text("Notifications")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Notifications are enabled! You'll receive focus alerts from Omi.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+            } else {
+                Text("Notifications")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+
+                Text("Omi sends you gentle notifications when it detects you're getting distracted from your work.")
+                    .font(.body)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+
+                // Animated GIF tutorial
+                AnimatedGIFView(gifName: "enable_notifications")
+                    .frame(maxWidth: 440, maxHeight: 350)
+                    .cornerRadius(8)
+                    .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
+            }
+        }
     }
 
     // MARK: - Screen Recording Step with Tutorial GIF
