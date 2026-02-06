@@ -43,10 +43,10 @@ struct ScrollPositionDetector: NSViewRepresentable {
                 current = v.superview
             }
 
-            guard let scrollView = scrollView,
-                  let clipView = scrollView.contentView as? NSClipView else {
+            guard let scrollView = scrollView else {
                 return
             }
+            let clipView = scrollView.contentView
 
             // Observe bounds changes (scroll events)
             clipView.postsBoundsChangedNotifications = true
