@@ -87,6 +87,15 @@ cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 # Copy GoogleService-Info.plist for Firebase
 cp Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
+# Copy resource bundle (contains app assets like herologo.png, omi-with-rope-no-padding.webp, etc.)
+SWIFT_BUILD_DIR="Desktop/.build/debug"
+if [ -d "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" ]; then
+    cp -R "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" "$APP_BUNDLE/Contents/Resources/"
+    echo "Copied resource bundle"
+else
+    echo "Warning: Resource bundle not found at $SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle"
+fi
+
 # Copy .env.app (app runtime secrets only) and add API URL
 if [ -f ".env.app" ]; then
     cp .env.app "$APP_BUNDLE/Contents/Resources/.env"
