@@ -1441,21 +1441,6 @@ private struct MemoryCardView: View {
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
 
-            // Reasoning (for tips)
-            if let reasoning = memory.reasoning, !reasoning.isEmpty {
-                HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "quote.opening")
-                        .font(.system(size: 10))
-                        .foregroundColor(OmiColors.textQuaternary)
-                    Text(reasoning)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .lineLimit(2)
-                }
-                .padding(8)
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(6)
-            }
 
             // Footer - metadata
             HStack(spacing: 6) {
