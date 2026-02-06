@@ -34,6 +34,21 @@ pub struct ActionItemDB {
     /// JSON metadata: {"source_app": "Safari", "confidence": 0.85}
     #[serde(default)]
     pub metadata: Option<String>,
+    /// Soft-delete: true if this task has been deleted
+    #[serde(default)]
+    pub deleted: Option<bool>,
+    /// Who deleted: "user", "ai_dedup"
+    #[serde(default)]
+    pub deleted_by: Option<String>,
+    /// When the task was soft-deleted
+    #[serde(default)]
+    pub deleted_at: Option<DateTime<Utc>>,
+    /// AI reason for deletion (dedup explanation)
+    #[serde(default)]
+    pub deleted_reason: Option<String>,
+    /// ID of the task that was kept instead of this one
+    #[serde(default)]
+    pub kept_task_id: Option<String>,
 }
 
 /// Request body for updating an action item
