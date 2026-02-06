@@ -96,6 +96,168 @@ actor ActionItemStorage {
         }
     }
 
+    /// Search action items by description text (case-insensitive)
+    /// Queries SQLite directly for efficient full-database search
+    func searchLocalActionItems(
+        query searchText: String,
+        limit: Int = 100,
+        offset: Int = 0,
+        completed: Bool? = nil,
+        includeDeleted: Bool = false,
+        category: String? = nil,
+        source: String? = nil,
+        priority: String? = nil
+    ) async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = ActionItemRecord.all()
+
+            if !includeDeleted {
+                query = query.filter(Column("deleted") == false)
+            }
+
+            // Search in description (case-insensitive)
+            if !searchText.isEmpty {
+                query = query.filter(Column("description").like("%\(searchText)%"))
+            }
+
+            if let completed = completed {
+                query = query.filter(Column("completed") == completed)
+            }
+
+            if let category = category {
+                query = query.filter(Column("category") == category)
+            }
+
+            if let source = source {
+                query = query.filter(Column("source") == source)
+            }
+
+            if let priority = priority {
+                query = query.filter(Column("priority") == priority)
+            }
+
+            let records = try query
+                .order(Column("createdAt").desc)
+                .limit(limit, offset: offset)
+                .fetchAll(database)
+
+            return records.map { $0.toTaskActionItem() }
+        }
+    }
+
+    /// Get count of action items matching search and filters
+    func searchLocalActionItemsCount(
+        query searchText: String,
+        completed: Bool? = nil,
+        includeDeleted: Bool = false,
+        category: String? = nil,
+        source: String? = nil,
+        priority: String? = nil
+    ) async throws -> Int {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var query = ActionItemRecord.all()
+
+            if !includeDeleted {
+                query = query.filter(Column("deleted") == false)
+            }
+
+            if !searchText.isEmpty {
+                query = query.filter(Column("description").like("%\(searchText)%"))
+            }
+
+            if let completed = completed {
+                query = query.filter(Column("completed") == completed)
+            }
+
+            if let category = category {
+                query = query.filter(Column("category") == category)
+            }
+
+            if let source = source {
+                query = query.filter(Column("source") == source)
+            }
+
+            if let priority = priority {
+                query = query.filter(Column("priority") == priority)
+            }
+
+            return try query.fetchCount(database)
+        }
+    }
+
+    /// Get count of action items by filter criteria (for filter tag counts)
+    func getFilterCounts() async throws -> (
+        todo: Int,
+        done: Int,
+        deleted: Int,
+        categories: [String: Int],
+        sources: [String: Int],
+        priorities: [String: Int]
+    ) {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let todo = try ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == false)
+                .fetchCount(database)
+
+            let done = try ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == true)
+                .fetchCount(database)
+
+            let deleted = try ActionItemRecord
+                .filter(Column("deleted") == true)
+                .fetchCount(database)
+
+            // Category counts
+            var categories: [String: Int] = [:]
+            let categoryRows = try Row.fetchAll(database, sql: """
+                SELECT category, COUNT(*) as count FROM action_items
+                WHERE deleted = 0 AND category IS NOT NULL
+                GROUP BY category
+            """)
+            for row in categoryRows {
+                if let cat: String = row["category"], let count: Int = row["count"] {
+                    categories[cat] = count
+                }
+            }
+
+            // Source counts
+            var sources: [String: Int] = [:]
+            let sourceRows = try Row.fetchAll(database, sql: """
+                SELECT source, COUNT(*) as count FROM action_items
+                WHERE deleted = 0 AND source IS NOT NULL
+                GROUP BY source
+            """)
+            for row in sourceRows {
+                if let src: String = row["source"], let count: Int = row["count"] {
+                    sources[src] = count
+                }
+            }
+
+            // Priority counts
+            var priorities: [String: Int] = [:]
+            let priorityRows = try Row.fetchAll(database, sql: """
+                SELECT priority, COUNT(*) as count FROM action_items
+                WHERE deleted = 0 AND priority IS NOT NULL
+                GROUP BY priority
+            """)
+            for row in priorityRows {
+                if let pri: String = row["priority"], let count: Int = row["count"] {
+                    priorities[pri] = count
+                }
+            }
+
+            return (todo, done, deleted, categories, sources, priorities)
+        }
+    }
+
     /// Get an action item by local ID
     func getActionItem(id: Int64) async throws -> ActionItemRecord? {
         let db = try await ensureInitialized()
