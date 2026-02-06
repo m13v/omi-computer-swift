@@ -237,8 +237,8 @@ struct DesktopHomeView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTaskSettings)) { _ in
-            // Navigate to settings > general, then developer settings will open via SettingsContentView listener
-            selectedSettingsSection = .general
+            // Navigate to settings > advanced where Task Agent settings live
+            selectedSettingsSection = .advanced
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedIndex = SidebarNavItem.settings.rawValue
             }
