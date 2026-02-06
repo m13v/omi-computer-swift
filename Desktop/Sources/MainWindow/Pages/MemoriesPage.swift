@@ -327,6 +327,15 @@ class MemoriesViewModel: ObservableObject {
             currentOffset += newMemories.count
             hasMoreMemories = newMemories.count >= pageSize
             log("MemoriesViewModel: Loaded \(newMemories.count) more memories (total: \(memories.count))")
+
+            // Sync new memories to local cache in background
+            Task.detached(priority: .background) {
+                do {
+                    try await MemoryStorage.shared.syncServerMemories(newMemories)
+                } catch {
+                    logError("MemoriesViewModel: Failed to sync new memories to local cache", error: error)
+                }
+            }
         } catch {
             logError("Failed to load more memories", error: error)
         }
