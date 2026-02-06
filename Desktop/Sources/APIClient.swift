@@ -690,6 +690,12 @@ struct ActionItem: Codable, Identifiable {
     let completed: Bool
     let deleted: Bool
 
+    init(description: String, completed: Bool, deleted: Bool) {
+        self.description = description
+        self.completed = completed
+        self.deleted = deleted
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         description = try container.decodeIfPresent(String.self, forKey: .description) ?? ""
