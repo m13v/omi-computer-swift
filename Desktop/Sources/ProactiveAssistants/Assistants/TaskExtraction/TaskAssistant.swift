@@ -176,10 +176,7 @@ actor TaskAssistant: ProactiveAssistant {
             // Update SQLite record with backend ID
             if let recordId = extractionRecord?.id {
                 do {
-                    try await ProactiveStorage.shared.updateExtraction(
-                        id: recordId,
-                        updates: ExtractionUpdate(backendId: backendId, backendSynced: true)
-                    )
+                    try await ActionItemStorage.shared.markSynced(id: recordId, backendId: backendId)
                 } catch {
                     logError("Task: Failed to update sync status", error: error)
                 }
@@ -202,25 +199,44 @@ actor TaskAssistant: ProactiveAssistant {
         ])
     }
 
-    /// Save extracted task to SQLite
+    /// Save extracted task to SQLite using ActionItemStorage
     private func saveTaskToSQLite(
         task: ExtractedTask,
         screenshotId: Int64?,
         contextSummary: String
-    ) async -> ProactiveExtractionRecord? {
-        let record = ProactiveExtractionRecord(
+    ) async -> ActionItemRecord? {
+        // Build metadata JSON with extraction details
+        var metadata: [String: Any] = [
+            "category": task.category.rawValue,
+            "context_summary": contextSummary
+        ]
+        if let deadline = task.inferredDeadline {
+            metadata["inferred_deadline"] = deadline
+        }
+
+        let metadataJson: String?
+        if let data = try? JSONSerialization.data(withJSONObject: metadata),
+           let json = String(data: data, encoding: .utf8) {
+            metadataJson = json
+        } else {
+            metadataJson = nil
+        }
+
+        let record = ActionItemRecord(
+            backendSynced: false,
+            description: task.title,
+            source: "screenshot",
+            priority: task.priority.rawValue,
+            category: task.category.rawValue,
             screenshotId: screenshotId,
-            type: .task,
-            content: task.title,
             confidence: task.confidence,
-            reasoning: task.description,
             sourceApp: task.sourceApp,
             contextSummary: contextSummary,
-            priority: task.priority.rawValue
+            metadataJson: metadataJson
         )
 
         do {
-            let inserted = try await ProactiveStorage.shared.insertExtraction(record)
+            let inserted = try await ActionItemStorage.shared.insertLocalActionItem(record)
             log("Task: Saved to SQLite (id: \(inserted.id ?? -1))")
             return inserted
         } catch {
