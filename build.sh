@@ -2,7 +2,8 @@
 set -e
 
 # Build configuration
-APP_NAME="Omi Computer"
+BINARY_NAME="Omi Computer"  # Package.swift target — binary paths, CFBundleExecutable
+APP_NAME="Omi Beta"
 BUNDLE_ID="com.omi.computer-macos"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
@@ -17,7 +18,7 @@ mkdir -p "$BUILD_DIR"
 swift build -c release --package-path Desktop
 
 # Get the built binary path
-BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/$APP_NAME
+BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/$BINARY_NAME
 
 if [ ! -f "$BINARY_PATH" ]; then
     echo "Error: Binary not found at $BINARY_PATH"
@@ -31,7 +32,7 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy binary
-cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 
 # Copy Info.plist
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
@@ -40,9 +41,10 @@ cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
 
 # Update Info.plist with actual values
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy .env.app file (app runtime secrets only)
 if [ -f ".env.app" ]; then
