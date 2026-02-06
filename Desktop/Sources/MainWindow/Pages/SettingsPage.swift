@@ -86,8 +86,8 @@ struct SettingsContentView: View {
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
 
-    // Tier gating
-    @AppStorage("tierGatingEnabled") private var tierGatingEnabled = false
+    // Tier gating (0 = show all, 1-6 = sequential tiers)
+    @AppStorage("currentTierLevel") private var currentTierLevel = 0
 
     // Advanced stats
     @State private var advancedStats: UserStats?
@@ -142,6 +142,7 @@ struct SettingsContentView: View {
 
     // Multi-chat mode setting
     @AppStorage("multiChatEnabled") private var multiChatEnabled = false
+    @AppStorage("conversationsCompactView") private var conversationsCompactView = true
 
     // Launch at login manager
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
@@ -421,6 +422,34 @@ struct SettingsContentView: View {
                     Spacer()
 
                     Toggle("", isOn: $multiChatEnabled)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                }
+            }
+
+            // Conversation View toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Image(systemName: conversationsCompactView ? "list.bullet" : "list.bullet.rectangle")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Compact Conversations")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(conversationsCompactView
+                             ? "Showing compact conversation list"
+                             : "Showing expanded conversation list")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $conversationsCompactView)
                         .toggleStyle(.switch)
                         .labelsHidden()
                 }
@@ -1539,39 +1568,71 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    settingRow(title: "Enable Tier Gating", subtitle: "Only show tier 1 features in the sidebar") {
-                        Toggle("", isOn: $tierGatingEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
+                    // Tier picker — radio-style selector
+                    VStack(alignment: .leading, spacing: 6) {
+                        tierPickerRow(tier: 0, label: "Show All Features", subtitle: "Unlock everything")
+                        tierPickerRow(tier: 1, label: "Tier 1", subtitle: "Conversations + Rewind")
+                        tierPickerRow(tier: 2, label: "Tier 2", subtitle: "+ Memories (100 memories)")
+                        tierPickerRow(tier: 3, label: "Tier 3", subtitle: "+ Tasks (100 tasks)")
+                        tierPickerRow(tier: 4, label: "Tier 4", subtitle: "+ AI Chat (100 conversations)")
+                        tierPickerRow(tier: 5, label: "Tier 5", subtitle: "+ Dashboard (200 convos + 2K screenshots)")
+                        tierPickerRow(tier: 6, label: "Tier 6", subtitle: "+ Apps (300 conversations)")
                     }
 
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
+                    if currentTierLevel > 0 {
+                        Divider()
+                            .background(OmiColors.backgroundQuaternary)
 
-                    // Tier 1
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Tier 1 (Basic)")
+                        Text("Progress")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(OmiColors.textPrimary)
+                            .foregroundColor(OmiColors.textSecondary)
 
-                        tierFeatureRow(name: "Conversations", unlocked: true)
-                        tierFeatureRow(name: "Rewind", unlocked: true)
-                    }
+                        // Tier 1 — always unlocked
+                        tierFeatureRow(
+                            tier: 1, name: "Conversations + Rewind",
+                            requirement: "Always unlocked",
+                            progress: nil, unlocked: true
+                        )
 
-                    Divider()
-                        .background(OmiColors.backgroundQuaternary)
+                        // Tier 2 — 100 memories
+                        tierFeatureRow(
+                            tier: 2, name: "Memories",
+                            requirement: "100 memories",
+                            progress: advancedStats.map { "\($0.memoriesTotal) / 100" },
+                            unlocked: currentTierLevel >= 2
+                        )
 
-                    // Locked features
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Unlocked Later")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(OmiColors.textTertiary)
+                        // Tier 3 — 100 tasks
+                        tierFeatureRow(
+                            tier: 3, name: "Tasks",
+                            requirement: "100 tasks (todo + done)",
+                            progress: advancedStats.map { "\($0.tasksTodo + $0.tasksDone) / 100" },
+                            unlocked: currentTierLevel >= 3
+                        )
 
-                        tierFeatureRow(name: "Dashboard", unlocked: false)
-                        tierFeatureRow(name: "AI Chat", unlocked: false)
-                        tierFeatureRow(name: "Memories", unlocked: false)
-                        tierFeatureRow(name: "Tasks", unlocked: false)
-                        tierFeatureRow(name: "Apps", unlocked: false)
+                        // Tier 4 — 100 conversations
+                        tierFeatureRow(
+                            tier: 4, name: "AI Chat",
+                            requirement: "100 conversations",
+                            progress: advancedStats.map { "\($0.conversations) / 100" },
+                            unlocked: currentTierLevel >= 4
+                        )
+
+                        // Tier 5 — 200 conversations + 2,000 screenshots
+                        tierFeatureRow(
+                            tier: 5, name: "Dashboard",
+                            requirement: "200 conversations + 2K screenshots",
+                            progress: advancedStats.map { "\($0.conversations) / 200 convos, \($0.screenshotsTotal) / 2,000 screenshots" },
+                            unlocked: currentTierLevel >= 5
+                        )
+
+                        // Tier 6 — 300 conversations
+                        tierFeatureRow(
+                            tier: 6, name: "Apps",
+                            requirement: "300 conversations",
+                            progress: advancedStats.map { "\($0.conversations) / 300" },
+                            unlocked: currentTierLevel >= 6
+                        )
                     }
                 }
             }
@@ -1864,24 +1925,81 @@ struct SettingsContentView: View {
         }
     }
 
-    private func tierFeatureRow(name: String, unlocked: Bool) -> some View {
-        HStack {
-            Text(name)
-                .font(.system(size: 14))
-                .foregroundColor(unlocked ? OmiColors.textSecondary : OmiColors.textTertiary)
+    private func tierPickerRow(tier: Int, label: String, subtitle: String) -> some View {
+        let isSelected = currentTierLevel == tier
+        return Button(action: {
+            TierManager.shared.userDidSetTier(tier)
+        }) {
+            HStack(spacing: 10) {
+                Image(systemName: isSelected ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 16))
+                    .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary)
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(label)
+                        .font(.system(size: 14, weight: isSelected ? .medium : .regular))
+                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
 
-            if unlocked {
-                Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundColor(.green)
-            } else {
-                Image(systemName: "lock.fill")
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+            }
+            .padding(.vertical, 6)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
+            )
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func tierFeatureRow(tier: Int, name: String, requirement: String, progress: String?, unlocked: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Tier \(tier)")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(unlocked ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        RoundedRectangle(cornerRadius: 4)
+                            .fill(unlocked ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)
+                    )
+
+                Text(name)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(unlocked ? OmiColors.textPrimary : OmiColors.textTertiary)
+
+                Spacer()
+
+                if unlocked {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 14))
+                        .foregroundColor(.green)
+                } else {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
+            HStack(spacing: 8) {
+                Text(requirement)
                     .font(.system(size: 12))
                     .foregroundColor(OmiColors.textTertiary)
+
+                if let progress = progress, !unlocked {
+                    Text("(\(progress))")
+                        .font(.system(size: 12).monospacedDigit())
+                        .foregroundColor(OmiColors.textTertiary.opacity(0.7))
+                }
             }
         }
+        .padding(.vertical, 4)
     }
 
     private func statRow(label: String, value: Int) -> some View {
@@ -1925,7 +2043,7 @@ struct SettingsContentView: View {
 
             let screenshotCount: Int
             do {
-                screenshotCount = try RewindDatabase.shared.getScreenshotCount()
+                screenshotCount = try await RewindDatabase.shared.getScreenshotCount()
             } catch {
                 screenshotCount = 0
             }
