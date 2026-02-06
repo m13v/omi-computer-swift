@@ -254,11 +254,23 @@ class MemoriesViewModel: ObservableObject {
         currentOffset = 0
 
         // Step 1: Load from local cache first for instant display
+        // Use timeout to avoid blocking UI if database is initializing (e.g. recovery)
         do {
-            let cachedMemories = try await MemoryStorage.shared.getLocalMemories(
-                limit: pageSize,
-                offset: 0
-            )
+            let cachedMemories = try await withThrowingTaskGroup(of: [ServerMemory].self) { group in
+                group.addTask {
+                    try await MemoryStorage.shared.getLocalMemories(
+                        limit: self.pageSize,
+                        offset: 0
+                    )
+                }
+                group.addTask {
+                    try await Task.sleep(nanoseconds: 3_000_000_000) // 3 second timeout
+                    throw CancellationError()
+                }
+                let result = try await group.next()!
+                group.cancelAll()
+                return result
+            }
 
             if !cachedMemories.isEmpty {
                 memories = cachedMemories
@@ -268,7 +280,7 @@ class MemoriesViewModel: ObservableObject {
                 log("MemoriesViewModel: Loaded \(cachedMemories.count) memories from local cache")
             }
         } catch {
-            logError("MemoriesViewModel: Failed to load from local cache", error: error)
+            log("MemoriesViewModel: Local cache unavailable, falling back to API")
             // Continue to API fetch even if cache fails
         }
 
