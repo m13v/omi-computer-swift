@@ -7,9 +7,10 @@ set -e
 # This script mirrors reset-and-run.sh cleanup but uses production bundle ID
 ###############################################################################
 
-APP_NAME="Omi Computer"
+BINARY_NAME="Omi Computer"  # Package.swift target — binary paths, pkill, CFBundleExecutable
+APP_NAME="Omi Beta"
 BUNDLE_ID="com.omi.computer-macos"
-BUNDLE_ID_DEV="com.omi.computer-macos-dev"
+BUNDLE_ID_DEV="com.omi.desktop-dev"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
@@ -24,7 +25,7 @@ echo ""
 
 # Kill existing app
 echo "[1/7] Stopping existing app..."
-pkill -f "Omi Computer" 2>/dev/null || true
+pkill -f "$BINARY_NAME" 2>/dev/null || true
 pkill -f "Omi" 2>/dev/null || true
 sleep 1
 
@@ -39,6 +40,7 @@ tccutil reset All "$BUNDLE_ID_DEV" 2>/dev/null || true
 # Belt-and-suspenders: Also clean user TCC database directly via sqlite3
 # Note: System TCC database (Screen Recording) is SIP-protected - only tccutil can reset it
 sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.computer-macos%';" 2>/dev/null || true
+sqlite3 "$HOME/Library/Application Support/com.apple.TCC/TCC.db" "DELETE FROM access WHERE client LIKE '%com.omi.desktop%';" 2>/dev/null || true
 
 # =============================================================================
 # STEP 3: CLEAN ALL CONFLICTING APP BUNDLES
@@ -49,6 +51,8 @@ echo "[3/7] Cleaning up conflicting bundles..."
 rm -rf "$APP_PATH" 2>/dev/null || true
 rm -rf "$APP_BUNDLE" 2>/dev/null || true
 rm -rf "/Applications/Omi.app" 2>/dev/null || true
+rm -rf "/Applications/Omi Computer.app" 2>/dev/null || true
+rm -rf "/Applications/Omi Dev.app" 2>/dev/null || true
 rm -rf "$HOME/Desktop/Omi.app" 2>/dev/null || true
 rm -rf "$HOME/Downloads/Omi.app" 2>/dev/null || true
 
@@ -59,6 +63,14 @@ find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi.app" -type d 2>/dev/
     rm -rf "$app"
 done
 find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Computer.app" -type d 2>/dev/null | while read app; do
+    echo "    Removing: $app"
+    rm -rf "$app"
+done
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Beta.app" -type d 2>/dev/null | while read app; do
+    echo "    Removing: $app"
+    rm -rf "$app"
+done
+find "$HOME/Library/Developer/Xcode/DerivedData" -name "Omi Dev.app" -type d 2>/dev/null | while read app; do
     echo "    Removing: $app"
     rm -rf "$app"
 done
@@ -101,8 +113,8 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 mkdir -p "$APP_BUNDLE/Contents/Frameworks"
 
-BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/"$APP_NAME"
-cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$APP_NAME"
+BINARY_PATH=$(swift build -c release --package-path Desktop --show-bin-path)/"$BINARY_NAME"
+cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 
 # Copy Sparkle framework
 SPARKLE_FRAMEWORK="$(swift build -c release --package-path Desktop --show-bin-path)/Sparkle.framework"
@@ -111,7 +123,7 @@ if [ -d "$SPARKLE_FRAMEWORK" ]; then
 fi
 
 # Add rpath for Sparkle
-install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$APP_NAME" 2>/dev/null || true
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" 2>/dev/null || true
 
 # Copy resources
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
@@ -132,9 +144,10 @@ if [ -f ".env.app" ]; then
 fi
 
 # Update Info.plist with production bundle ID
-/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
-/usr/libexec/PlistBuddy -c "Set :CFBundleName Omi Computer" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
+/usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$APP_BUNDLE/Contents/Info.plist" 2>/dev/null || \
 /usr/libexec/PlistBuddy -c "Add :CFBundleShortVersionString string $VERSION" "$APP_BUNDLE/Contents/Info.plist"
 
