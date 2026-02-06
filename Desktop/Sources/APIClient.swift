@@ -1508,6 +1508,24 @@ extension APIClient {
         try await delete("v1/action-items/\(id)")
     }
 
+    /// Soft-deletes an action item (marks as deleted without removing from Firestore)
+    func softDeleteActionItem(id: String, deletedBy: String, reason: String, keptTaskId: String) async throws -> TaskActionItem {
+        struct SoftDeleteRequest: Encodable {
+            let deletedBy: String
+            let reason: String
+            let keptTaskId: String
+
+            enum CodingKeys: String, CodingKey {
+                case deletedBy = "deleted_by"
+                case reason
+                case keptTaskId = "kept_task_id"
+            }
+        }
+
+        let request = SoftDeleteRequest(deletedBy: deletedBy, reason: reason, keptTaskId: keptTaskId)
+        return try await post("v1/action-items/\(id)/soft-delete", body: request)
+    }
+
     /// Creates a new action item
     func createActionItem(
         description: String,
@@ -1729,6 +1747,16 @@ struct TaskActionItem: Codable, Identifiable {
     let metadata: String?
     /// Classification category: personal, work, feature, bug, code, research, communication, finance, health, other
     let category: String?
+    /// Soft-delete: true if this task has been deleted by AI dedup
+    let deleted: Bool?
+    /// Who deleted: "user", "ai_dedup"
+    let deletedBy: String?
+    /// When the task was soft-deleted
+    let deletedAt: Date?
+    /// AI reason for deletion (dedup explanation)
+    let deletedReason: String?
+    /// ID of the task that was kept instead of this one
+    let keptTaskId: String?
 
     // Agent execution tracking (stored locally, not synced to backend)
     var agentStatus: String?       // nil, "pending", "processing", "completed", "failed"
@@ -1739,12 +1767,16 @@ struct TaskActionItem: Codable, Identifiable {
     var agentCompletedAt: Date?    // When agent finished
 
     enum CodingKeys: String, CodingKey {
-        case id, description, completed, source, priority, metadata, category
+        case id, description, completed, source, priority, metadata, category, deleted
         case createdAt = "created_at"
         case updatedAt = "updated_at"
         case dueAt = "due_at"
         case completedAt = "completed_at"
         case conversationId = "conversation_id"
+        case deletedBy = "deleted_by"
+        case deletedAt = "deleted_at"
+        case deletedReason = "deleted_reason"
+        case keptTaskId = "kept_task_id"
     }
 
     init(from decoder: Decoder) throws {
@@ -1761,6 +1793,11 @@ struct TaskActionItem: Codable, Identifiable {
         priority = try container.decodeIfPresent(String.self, forKey: .priority)
         metadata = try container.decodeIfPresent(String.self, forKey: .metadata)
         category = try container.decodeIfPresent(String.self, forKey: .category)
+        deleted = try container.decodeIfPresent(Bool.self, forKey: .deleted)
+        deletedBy = try container.decodeIfPresent(String.self, forKey: .deletedBy)
+        deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
+        deletedReason = try container.decodeIfPresent(String.self, forKey: .deletedReason)
+        keptTaskId = try container.decodeIfPresent(String.self, forKey: .keptTaskId)
 
         // Agent fields are local-only, not decoded from API
         agentStatus = nil
