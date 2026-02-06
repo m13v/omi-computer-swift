@@ -8,6 +8,11 @@ actor RewindIndexer {
 
     private var isInitialized = false
 
+    /// Backoff state for initialization retries
+    private var initFailureCount = 0
+    private var nextRetryTime: Date = .distantPast
+    private static let maxBackoffSeconds: Double = 300 // Cap at 5 minutes
+
     // MARK: - Initialization
 
     private init() {}
@@ -25,22 +30,42 @@ actor RewindIndexer {
         try await RewindStorage.shared.initialize()
 
         isInitialized = true
+        initFailureCount = 0
         log("RewindIndexer: Initialized successfully")
+    }
+
+    /// Try to initialize with exponential backoff. Returns true if initialized.
+    private func ensureInitialized() async -> Bool {
+        if isInitialized { return true }
+
+        // Check backoff timer - skip if too soon after last failure
+        if Date() < nextRetryTime {
+            return false
+        }
+
+        do {
+            try await initialize()
+            return true
+        } catch {
+            initFailureCount += 1
+            // Exponential backoff: 2s, 4s, 8s, 16s, ... capped at 5 minutes
+            let backoffSeconds = min(pow(2.0, Double(initFailureCount)), Self.maxBackoffSeconds)
+            nextRetryTime = Date().addingTimeInterval(backoffSeconds)
+
+            // Only log every few failures to avoid spamming Sentry
+            if initFailureCount <= 3 || initFailureCount % 10 == 0 {
+                logError("RewindIndexer: Failed to initialize (attempt \(initFailureCount), next retry in \(Int(backoffSeconds))s): \(error)")
+            }
+            return false
+        }
     }
 
     // MARK: - Frame Processing
 
     /// Process a captured frame from ProactiveAssistantsPlugin
     func processFrame(_ frame: CapturedFrame) async {
-        // Ensure initialized
-        if !isInitialized {
-            do {
-                try await initialize()
-            } catch {
-                logError("RewindIndexer: Failed to initialize: \(error)")
-                return
-            }
-        }
+        // Ensure initialized with backoff
+        guard await ensureInitialized() else { return }
 
         do {
             // Convert JPEG to CGImage for video encoding
@@ -100,14 +125,7 @@ actor RewindIndexer {
 
     /// Process a frame with additional metadata (focus status, etc.)
     func processFrame(_ frame: CapturedFrame, focusStatus: String?, extractedTasks: [String]?, advice: String?) async {
-        if !isInitialized {
-            do {
-                try await initialize()
-            } catch {
-                logError("RewindIndexer: Failed to initialize: \(error)")
-                return
-            }
-        }
+        guard await ensureInitialized() else { return }
 
         do {
             // Convert JPEG to CGImage for video encoding
