@@ -103,6 +103,77 @@ actor MemoryStorage {
         }
     }
 
+    /// Get memories matching ANY of the specified tags (OR logic)
+    /// Used for filter dropdowns where selecting multiple tags shows items matching any tag
+    func getFilteredMemories(
+        limit: Int = 200,
+        offset: Int = 0,
+        matchAnyTag: [String]? = nil,     // OR logic: matches any of these tags
+        matchAnyCategory: [String]? = nil, // OR logic: matches any of these categories
+        excludeTags: [String]? = nil,      // Exclude memories containing these tags
+        includeDismissed: Bool = false
+    ) async throws -> [ServerMemory] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            // Build SQL for complex OR/AND logic
+            var conditions: [String] = ["deleted = 0"]
+            var arguments: [DatabaseValue] = []
+
+            if !includeDismissed {
+                conditions.append("isDismissed = 0")
+            }
+
+            // Tag OR conditions
+            if let tags = matchAnyTag, !tags.isEmpty {
+                let tagConditions = tags.map { _ in "tagsJson LIKE ?" }.joined(separator: " OR ")
+                conditions.append("(\(tagConditions))")
+                for tag in tags {
+                    if let dbValue = DatabaseValue(value: "%\"\(tag)\"%") {
+                        arguments.append(dbValue)
+                    }
+                }
+            }
+
+            // Category OR conditions
+            if let categories = matchAnyCategory, !categories.isEmpty {
+                let placeholders = categories.map { _ in "?" }.joined(separator: ", ")
+                conditions.append("category IN (\(placeholders))")
+                for cat in categories {
+                    if let dbValue = DatabaseValue(value: cat) {
+                        arguments.append(dbValue)
+                    }
+                }
+            }
+
+            // Exclude tags
+            if let excludeTags = excludeTags, !excludeTags.isEmpty {
+                for tag in excludeTags {
+                    conditions.append("tagsJson NOT LIKE ?")
+                    if let dbValue = DatabaseValue(value: "%\"\(tag)\"%") {
+                        arguments.append(dbValue)
+                    }
+                }
+            }
+
+            let sql = """
+                SELECT * FROM memories
+                WHERE \(conditions.joined(separator: " AND "))
+                ORDER BY createdAt DESC
+                LIMIT ? OFFSET ?
+            """
+            if let limitValue = DatabaseValue(value: limit) {
+                arguments.append(limitValue)
+            }
+            if let offsetValue = DatabaseValue(value: offset) {
+                arguments.append(offsetValue)
+            }
+
+            let records = try MemoryRecord.fetchAll(database, sql: sql, arguments: StatementArguments(arguments))
+            return records.compactMap { $0.toServerMemory() }
+        }
+    }
+
     /// Search memories by content text (case-insensitive)
     /// Queries SQLite directly for efficient full-database search
     func searchLocalMemories(
@@ -224,8 +295,7 @@ actor MemoryStorage {
                 return recordId
             } else {
                 // Insert new record
-                var newRecord = MemoryRecord.from(memory)
-                try newRecord.insert(database)
+                let newRecord = try MemoryRecord.from(memory).inserted(database)
                 guard let recordId = newRecord.id else {
                     throw MemoryStorageError.syncFailed("Record ID is nil after insert")
                 }
@@ -247,8 +317,7 @@ actor MemoryStorage {
                     existingRecord.updateFrom(memory)
                     try existingRecord.update(database)
                 } else {
-                    var newRecord = MemoryRecord.from(memory)
-                    try newRecord.insert(database)
+                    _ = try MemoryRecord.from(memory).inserted(database)
                 }
             }
         }
