@@ -163,6 +163,8 @@ class DashboardViewModel: ObservableObject {
 
 struct DashboardPage: View {
     @ObservedObject var viewModel: DashboardViewModel
+    @ObservedObject var appState: AppState
+    @Binding var selectedIndex: Int
 
     var body: some View {
         ScrollView {
@@ -218,9 +220,25 @@ struct DashboardPage: View {
                     }
                     .frame(maxWidth: .infinity)
 
-                    // Right column: Focus + Goals
+                    // Right column: Focus + Recent Conversations + Goals
                     VStack(spacing: 20) {
-                        FocusSummaryWidget(stats: FocusStorage.shared.todayStats)
+                        FocusSummaryWidget(
+                            todayStats: FocusStorage.shared.todayStats,
+                            totalStats: FocusStorage.shared.allTimeStats
+                        )
+
+                        RecentConversationsWidget(
+                            conversations: Array(appState.conversations.prefix(5)),
+                            folders: appState.folders,
+                            onViewAll: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    selectedIndex = SidebarNavItem.conversations.rawValue
+                                }
+                            },
+                            onMoveToFolder: { id, folderId in
+                                await appState.moveConversationToFolder(id, folderId: folderId)
+                            }
+                        )
 
                         GoalsWidget(
                             goals: viewModel.goals,
@@ -267,7 +285,7 @@ struct DashboardPage: View {
 }
 
 #Preview {
-    DashboardPage(viewModel: DashboardViewModel())
+    DashboardPage(viewModel: DashboardViewModel(), appState: AppState(), selectedIndex: .constant(0))
         .frame(width: 800, height: 600)
         .background(OmiColors.backgroundPrimary)
 }
