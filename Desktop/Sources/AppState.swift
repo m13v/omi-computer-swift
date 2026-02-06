@@ -1661,7 +1661,7 @@ class AppState: ObservableObject {
                 prodDefaults.removeObject(forKey: key)
             }
         }
-        if let devDefaults = UserDefaults(suiteName: "com.omi.computer-macos-dev") {
+        if let devDefaults = UserDefaults(suiteName: "com.omi.desktop-dev") {
             for key in onboardingKeys {
                 devDefaults.removeObject(forKey: key)
             }
@@ -1670,7 +1670,7 @@ class AppState: ObservableObject {
         // 6. Reset ALL TCC permissions using tccutil for BOTH bundle IDs
         let bundleIds = [
             "com.omi.computer-macos",       // Production
-            "com.omi.computer-macos-dev"    // Development
+            "com.omi.desktop-dev"           // Development
         ]
 
         for id in bundleIds {
@@ -1827,6 +1827,21 @@ class AppState: ObservableObject {
             log("User TCC database cleaned (exit code: \(process.terminationStatus))")
         } catch {
             log("Failed to clean user TCC database: \(error.localizedDescription)")
+        }
+
+        // Also clean entries for new dev bundle ID pattern (com.omi.desktop-dev)
+        let process2 = Process()
+        process2.executableURL = URL(fileURLWithPath: "/usr/bin/sqlite3")
+        process2.arguments = [tccDbPath, "DELETE FROM access WHERE client LIKE '%com.omi.desktop%';"]
+        process2.standardOutput = FileHandle.nullDevice
+        process2.standardError = FileHandle.nullDevice
+
+        do {
+            try process2.run()
+            process2.waitUntilExit()
+            log("User TCC database cleaned for desktop-dev (exit code: \(process2.terminationStatus))")
+        } catch {
+            log("Failed to clean user TCC database for desktop-dev: \(error.localizedDescription)")
         }
     }
 
