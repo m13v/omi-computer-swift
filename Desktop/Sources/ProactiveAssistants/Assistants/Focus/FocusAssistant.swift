@@ -45,6 +45,11 @@ actor FocusAssistant: ProactiveAssistant {
     // from parallel frame analysis (only notify on state change)
     private var lastNotifiedState: FocusStatus?
 
+    // MARK: - Error Backoff
+    // Prevents infinite retry loops when Gemini consistently rejects content (e.g. safety filter)
+    private var consecutiveErrorCount = 0
+    private var errorBackoffEndTime: Date?
+
     /// Get the current system prompt from settings (accessed on MainActor for thread safety)
     private var systemPrompt: String {
         get async {
@@ -135,18 +140,74 @@ actor FocusAssistant: ProactiveAssistant {
         return nil
     }
 
+    /// Normalize a window title by stripping cosmetic noise (spinners, timers, terminal dimensions)
+    /// so that rapid updates from apps like Claude Code or Toggl don't trigger re-analysis.
+    private func normalizeWindowTitle(_ title: String?) -> String? {
+        guard var result = title else { return nil }
+
+        // Strip Braille spinner characters (U+2800-U+28FF)
+        result = result.unicodeScalars.filter { !($0.value >= 0x2800 && $0.value <= 0x28FF) }
+            .reduce(into: "") { $0.append(String($1)) }
+
+        // Strip common spinner/progress characters
+        let spinnerChars: Set<Character> = ["✳", "↻", "◐", "◑", "◒", "◓", "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
+                                             "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷",
+                                             "◴", "◷", "◶", "◵", "◰", "◳", "◲", "◱",
+                                             "▖", "▘", "▝", "▗", "⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"]
+        result = String(result.filter { !spinnerChars.contains($0) })
+
+        // Strip timer patterns like "12:34", "1:23:45", "00:05:23"
+        result = result.replacingOccurrences(
+            of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Strip terminal dimension patterns like "80×24", "60x88"
+        result = result.replacingOccurrences(
+            of: #"\b\d+[×x]\d+\b"#,
+            with: "",
+            options: .regularExpression
+        )
+
+        // Collapse whitespace
+        result = result.replacingOccurrences(
+            of: #"\s+"#,
+            with: " ",
+            options: .regularExpression
+        ).trimmingCharacters(in: .whitespaces)
+
+        return result.isEmpty ? nil : result
+    }
+
     /// Determines if we should skip analysis for this frame
     /// Returns true if:
     /// - User is focused on the same app AND same window title
     /// - OR we're in cooldown period after distraction (unless context changed)
+    /// - OR we're in error backoff period
     private func shouldSkipAnalysis(for frame: CapturedFrame) -> Bool {
+        // Check error backoff FIRST (before the lastStatus guard)
+        // This prevents infinite retry loops when lastStatus is nil due to repeated errors
+        if let backoffEnd = errorBackoffEndTime {
+            if Date() < backoffEnd {
+                return true
+            } else {
+                // Backoff expired, allow retry
+                errorBackoffEndTime = nil
+                log("Focus: Error backoff expired, allowing retry")
+            }
+        }
+
         // Always analyze if we don't have a status yet
         guard lastStatus != nil else {
             return false
         }
 
         // Check if context changed (app or window title different from last analysis)
-        let contextChanged = frame.appName != lastAnalyzedApp || frame.windowTitle != lastAnalyzedWindowTitle
+        // Compare normalized titles so spinner/timer updates don't trigger re-analysis
+        let normalizedFrameTitle = normalizeWindowTitle(frame.windowTitle)
+        let normalizedLastTitle = normalizeWindowTitle(lastAnalyzedWindowTitle)
+        let contextChanged = frame.appName != lastAnalyzedApp || normalizedFrameTitle != normalizedLastTitle
 
         // Check 1: Context switch - ALWAYS analyze (bypass cooldown)
         if contextChanged {
@@ -233,6 +294,8 @@ actor FocusAssistant: ProactiveAssistant {
         lastStatus = nil
         lastNotifiedState = nil
         analysisCooldownEndTime = nil
+        consecutiveErrorCount = 0
+        errorBackoffEndTime = nil
 
         // Clear cooldown in UI
         await MainActor.run {
@@ -293,6 +356,10 @@ actor FocusAssistant: ProactiveAssistant {
             guard let analysis = try await analyzeScreenshot(jpegData: frame.jpegData) else {
                 return
             }
+
+            // Success — reset error backoff
+            consecutiveErrorCount = 0
+            errorBackoffEndTime = nil
 
             // Skip stale frames - a newer frame was processed while we were waiting for API
             guard frame.frameNumber > lastProcessedFrameNum else {
@@ -408,7 +475,10 @@ actor FocusAssistant: ProactiveAssistant {
                 }
             }
         } catch {
-            logError("Frame \(frame.frameNumber) error", error: error)
+            consecutiveErrorCount += 1
+            let backoffSeconds = min(5.0 * pow(2.0, Double(consecutiveErrorCount - 1)), 300.0) // 5s, 10s, 20s, 40s... cap 5min
+            errorBackoffEndTime = Date().addingTimeInterval(backoffSeconds)
+            logError("Frame \(frame.frameNumber) error (consecutive: \(consecutiveErrorCount), backoff: \(Int(backoffSeconds))s)", error: error)
         }
     }
 
