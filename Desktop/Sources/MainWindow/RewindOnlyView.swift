@@ -8,7 +8,21 @@ struct RewindOnlyView: View {
 
     var body: some View {
         Group {
-            if !authState.isSignedIn {
+            if authState.isRestoringAuth {
+                VStack(spacing: 16) {
+                    if let iconURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                       let nsImage = NSImage(contentsOf: iconURL) {
+                        Image(nsImage: nsImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 64, height: 64)
+                    }
+                    ProgressView()
+                        .scaleEffect(0.8)
+                        .tint(.white.opacity(0.6))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if !authState.isSignedIn {
                 // Not signed in - show sign in view
                 SignInView(authState: authState)
                     .onAppear {
