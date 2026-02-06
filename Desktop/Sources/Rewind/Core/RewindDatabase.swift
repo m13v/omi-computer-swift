@@ -132,12 +132,11 @@ actor RewindDatabase {
     /// Check if database file is corrupted using quick_check
     /// Returns true if corrupted, false if OK
     private func checkDatabaseCorruption(at path: String) async -> Bool {
-        // Try to open database with minimal config just for integrity check
-        var config = Configuration()
-        config.readonly = true
-
+        // Open in read-write mode (NOT readonly) because WAL recovery requires write access.
+        // Opening readonly with a pending WAL file causes SQLITE_CANTOPEN (error 14),
+        // which is a false positive - the database isn't actually corrupted.
         do {
-            let testQueue = try DatabaseQueue(path: path, configuration: config)
+            let testQueue = try DatabaseQueue(path: path)
             let result = try await testQueue.read { db -> String in
                 try String.fetchOne(db, sql: "PRAGMA quick_check(1)") ?? "ok"
             }
