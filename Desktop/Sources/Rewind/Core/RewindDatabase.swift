@@ -75,6 +75,10 @@ actor RewindDatabase {
 
         // Check for and handle database corruption before opening
         if FileManager.default.fileExists(atPath: dbPath) {
+            // First, try to clean up stale WAL/SHM files that can cause disk I/O errors (SQLite error 10)
+            // This is a common issue when the app crashes and leaves behind WAL files
+            cleanupStaleWALFiles(at: dbPath)
+
             let isCorrupted = await checkDatabaseCorruption(at: dbPath)
             if isCorrupted {
                 log("RewindDatabase: Database corruption detected, attempting recovery...")
@@ -97,7 +101,7 @@ actor RewindDatabase {
             } catch {
                 // WAL mode failed - log but continue with default journal mode
                 // This can happen with disk I/O errors, permission issues, or full disk
-                print("RewindDatabase: WAL mode unavailable (\(error.localizedDescription)), using default journal mode")
+                log("RewindDatabase: WAL mode unavailable (\(error.localizedDescription)), using default journal mode")
             }
 
             // Enable foreign keys (required)
@@ -107,7 +111,15 @@ actor RewindDatabase {
             try db.execute(sql: "PRAGMA busy_timeout = 5000")
         }
 
-        let queue = try DatabaseQueue(path: dbPath, configuration: config)
+        let queue: DatabaseQueue
+        do {
+            queue = try DatabaseQueue(path: dbPath, configuration: config)
+        } catch {
+            // If opening fails (e.g. disk I/O error on WAL), try once more without WAL files
+            log("RewindDatabase: Failed to open database: \(error), cleaning WAL and retrying...")
+            removeWALFiles(at: dbPath)
+            queue = try DatabaseQueue(path: dbPath, configuration: config)
+        }
         dbQueue = queue
 
         try migrate(queue)
@@ -145,6 +157,36 @@ actor RewindDatabase {
             // If we can't even open the database, it's definitely corrupted
             log("RewindDatabase: Database failed to open for integrity check: \(error)")
             return true
+        }
+    }
+
+    /// Clean up stale WAL/SHM files that can cause disk I/O errors (SQLite error 10, code 3850)
+    /// This happens when the app crashes and leaves behind WAL files that are in a bad state
+    private func cleanupStaleWALFiles(at dbPath: String) {
+        let walPath = dbPath + "-wal"
+        let shmPath = dbPath + "-shm"
+        let fileManager = FileManager.default
+
+        // Only clean up if WAL file exists and is empty (indicates stale/orphaned WAL)
+        // Non-empty WAL files may contain uncommitted data we don't want to lose
+        if fileManager.fileExists(atPath: walPath),
+           let attrs = try? fileManager.attributesOfItem(atPath: walPath),
+           let size = attrs[.size] as? Int64, size == 0 {
+            try? fileManager.removeItem(atPath: walPath)
+            try? fileManager.removeItem(atPath: shmPath)
+            log("RewindDatabase: Cleaned up stale empty WAL/SHM files")
+        }
+    }
+
+    /// Force-remove WAL/SHM files (last resort when database won't open)
+    private func removeWALFiles(at dbPath: String) {
+        let fileManager = FileManager.default
+        for ext in ["-wal", "-shm"] {
+            let filePath = dbPath + ext
+            if fileManager.fileExists(atPath: filePath) {
+                try? fileManager.removeItem(atPath: filePath)
+                log("RewindDatabase: Removed \(ext) file for recovery")
+            }
         }
     }
 
