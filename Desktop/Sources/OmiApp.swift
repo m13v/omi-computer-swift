@@ -35,6 +35,7 @@ class AuthState: ObservableObject {
 
     @Published var isSignedIn: Bool
     @Published var isLoading: Bool = false
+    @Published var isRestoringAuth: Bool = true
     @Published var error: String?
     @Published var userEmail: String?
 
@@ -44,8 +45,10 @@ class AuthState: ObservableObject {
         let savedEmail = UserDefaults.standard.string(forKey: Self.kAuthUserEmail)
         self.isSignedIn = savedSignedIn
         self.userEmail = savedEmail
-        NSLog("OMI AuthState: Initialized with savedSignedIn=%@, email=%@",
-              savedSignedIn ? "true" : "false", savedEmail ?? "nil")
+        // Show loading splash while Firebase restores session (only if user was previously signed in)
+        self.isRestoringAuth = savedSignedIn
+        NSLog("OMI AuthState: Initialized with savedSignedIn=%@, email=%@, isRestoringAuth=%@",
+              savedSignedIn ? "true" : "false", savedEmail ?? "nil", self.isRestoringAuth ? "true" : "false")
     }
 
     func update(isSignedIn: Bool, userEmail: String? = nil) {
