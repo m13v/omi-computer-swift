@@ -201,6 +201,10 @@ class TasksStore: ObservableObject {
     /// Legacy method - loads incomplete tasks with recent filter
     func loadTasks() async {
         await loadIncompleteTasks(showAll: isShowingAllIncompleteTasks)
+        // Also load deleted tasks so the "Removed by AI" filter count is ready
+        if !hasLoadedDeleted {
+            await loadDeletedTasks()
+        }
     }
 
     /// Load incomplete tasks (To Do)
