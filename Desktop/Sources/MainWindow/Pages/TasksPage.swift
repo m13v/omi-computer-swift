@@ -41,6 +41,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     // Status
     case todo
     case done
+    case removedByAI
 
     // Category (matches TaskClassification)
     case personal
@@ -69,7 +70,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
 
     var group: TaskFilterGroup {
         switch self {
-        case .todo, .done: return .status
+        case .todo, .done, .removedByAI: return .status
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
         case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
@@ -80,6 +81,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo: return "To Do"
         case .done: return "Done"
+        case .removedByAI: return "Removed by AI"
         case .personal: return "Personal"
         case .work: return "Work"
         case .feature: return "Feature"
@@ -104,6 +106,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo: return "circle"
         case .done: return "checkmark.circle.fill"
+        case .removedByAI: return "trash.slash"
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
         case .feature: return "sparkles"
@@ -129,6 +132,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo: return !task.completed
         case .done: return task.completed
+        case .removedByAI: return task.deleted == true
         case .personal: return task.category == "personal"
         case .work: return task.category == "work"
         case .feature: return task.category == "feature"
@@ -207,9 +211,14 @@ class TasksViewModel: ObservableObject {
             if hasStatusFilter {
                 let wantsDone = selectedTags.contains(.done)
                 let wantsTodo = selectedTags.contains(.todo)
-                if wantsDone && !wantsTodo && !showCompleted {
+                let wantsDeleted = selectedTags.contains(.removedByAI)
+                if wantsDeleted {
+                    // Load deleted tasks from server
+                    Task { await store.loadDeletedTasks() }
+                }
+                if wantsDone && !wantsTodo && !wantsDeleted && !showCompleted {
                     showCompleted = true
-                } else if wantsTodo && !wantsDone && showCompleted {
+                } else if wantsTodo && !wantsDone && !wantsDeleted && showCompleted {
                     showCompleted = false
                 } else if wantsDone && wantsTodo {
                     // Both selected - load both
@@ -391,15 +400,31 @@ class TasksViewModel: ObservableObject {
 
     /// Get the source tasks based on current view (completed vs incomplete)
     private func getSourceTasks() -> [TaskActionItem] {
-        // If both status tags selected or no status tags, combine both lists
         let statusTags = selectedTags.filter { $0.group == .status }
-        if statusTags.isEmpty || (statusTags.contains(.todo) && statusTags.contains(.done)) {
-            return store.incompleteTasks + store.completedTasks
-        } else if statusTags.contains(.done) {
-            return store.completedTasks
-        } else {
-            return store.incompleteTasks
+
+        // If removedByAI is the only status filter, show only deleted tasks
+        if statusTags.contains(.removedByAI) && !statusTags.contains(.todo) && !statusTags.contains(.done) {
+            return store.deletedTasks
         }
+
+        // Build combined list from selected status filters
+        var result: [TaskActionItem] = []
+        if statusTags.isEmpty || statusTags.contains(.todo) || statusTags.contains(.done) {
+            if statusTags.isEmpty || (statusTags.contains(.todo) && statusTags.contains(.done)) {
+                result = store.incompleteTasks + store.completedTasks
+            } else if statusTags.contains(.done) {
+                result = store.completedTasks
+            } else {
+                result = store.incompleteTasks
+            }
+        }
+
+        // If removedByAI is also selected alongside other status tags, include deleted
+        if statusTags.contains(.removedByAI) {
+            result += store.deletedTasks
+        }
+
+        return result
     }
 
     /// Apply selected filter tags to tasks (non-status tags)
@@ -423,11 +448,16 @@ class TasksViewModel: ObservableObject {
         todoCount = store.incompleteTasks.count
         doneCount = store.completedTasks.count
 
-        // Recompute tag counts from all tasks
+        // Recompute tag counts from all tasks (incomplete + completed)
         let allTasks = store.incompleteTasks + store.completedTasks
         var counts: [TaskFilterTag: Int] = [:]
         for tag in TaskFilterTag.allCases {
-            counts[tag] = allTasks.filter { tag.matches($0) }.count
+            if tag == .removedByAI {
+                // Deleted tasks come from a separate list
+                counts[tag] = store.deletedTasks.count
+            } else {
+                counts[tag] = allTasks.filter { tag.matches($0) }.count
+            }
         }
         tagCounts = counts
 
@@ -1114,9 +1144,10 @@ struct TasksPage: View {
         ScrollView {
             LazyVStack(spacing: 16) {
                 // Show tasks grouped by category when sorting by due date
-                // Show category grouping when sorting by due date and not viewing only completed tasks
+                // Show category grouping when sorting by due date and not viewing only completed/deleted tasks
                 let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
-                if viewModel.sortOption == .dueDate && !onlyDone && !viewModel.isMultiSelectMode {
+                let onlyDeleted = viewModel.selectedTags.contains(.removedByAI) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
+                if viewModel.sortOption == .dueDate && !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
                     ForEach(TaskCategory.allCases, id: \.self) { category in
                         let tasksInCategory = viewModel.categorizedTasks[category] ?? []
                         if !tasksInCategory.isEmpty {
@@ -1373,7 +1404,7 @@ struct TaskRow: View {
                 .gesture(
                     DragGesture(minimumDistance: 10, coordinateSpace: .local)
                         .onChanged { value in
-                            guard !viewModel.isMultiSelectMode else { return }
+                            guard !viewModel.isMultiSelectMode, !isDeletedTask else { return }
                             isDragging = true
 
                             // Apply resistance at the edges
@@ -1494,6 +1525,11 @@ struct TaskRow: View {
         }
     }
 
+    /// Whether this task is soft-deleted
+    private var isDeletedTask: Bool {
+        task.deleted == true
+    }
+
     private var taskRowContent: some View {
         HStack(alignment: .center, spacing: 12) {
             // Indent visual (vertical line for indented tasks)
@@ -1508,8 +1544,15 @@ struct TaskRow: View {
                 }
                 .frame(width: indentPadding)
             }
-            // Multi-select checkbox or completion checkbox
-            if viewModel.isMultiSelectMode {
+
+            if isDeletedTask {
+                // Deleted tasks: show trash icon instead of checkbox
+                Image(systemName: "trash.slash")
+                    .font(.system(size: 14))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .frame(width: 24, height: 24)
+            } else if viewModel.isMultiSelectMode {
+                // Multi-select checkbox
                 Button {
                     viewModel.toggleTaskSelection(task)
                 } label: {
@@ -1561,8 +1604,24 @@ struct TaskRow: View {
                 .buttonStyle(.plain)
             }
 
-            // Task content - inline editable
-            if isEditing && !viewModel.isMultiSelectMode {
+            // Task content
+            if isDeletedTask {
+                // Deleted task: strikethrough description + reason
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(task.description)
+                        .font(.system(size: 14))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .strikethrough(true, color: OmiColors.textTertiary)
+
+                    if let reason = task.deletedReason {
+                        Text(reason)
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textQuaternary)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else if isEditing && !viewModel.isMultiSelectMode {
                 // Inline text field
                 TextField("Task description", text: $editText, axis: .vertical)
                     .textFieldStyle(.plain)
@@ -1660,8 +1719,8 @@ struct TaskRow: View {
 
             Spacer(minLength: 0)
 
-            // Hover actions: agent, indent controls, and delete
-            if isHovering && !viewModel.isMultiSelectMode {
+            // Hover actions: agent, indent controls, and delete (not for deleted tasks)
+            if isHovering && !viewModel.isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
                     // Agent button (for code-related tasks)
                     if task.shouldTriggerAgent {
