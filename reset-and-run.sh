@@ -90,7 +90,7 @@ set -e
 #   swift -e 'import CoreGraphics; print(CGPreflightScreenCaptureAccess())'
 #
 # Manually reset all TCC for a bundle:
-#   tccutil reset All com.omi.computer-macos.development
+#   tccutil reset All com.omi.computer-macos-dev
 #
 ###############################################################################
 
@@ -99,7 +99,7 @@ unset OPENAI_API_KEY
 
 # App configuration
 APP_NAME="Omi Computer"
-BUNDLE_ID="com.omi.computer-macos.development"
+BUNDLE_ID="com.omi.computer-macos-dev"
 BUILD_DIR="build"
 APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 APP_PATH="/Applications/$APP_NAME.app"
@@ -143,7 +143,7 @@ rm -f /tmp/omi.log 2>/dev/null || true
 # but doesn't actually reset anything.
 #
 # We reset BOTH bundle IDs:
-# - Development: com.omi.computer-macos.development (this script's builds)
+# - Development: com.omi.computer-macos-dev (this script's builds)
 # - Production: com.omi.computer-macos (release DMG builds)
 #
 # Using "reset All" instead of individual services (ScreenCapture, Microphone, etc.)
