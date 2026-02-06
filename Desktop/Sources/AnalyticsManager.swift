@@ -614,6 +614,13 @@ class AnalyticsManager {
         PostHogManager.shared.menuBarActionClicked(action: action)
     }
 
+    // MARK: - Tier Events
+
+    func tierChanged(tier: Int, reason: String) {
+        MixpanelManager.shared.tierChanged(tier: tier, reason: reason)
+        PostHogManager.shared.tierChanged(tier: tier, reason: reason)
+    }
+
     // MARK: - Display Info
 
     /// Track display characteristics (notch, screen size, etc.)
