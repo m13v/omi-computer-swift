@@ -95,7 +95,7 @@ actor TaskDeduplicationService {
         // 2. Send all tasks to Gemini in a single call
         let totalDeleted = await analyzeAndDeleteDuplicates(tasks: tasks, client: client)
 
-        log("TaskDedup: Run complete. Deleted \(totalDeleted) duplicate tasks.")
+        log("TaskDedup: Run complete. Soft-deleted \(totalDeleted) duplicate tasks.")
     }
 
     private func analyzeAndDeleteDuplicates(tasks: [TaskActionItem], client: GeminiClient) async -> Int {
@@ -236,13 +236,18 @@ actor TaskDeduplicationService {
                     log("TaskDedup: Failed to log deletion record: \(error)")
                 }
 
-                // Delete from backend
+                // Soft-delete from backend (mark as deleted, not removed)
                 do {
-                    try await APIClient.shared.deleteActionItem(id: deleteId)
+                    _ = try await APIClient.shared.softDeleteActionItem(
+                        id: deleteId,
+                        deletedBy: "ai_dedup",
+                        reason: group.reason,
+                        keptTaskId: group.keepId
+                    )
                     deletedCount += 1
-                    log("TaskDedup: Deleted '\(deletedTask?.description ?? deleteId)' (kept: '\(keptTask?.description ?? group.keepId)') - \(group.reason)")
+                    log("TaskDedup: Soft-deleted '\(deletedTask?.description ?? deleteId)' (kept: '\(keptTask?.description ?? group.keepId)') - \(group.reason)")
                 } catch {
-                    log("TaskDedup: Failed to delete task \(deleteId): \(error)")
+                    log("TaskDedup: Failed to soft-delete task \(deleteId): \(error)")
                 }
             }
         }
