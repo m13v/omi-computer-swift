@@ -38,6 +38,10 @@ pub struct Config {
     pub redis_port: u16,
     /// Redis password
     pub redis_password: Option<String>,
+    /// PostHog Personal API Key (for querying analytics)
+    pub posthog_api_key: Option<String>,
+    /// PostHog Project ID
+    pub posthog_project_id: String,
 }
 
 impl Config {
@@ -69,6 +73,9 @@ impl Config {
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(6379),
             redis_password: env::var("REDIS_DB_PASSWORD").ok(),
+            posthog_api_key: env::var("POSTHOG_PERSONAL_API_KEY").ok(),
+            posthog_project_id: env::var("POSTHOG_PROJECT_ID")
+                .unwrap_or_else(|_| "302298".to_string()),
         }
     }
 
