@@ -116,6 +116,34 @@ actor GoalsAIService {
             .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
     }
 
+    // MARK: - Extract Progress from All Goals
+
+    /// Extract progress for all active goals from text (e.g., after chat or conversation)
+    func extractProgressFromAllGoals(text: String) async {
+        guard text.count >= 10 else { return }
+
+        do {
+            let goals = try await APIClient.shared.getGoals()
+            guard !goals.isEmpty else { return }
+
+            log("GoalsAI: Checking \(goals.count) goals for progress in text (\(text.prefix(50))...)")
+
+            for goal in goals {
+                do {
+                    if let result = try await extractProgress(text: text, goal: goal, updateIfFound: true),
+                       result.found, let value = result.value {
+                        log("GoalsAI: Found progress for '\(goal.title)': \(value)")
+                    }
+                } catch {
+                    // Swallow per-goal errors to continue checking other goals
+                    log("GoalsAI: Error extracting progress for '\(goal.title)': \(error.localizedDescription)")
+                }
+            }
+        } catch {
+            log("GoalsAI: Failed to fetch goals for progress extraction: \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Extract Progress
 
     /// Extract goal progress from text and optionally update via API
