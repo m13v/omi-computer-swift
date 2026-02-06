@@ -1784,6 +1784,57 @@ struct TaskActionItem: Codable, Identifiable {
         case keptTaskId = "kept_task_id"
     }
 
+    /// Memberwise initializer for creating instances programmatically
+    init(
+        id: String,
+        description: String,
+        completed: Bool,
+        createdAt: Date,
+        updatedAt: Date? = nil,
+        dueAt: Date? = nil,
+        completedAt: Date? = nil,
+        conversationId: String? = nil,
+        source: String? = nil,
+        priority: String? = nil,
+        metadata: String? = nil,
+        category: String? = nil,
+        deleted: Bool? = nil,
+        deletedBy: String? = nil,
+        deletedAt: Date? = nil,
+        deletedReason: String? = nil,
+        keptTaskId: String? = nil,
+        agentStatus: String? = nil,
+        agentPrompt: String? = nil,
+        agentPlan: String? = nil,
+        agentSessionId: String? = nil,
+        agentStartedAt: Date? = nil,
+        agentCompletedAt: Date? = nil
+    ) {
+        self.id = id
+        self.description = description
+        self.completed = completed
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.dueAt = dueAt
+        self.completedAt = completedAt
+        self.conversationId = conversationId
+        self.source = source
+        self.priority = priority
+        self.metadata = metadata
+        self.category = category
+        self.deleted = deleted
+        self.deletedBy = deletedBy
+        self.deletedAt = deletedAt
+        self.deletedReason = deletedReason
+        self.keptTaskId = keptTaskId
+        self.agentStatus = agentStatus
+        self.agentPrompt = agentPrompt
+        self.agentPlan = agentPlan
+        self.agentSessionId = agentSessionId
+        self.agentStartedAt = agentStartedAt
+        self.agentCompletedAt = agentCompletedAt
+    }
+
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
