@@ -301,8 +301,8 @@ done
 echo "Building app..."
 swift build -c debug --package-path Desktop
 
-# Remove old app bundle to avoid permission issues with signed apps
-rm -rf "$APP_BUNDLE"
+# Remove old app bundles to avoid permission issues with signed apps
+rm -rf "$APP_BUNDLE" "$BUILD_DIR/Omi Computer.app" "$BUILD_DIR/Omi Beta.app"
 
 # Create app bundle
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
