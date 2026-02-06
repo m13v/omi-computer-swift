@@ -68,7 +68,7 @@ pub use persona::{
     UsernameAvailableResponse,
 };
 pub use knowledge_graph::{
-    ExtractedEntity, ExtractedKnowledge, ExtractedRelationship, KnowledgeGraphEdge,
+    ExtractedKnowledge, KnowledgeGraphEdge,
     KnowledgeGraphNode, KnowledgeGraphResponse, KnowledgeGraphStatusResponse, NodeType,
-    RebuildGraphRequest, RebuildGraphResponse,
+    RebuildGraphResponse,
 };
