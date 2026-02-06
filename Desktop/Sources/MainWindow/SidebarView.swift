@@ -71,8 +71,12 @@ struct SidebarView: View {
     // State for Get Omi Widget (shown when no device is paired, dismissible)
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
 
-    // Tier gating
-    @AppStorage("tierGatingEnabled") private var tierGatingEnabled = false
+    // Tier gating (0 = show all, 1-6 = sequential tiers)
+    @AppStorage("currentTierLevel") private var currentTierLevel = 0
+
+    // Track newly unlocked items for animation (persisted so it survives settings navigation)
+    @State private var newlyUnlockedItems: Set<SidebarNavItem> = []
+    @AppStorage("lastSeenTierLevel") private var lastSeenTierLevel = 0
 
     // Toggle states for quick controls
     @AppStorage("screenAnalysisEnabled") private var screenAnalysisEnabled = true
@@ -101,12 +105,23 @@ struct SidebarView: View {
         isCollapsed ? collapsedWidth : expandedWidth
     }
 
-    /// Sidebar items filtered by tier gating
+    /// Sidebar items filtered by tier level
     private var visibleMainItems: [SidebarNavItem] {
-        if tierGatingEnabled {
-            return SidebarNavItem.mainItems.filter { [.conversations, .rewind].contains($0) }
+        Self.visibleItems(for: currentTierLevel)
+    }
+
+    /// Static version for use in onChange (where self isn't fully available)
+    static func visibleItems(for tier: Int) -> [SidebarNavItem] {
+        if tier == 0 || tier >= 6 {
+            return SidebarNavItem.mainItems
         }
-        return SidebarNavItem.mainItems
+        var items: [SidebarNavItem] = [.conversations, .rewind]  // Tier 1: always
+        if tier >= 2 { items.append(.memories) }
+        if tier >= 3 { items.append(.tasks) }
+        if tier >= 4 { items.append(.chat) }
+        if tier >= 5 { items.append(.dashboard) }
+        // Tier 6 or 0: + apps (included in full list above)
+        return items
     }
 
     /// Color for focus status indicator (green = focused, orange = distracted, nil = no status)
@@ -135,95 +150,105 @@ struct SidebarView: View {
                 VStack(alignment: .leading, spacing: 0) {
                     // Main navigation items
                     ForEach(visibleMainItems, id: \.rawValue) { item in
-                        if item == .conversations {
-                            // Conversations - icon shows audio activity when recording
-                            NavItemWithStatusView(
-                                icon: item.icon,
-                                label: item.title,
-                                isSelected: selectedIndex == item.rawValue,
-                                isCollapsed: isCollapsed,
-                                iconWidth: iconWidth,
-                                isOn: appState.isTranscribing,
-                                isToggling: isTogglingTranscription,
-                                isPageLoading: isConversationsPageLoading,
-                                onTap: {
-                                    // Show loading immediately when navigating to Conversations
-                                    if selectedIndex != item.rawValue {
-                                        isConversationsPageLoading = true
-                                        // Fallback timeout
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                                            if isConversationsPageLoading {
-                                                isConversationsPageLoading = false
+                        Group {
+                            if item == .conversations {
+                                // Conversations - icon shows audio activity when recording
+                                NavItemWithStatusView(
+                                    icon: item.icon,
+                                    label: item.title,
+                                    isSelected: selectedIndex == item.rawValue,
+                                    isCollapsed: isCollapsed,
+                                    iconWidth: iconWidth,
+                                    isOn: appState.isTranscribing,
+                                    isToggling: isTogglingTranscription,
+                                    isPageLoading: isConversationsPageLoading,
+                                    onTap: {
+                                        // Show loading immediately when navigating to Conversations
+                                        if selectedIndex != item.rawValue {
+                                            isConversationsPageLoading = true
+                                            // Fallback timeout
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                                if isConversationsPageLoading {
+                                                    isConversationsPageLoading = false
+                                                }
                                             }
                                         }
-                                    }
-                                    selectedIndex = item.rawValue
-                                    AnalyticsManager.shared.tabChanged(tabName: item.title)
-                                },
-                                onToggle: {
-                                    toggleTranscription(enabled: !appState.isTranscribing)
-                                },
-                                micLevel: audioLevels.microphoneLevel,
-                                systemLevel: audioLevels.systemLevel,
-                                showAudioBars: true
-                            )
-                        } else if item == .rewind {
-                            // Rewind - shows pulsing recording icon when active
-                            NavItemWithStatusView(
-                                icon: item.icon,
-                                label: item.title,
-                                isSelected: selectedIndex == item.rawValue,
-                                isCollapsed: isCollapsed,
-                                iconWidth: iconWidth,
-                                isOn: isMonitoring,
-                                isToggling: isTogglingMonitoring,
-                                isPageLoading: isRewindPageLoading,
-                                onTap: {
-                                    // Show loading immediately when navigating to Rewind
-                                    if selectedIndex != item.rawValue {
-                                        log("SIDEBAR: Rewind tapped, showing loading indicator")
-                                        isRewindPageLoading = true
-                                        // Fallback timeout in case page load notification never comes
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                                            if isRewindPageLoading {
-                                                log("SIDEBAR: Rewind loading timeout, clearing indicator")
-                                                isRewindPageLoading = false
+                                        selectedIndex = item.rawValue
+                                        AnalyticsManager.shared.tabChanged(tabName: item.title)
+                                    },
+                                    onToggle: {
+                                        toggleTranscription(enabled: !appState.isTranscribing)
+                                    },
+                                    micLevel: audioLevels.microphoneLevel,
+                                    systemLevel: audioLevels.systemLevel,
+                                    showAudioBars: true
+                                )
+                            } else if item == .rewind {
+                                // Rewind - shows pulsing recording icon when active
+                                NavItemWithStatusView(
+                                    icon: item.icon,
+                                    label: item.title,
+                                    isSelected: selectedIndex == item.rawValue,
+                                    isCollapsed: isCollapsed,
+                                    iconWidth: iconWidth,
+                                    isOn: isMonitoring,
+                                    isToggling: isTogglingMonitoring,
+                                    isPageLoading: isRewindPageLoading,
+                                    onTap: {
+                                        // Show loading immediately when navigating to Rewind
+                                        if selectedIndex != item.rawValue {
+                                            log("SIDEBAR: Rewind tapped, showing loading indicator")
+                                            isRewindPageLoading = true
+                                            // Fallback timeout in case page load notification never comes
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                                if isRewindPageLoading {
+                                                    log("SIDEBAR: Rewind loading timeout, clearing indicator")
+                                                    isRewindPageLoading = false
+                                                }
                                             }
                                         }
-                                    }
-                                    selectedIndex = item.rawValue
-                                    AnalyticsManager.shared.tabChanged(tabName: item.title)
-                                },
-                                onToggle: {
-                                    toggleMonitoring(enabled: !isMonitoring)
-                                },
-                                showRewindIcon: true
-                            )
-                        } else {
-                            NavItemView(
-                                icon: item.icon,
-                                label: item.title,
-                                isSelected: selectedIndex == item.rawValue,
-                                isCollapsed: isCollapsed,
-                                iconWidth: iconWidth,
-                                badge: item == .advice ? adviceStorage.unreadCount : 0,
-                                statusColor: item == .focus ? focusStatusColor : nil,
-                                isLoading: pageLoadingState(for: item),
-                                onTap: {
-                                    // Show loading immediately when navigating
-                                    if selectedIndex != item.rawValue {
-                                        setPageLoading(for: item, loading: true)
-                                        // Fallback timeout
-                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
-                                            setPageLoading(for: item, loading: false)
+                                        selectedIndex = item.rawValue
+                                        AnalyticsManager.shared.tabChanged(tabName: item.title)
+                                    },
+                                    onToggle: {
+                                        toggleMonitoring(enabled: !isMonitoring)
+                                    },
+                                    showRewindIcon: true
+                                )
+                            } else {
+                                NavItemView(
+                                    icon: item.icon,
+                                    label: item.title,
+                                    isSelected: selectedIndex == item.rawValue,
+                                    isCollapsed: isCollapsed,
+                                    iconWidth: iconWidth,
+                                    badge: item == .advice ? adviceStorage.unreadCount : 0,
+                                    statusColor: item == .focus ? focusStatusColor : nil,
+                                    isLoading: pageLoadingState(for: item),
+                                    onTap: {
+                                        // Show loading immediately when navigating
+                                        if selectedIndex != item.rawValue {
+                                            setPageLoading(for: item, loading: true)
+                                            // Fallback timeout
+                                            DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                                setPageLoading(for: item, loading: false)
+                                            }
                                         }
+                                        selectedIndex = item.rawValue
+                                        AnalyticsManager.shared.tabChanged(tabName: item.title)
                                     }
-                                    selectedIndex = item.rawValue
-                                    AnalyticsManager.shared.tabChanged(tabName: item.title)
-                                }
-                            )
+                                )
+                            }
                         }
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .scale(scale: 0.8)).combined(with: .offset(x: -20)),
+                            removal: .opacity
+                        ))
+                        .overlay(
+                            TierUnlockCelebration(isActive: newlyUnlockedItems.contains(item))
+                        )
                     }
+                    .animation(.easeOut(duration: 0.4), value: visibleMainItems.map(\.rawValue))
 
                     Spacer()
 
@@ -257,37 +282,27 @@ struct SidebarView: View {
                     }
 
                     // Secondary navigation items
-                    BottomNavItemView(
-                        icon: "gift.fill",
-                        label: "Refer a Friend",
-                        isCollapsed: isCollapsed,
-                        iconWidth: iconWidth,
-                        onTap: {
-                            if let url = URL(string: "https://affiliate.omi.me") {
-                                NSWorkspace.shared.open(url)
+                    if currentTierLevel == 0 || currentTierLevel >= 4 {
+                        BottomNavItemView(
+                            icon: "gift.fill",
+                            label: "Refer a Friend",
+                            isCollapsed: isCollapsed,
+                            iconWidth: iconWidth,
+                            onTap: {
+                                if let url = URL(string: "https://affiliate.omi.me") {
+                                    NSWorkspace.shared.open(url)
+                                }
                             }
-                        }
-                    )
+                        )
+                    }
 
-                    // Help from Founder - uses custom Crisp icon
+                    // Help from Founder - navigates to Crisp chat page
                     NavItemView(
                         icon: SidebarNavItem.help.icon,
                         label: SidebarNavItem.help.title,
                         isSelected: selectedIndex == SidebarNavItem.help.rawValue,
                         isCollapsed: isCollapsed,
                         iconWidth: iconWidth,
-                        customIcon: {
-                            if let iconUrl = Bundle.resourceBundle.url(forResource: "crisp-icon", withExtension: "png"),
-                               let iconImage = NSImage(contentsOf: iconUrl) {
-                                return AnyView(
-                                    Image(nsImage: iconImage)
-                                        .resizable()
-                                        .aspectRatio(contentMode: .fit)
-                                        .frame(width: iconWidth, height: iconWidth)
-                                )
-                            }
-                            return nil
-                        }(),
                         onTap: {
                             selectedIndex = SidebarNavItem.help.rawValue
                             AnalyticsManager.shared.tabChanged(tabName: SidebarNavItem.help.title)
@@ -352,13 +367,19 @@ struct SidebarView: View {
         .onAppear {
             syncMonitoringState()
             appState.checkAllPermissions()
+            // Check if tier changed while sidebar wasn't visible (e.g. changed in settings, or auto-upgraded on launch)
+            checkForDeferredUnlockAnimation()
         }
-        .onChange(of: tierGatingEnabled) { _, enabled in
-            if enabled {
-                let visibleRawValues: Set<Int> = [SidebarNavItem.conversations.rawValue, SidebarNavItem.rewind.rawValue]
-                if !visibleRawValues.contains(selectedIndex) {
-                    selectedIndex = SidebarNavItem.conversations.rawValue
-                }
+        .onChange(of: currentTierLevel) { _, newTier in
+            // Redirect if current page is no longer visible
+            let newVisible = Self.visibleItems(for: newTier)
+            let visibleRawValues = Set(newVisible.map(\.rawValue))
+            if !visibleRawValues.contains(selectedIndex) && selectedIndex != SidebarNavItem.settings.rawValue && selectedIndex != SidebarNavItem.permissions.rawValue && selectedIndex != SidebarNavItem.device.rawValue && selectedIndex != SidebarNavItem.help.rawValue {
+                selectedIndex = SidebarNavItem.conversations.rawValue
+            }
+            // If sidebar is currently visible (not in settings), play animation immediately
+            if selectedIndex != SidebarNavItem.settings.rawValue {
+                checkForDeferredUnlockAnimation()
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
@@ -1043,6 +1064,36 @@ struct SidebarView: View {
         default: break
         }
     }
+
+    // MARK: - Tier Unlock Animation
+
+    /// Compare lastSeenTierLevel to currentTierLevel and animate any newly visible items.
+    /// Called on onAppear (returning from settings) and onChange when sidebar is visible.
+    private func checkForDeferredUnlockAnimation() {
+        guard lastSeenTierLevel != currentTierLevel else { return }
+
+        let oldVisible = Self.visibleItems(for: lastSeenTierLevel)
+        let newVisible = Self.visibleItems(for: currentTierLevel)
+        let unlocked = Set(newVisible).subtracting(Set(oldVisible))
+
+        // Update lastSeen immediately so we don't re-trigger
+        lastSeenTierLevel = currentTierLevel
+
+        guard !unlocked.isEmpty else { return }
+
+        // Small delay so the sidebar has time to render before animating
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+            withAnimation(.easeOut(duration: 0.4)) {
+                newlyUnlockedItems = unlocked
+            }
+            // Clear after full celebration plays (highlight 0.3s + confetti 1.5s + text 1.5s + buffer)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    newlyUnlockedItems = []
+                }
+            }
+        }
+    }
 }
 
 // MARK: - Nav Item View
@@ -1055,7 +1106,6 @@ struct NavItemView: View {
     var badge: Int = 0
     var statusColor: Color? = nil
     var isLoading: Bool = false
-    var customIcon: AnyView? = nil
     let onTap: () -> Void
 
     @State private var isHovered = false
@@ -1067,8 +1117,6 @@ struct NavItemView: View {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: iconWidth, height: 17)
-                } else if let customIcon = customIcon {
-                    customIcon
                 } else {
                     Image(systemName: icon)
                         .font(.system(size: 17))
@@ -1401,6 +1449,149 @@ struct SidebarRewindIcon: View {
     private func startPulsing() {
         withAnimation(.easeOut(duration: 1.0).repeatForever(autoreverses: false)) {
             isPulsing = true
+        }
+    }
+}
+
+// MARK: - Tier Unlock Celebration
+/// Multi-phase celebration overlay: highlight → confetti → glowing text
+struct TierUnlockCelebration: View {
+    let isActive: Bool
+
+    @State private var phase: CelebrationPhase = .idle
+
+    enum CelebrationPhase {
+        case idle, highlight, confetti, text, done
+    }
+
+    var body: some View {
+        ZStack {
+            // Phase 1: Purple highlight border
+            if phase == .highlight || phase == .confetti || phase == .text {
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(OmiColors.purplePrimary, lineWidth: phase == .highlight ? 2.5 : 1.5)
+                    .shadow(color: OmiColors.purplePrimary.opacity(phase == .highlight ? 0.8 : 0.3), radius: phase == .highlight ? 12 : 4)
+                    .transition(.opacity)
+            }
+
+            // Phase 2: Confetti particles
+            if phase == .confetti || phase == .text {
+                ConfettiView()
+                    .allowsHitTesting(false)
+                    .transition(.opacity)
+            }
+
+            // Phase 3: Glowing "Unlocked!" text
+            if phase == .text {
+                Text("Unlocked!")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        Capsule()
+                            .fill(OmiColors.purplePrimary)
+                            .shadow(color: OmiColors.purplePrimary.opacity(0.8), radius: 8)
+                    )
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+                    .offset(x: 30, y: -8)
+            }
+        }
+        .onChange(of: isActive) { _, active in
+            if active {
+                startCelebration()
+            } else {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    phase = .idle
+                }
+            }
+        }
+    }
+
+    private func startCelebration() {
+        // Phase 1: Highlight (immediate)
+        withAnimation(.easeOut(duration: 0.3)) {
+            phase = .highlight
+        }
+        // Phase 2: Confetti (after 0.4s)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            withAnimation(.easeOut(duration: 0.3)) {
+                phase = .confetti
+            }
+        }
+        // Phase 3: Text (after 1.0s)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.6)) {
+                phase = .text
+            }
+        }
+    }
+}
+
+// MARK: - Confetti View
+/// Burst of small colored particles that animate outward from center
+struct ConfettiView: View {
+    @State private var animate = false
+    @State private var fadeOut = false
+
+    // Pre-computed particle configs (fixed set for reliable animation)
+    private let particleConfigs: [(color: Color, size: CGFloat, angle: Double, distance: CGFloat, rotation: Double, isRect: Bool)] = {
+        let colors: [Color] = [
+            OmiColors.purplePrimary, OmiColors.purplePrimary.opacity(0.7),
+            .yellow, .green, .pink, .cyan, .orange, .mint, .indigo
+        ]
+        return (0..<18).map { _ in
+            (
+                color: colors.randomElement()!,
+                size: CGFloat.random(in: 3...6),
+                angle: Double.random(in: 0...(2 * .pi)),
+                distance: CGFloat.random(in: 40...120),
+                rotation: Double.random(in: 0...720),
+                isRect: Bool.random()
+            )
+        }
+    }()
+
+    var body: some View {
+        GeometryReader { geo in
+            let cx = geo.size.width / 2
+            let cy = geo.size.height / 2
+
+            ZStack {
+                ForEach(0..<particleConfigs.count, id: \.self) { i in
+                    let p = particleConfigs[i]
+                    Group {
+                        if p.isRect {
+                            RoundedRectangle(cornerRadius: 1)
+                                .fill(p.color)
+                        } else {
+                            Circle()
+                                .fill(p.color)
+                        }
+                    }
+                    .frame(width: p.size, height: p.size * (p.isRect ? 2 : 1))
+                    .rotationEffect(.degrees(animate ? p.rotation : 0))
+                    .offset(
+                        x: animate ? cos(p.angle) * p.distance : 0,
+                        y: animate ? sin(p.angle) * p.distance - 20 : 0
+                    )
+                    .scaleEffect(animate ? (fadeOut ? 0.1 : 1.0) : 0.1)
+                    .opacity(fadeOut ? 0 : 1)
+                    .position(x: cx, y: cy)
+                }
+            }
+        }
+        .onAppear {
+            // Burst outward
+            withAnimation(.easeOut(duration: 0.7)) {
+                animate = true
+            }
+            // Fade out
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+                withAnimation(.easeOut(duration: 0.5)) {
+                    fadeOut = true
+                }
+            }
         }
     }
 }
