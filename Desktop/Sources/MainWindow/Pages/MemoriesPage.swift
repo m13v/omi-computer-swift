@@ -119,8 +119,20 @@ class MemoriesViewModel: ObservableObject {
     @Published private(set) var isSearching = false
     @Published private(set) var searchResults: [ServerMemory] = []
     @Published var selectedTags: Set<MemoryTag> = [] {
-        didSet { recomputeFilteredMemories() }
+        didSet {
+            // When tags are selected, query SQLite directly
+            if !selectedTags.isEmpty {
+                Task { await loadFilteredMemoriesFromDatabase() }
+            } else {
+                filteredFromDatabase = []
+                recomputeFilteredMemories()
+            }
+        }
     }
+
+    /// Memories loaded from SQLite with filters applied
+    @Published private(set) var filteredFromDatabase: [ServerMemory] = []
+    @Published private(set) var isLoadingFiltered = false
     @Published var showingAddMemory = false
     @Published var newMemoryText = ""
     @Published var editingMemory: ServerMemory? = nil
@@ -133,6 +145,17 @@ class MemoriesViewModel: ObservableObject {
     private var deleteTask: Task<Void, Never>? = nil
     private var cancellables = Set<AnyCancellable>()
     private var hasLoadedInitially = false
+
+    /// Whether the memories page is currently visible.
+    /// Auto-refresh only runs when active to avoid unnecessary API calls.
+    var isActive = false {
+        didSet {
+            if isActive && !oldValue && hasLoadedInitially {
+                // Refresh immediately when becoming active
+                Task { await refreshMemoriesIfNeeded() }
+            }
+        }
+    }
 
     // Pagination state
     private var currentOffset = 0
@@ -168,8 +191,8 @@ class MemoriesViewModel: ObservableObject {
     // MARK: - Initialization
 
     init() {
-        // Auto-refresh memories every 3 seconds
-        Timer.publish(every: 3.0, on: .main, in: .common)
+        // Auto-refresh memories every 30 seconds
+        Timer.publish(every: 30.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 Task { await self?.refreshMemoriesIfNeeded() }
@@ -179,6 +202,9 @@ class MemoriesViewModel: ObservableObject {
 
     /// Refresh memories if already loaded (for auto-refresh)
     private func refreshMemoriesIfNeeded() async {
+        // Skip if page is not visible
+        guard isActive else { return }
+
         // Skip if currently loading or haven't loaded initially
         guard !isLoading, !isLoadingMore, hasLoadedInitially else { return }
 
@@ -267,16 +293,93 @@ class MemoriesViewModel: ObservableObject {
         }
     }
 
-    /// Recompute filtered memories when search/tags change
-    private func recomputeFilteredMemories() {
-        // When searching, use search results from SQLite as the source
-        var result = searchText.isEmpty ? memories : searchResults
+    /// Load filtered memories from SQLite when tag filters are applied
+    private func loadFilteredMemoriesFromDatabase() async {
+        guard !selectedTags.isEmpty else {
+            filteredFromDatabase = []
+            recomputeFilteredMemories()
+            return
+        }
 
-        // Filter by selected tags (OR logic - match any selected tag)
-        if !selectedTags.isEmpty {
-            result = result.filter { memory in
+        isLoadingFiltered = true
+
+        // Build filter parameters from selected tags
+        // Tags use OR logic - match ANY selected tag
+        var matchAnyTag: [String] = []
+        var matchAnyCategory: [String] = []
+
+        for tag in selectedTags {
+            switch tag {
+            // Simple tag matches
+            case .focus:
+                matchAnyTag.append("focus")
+            case .focused:
+                matchAnyTag.append("focused")
+            case .distracted:
+                matchAnyTag.append("distracted")
+            case .tips:
+                matchAnyTag.append("tips")
+            case .productivity:
+                matchAnyTag.append("productivity")
+            case .health:
+                matchAnyTag.append("health")
+            case .communication:
+                matchAnyTag.append("communication")
+            case .learning:
+                matchAnyTag.append("learning")
+            case .other:
+                matchAnyTag.append("other")
+            // Category matches (handled separately due to exclusions)
+            case .system, .interesting, .manual:
+                matchAnyCategory.append(tag.rawValue)
+            }
+        }
+
+        do {
+            // Query SQLite with OR logic for tags
+            let results = try await MemoryStorage.shared.getFilteredMemories(
+                limit: 500,
+                matchAnyTag: matchAnyTag.isEmpty ? nil : matchAnyTag,
+                matchAnyCategory: matchAnyCategory.isEmpty ? nil : matchAnyCategory
+            )
+
+            // Apply complex tag matching (for system/interesting/manual exclusions)
+            // These tags have special matching logic that can't be easily expressed in SQL
+            let filteredResults = results.filter { memory in
                 selectedTags.contains { tag in tag.matches(memory) }
             }
+
+            filteredFromDatabase = filteredResults
+            log("MemoriesViewModel: Loaded \(filteredResults.count) filtered memories from SQLite (raw: \(results.count))")
+        } catch {
+            logError("MemoriesViewModel: Failed to load filtered memories", error: error)
+            filteredFromDatabase = []
+        }
+
+        isLoadingFiltered = false
+        recomputeFilteredMemories()
+    }
+
+    /// Recompute filtered memories when search/tags change
+    private func recomputeFilteredMemories() {
+        // Determine source based on current state
+        var result: [ServerMemory]
+
+        if !searchText.isEmpty {
+            // Searching: use search results from SQLite
+            result = searchResults
+            // Apply tag filters to search results
+            if !selectedTags.isEmpty {
+                result = result.filter { memory in
+                    selectedTags.contains { tag in tag.matches(memory) }
+                }
+            }
+        } else if !filteredFromDatabase.isEmpty {
+            // Tag filters applied: use SQLite filtered results
+            result = filteredFromDatabase
+        } else {
+            // No filters: use loaded memories
+            result = memories
         }
 
         // Sort by date (newest first)
@@ -956,7 +1059,7 @@ struct MemoriesPage: View {
         HStack(spacing: 10) {
             // Search field
             HStack(spacing: 10) {
-                if viewModel.isSearching {
+                if viewModel.isSearching || viewModel.isLoadingFiltered {
                     ProgressView()
                         .scaleEffect(0.7)
                         .frame(width: 14, height: 14)
