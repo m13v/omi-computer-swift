@@ -835,6 +835,21 @@ actor RewindDatabase {
             try db.create(index: "idx_sessions_starred", on: "transcription_sessions", columns: ["starred"])
         }
 
+        // Migration 13: Create task dedup log table for AI deletion tracking
+        migrator.registerMigration("createTaskDedupLog") { db in
+            try db.create(table: "task_dedup_log") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("deletedTaskId", .text).notNull()
+                t.column("deletedDescription", .text).notNull()
+                t.column("keptTaskId", .text).notNull()
+                t.column("keptDescription", .text).notNull()
+                t.column("reason", .text).notNull()
+                t.column("deletedAt", .datetime).notNull()
+            }
+            try db.create(index: "idx_dedup_log_deleted_at",
+                          on: "task_dedup_log", columns: ["deletedAt"])
+        }
+
         try migrator.migrate(queue)
     }
 
