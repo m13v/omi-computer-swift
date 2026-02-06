@@ -196,49 +196,53 @@ final class OpusAudioDecoder: AudioCodecDecoder {
             mDataByteSize: UInt32(data.count)
         )
 
-        // Create buffer list for output
-        var outputBufferList = AudioBufferList(
-            mNumberBuffers: 1,
-            mBuffers: AudioBuffer(
-                mNumberChannels: UInt32(outputChannels),
-                mDataByteSize: outputSize,
-                mData: &outputSamples
-            )
-        )
-
-        // Decode
+        // Decode using withUnsafeMutableBytes for proper pointer lifetime
         var ioOutputDataPacketSize = UInt32(frameSize)
+        var decodedByteSize: UInt32 = 0
 
-        let status = data.withUnsafeBytes { inputBytes -> OSStatus in
-            return withUnsafeMutablePointer(to: &packetDescription) { packetDescPtr in
-                var context = (inputBytes.baseAddress, UInt32(data.count), packetDescPtr)
+        let status = outputSamples.withUnsafeMutableBytes { outputBuffer -> OSStatus in
+            var outputBufferList = AudioBufferList(
+                mNumberBuffers: 1,
+                mBuffers: AudioBuffer(
+                    mNumberChannels: UInt32(outputChannels),
+                    mDataByteSize: outputSize,
+                    mData: outputBuffer.baseAddress
+                )
+            )
 
-                return withUnsafeMutablePointer(to: &context) { contextPtr in
-                    AudioConverterFillComplexBuffer(
-                        converter,
-                        { (_, ioNumberDataPackets, ioData, outDataPacketDescription, inUserData) -> OSStatus in
-                            // This callback provides input data to the converter
-                            guard let userData = inUserData else { return -1 }
-                            let context = userData.assumingMemoryBound(to: (UnsafeRawPointer?, UInt32, UnsafeMutablePointer<AudioStreamPacketDescription>).self)
+            let result = data.withUnsafeBytes { inputBytes -> OSStatus in
+                return withUnsafeMutablePointer(to: &packetDescription) { packetDescPtr in
+                    var context = (inputBytes.baseAddress, UInt32(data.count), packetDescPtr)
 
-                            ioData.pointee.mBuffers.mData = UnsafeMutableRawPointer(mutating: context.pointee.0)
-                            ioData.pointee.mBuffers.mDataByteSize = context.pointee.1
-                            ioData.pointee.mBuffers.mNumberChannels = 1
-                            ioNumberDataPackets.pointee = 1
+                    return withUnsafeMutablePointer(to: &context) { contextPtr in
+                        AudioConverterFillComplexBuffer(
+                            converter,
+                            { (_, ioNumberDataPackets, ioData, outDataPacketDescription, inUserData) -> OSStatus in
+                                // This callback provides input data to the converter
+                                guard let userData = inUserData else { return -1 }
+                                let context = userData.assumingMemoryBound(to: (UnsafeRawPointer?, UInt32, UnsafeMutablePointer<AudioStreamPacketDescription>).self)
 
-                            if let outDesc = outDataPacketDescription {
-                                outDesc.pointee = context.pointee.2
-                            }
+                                ioData.pointee.mBuffers.mData = UnsafeMutableRawPointer(mutating: context.pointee.0)
+                                ioData.pointee.mBuffers.mDataByteSize = context.pointee.1
+                                ioData.pointee.mBuffers.mNumberChannels = 1
+                                ioNumberDataPackets.pointee = 1
 
-                            return noErr
-                        },
-                        contextPtr,
-                        &ioOutputDataPacketSize,
-                        &outputBufferList,
-                        nil
-                    )
+                                if let outDesc = outDataPacketDescription {
+                                    outDesc.pointee = context.pointee.2
+                                }
+
+                                return noErr
+                            },
+                            contextPtr,
+                            &ioOutputDataPacketSize,
+                            &outputBufferList,
+                            nil
+                        )
+                    }
                 }
             }
+            decodedByteSize = outputBufferList.mBuffers.mDataByteSize
+            return result
         }
 
         if status != noErr && status != kAudioConverterErr_InvalidInputSize {
@@ -247,7 +251,7 @@ final class OpusAudioDecoder: AudioCodecDecoder {
         }
 
         // Return only the decoded samples
-        let decodedCount = Int(outputBufferList.mBuffers.mDataByteSize) / 2
+        let decodedCount = Int(decodedByteSize) / 2
         return Array(outputSamples.prefix(decodedCount))
     }
 
@@ -366,47 +370,52 @@ final class AACAudioDecoder: AudioCodecDecoder {
             mDataByteSize: UInt32(rawAACData.count)
         )
 
-        // Create buffer list for output
-        var outputBufferList = AudioBufferList(
-            mNumberBuffers: 1,
-            mBuffers: AudioBuffer(
-                mNumberChannels: UInt32(outputChannels),
-                mDataByteSize: outputSize,
-                mData: &outputSamples
-            )
-        )
-
+        // Decode using withUnsafeMutableBytes for proper pointer lifetime
         var ioOutputDataPacketSize = UInt32(aacFrameSize)
+        var decodedByteSize: UInt32 = 0
 
-        let status = rawAACData.withUnsafeBytes { inputBytes -> OSStatus in
-            return withUnsafeMutablePointer(to: &packetDescription) { packetDescPtr in
-                var context = (inputBytes.baseAddress, UInt32(rawAACData.count), packetDescPtr)
+        let status = outputSamples.withUnsafeMutableBytes { outputBuffer -> OSStatus in
+            var outputBufferList = AudioBufferList(
+                mNumberBuffers: 1,
+                mBuffers: AudioBuffer(
+                    mNumberChannels: UInt32(outputChannels),
+                    mDataByteSize: outputSize,
+                    mData: outputBuffer.baseAddress
+                )
+            )
 
-                return withUnsafeMutablePointer(to: &context) { contextPtr in
-                    AudioConverterFillComplexBuffer(
-                        converter,
-                        { (_, ioNumberDataPackets, ioData, outDataPacketDescription, inUserData) -> OSStatus in
-                            guard let userData = inUserData else { return -1 }
-                            let context = userData.assumingMemoryBound(to: (UnsafeRawPointer?, UInt32, UnsafeMutablePointer<AudioStreamPacketDescription>).self)
+            let result = rawAACData.withUnsafeBytes { inputBytes -> OSStatus in
+                return withUnsafeMutablePointer(to: &packetDescription) { packetDescPtr in
+                    var context = (inputBytes.baseAddress, UInt32(rawAACData.count), packetDescPtr)
 
-                            ioData.pointee.mBuffers.mData = UnsafeMutableRawPointer(mutating: context.pointee.0)
-                            ioData.pointee.mBuffers.mDataByteSize = context.pointee.1
-                            ioData.pointee.mBuffers.mNumberChannels = 1
-                            ioNumberDataPackets.pointee = 1
+                    return withUnsafeMutablePointer(to: &context) { contextPtr in
+                        AudioConverterFillComplexBuffer(
+                            converter,
+                            { (_, ioNumberDataPackets, ioData, outDataPacketDescription, inUserData) -> OSStatus in
+                                guard let userData = inUserData else { return -1 }
+                                let context = userData.assumingMemoryBound(to: (UnsafeRawPointer?, UInt32, UnsafeMutablePointer<AudioStreamPacketDescription>).self)
 
-                            if let outDesc = outDataPacketDescription {
-                                outDesc.pointee = context.pointee.2
-                            }
+                                ioData.pointee.mBuffers.mData = UnsafeMutableRawPointer(mutating: context.pointee.0)
+                                ioData.pointee.mBuffers.mDataByteSize = context.pointee.1
+                                ioData.pointee.mBuffers.mNumberChannels = 1
+                                ioNumberDataPackets.pointee = 1
 
-                            return noErr
-                        },
-                        contextPtr,
-                        &ioOutputDataPacketSize,
-                        &outputBufferList,
-                        nil
-                    )
+                                if let outDesc = outDataPacketDescription {
+                                    outDesc.pointee = context.pointee.2
+                                }
+
+                                return noErr
+                            },
+                            contextPtr,
+                            &ioOutputDataPacketSize,
+                            &outputBufferList,
+                            nil
+                        )
+                    }
                 }
             }
+            decodedByteSize = outputBufferList.mBuffers.mDataByteSize
+            return result
         }
 
         if status != noErr {
@@ -414,7 +423,7 @@ final class AACAudioDecoder: AudioCodecDecoder {
             return nil
         }
 
-        let decodedCount = Int(outputBufferList.mBuffers.mDataByteSize) / 2
+        let decodedCount = Int(decodedByteSize) / 2
         return Array(outputSamples.prefix(decodedCount))
     }
 
