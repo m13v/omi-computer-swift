@@ -1923,6 +1923,9 @@ struct TaskRow: View {
                         .font(.system(size: 14))
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
+                        .lineLimit(2)
+                        .truncationMode(.tail)
+                        .help(task.description)
                         .onTapGesture {
                             if viewModel.isMultiSelectMode {
                                 viewModel.toggleTaskSelection(task)
