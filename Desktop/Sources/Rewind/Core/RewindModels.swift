@@ -365,6 +365,12 @@ class RewindSettings: ObservableObject {
         }
     }
 
+    @Published var ocrRecognitionFast: Bool {
+        didSet {
+            defaults.set(ocrRecognitionFast, forKey: "rewindOCRFast")
+        }
+    }
+
     @Published var excludedApps: Set<String> {
         didSet {
             let array = Array(excludedApps)
@@ -384,6 +390,7 @@ class RewindSettings: ObservableObject {
         // Load settings with defaults
         self.retentionDays = defaults.object(forKey: "rewindRetentionDays") as? Int ?? 7
         self.captureInterval = defaults.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
+        self.ocrRecognitionFast = defaults.object(forKey: "rewindOCRFast") as? Bool ?? true
         self.removedDefaults = Set(defaults.array(forKey: "rewindRemovedDefaultApps") as? [String] ?? [])
 
         // Load excluded apps, merging in any new defaults
