@@ -156,7 +156,7 @@ actor ActionItemStorage {
                     existingRecord.updateFrom(item)
                     try existingRecord.update(database)
                 } else {
-                    var newRecord = ActionItemRecord.from(item)
+                    let newRecord = ActionItemRecord.from(item)
                     try newRecord.insert(database)
                 }
             }
@@ -177,7 +177,7 @@ actor ActionItemStorage {
                     existingRecord.updateFrom(item)
                     try existingRecord.update(database)
                 } else {
-                    var newRecord = ActionItemRecord.from(item)
+                    let newRecord = ActionItemRecord.from(item)
                     try newRecord.insert(database)
                 }
             }
@@ -195,9 +195,10 @@ actor ActionItemStorage {
 
         var insertRecord = record
         insertRecord.backendSynced = false
+        let recordToInsert = insertRecord
 
         let inserted = try await db.write { database in
-            try insertRecord.inserted(database)
+            try recordToInsert.inserted(database)
         }
 
         log("ActionItemStorage: Inserted local action item (id: \(inserted.id ?? -1))")
