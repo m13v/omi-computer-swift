@@ -26,6 +26,13 @@ class ViewModelContainer: ObservableObject {
         let timer = PerfTimer("ViewModelContainer.loadAllData", logCPU: true)
         logPerf("DATA LOAD: Starting eager data load for all pages", cpu: true)
 
+        // Pre-initialize database so local SQLite reads are instant
+        do {
+            try await RewindDatabase.shared.initialize()
+        } catch {
+            logError("ViewModelContainer: Database pre-init failed", error: error)
+        }
+
         // Load shared stores first (both Dashboard and Tasks use these)
         async let tasks: Void = measurePerfAsync("DATA LOAD: TasksStore") { await tasksStore.loadTasks() }
 
