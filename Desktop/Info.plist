@@ -5,7 +5,7 @@
     <key>CFBundleDevelopmentRegion</key>
     <string>en</string>
     <key>CFBundleDisplayName</key>
-    <string>Omi Computer</string>
+    <string>Omi Beta</string>
     <key>CFBundleExecutable</key>
     <string>$(EXECUTABLE_NAME)</string>
     <key>CFBundleIconFile</key>
@@ -29,20 +29,20 @@
     <key>NSHighResolutionCapable</key>
     <true/>
     <key>NSScreenCaptureUsageDescription</key>
-    <string>Omi Computer needs screen recording permission to monitor your focus and detect distractions.</string>
+    <string>Omi needs screen recording permission to monitor your focus and detect distractions.</string>
     <key>NSAppleEventsUsageDescription</key>
-    <string>Omi Computer needs permission to detect which application is currently active.</string>
+    <string>Omi needs permission to detect which application is currently active.</string>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Omi Computer needs microphone access to transcribe your conversations in real-time.</string>
+    <string>Omi needs microphone access to transcribe your conversations in real-time.</string>
     <key>NSAudioCaptureUsageDescription</key>
-    <string>Omi Computer needs permission to capture system audio for transcription of calls and meetings.</string>
+    <string>Omi needs permission to capture system audio for transcription of calls and meetings.</string>
     <key>NSBluetoothAlwaysUsageDescription</key>
-    <string>Omi Computer needs Bluetooth access to connect to your Omi wearable device for audio capture and transcription.</string>
+    <string>Omi needs Bluetooth access to connect to your Omi wearable device for audio capture and transcription.</string>
     <key>CFBundleURLTypes</key>
     <array>
         <dict>
             <key>CFBundleURLName</key>
-            <string>Omi Computer Auth Callback</string>
+            <string>Omi Auth Callback</string>
             <key>CFBundleURLSchemes</key>
             <array>
                 <string>omi-computer</string>
