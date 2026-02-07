@@ -110,6 +110,7 @@ actor MemoryAssistant: ProactiveAssistant {
         // Skip apps excluded from memory extraction (built-in + user's custom list)
         let excluded = await MainActor.run { MemoryAssistantSettings.shared.isAppExcluded(frame.appName) }
         if excluded {
+            log("Memory: Skipping excluded app '\(frame.appName)'")
             return nil
         }
 
