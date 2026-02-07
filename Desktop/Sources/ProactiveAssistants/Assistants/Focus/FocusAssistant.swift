@@ -125,6 +125,7 @@ actor FocusAssistant: ProactiveAssistant {
         // Skip apps excluded from focus analysis
         let excluded = await MainActor.run { FocusAssistantSettings.shared.isAppExcluded(frame.appName) }
         if excluded {
+            log("Focus: Skipping excluded app '\(frame.appName)'")
             return nil
         }
 
