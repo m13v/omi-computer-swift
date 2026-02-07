@@ -338,7 +338,8 @@ actor TaskAssistant: ProactiveAssistant {
 
             log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
 
-            // Stage 1: Log draft task
+            // Stage 1: Log draft task and validate
+            var finalResult = result
             if result.hasNewTask, let task = result.task {
                 let confidencePercent = Int(task.confidence * 100)
                 log("Task: [DRAFT] [\(confidencePercent)%] \"\(task.title)\"")
@@ -346,10 +347,20 @@ actor TaskAssistant: ProactiveAssistant {
                 // Stage 2: Validate the draft task against existing context
                 let validationResult = await validateDraftTask(task: task, contextSummary: result.contextSummary)
                 log("Task: [FINAL] \(validationResult.isValid ? "APPROVED" : "REJECTED") - \"\(task.title)\" - \(validationResult.reason)")
+
+                // If validation rejects the task, override to no-task result
+                if !validationResult.isValid {
+                    finalResult = TaskExtractionResult(
+                        hasNewTask: false,
+                        task: nil,
+                        contextSummary: result.contextSummary,
+                        currentActivity: result.currentActivity
+                    )
+                }
             }
 
             // Handle the result with screenshot ID for SQLite storage
-            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
+            await handleResultWithScreenshot(finalResult, screenshotId: frame.screenshotId) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }
@@ -361,10 +372,10 @@ actor TaskAssistant: ProactiveAssistant {
 
     private func extractTasks(from jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
         // Build context with previous tasks
-        var prompt = "Analyze this screenshot from \(appName).\n\n"
+        var prompt = "Screenshot from \(appName). Is there a request directed at the user from another person or AI that they haven't acted on?\n\n"
 
         if !previousTasks.isEmpty {
-            prompt += "PREVIOUSLY EXTRACTED TASKS (do not re-extract these or semantically similar tasks):\n"
+            prompt += "PREVIOUSLY EXTRACTED TASKS (do not re-extract these or semantically similar ones):\n"
             for (index, task) in previousTasks.enumerated() {
                 prompt += "\(index + 1). \(task.title)"
                 if let description = task.description {
@@ -372,9 +383,9 @@ actor TaskAssistant: ProactiveAssistant {
                 }
                 prompt += "\n"
             }
-            prompt += "\nLook for ONE NEW task that is NOT already in the list above."
+            prompt += "\nOnly extract a NEW request not already covered above."
         } else {
-            prompt += "Look for ONE task to extract."
+            prompt += "Is there an unaddressed request from someone?"
         }
 
         // Get current system prompt from settings
@@ -580,29 +591,23 @@ actor TaskAssistant: ProactiveAssistant {
     /// System prompt for task validation
     private var validationSystemPrompt: String {
         """
-        You are a task validation assistant. Your job is to determine if a newly extracted task is valuable and worth tracking.
+        You validate whether an extracted task is actually a request from another person or AI that the user needs to act on.
 
-        A task should be REJECTED (is_valid = false) if:
-        1. It's semantically similar to an existing task the user is already tracking
-        2. It's too vague or generic (e.g., "Do work", "Check things")
-        3. It's something trivial that doesn't need tracking (e.g., "Close browser tab")
-        4. It contradicts the user's known priorities from their memories
-        5. It's already been completed based on context
-        6. It's a duplicate of something they're clearly already aware of
+        REJECT (is_valid = false) if:
+        1. It's NOT a request from someone — it's just something the user is doing or looking at
+        2. It's a development/terminal task (build errors, package updates, code changes)
+        3. It's semantically similar to an existing task already being tracked
+        4. It's too vague to act on ("Check things", "Follow up")
+        5. The user already responded to or completed the request
+        6. It's a notification badge without a specific actionable message
 
-        A task should be APPROVED (is_valid = true) if:
-        1. It's a specific, actionable item the user might forget
-        2. It aligns with the user's goals and priorities from their memories
-        3. It's genuinely new and not already being tracked
-        4. It has real importance (deadline, commitment to others, financial impact)
-        5. It's something the user explicitly mentioned needing to do
+        APPROVE (is_valid = true) if:
+        1. It's a clear request from a person or AI that the user hasn't addressed
+        2. It's the user's own explicit reminder ("TODO", "Remind me to…", "Don't forget")
+        3. It's genuinely new — not already tracked in existing tasks
+        4. The user would likely forget it after switching windows
 
-        Adjust the confidence score based on how well the task fits the user's context:
-        - Increase if it strongly aligns with user's known priorities
-        - Decrease if it seems tangential to their main focus
-        - Keep similar if neutral
-
-        Be concise in your reason - one short sentence explaining your decision.
+        Adjust confidence based on context. Be concise — one short sentence for your reason.
         """
     }
 }
