@@ -208,9 +208,12 @@ actor TaskAssistant: ProactiveAssistant {
     ) async -> ActionItemRecord? {
         // Build metadata JSON with extraction details
         var metadata: [String: Any] = [
-            "category": task.category.rawValue,
+            "tags": task.tags,
             "context_summary": contextSummary
         ]
+        if let primaryTag = task.primaryTag {
+            metadata["category"] = primaryTag
+        }
         if let deadline = task.inferredDeadline {
             metadata["inferred_deadline"] = deadline
         }
@@ -223,12 +226,22 @@ actor TaskAssistant: ProactiveAssistant {
             metadataJson = nil
         }
 
+        // Build tagsJson
+        let tagsJson: String?
+        if let data = try? JSONEncoder().encode(task.tags),
+           let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        } else {
+            tagsJson = nil
+        }
+
         let record = ActionItemRecord(
             backendSynced: false,
             description: task.title,
             source: "screenshot",
             priority: task.priority.rawValue,
-            category: task.category.rawValue,
+            category: task.primaryTag,
+            tagsJson: tagsJson,
             screenshotId: screenshotId,
             confidence: task.confidence,
             sourceApp: task.sourceApp,
@@ -254,8 +267,11 @@ actor TaskAssistant: ProactiveAssistant {
                 "confidence": task.confidence,
                 "context_summary": taskResult.contextSummary,
                 "current_activity": taskResult.currentActivity,
-                "category": task.category.rawValue
+                "tags": task.tags
             ]
+            if let primaryTag = task.primaryTag {
+                metadata["category"] = primaryTag
+            }
 
             // Add reasoning/description if available
             if let reasoning = task.description {
@@ -272,7 +288,7 @@ actor TaskAssistant: ProactiveAssistant {
                 dueAt: nil, // Could parse task.inferredDeadline if available
                 source: "screenshot",
                 priority: task.priority.rawValue,
-                category: task.category.rawValue,
+                category: task.primaryTag,
                 metadata: metadata
             )
 
@@ -373,7 +389,7 @@ actor TaskAssistant: ProactiveAssistant {
 
     private func extractTasks(from jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
         // Build context with previous tasks
-        var prompt = "Screenshot from \(appName). Is there a request directed at the user from another person or AI that they haven't acted on?\n\n"
+        var prompt = "Screenshot from \(appName). Is there a request directed at the user from another person or AI that they haven't acted on? If yes, assign 1-3 relevant tags (e.g. a coding work task could have tags ['work', 'code']).\n\n"
 
         if !previousTasks.isEmpty {
             prompt += "PREVIOUSLY EXTRACTED TASKS (do not re-extract these or semantically similar ones):\n"
@@ -397,10 +413,10 @@ actor TaskAssistant: ProactiveAssistant {
             "title": .init(type: "string", description: "Brief, actionable task title"),
             "description": .init(type: "string", description: "Optional additional context"),
             "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
-            "category": .init(
-                type: "string",
-                enum: TaskClassification.allCases.map { $0.rawValue },
-                description: "Task category: 'feature' for new features/enhancements, 'bug' for bugs/issues to fix, 'code' for coding/development tasks, 'work' for professional tasks, 'personal' for personal to-dos, 'research' for investigation/learning, 'communication' for messages/calls, 'finance' for money-related, 'health' for wellness, 'other' for everything else"
+            "tags": .init(
+                type: "array",
+                description: "1-3 relevant tags from: 'feature' (new features/enhancements), 'bug' (bugs/issues), 'code' (coding/development), 'work' (professional), 'personal' (personal to-dos), 'research' (investigation/learning), 'communication' (messages/calls), 'finance' (money-related), 'health' (wellness), 'other' (everything else). A task can have multiple tags e.g. ['work', 'code'].",
+                items: .init(type: "string", properties: nil, required: nil)
             ),
             "source_app": .init(type: "string", description: "App where task was found"),
             "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied"),
@@ -415,7 +431,7 @@ actor TaskAssistant: ProactiveAssistant {
                     type: "object",
                     description: "The extracted task (only if has_new_task is true)",
                     properties: taskProperties,
-                    required: ["title", "priority", "category", "source_app", "confidence"]
+                    required: ["title", "priority", "tags", "source_app", "confidence"]
                 ),
                 "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
                 "current_activity": .init(type: "string", description: "High-level description of user's activity")
