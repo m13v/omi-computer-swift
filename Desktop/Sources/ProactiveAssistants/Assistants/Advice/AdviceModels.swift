@@ -4,7 +4,7 @@ import Foundation
 
 enum AdviceCategory: String, Codable {
     case productivity
-    case health
+    case health // legacy, kept for backward compatibility with stored records
     case communication
     case learning
     case other
