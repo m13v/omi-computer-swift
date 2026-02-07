@@ -1987,6 +1987,7 @@ impl FirestoreService {
         due_at: Option<DateTime<Utc>>,
         priority: Option<&str>,
         category: Option<&str>,
+        goal_id: Option<&str>,
     ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
         // Build update mask and fields
         let mut field_paths: Vec<&str> = vec!["updated_at"];
@@ -2026,6 +2027,11 @@ impl FirestoreService {
         if let Some(cat) = category {
             field_paths.push("category");
             fields["category"] = json!({"stringValue": cat});
+        }
+
+        if let Some(gid) = goal_id {
+            field_paths.push("goal_id");
+            fields["goal_id"] = json!({"stringValue": gid});
         }
 
         let update_mask = field_paths
@@ -3120,6 +3126,7 @@ impl FirestoreService {
             deleted_reason: self.parse_string(fields, "deleted_reason"),
             kept_task_id: self.parse_string(fields, "kept_task_id"),
             category: self.parse_string(fields, "category"),
+            goal_id: self.parse_string(fields, "goal_id"),
         })
     }
 
