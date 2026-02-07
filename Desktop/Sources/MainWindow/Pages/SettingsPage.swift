@@ -82,6 +82,7 @@ struct SettingsContentView: View {
     @State private var memoryExtractionInterval: Double
     @State private var memoryMinConfidence: Double
     @State private var memoryNotificationsEnabled: Bool
+    @State private var memoryExcludedApps: Set<String>
 
     // Glow preview state
     @State private var isPreviewRunning: Bool = false
@@ -184,6 +185,7 @@ struct SettingsContentView: View {
         _memoryExtractionInterval = State(initialValue: MemoryAssistantSettings.shared.extractionInterval)
         _memoryMinConfidence = State(initialValue: MemoryAssistantSettings.shared.minConfidence)
         _memoryNotificationsEnabled = State(initialValue: MemoryAssistantSettings.shared.notificationsEnabled)
+        _memoryExcludedApps = State(initialValue: MemoryAssistantSettings.shared.excludedApps)
     }
 
     /// Computed status text for notifications
@@ -1819,6 +1821,67 @@ struct SettingsContentView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Excluded Apps for Memory Extraction
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Excluded Apps")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Memories won't be extracted from these apps")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        // Built-in system exclusions (non-removable, shared across assistants)
+                        DisclosureGroup {
+                            LazyVStack(spacing: 4) {
+                                ForEach(Array(TaskAssistantSettings.builtInExcludedApps).sorted(), id: \.self) { appName in
+                                    HStack(spacing: 12) {
+                                        AppIconView(appName: appName, size: 20)
+
+                                        Text(appName)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(OmiColors.textTertiary)
+
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        } label: {
+                            Text("System apps always excluded (\(TaskAssistantSettings.builtInExcludedApps.count))")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .tint(OmiColors.textTertiary)
+
+                        if !memoryExcludedApps.isEmpty {
+                            LazyVStack(spacing: 8) {
+                                ForEach(Array(memoryExcludedApps).sorted(), id: \.self) { appName in
+                                    ExcludedAppRow(
+                                        appName: appName,
+                                        onRemove: {
+                                            MemoryAssistantSettings.shared.includeApp(appName)
+                                            memoryExcludedApps = MemoryAssistantSettings.shared.excludedApps
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        AddExcludedAppView(
+                            onAdd: { appName in
+                                MemoryAssistantSettings.shared.excludeApp(appName)
+                                memoryExcludedApps = MemoryAssistantSettings.shared.excludedApps
+                            },
+                            excludedApps: memoryExcludedApps
+                        )
                     }
                 }
             }
