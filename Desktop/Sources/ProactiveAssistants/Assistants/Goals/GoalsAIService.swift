@@ -15,7 +15,7 @@ actor GoalsAIService {
         }
     }
 
-    /// Response schema shared by suggestGoal and generateGoal
+    /// Response schema for goal generation
     private var goalSuggestionSchema: GeminiRequest.GenerationConfig.ResponseSchema {
         GeminiRequest.GenerationConfig.ResponseSchema(
             type: "object",
@@ -134,50 +134,6 @@ actor GoalsAIService {
 
         log("GoalsAI: Auto-created goal '\(goal.title)' (id: \(goal.id))")
         return goal
-    }
-
-    // MARK: - Suggest Goal (manual)
-
-    /// Generate a goal suggestion based on rich user context (for manual "Get AI Suggestion" flow)
-    func suggestGoal() async throws -> GoalSuggestion {
-        guard let client = geminiClient else {
-            throw GoalsAIError.clientNotInitialized
-        }
-
-        let ctx = await fetchRichContext()
-
-        // Handle case with no context at all
-        if ctx.memories.isEmpty && ctx.conversations.isEmpty && ctx.actionItems.isEmpty {
-            return GoalSuggestion(
-                suggestedTitle: "Learn something new every day",
-                suggestedType: "scale",
-                suggestedTarget: 10,
-                suggestedMin: 0,
-                suggestedMax: 10,
-                reasoning: "Start tracking your daily learning progress!"
-            )
-        }
-
-        // Build prompt using the richer generateGoal prompt
-        let prompt = GoalPrompts.generateGoal
-            .replacingOccurrences(of: "{persona_context}", with: ctx.persona)
-            .replacingOccurrences(of: "{memory_context}", with: ctx.memories.isEmpty ? "No memories yet" : ctx.memories)
-            .replacingOccurrences(of: "{conversation_context}", with: ctx.conversations.isEmpty ? "No recent conversations" : ctx.conversations)
-            .replacingOccurrences(of: "{action_items_context}", with: ctx.actionItems.isEmpty ? "No active tasks" : ctx.actionItems)
-            .replacingOccurrences(of: "{existing_goals}", with: ctx.existingGoals)
-
-        // Call Gemini
-        let responseText = try await client.sendRequest(
-            prompt: prompt,
-            systemPrompt: "You are a goal coach. Suggest meaningful, achievable goals based on user context.",
-            responseSchema: goalSuggestionSchema
-        )
-
-        guard let data = responseText.data(using: .utf8) else {
-            throw GoalsAIError.invalidResponse
-        }
-
-        return try JSONDecoder().decode(GoalSuggestion.self, from: data)
     }
 
     // MARK: - Get Goal Advice
