@@ -180,11 +180,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Task {
                 await TierManager.shared.checkTierIfNeeded()
             }
-
-            // Start automatic goal generation (daily)
-            Task {
-                await GoalGenerationService.shared.start()
-            }
         }
 
         // One-time migration: Enable launch at login for existing users who haven't set it
