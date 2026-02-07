@@ -29,6 +29,9 @@ actor RewindDatabase {
 
     private init() {}
 
+    /// Whether the database has been successfully initialized
+    var isInitialized: Bool { dbQueue != nil }
+
     /// Get the database queue for other storage actors
     func getDatabaseQueue() -> DatabaseQueue? {
         return dbQueue
@@ -53,6 +56,8 @@ actor RewindDatabase {
 
         do {
             try await task.value
+            // Clear task on success to release the Task object
+            initializationTask = nil
         } catch {
             // Clear task on failure so retry is possible
             initializationTask = nil
