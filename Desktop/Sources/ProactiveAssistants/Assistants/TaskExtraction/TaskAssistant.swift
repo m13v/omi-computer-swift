@@ -116,6 +116,7 @@ actor TaskAssistant: ProactiveAssistant {
         // Skip apps excluded from task extraction
         let excluded = await MainActor.run { TaskAssistantSettings.shared.isAppExcluded(frame.appName) }
         if excluded {
+            log("Task: Skipping excluded app '\(frame.appName)'")
             return nil
         }
 
