@@ -1578,6 +1578,30 @@ struct SettingsContentView: View {
                                 .foregroundColor(OmiColors.textTertiary)
                         }
 
+                        // Built-in system exclusions (non-removable)
+                        DisclosureGroup {
+                            LazyVStack(spacing: 4) {
+                                ForEach(Array(TaskAssistantSettings.builtInExcludedApps).sorted(), id: \.self) { appName in
+                                    HStack(spacing: 12) {
+                                        AppIconView(appName: appName, size: 20)
+
+                                        Text(appName)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(OmiColors.textTertiary)
+
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        } label: {
+                            Text("System apps always excluded (\(TaskAssistantSettings.builtInExcludedApps.count))")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .tint(OmiColors.textTertiary)
+
                         if !taskExcludedApps.isEmpty {
                             LazyVStack(spacing: 8) {
                                 ForEach(Array(taskExcludedApps).sorted(), id: \.self) { appName in
@@ -2641,7 +2665,7 @@ struct AddExcludedAppView: View {
 
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(runningApps.filter { !excludedApps.contains($0) }, id: \.self) { appName in
+                        ForEach(runningApps.filter { !excludedApps.contains($0) && !TaskAssistantSettings.builtInExcludedApps.contains($0) }, id: \.self) { appName in
                             RunningAppChip(appName: appName) {
                                 onAdd(appName)
                             }
