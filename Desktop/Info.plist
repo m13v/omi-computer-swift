@@ -59,6 +59,6 @@
     <key>SUAutomaticallyUpdate</key>
     <false/>
     <key>SUScheduledCheckInterval</key>
-    <integer>3600</integer>
+    <integer>600</integer>
 </dict>
 </plist>
