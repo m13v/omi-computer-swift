@@ -148,6 +148,16 @@ class DashboardViewModel: ObservableObject {
                 goalId: goal.id,
                 currentValue: currentValue
             )
+
+            // Check if the backend auto-completed this goal
+            if updated.completedAt != nil {
+                log("Goals: '\(goal.title)' COMPLETED! Triggering celebration.")
+                goals.removeAll { $0.id == goal.id }
+                saveGoalsToCache()
+                NotificationCenter.default.post(name: .goalCompleted, object: updated)
+                return
+            }
+
             if let index = goals.firstIndex(where: { $0.id == goal.id }) {
                 goals[index] = updated
             }
