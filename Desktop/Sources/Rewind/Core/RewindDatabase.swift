@@ -1020,6 +1020,18 @@ actor RewindDatabase {
             """)
         }
 
+        // Migration 16: Add tagsJson column to action_items for multi-tag support
+        migrator.registerMigration("addActionItemTagsJson") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "tagsJson", .text)
+            }
+
+            // Migrate existing rows: populate tagsJson from category
+            try db.execute(sql: """
+                UPDATE action_items SET tagsJson = json_array(category) WHERE category IS NOT NULL
+            """)
+        }
+
         try migrator.migrate(queue)
     }
 
