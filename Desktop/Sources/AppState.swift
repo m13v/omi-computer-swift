@@ -1989,4 +1989,6 @@ extension Notification.Name {
     static let advicePageDidLoad = Notification.Name("advicePageDidLoad")
     /// Posted when Apps page finishes loading initial data
     static let appsPageDidLoad = Notification.Name("appsPageDidLoad")
+    /// Posted when a goal is auto-created by GoalGenerationService
+    static let goalAutoCreated = Notification.Name("goalAutoCreated")
 }
