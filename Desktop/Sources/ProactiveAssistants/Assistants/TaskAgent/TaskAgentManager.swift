@@ -24,19 +24,22 @@ class TaskAgentManager: ObservableObject {
         var output: String?
         var plan: String?
         var completedAt: Date?
+        var editedFiles: [String] = []
     }
 
     enum AgentStatus: String, CaseIterable {
         case pending = "pending"
         case processing = "processing"
+        case editing = "editing"
         case completed = "completed"
         case failed = "failed"
 
         var displayName: String {
             switch self {
             case .pending: return "Starting..."
-            case .processing: return "Analyzing..."
-            case .completed: return "Ready"
+            case .processing: return "Running..."
+            case .editing: return "Editing..."
+            case .completed: return "Done"
             case .failed: return "Failed"
             }
         }
@@ -45,6 +48,7 @@ class TaskAgentManager: ObservableObject {
             switch self {
             case .pending: return "clock"
             case .processing: return "bolt.fill"
+            case .editing: return "pencil"
             case .completed: return "checkmark.circle.fill"
             case .failed: return "xmark.circle.fill"
             }
@@ -303,37 +307,58 @@ class TaskAgentManager: ObservableObject {
         let task = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self = self else { break }
-                guard self.activeSessions[taskId]?.status == .processing else { break }
+                let currentStatus = self.activeSessions[taskId]?.status
+                guard currentStatus == .processing || currentStatus == .editing else { break }
 
                 try? await Task.sleep(nanoseconds: 5_000_000_000) // 5 seconds
 
                 guard !Task.isCancelled else { break }
 
                 let output = self.readTmuxOutput(sessionName: sessionName)
+                let editedFiles = self.parseEditedFiles(from: output)
 
                 await MainActor.run {
                     self.activeSessions[taskId]?.output = output
+                    if !editedFiles.isEmpty {
+                        self.activeSessions[taskId]?.editedFiles = editedFiles
+                    }
                 }
 
-                // Check if session has completed (look for completion markers)
+                // Check if session has completed (waiting for user input)
                 if self.isSessionCompleted(output: output) {
                     await MainActor.run {
                         self.activeSessions[taskId]?.status = .completed
                         self.activeSessions[taskId]?.plan = self.extractPlan(from: output)
                         self.activeSessions[taskId]?.completedAt = Date()
                     }
-                    logMessage("TaskAgentManager: Session completed for task \(taskId)")
+                    logMessage("TaskAgentManager: Session completed for task \(taskId) (\(editedFiles.count) files edited)")
                     break
+                }
+
+                // Update status based on activity
+                if !editedFiles.isEmpty {
+                    await MainActor.run {
+                        if self.activeSessions[taskId]?.status == .processing {
+                            self.activeSessions[taskId]?.status = .editing
+                        }
+                    }
                 }
 
                 // Check if session still exists
                 if !self.isSessionAlive(sessionName: sessionName) {
                     await MainActor.run {
-                        if self.activeSessions[taskId]?.status == .processing {
-                            self.activeSessions[taskId]?.status = .failed
+                        let status = self.activeSessions[taskId]?.status
+                        if status == .processing || status == .editing {
+                            // If files were edited before session ended, mark as completed
+                            if !editedFiles.isEmpty {
+                                self.activeSessions[taskId]?.status = .completed
+                                self.activeSessions[taskId]?.completedAt = Date()
+                            } else {
+                                self.activeSessions[taskId]?.status = .failed
+                            }
                         }
                     }
-                    logMessage("TaskAgentManager: Session died for task \(taskId)")
+                    logMessage("TaskAgentManager: Session ended for task \(taskId) (\(editedFiles.count) files edited)")
                     break
                 }
             }
@@ -396,6 +421,38 @@ class TaskAgentManager: ObservableObject {
         }
 
         return false
+    }
+
+    private func parseEditedFiles(from output: String) -> [String] {
+        // Detect files edited by Claude Code from tmux output
+        // Claude Code shows patterns like:
+        //   ⏺ Update(path/to/file.swift)
+        //   ● Update(path/to/file.swift)
+        //   ⏺ Write(path/to/file.swift)
+        //   Update(path/to/file.swift)
+        var files = Set<String>()
+
+        let editPatterns = [
+            "Update(", "Edit(", "Write(", "Created "
+        ]
+
+        for line in output.components(separatedBy: .newlines) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            for pattern in editPatterns {
+                if trimmed.contains(pattern),
+                   let start = trimmed.range(of: pattern)?.upperBound {
+                    let rest = trimmed[start...]
+                    if let end = rest.firstIndex(of: ")") {
+                        let filePath = String(rest[..<end]).trimmingCharacters(in: .whitespaces)
+                        if !filePath.isEmpty {
+                            files.insert(filePath)
+                        }
+                    }
+                }
+            }
+        }
+
+        return Array(files).sorted()
     }
 
     private func extractPlan(from output: String) -> String {
