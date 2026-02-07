@@ -27,8 +27,11 @@ impl Default for GoalType {
 pub struct GoalDB {
     /// Document ID
     pub id: String,
-    /// Goal title/description
+    /// Goal title
     pub title: String,
+    /// Detailed description of the goal (why it matters, what achieving it looks like)
+    #[serde(default)]
+    pub description: Option<String>,
     /// Type of goal measurement
     #[serde(default)]
     pub goal_type: GoalType,
@@ -69,8 +72,10 @@ fn default_true() -> bool {
 /// Request body for creating a new goal
 #[derive(Debug, Clone, Deserialize)]
 pub struct CreateGoalRequest {
-    /// Goal title/description (required)
+    /// Goal title (required)
     pub title: String,
+    /// Detailed description (optional)
+    pub description: Option<String>,
     /// Type of goal measurement (optional, defaults to boolean)
     #[serde(default)]
     pub goal_type: GoalType,
@@ -91,6 +96,8 @@ pub struct CreateGoalRequest {
 pub struct UpdateGoalRequest {
     /// New title (optional)
     pub title: Option<String>,
+    /// New description (optional)
+    pub description: Option<String>,
     /// New target value (optional)
     pub target_value: Option<f64>,
     /// New current value (optional)
