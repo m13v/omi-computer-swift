@@ -223,7 +223,7 @@ async fn get_chat_context(
     tracing::info!(
         "Getting chat context for user {} - question: {} ({} previous messages, app_id={:?})",
         user.uid,
-        &question[..question.len().min(50)],
+        truncate_str(&question, 50),
         request.messages.len(),
         request.app_id
     );
@@ -522,6 +522,18 @@ async fn generate_session_title(
 // HELPER FUNCTIONS
 // ============================================================================
 
+/// Truncate a string to at most `max_bytes` bytes at a valid UTF-8 character boundary.
+fn truncate_str(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Format conversation history for inclusion in prompts
 fn format_conversation_history(messages: &[ChatMessageInput]) -> String {
     if messages.is_empty() {
@@ -534,7 +546,7 @@ fn format_conversation_history(messages: &[ChatMessageInput]) -> String {
         let role = if msg.sender == "human" { "User" } else { "Assistant" };
         // Truncate very long messages
         let text = if msg.text.len() > 500 {
-            format!("{}...", &msg.text[..500])
+            format!("{}...", truncate_str(&msg.text, 500))
         } else {
             msg.text.clone()
         };
