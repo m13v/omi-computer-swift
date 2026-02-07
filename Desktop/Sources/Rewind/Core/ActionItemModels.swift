@@ -20,6 +20,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var conversationId: String?
     var priority: String?               // high, medium, low
     var category: String?
+    var tagsJson: String?               // JSON array: ["work", "code"]
     var dueAt: Date?
 
     // Desktop extraction fields
@@ -49,6 +50,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         conversationId: String? = nil,
         priority: String? = nil,
         category: String? = nil,
+        tagsJson: String? = nil,
         dueAt: Date? = nil,
         screenshotId: Int64? = nil,
         confidence: Double? = nil,
@@ -69,6 +71,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.conversationId = conversationId
         self.priority = priority
         self.category = category
+        self.tagsJson = tagsJson
         self.dueAt = dueAt
         self.screenshotId = screenshotId
         self.confidence = confidence
@@ -109,6 +112,32 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         metadataJson = json
     }
 
+    // MARK: - Tag Helpers
+
+    /// Get tags as array (decoded from JSON)
+    var tags: [String] {
+        guard let json = tagsJson,
+              let data = json.data(using: .utf8),
+              let array = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return array
+    }
+
+    /// Set tags from array
+    mutating func setTags(_ tags: [String]) {
+        if tags.isEmpty {
+            tagsJson = nil
+        } else if let data = try? JSONEncoder().encode(tags),
+                  let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        }
+    }
+
+    /// Check if record has a specific tag
+    func hasTag(_ tag: String) -> Bool {
+        tags.contains(tag)
+    }
+
     // MARK: - Relationships
 
     static let screenshot = belongsTo(Screenshot.self)
@@ -147,6 +176,17 @@ extension ActionItemRecord {
 
     /// Create a local record from a TaskActionItem (for caching API responses with full data)
     static func from(_ item: TaskActionItem) -> ActionItemRecord {
+        // Build tagsJson from item.tags
+        let tagsJson: String?
+        let itemTags = item.tags
+        if !itemTags.isEmpty,
+           let data = try? JSONEncoder().encode(itemTags),
+           let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        } else {
+            tagsJson = nil
+        }
+
         return ActionItemRecord(
             backendId: item.id,
             backendSynced: true,
@@ -157,6 +197,7 @@ extension ActionItemRecord {
             conversationId: item.conversationId,
             priority: item.priority,
             category: item.category,
+            tagsJson: tagsJson,
             dueAt: item.dueAt,
             screenshotId: nil,
             confidence: nil,
@@ -193,6 +234,14 @@ extension ActionItemRecord {
         self.dueAt = item.dueAt
         self.metadataJson = item.metadata
         self.updatedAt = item.updatedAt ?? Date()
+
+        // Sync tags from TaskActionItem
+        let itemTags = item.tags
+        if !itemTags.isEmpty,
+           let data = try? JSONEncoder().encode(itemTags),
+           let json = String(data: data, encoding: .utf8) {
+            self.tagsJson = json
+        }
     }
 
     /// Convert to ActionItem for UI display (simplified)
