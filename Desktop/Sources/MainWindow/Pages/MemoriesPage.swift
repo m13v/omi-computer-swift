@@ -1014,7 +1014,7 @@ struct MemoriesPage: View {
                             .font(.system(size: 13))
                             .foregroundColor(OmiColors.textTertiary)
                     } else {
-                        Text("\(viewModel.memories.count) memories\(viewModel.hasMoreMemories ? "+" : "")")
+                        Text("\(viewModel.totalMemoriesCount) memories")
                             .font(.system(size: 13))
                             .foregroundColor(OmiColors.textTertiary)
                     }
