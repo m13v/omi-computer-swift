@@ -10,6 +10,7 @@ struct GoalsWidget: View {
 
     @State private var editingGoal: Goal? = nil
     @State private var showingCreateSheet = false
+    @State private var showingHistory = false
     @State private var isGeneratingGoal = false
 
     // AI Features
@@ -24,6 +25,14 @@ struct GoalsWidget: View {
                     .foregroundColor(OmiColors.textPrimary)
 
                 Spacer()
+
+                // History button
+                Button(action: { showingHistory = true }) {
+                    Image(systemName: "clock.arrow.circlepath")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
 
                 // AI goal generation button (when there are goals but room for more)
                 if goals.count > 0 && goals.count < 3 {
@@ -151,6 +160,10 @@ struct GoalsWidget: View {
                 goal: goal,
                 onDismiss: { selectedGoalForAdvice = nil }
             )
+        }
+        .sheet(isPresented: $showingHistory) {
+            GoalsHistoryPage(onDismiss: { showingHistory = false })
+                .frame(width: 480, height: 500)
         }
     }
 
