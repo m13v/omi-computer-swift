@@ -17,6 +17,7 @@ class ViewModelContainer: ObservableObject {
     // Loading state
     @Published var isInitialLoadComplete = false
     @Published var isLoading = false
+    @Published var databaseInitFailed = false
 
     /// Load all data in parallel at app launch
     func loadAllData() async {
@@ -29,17 +30,42 @@ class ViewModelContainer: ObservableObject {
         // Pre-initialize database so local SQLite reads are instant
         do {
             try await RewindDatabase.shared.initialize()
+            databaseInitFailed = false
         } catch {
-            logError("ViewModelContainer: Database pre-init failed", error: error)
+            logError("ViewModelContainer: Database pre-init failed, DB-dependent loads will be skipped", error: error)
+            databaseInitFailed = true
         }
 
+        // DB-dependent loads are guarded — skip them if database init failed
+        // to prevent a stampede of retries from each storage actor
+        let dbAvailable = !databaseInitFailed
+
         // Load shared stores first (both Dashboard and Tasks use these)
-        async let tasks: Void = measurePerfAsync("DATA LOAD: TasksStore") { await tasksStore.loadTasks() }
+        async let tasks: Void = measurePerfAsync("DATA LOAD: TasksStore") {
+            guard dbAvailable else {
+                log("DATA LOAD: Skipping TasksStore (database unavailable)")
+                return
+            }
+            await tasksStore.loadTasks()
+        }
 
         // Load page-specific data in parallel
-        async let dashboard: Void = measurePerfAsync("DATA LOAD: Dashboard") { await dashboardViewModel.loadDashboardData() }
+        async let dashboard: Void = measurePerfAsync("DATA LOAD: Dashboard") {
+            guard dbAvailable else {
+                log("DATA LOAD: Skipping Dashboard (database unavailable)")
+                return
+            }
+            await dashboardViewModel.loadDashboardData()
+        }
+        // Apps and Chat don't depend on local DB
         async let apps: Void = measurePerfAsync("DATA LOAD: Apps") { await appProvider.fetchApps() }
-        async let memories: Void = measurePerfAsync("DATA LOAD: Memories") { await memoriesViewModel.loadMemories() }
+        async let memories: Void = measurePerfAsync("DATA LOAD: Memories") {
+            guard dbAvailable else {
+                log("DATA LOAD: Skipping Memories (database unavailable)")
+                return
+            }
+            await memoriesViewModel.loadMemories()
+        }
         async let chat: Void = measurePerfAsync("DATA LOAD: Chat") { await chatProvider.initialize() }
 
         // Wait for all to complete
@@ -50,5 +76,27 @@ class ViewModelContainer: ObservableObject {
 
         timer.stop()
         logPerf("DATA LOAD: Complete - all pages loaded", cpu: true)
+    }
+
+    /// Retry database initialization and reload DB-dependent data
+    func retryDatabaseInit() async {
+        guard databaseInitFailed else { return }
+        log("ViewModelContainer: Retrying database initialization...")
+
+        do {
+            try await RewindDatabase.shared.initialize()
+            databaseInitFailed = false
+            log("ViewModelContainer: Database retry succeeded, loading data...")
+
+            // Load previously skipped DB-dependent data
+            async let tasks: Void = tasksStore.loadTasks()
+            async let dashboard: Void = dashboardViewModel.loadDashboardData()
+            async let memories: Void = memoriesViewModel.loadMemories()
+            _ = await (tasks, dashboard, memories)
+
+            log("ViewModelContainer: DB-dependent data loaded after retry")
+        } catch {
+            logError("ViewModelContainer: Database retry failed", error: error)
+        }
     }
 }
