@@ -112,6 +112,7 @@ class MemoriesViewModel: ObservableObject {
     @Published var searchText = "" {
         didSet {
             if oldValue != searchText {
+                displayLimit = pageSize
                 Task { await performSearch() }
             }
         }
@@ -120,11 +121,15 @@ class MemoriesViewModel: ObservableObject {
     @Published private(set) var searchResults: [ServerMemory] = []
     @Published var selectedTags: Set<MemoryTag> = [] {
         didSet {
+            // Reset display limit when filters change
+            displayLimit = pageSize
             // When tags are selected, query SQLite directly
             if !selectedTags.isEmpty {
                 Task { await loadFilteredMemoriesFromDatabase() }
             } else {
                 filteredFromDatabase = []
+                allFilteredResults = []
+                hasMoreFilteredResults = false
                 recomputeFilteredMemories()
             }
         }
@@ -180,8 +185,20 @@ class MemoriesViewModel: ObservableObject {
     /// Cached tag counts - only recomputed when memories change
     @Published private(set) var tagCounts: [MemoryTag: Int] = [:]
 
-    /// Cached unread tips count - only recomputed when memories change
+    /// Cached unread tips count - queried from SQLite for true totals
     @Published private(set) var unreadTipsCount: Int = 0
+
+    /// Total memory count from SQLite (not just loaded items)
+    @Published private(set) var totalMemoriesCount: Int = 0
+
+    /// Whether there are more filtered/search results beyond the display limit
+    @Published private(set) var hasMoreFilteredResults = false
+
+    /// Full filtered results before display cap (kept in memory for pagination)
+    private var allFilteredResults: [ServerMemory] = []
+
+    /// Current display limit for filtered/search results
+    private var displayLimit = 100
 
     /// Count memories for a specific tag (uses cached value)
     func tagCount(_ tag: MemoryTag) -> Int {
@@ -239,10 +256,7 @@ class MemoriesViewModel: ObservableObject {
         // Recompute filtered memories first (fast, in-memory)
         recomputeFilteredMemories()
 
-        // Compute unread tips count from loaded memories
-        unreadTipsCount = memories.filter { $0.isTip && !$0.isRead }.count
-
-        // Load true tag counts from SQLite asynchronously
+        // Load true tag counts and unread tips count from SQLite asynchronously
         Task {
             await loadTagCountsFromDatabase()
         }
@@ -253,8 +267,12 @@ class MemoriesViewModel: ObservableObject {
         do {
             var counts: [MemoryTag: Int] = [:]
 
-            // Get total count (no filters)
+            // Get total count (no filters) and store for "All" badge
             let totalCount = try await MemoryStorage.shared.getLocalMemoriesCount()
+            totalMemoriesCount = totalCount
+
+            // Get unread tips count from SQLite
+            unreadTipsCount = try await MemoryStorage.shared.getUnreadTipsCount()
 
             // Focus tags
             counts[.focus] = try await MemoryStorage.shared.getLocalMemoriesCount(tags: ["focus"])
@@ -338,7 +356,7 @@ class MemoriesViewModel: ObservableObject {
         do {
             // Query SQLite with OR logic for tags
             let results = try await MemoryStorage.shared.getFilteredMemories(
-                limit: 500,
+                limit: 10000,
                 matchAnyTag: matchAnyTag.isEmpty ? nil : matchAnyTag,
                 matchAnyCategory: matchAnyCategory.isEmpty ? nil : matchAnyCategory
             )
@@ -362,6 +380,8 @@ class MemoriesViewModel: ObservableObject {
 
     /// Recompute filtered memories when search/tags change
     private func recomputeFilteredMemories() {
+        let isInFilteredMode = !searchText.isEmpty || !selectedTags.isEmpty
+
         // Determine source based on current state
         var result: [ServerMemory]
 
@@ -385,7 +405,23 @@ class MemoriesViewModel: ObservableObject {
         // Sort by date (newest first)
         result.sort { $0.createdAt > $1.createdAt }
 
-        filteredMemories = result
+        if isInFilteredMode {
+            // Store full results for pagination, apply display cap
+            allFilteredResults = result
+            filteredMemories = Array(result.prefix(displayLimit))
+            hasMoreFilteredResults = result.count > displayLimit
+        } else {
+            allFilteredResults = []
+            hasMoreFilteredResults = false
+            filteredMemories = result
+        }
+    }
+
+    /// Load more filtered/search results (pagination within already-queried results)
+    func loadMoreFiltered() {
+        displayLimit += pageSize
+        filteredMemories = Array(allFilteredResults.prefix(displayLimit))
+        hasMoreFilteredResults = allFilteredResults.count > displayLimit
     }
 
     /// Perform search against SQLite database for efficient full-text search
@@ -405,7 +441,7 @@ class MemoriesViewModel: ObservableObject {
         do {
             let results = try await MemoryStorage.shared.searchLocalMemories(
                 query: query,
-                limit: 200
+                limit: 10000
             )
             searchResults = results
             log("MemoriesViewModel: Search for '\(query)' found \(results.count) results")
@@ -504,9 +540,15 @@ class MemoriesViewModel: ObservableObject {
         isLoading = false
     }
 
+    /// Whether we're currently in a filtered/search mode
+    var isInFilteredMode: Bool {
+        !searchText.isEmpty || !selectedTags.isEmpty
+    }
+
     /// Load more memories (pagination) - triggered by scrolling near end
     func loadMoreIfNeeded(currentMemory: ServerMemory) async {
-        guard hasMoreMemories, !isLoading, !isLoadingMore else { return }
+        let hasMore = isInFilteredMode ? hasMoreFilteredResults : hasMoreMemories
+        guard hasMore, !isLoading, !isLoadingMore else { return }
 
         // Only load more when near the end of the list
         let thresholdIndex = filteredMemories.index(filteredMemories.endIndex, offsetBy: -10, limitedBy: filteredMemories.startIndex) ?? filteredMemories.startIndex
@@ -515,7 +557,11 @@ class MemoriesViewModel: ObservableObject {
             return
         }
 
-        await loadMore()
+        if isInFilteredMode {
+            loadMoreFiltered()
+        } else {
+            await loadMore()
+        }
     }
 
     /// Explicitly load more memories (for button tap)
@@ -1169,7 +1215,7 @@ struct MemoriesPage: View {
                             Text("All")
                                 .font(.system(size: 13))
                             Spacer()
-                            Text("\(viewModel.memories.count)")
+                            Text("\(viewModel.totalMemoriesCount)")
                                 .font(.system(size: 11))
                                 .foregroundColor(OmiColors.textTertiary)
                                 .padding(.horizontal, 6)
@@ -1404,24 +1450,44 @@ struct MemoriesPage: View {
                 }
 
                 // "Load more" button if there are more memories
-                if viewModel.hasMoreMemories && !viewModel.isLoadingMore && !viewModel.filteredMemories.isEmpty {
-                    Button {
-                        Task { await viewModel.loadMore() }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "arrow.down.circle")
-                            Text("Load more memories")
+                if !viewModel.filteredMemories.isEmpty && !viewModel.isLoadingMore {
+                    if viewModel.isInFilteredMode && viewModel.hasMoreFilteredResults {
+                        Button {
+                            viewModel.loadMoreFiltered()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.circle")
+                                Text("Load more memories")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
                         }
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(OmiColors.backgroundTertiary)
-                        .cornerRadius(8)
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    } else if !viewModel.isInFilteredMode && viewModel.hasMoreMemories {
+                        Button {
+                            Task { await viewModel.loadMore() }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.circle")
+                                Text("Load more memories")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 8)
                 }
             }
             .padding(.horizontal, 24)
