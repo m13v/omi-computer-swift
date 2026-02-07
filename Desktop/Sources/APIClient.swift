@@ -1492,7 +1492,8 @@ extension APIClient {
         description: String? = nil,
         dueAt: Date? = nil,
         priority: String? = nil,
-        metadata: [String: Any]? = nil
+        metadata: [String: Any]? = nil,
+        goalId: String? = nil
     ) async throws -> TaskActionItem {
         struct UpdateRequest: Encodable {
             let completed: Bool?
@@ -1500,10 +1501,12 @@ extension APIClient {
             let dueAt: String?
             let priority: String?
             let metadata: String?
+            let goalId: String?
 
             enum CodingKeys: String, CodingKey {
                 case completed, description, priority, metadata
                 case dueAt = "due_at"
+                case goalId = "goal_id"
             }
         }
 
@@ -1523,7 +1526,8 @@ extension APIClient {
             description: description,
             dueAt: dueAt.map { formatter.string(from: $0) },
             priority: priority,
-            metadata: metadataString
+            metadata: metadataString,
+            goalId: goalId
         )
 
         return try await patch("v1/action-items/\(id)", body: request)
@@ -1663,6 +1667,7 @@ extension APIClient {
     /// Creates a new goal
     func createGoal(
         title: String,
+        description: String? = nil,
         goalType: GoalType = .boolean,
         targetValue: Double = 1.0,
         currentValue: Double = 0.0,
@@ -1672,6 +1677,7 @@ extension APIClient {
     ) async throws -> Goal {
         struct CreateGoalRequest: Encodable {
             let title: String
+            let description: String?
             let goalType: String
             let targetValue: Double
             let currentValue: Double
@@ -1680,7 +1686,7 @@ extension APIClient {
             let unit: String?
 
             enum CodingKeys: String, CodingKey {
-                case title, unit
+                case title, description, unit
                 case goalType = "goal_type"
                 case targetValue = "target_value"
                 case currentValue = "current_value"
@@ -1691,6 +1697,7 @@ extension APIClient {
 
         let request = CreateGoalRequest(
             title: title,
+            description: description,
             goalType: goalType.rawValue,
             targetValue: targetValue,
             currentValue: currentValue,
@@ -1818,6 +1825,8 @@ struct TaskActionItem: Codable, Identifiable {
     let deletedReason: String?
     /// ID of the task that was kept instead of this one
     let keptTaskId: String?
+    /// ID of the goal this task is linked to
+    let goalId: String?
 
     // Agent execution tracking (stored locally, not synced to backend)
     var agentStatus: String?       // nil, "pending", "processing", "completed", "failed"
@@ -1838,6 +1847,7 @@ struct TaskActionItem: Codable, Identifiable {
         case deletedAt = "deleted_at"
         case deletedReason = "deleted_reason"
         case keptTaskId = "kept_task_id"
+        case goalId = "goal_id"
     }
 
     /// Memberwise initializer for creating instances programmatically
@@ -1859,6 +1869,7 @@ struct TaskActionItem: Codable, Identifiable {
         deletedAt: Date? = nil,
         deletedReason: String? = nil,
         keptTaskId: String? = nil,
+        goalId: String? = nil,
         agentStatus: String? = nil,
         agentPrompt: String? = nil,
         agentPlan: String? = nil,
@@ -1883,6 +1894,7 @@ struct TaskActionItem: Codable, Identifiable {
         self.deletedAt = deletedAt
         self.deletedReason = deletedReason
         self.keptTaskId = keptTaskId
+        self.goalId = goalId
         self.agentStatus = agentStatus
         self.agentPrompt = agentPrompt
         self.agentPlan = agentPlan
@@ -2052,6 +2064,7 @@ enum GoalType: String, Codable, CaseIterable {
 struct Goal: Codable, Identifiable {
     let id: String
     let title: String
+    let description: String?
     let goalType: GoalType
     let targetValue: Double
     var currentValue: Double
@@ -2064,7 +2077,7 @@ struct Goal: Codable, Identifiable {
     let completedAt: Date?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, unit
+        case id, title, description, unit
         case goalType = "goal_type"
         case targetValue = "target_value"
         case currentValue = "current_value"
@@ -2080,6 +2093,7 @@ struct Goal: Codable, Identifiable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         id = try container.decode(String.self, forKey: .id)
         title = try container.decodeIfPresent(String.self, forKey: .title) ?? ""
+        description = try container.decodeIfPresent(String.self, forKey: .description)
         goalType = try container.decodeIfPresent(GoalType.self, forKey: .goalType) ?? .boolean
         targetValue = try container.decodeIfPresent(Double.self, forKey: .targetValue) ?? 1.0
         currentValue = try container.decodeIfPresent(Double.self, forKey: .currentValue) ?? 0.0
@@ -2096,6 +2110,7 @@ struct Goal: Codable, Identifiable {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(id, forKey: .id)
         try container.encode(title, forKey: .title)
+        try container.encodeIfPresent(description, forKey: .description)
         try container.encode(goalType, forKey: .goalType)
         try container.encode(targetValue, forKey: .targetValue)
         try container.encode(currentValue, forKey: .currentValue)
