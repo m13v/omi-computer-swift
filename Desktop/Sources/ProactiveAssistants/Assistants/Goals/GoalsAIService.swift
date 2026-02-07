@@ -8,43 +8,16 @@ actor GoalsAIService {
 
     private init() {
         do {
-            self.geminiClient = try GeminiClient(model: "gemini-2.0-flash")
+            self.geminiClient = try GeminiClient(model: "gemini-3-pro-preview")
         } catch {
             log("GoalsAIService: Failed to initialize GeminiClient: \(error)")
             self.geminiClient = nil
         }
     }
 
-    // MARK: - Suggest Goal
-
-    /// Generate a goal suggestion based on user's memories
-    func suggestGoal() async throws -> GoalSuggestion {
-        guard let client = geminiClient else {
-            throw GoalsAIError.clientNotInitialized
-        }
-
-        // 1. Fetch memories via API
-        let memories = try await APIClient.shared.getMemories(limit: 50)
-        let memoryContext = memories.prefix(20).map { $0.content }.joined(separator: "\n")
-
-        // Handle case with no memories
-        if memoryContext.isEmpty {
-            return GoalSuggestion(
-                suggestedTitle: "Learn something new every day",
-                suggestedType: "scale",
-                suggestedTarget: 10,
-                suggestedMin: 0,
-                suggestedMax: 10,
-                reasoning: "Start tracking your daily learning progress!"
-            )
-        }
-
-        // 2. Build prompt
-        let prompt = GoalPrompts.suggestGoal
-            .replacingOccurrences(of: "{memory_context}", with: memoryContext)
-
-        // 3. Build response schema
-        let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+    /// Response schema shared by suggestGoal and generateGoal
+    private var goalSuggestionSchema: GeminiRequest.GenerationConfig.ResponseSchema {
+        GeminiRequest.GenerationConfig.ResponseSchema(
             type: "object",
             properties: [
                 "suggested_title": .init(type: "string", description: "Brief, actionable goal title"),
@@ -56,15 +29,150 @@ actor GoalsAIService {
             ],
             required: ["suggested_title", "suggested_type", "suggested_target", "suggested_min", "suggested_max", "reasoning"]
         )
+    }
 
-        // 4. Call Gemini
+    // MARK: - Rich Context Fetching
+
+    /// Fetch rich user context for goal generation/suggestion
+    private func fetchRichContext() async -> (memories: String, conversations: String, actionItems: String, persona: String, existingGoals: String) {
+        // Fetch all context in parallel
+        async let memoriesFetch = { () async -> [ServerMemory] in
+            do { return try await APIClient.shared.getMemories(limit: 30) }
+            catch { log("GoalsAI: Failed to fetch memories: \(error.localizedDescription)"); return [] }
+        }()
+        async let conversationsFetch = { () async -> [ServerConversation] in
+            do { return try await APIClient.shared.getConversations(limit: 10, statuses: [.completed]) }
+            catch { log("GoalsAI: Failed to fetch conversations: \(error.localizedDescription)"); return [] }
+        }()
+        async let actionItemsFetch = { () async -> ActionItemsListResponse? in
+            do { return try await APIClient.shared.getActionItems(limit: 30, completed: false) }
+            catch { log("GoalsAI: Failed to fetch action items: \(error.localizedDescription)"); return nil }
+        }()
+        async let personaFetch = { () async -> Persona? in
+            do { return try await APIClient.shared.getPersona() }
+            catch { log("GoalsAI: Failed to fetch persona: \(error.localizedDescription)"); return nil }
+        }()
+        async let goalsFetch = { () async -> [Goal] in
+            do { return try await APIClient.shared.getGoals() }
+            catch { log("GoalsAI: Failed to fetch goals: \(error.localizedDescription)"); return [] }
+        }()
+
+        let (memories, conversations, actionItems, persona, goals) = await (memoriesFetch, conversationsFetch, actionItemsFetch, personaFetch, goalsFetch)
+
+        // Build context strings with truncation limits
+        let memoryContext = String(memories.map { $0.content }.joined(separator: "\n").prefix(800))
+        let conversationContext = String(conversations
+            .compactMap { $0.structured.overview.isEmpty ? nil : $0.structured.overview }
+            .joined(separator: "\n")
+            .prefix(1500))
+        let actionItemsContext = String((actionItems?.items ?? [])
+            .map { $0.description }
+            .joined(separator: "\n")
+            .prefix(600))
+        let personaContext: String
+        if let p = persona {
+            personaContext = String("\(p.name): \(p.description)".prefix(400))
+        } else {
+            personaContext = "No persona set"
+        }
+        let existingGoalsContext = goals.isEmpty
+            ? "None"
+            : goals.map { "- \($0.title) (\(Int($0.currentValue))/\(Int($0.targetValue)))" }.joined(separator: "\n")
+
+        return (memoryContext, conversationContext, actionItemsContext, personaContext, existingGoalsContext)
+    }
+
+    // MARK: - Generate Goal (automatic)
+
+    /// Automatically generate and create a goal based on rich user context
+    func generateGoal() async throws -> Goal {
+        guard let client = geminiClient else {
+            throw GoalsAIError.clientNotInitialized
+        }
+
+        let ctx = await fetchRichContext()
+
+        // Check if there's enough context to generate a meaningful goal
+        if ctx.memories.isEmpty && ctx.conversations.isEmpty && ctx.actionItems.isEmpty {
+            log("GoalsAI: Not enough context to generate a goal")
+            throw GoalsAIError.insufficientContext
+        }
+
+        // Build prompt
+        let prompt = GoalPrompts.generateGoal
+            .replacingOccurrences(of: "{persona_context}", with: ctx.persona)
+            .replacingOccurrences(of: "{memory_context}", with: ctx.memories.isEmpty ? "No memories yet" : ctx.memories)
+            .replacingOccurrences(of: "{conversation_context}", with: ctx.conversations.isEmpty ? "No recent conversations" : ctx.conversations)
+            .replacingOccurrences(of: "{action_items_context}", with: ctx.actionItems.isEmpty ? "No active tasks" : ctx.actionItems)
+            .replacingOccurrences(of: "{existing_goals}", with: ctx.existingGoals)
+
+        log("GoalsAI: Generating goal with rich context (memories: \(ctx.memories.count)c, conversations: \(ctx.conversations.count)c, tasks: \(ctx.actionItems.count)c)")
+
+        // Call Gemini
+        let responseText = try await client.sendRequest(
+            prompt: prompt,
+            systemPrompt: "You are a goal coach. Generate one meaningful, achievable goal based on the user's full context.",
+            responseSchema: goalSuggestionSchema
+        )
+
+        guard let data = responseText.data(using: .utf8) else {
+            throw GoalsAIError.invalidResponse
+        }
+
+        let suggestion = try JSONDecoder().decode(GoalSuggestion.self, from: data)
+        log("GoalsAI: Generated goal suggestion: '\(suggestion.suggestedTitle)' (\(suggestion.suggestedType))")
+
+        // Auto-create the goal via API
+        let goal = try await APIClient.shared.createGoal(
+            title: suggestion.suggestedTitle,
+            goalType: suggestion.goalType,
+            targetValue: suggestion.suggestedTarget,
+            currentValue: 0,
+            minValue: suggestion.suggestedMin,
+            maxValue: suggestion.suggestedMax
+        )
+
+        log("GoalsAI: Auto-created goal '\(goal.title)' (id: \(goal.id))")
+        return goal
+    }
+
+    // MARK: - Suggest Goal (manual)
+
+    /// Generate a goal suggestion based on rich user context (for manual "Get AI Suggestion" flow)
+    func suggestGoal() async throws -> GoalSuggestion {
+        guard let client = geminiClient else {
+            throw GoalsAIError.clientNotInitialized
+        }
+
+        let ctx = await fetchRichContext()
+
+        // Handle case with no context at all
+        if ctx.memories.isEmpty && ctx.conversations.isEmpty && ctx.actionItems.isEmpty {
+            return GoalSuggestion(
+                suggestedTitle: "Learn something new every day",
+                suggestedType: "scale",
+                suggestedTarget: 10,
+                suggestedMin: 0,
+                suggestedMax: 10,
+                reasoning: "Start tracking your daily learning progress!"
+            )
+        }
+
+        // Build prompt using the richer generateGoal prompt
+        let prompt = GoalPrompts.generateGoal
+            .replacingOccurrences(of: "{persona_context}", with: ctx.persona)
+            .replacingOccurrences(of: "{memory_context}", with: ctx.memories.isEmpty ? "No memories yet" : ctx.memories)
+            .replacingOccurrences(of: "{conversation_context}", with: ctx.conversations.isEmpty ? "No recent conversations" : ctx.conversations)
+            .replacingOccurrences(of: "{action_items_context}", with: ctx.actionItems.isEmpty ? "No active tasks" : ctx.actionItems)
+            .replacingOccurrences(of: "{existing_goals}", with: ctx.existingGoals)
+
+        // Call Gemini
         let responseText = try await client.sendRequest(
             prompt: prompt,
             systemPrompt: "You are a goal coach. Suggest meaningful, achievable goals based on user context.",
-            responseSchema: responseSchema
+            responseSchema: goalSuggestionSchema
         )
 
-        // 5. Parse response
         guard let data = responseText.data(using: .utf8) else {
             throw GoalsAIError.invalidResponse
         }
@@ -203,6 +311,7 @@ actor GoalsAIService {
 enum GoalsAIError: LocalizedError {
     case clientNotInitialized
     case invalidResponse
+    case insufficientContext
 
     var errorDescription: String? {
         switch self {
@@ -210,6 +319,8 @@ enum GoalsAIError: LocalizedError {
             return "Gemini client not initialized. Check GEMINI_API_KEY."
         case .invalidResponse:
             return "Invalid response from AI service"
+        case .insufficientContext:
+            return "Not enough user context to generate a meaningful goal"
         }
     }
 }
