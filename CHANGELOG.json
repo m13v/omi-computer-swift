@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.3.7",
+      "date": "2026-02-06",
+      "changes": [
+        "App renamed to Omi Beta with new icon for clearer identity",
+        "Help page with direct Crisp chat support from the founder",
+        "Loading screen during authentication for smoother sign-in",
+        "Tier gating for premium features in sidebar navigation",
+        "OCR optimizations with frame throttling, deduplication, and fast mode setting",
+        "Dashboard improvements: recent conversations widget and focus session stats",
+        "Advanced memory and task filtering by category, source, and priority",
+        "Inline memory editing with delete and public toggle",
+        "Reduced task polling frequency and paused updates when inactive",
+        "Fixed dev bundle ID to prevent permission conflicts between production and development builds"
+      ]
+    },
+    {
       "version": "0.3.6",
       "date": "2026-02-06",
       "changes": [
