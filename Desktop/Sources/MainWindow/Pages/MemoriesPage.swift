@@ -1104,7 +1104,7 @@ struct MemoriesPage: View {
                 .foregroundColor(viewModel.selectedTags.isEmpty ? OmiColors.textSecondary : OmiColors.textPrimary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 10)
-                .background(viewModel.selectedTags.isEmpty ? OmiColors.backgroundTertiary : Color.white)
+                .background(OmiColors.backgroundTertiary)
                 .cornerRadius(8)
                 .overlay(
                     RoundedRectangle(cornerRadius: 8)
