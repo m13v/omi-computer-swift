@@ -73,6 +73,23 @@ struct AgentStatusIndicator: View {
         manager.getSession(for: taskId)
     }
 
+    private var statusText: String {
+        guard let session = session else { return "" }
+        let fileCount = session.editedFiles.count
+        switch session.status {
+        case .pending:
+            return "Starting..."
+        case .processing:
+            return "Running..."
+        case .editing:
+            return fileCount > 0 ? "Editing (\(fileCount))" : "Editing..."
+        case .completed:
+            return fileCount > 0 ? "Done (\(fileCount) files)" : "Done"
+        case .failed:
+            return "Failed"
+        }
+    }
+
     var body: some View {
         if let session = session {
             Button {
@@ -81,7 +98,7 @@ struct AgentStatusIndicator: View {
                 HStack(spacing: 4) {
                     statusIcon(for: session.status)
 
-                    Text(session.status.displayName)
+                    Text(statusText)
                         .font(.system(size: 10, weight: .medium))
                 }
                 .foregroundColor(statusColor(for: session.status))
@@ -100,7 +117,7 @@ struct AgentStatusIndicator: View {
     @ViewBuilder
     private func statusIcon(for status: TaskAgentManager.AgentStatus) -> some View {
         switch status {
-        case .pending, .processing:
+        case .pending, .processing, .editing:
             ProgressView()
                 .scaleEffect(0.5)
                 .frame(width: 10, height: 10)
@@ -117,6 +134,7 @@ struct AgentStatusIndicator: View {
         switch status {
         case .pending: return .orange
         case .processing: return .blue
+        case .editing: return .purple
         case .completed: return .green
         case .failed: return .red
         }
@@ -322,9 +340,23 @@ struct TaskAgentDetailView: View {
                         .foregroundColor(statusColor(for: session.status))
 
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(session.status.displayName)
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
+                        HStack(spacing: 6) {
+                            Text(session.status.displayName)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            if !session.editedFiles.isEmpty {
+                                Text("\(session.editedFiles.count) files edited")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.purple)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        Capsule()
+                                            .fill(Color.purple.opacity(0.15))
+                                    )
+                            }
+                        }
 
                         Text("Session: \(session.sessionName)")
                             .font(.system(size: 11))
@@ -355,7 +387,7 @@ struct TaskAgentDetailView: View {
                     }
                     .buttonStyle(.plain)
 
-                    if session.status == .processing || session.status == .pending {
+                    if session.status == .processing || session.status == .pending || session.status == .editing {
                         Button {
                             manager.stopAgent(taskId: task.id)
                         } label: {
@@ -603,6 +635,7 @@ struct TaskAgentDetailView: View {
         switch status {
         case .pending: return .orange
         case .processing: return .blue
+        case .editing: return .purple
         case .completed: return .green
         case .failed: return .red
         }
