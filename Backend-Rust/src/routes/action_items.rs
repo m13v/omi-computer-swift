@@ -176,6 +176,7 @@ async fn update_action_item(
             request.due_at,
             request.priority.as_deref(),
             request.category.as_deref(),
+            request.goal_id.as_deref(),
         )
         .await
     {
