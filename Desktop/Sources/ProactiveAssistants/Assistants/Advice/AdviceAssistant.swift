@@ -106,6 +106,12 @@ actor AdviceAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
+        // Skip apps from the built-in skip list (utility/media/system apps)
+        let excluded = await MainActor.run { TaskAssistantSettings.builtInExcludedApps.contains(frame.appName) }
+        if excluded {
+            return nil
+        }
+
         // Store the latest frame - we'll process it when the interval has passed
         pendingFrame = frame
         // Note: This overwrites the previous frame, not a queue
@@ -318,10 +324,10 @@ actor AdviceAssistant: ProactiveAssistant {
 
     private func extractAdvice(from jpegData: Data, appName: String) async throws -> AdviceExtractionResult? {
         // Build context with previous advice
-        var prompt = "Analyze this screenshot from \(appName).\n\n"
+        var prompt = "Screenshot from \(appName). Is the user about to make a mistake or missing a non-obvious shortcut/tool for what they're doing?\n\n"
 
         if !previousAdvice.isEmpty {
-            prompt += "PREVIOUSLY PROVIDED ADVICE (do not repeat these or semantically similar advice):\n"
+            prompt += "PREVIOUSLY PROVIDED ADVICE (do not repeat these or semantically similar):\n"
             for (index, advice) in previousAdvice.enumerated() {
                 prompt += "\(index + 1). \(advice.advice)"
                 if let reasoning = advice.reasoning {
@@ -329,9 +335,9 @@ actor AdviceAssistant: ProactiveAssistant {
                 }
                 prompt += "\n"
             }
-            prompt += "\nProvide ONE NEW piece of advice that is NOT similar to the above. Use an appropriate confidence score (0.0-1.0) based on how relevant/useful the advice is. Only set has_advice=false if the advice would be a duplicate."
+            prompt += "\nOnly provide advice if there's a genuinely NEW non-obvious insight not covered above."
         } else {
-            prompt += "Provide ONE piece of contextual advice based on what you see. Use an appropriate confidence score (0.0-1.0) based on how relevant/useful the advice is."
+            prompt += "Only provide advice if there's something specific and non-obvious that would help."
         }
 
         // Get current system prompt from settings
@@ -341,7 +347,7 @@ actor AdviceAssistant: ProactiveAssistant {
         let adviceProperties: [String: GeminiRequest.GenerationConfig.ResponseSchema.Property] = [
             "advice": .init(type: "string", description: "The advice text (1-2 sentences, max 30 words)"),
             "reasoning": .init(type: "string", description: "Brief explanation of why this advice is relevant"),
-            "category": .init(type: "string", enum: ["productivity", "health", "communication", "learning", "other"], description: "Category of advice"),
+            "category": .init(type: "string", enum: ["productivity", "communication", "learning", "other"], description: "Category of advice"),
             "source_app": .init(type: "string", description: "App where context was observed"),
             "confidence": .init(type: "number", description: "Confidence score 0.0-1.0")
         ]
@@ -349,10 +355,10 @@ actor AdviceAssistant: ProactiveAssistant {
         let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
             type: "object",
             properties: [
-                "has_advice": .init(type: "boolean", description: "Almost always true. Only false if advice would duplicate previous advice."),
+                "has_advice": .init(type: "boolean", description: "True only if there is a specific, non-obvious insight. False if nothing qualifies or would duplicate previous advice."),
                 "advice": .init(
                     type: "object",
-                    description: "The advice with calibrated confidence score (0.0-1.0)",
+                    description: "The specific insight (only if has_advice is true)",
                     properties: adviceProperties,
                     required: ["advice", "category", "source_app", "confidence"]
                 ),
