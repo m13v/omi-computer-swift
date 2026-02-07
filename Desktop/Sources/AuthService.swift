@@ -118,6 +118,7 @@ class AuthService {
         UserDefaults.standard.set(isSignedIn, forKey: kAuthIsSignedIn)
         UserDefaults.standard.set(email, forKey: kAuthUserEmail)
         UserDefaults.standard.set(userId, forKey: kAuthUserId)
+        UserDefaults.standard.synchronize()  // Force flush before process can be killed
         NSLog("OMI AUTH: Saved auth state - signedIn: %@, email: %@", isSignedIn ? "true" : "false", email ?? "nil")
     }
 
@@ -129,16 +130,18 @@ class AuthService {
         NSLog("OMI AUTH: Checking saved auth state - savedSignedIn: %@, savedEmail: %@",
               savedSignedIn ? "true" : "false", savedEmail ?? "nil")
 
+        // Set auth state synchronously (we're already on main thread from configure()).
+        // Using DispatchQueue.main.async here would defer to the next run-loop tick,
+        // creating a race window where the Firebase auth state listener can fire first
+        // with user=nil and flip isSignedIn to false before we restore it.
         if savedSignedIn {
             // Check if Firebase also has a current user (session might still be valid)
             if let currentUser = Auth.auth().currentUser {
                 NSLog("OMI AUTH: Restored auth state from Firebase - uid: %@", currentUser.uid)
-                DispatchQueue.main.async {
-                    self.isSignedIn = true
-                    AuthState.shared.userEmail = currentUser.email ?? savedEmail
-                    AuthState.shared.isRestoringAuth = false
-                    self.loadNameFromFirebaseIfNeeded()
-                }
+                self.isSignedIn = true
+                AuthState.shared.userEmail = currentUser.email ?? savedEmail
+                AuthState.shared.isRestoringAuth = false
+                self.loadNameFromFirebaseIfNeeded()
             } else {
                 // Firebase doesn't have user, but we have saved state
                 // This can happen with ad-hoc signing where Keychain doesn't persist
@@ -154,17 +157,13 @@ class AuthService {
                     }
                 }
 
-                DispatchQueue.main.async {
-                    self.isSignedIn = true
-                    AuthState.shared.userEmail = savedEmail
-                    AuthState.shared.isRestoringAuth = false
-                }
+                self.isSignedIn = true
+                AuthState.shared.userEmail = savedEmail
+                AuthState.shared.isRestoringAuth = false
             }
         } else {
             NSLog("OMI AUTH: No saved auth state found")
-            DispatchQueue.main.async {
-                AuthState.shared.isRestoringAuth = false
-            }
+            AuthState.shared.isRestoringAuth = false
         }
     }
 
@@ -175,6 +174,7 @@ class AuthService {
             Task { @MainActor in
                 if user != nil {
                     // Firebase has a user - trust it
+                    log("AUTH_LISTENER: Firebase user present (uid=\(user?.uid ?? "nil")), setting isSignedIn=true")
                     self?.isSignedIn = true
                     AuthState.shared.userEmail = user?.email
                     AuthState.shared.isRestoringAuth = false
@@ -184,13 +184,16 @@ class AuthService {
                 } else {
                     // Firebase has no user - check if we have a saved session (for dev builds where Keychain doesn't persist)
                     let savedSignedIn = UserDefaults.standard.bool(forKey: self?.kAuthIsSignedIn ?? "")
+                    log("AUTH_LISTENER: Firebase user nil, savedSignedIn=\(savedSignedIn), currentIsSignedIn=\(self?.isSignedIn ?? false)")
                     if !savedSignedIn {
                         // No saved session either - user is truly signed out
+                        log("AUTH_LISTENER: No saved session - setting isSignedIn=false")
                         self?.isSignedIn = false
                         AuthState.shared.userEmail = nil
                         AuthState.shared.isRestoringAuth = false
+                    } else {
+                        log("AUTH_LISTENER: Keeping saved session (not overriding isSignedIn)")
                     }
-                    // If savedSignedIn is true, don't overwrite - keep the saved session
                 }
             }
         }
