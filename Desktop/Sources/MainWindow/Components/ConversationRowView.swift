@@ -264,7 +264,7 @@ struct ConversationRowView: View {
                 .frame(width: 28, height: 28)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(OmiColors.backgroundSecondary)
+                        .fill(OmiColors.backgroundTertiary)
                 )
 
             // Title
@@ -320,10 +320,10 @@ struct ConversationRowView: View {
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isHovering ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary)))
+                .fill(isSelected ? OmiColors.purplePrimary.opacity(0.2) : (isHovering ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundSecondary)))
         )
         .overlay(
             RoundedRectangle(cornerRadius: 8)
