@@ -59,6 +59,8 @@ actor GoalsAIService {
 
         let (memories, conversations, actionItems, persona, goals) = await (memoriesFetch, conversationsFetch, actionItemsFetch, personaFetch, goalsFetch)
 
+        log("GoalsAI: Fetched context — \(memories.count) memories, \(conversations.count) conversations, \((actionItems?.items ?? []).count) tasks, persona: \(persona != nil ? "yes" : "no"), \(goals.count) existing goals")
+
         // Build context strings with truncation limits
         let memoryContext = String(memories.map { $0.content }.joined(separator: "\n").prefix(800))
         let conversationContext = String(conversations
@@ -106,7 +108,9 @@ actor GoalsAIService {
             .replacingOccurrences(of: "{action_items_context}", with: ctx.actionItems.isEmpty ? "No active tasks" : ctx.actionItems)
             .replacingOccurrences(of: "{existing_goals}", with: ctx.existingGoals)
 
-        log("GoalsAI: Generating goal with rich context (memories: \(ctx.memories.count)c, conversations: \(ctx.conversations.count)c, tasks: \(ctx.actionItems.count)c)")
+        log("GoalsAI: Model: gemini-3-pro-preview")
+        log("GoalsAI: Context sizes — memories: \(ctx.memories.count) chars, conversations: \(ctx.conversations.count) chars, tasks: \(ctx.actionItems.count) chars, persona: \(ctx.persona.count) chars, existing goals: \(ctx.existingGoals)")
+        log("GoalsAI: Full prompt:\n\(prompt)")
 
         // Call Gemini
         let responseText = try await client.sendRequest(
