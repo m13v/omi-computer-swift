@@ -1707,6 +1707,41 @@ extension APIClient {
         return try decoder.decode(Goal.self, from: data)
     }
 
+    /// Gets completed goals for history
+    func getCompletedGoals() async throws -> [Goal] {
+        let response: GoalsListResponse = try await get("v1/goals/completed")
+        return response.goals
+    }
+
+    /// Completes a goal (marks as inactive with completed_at)
+    func completeGoal(id: String) async throws -> Goal {
+        struct CompleteGoalRequest: Encodable {
+            let is_active: Bool
+            let completed_at: String
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let body = CompleteGoalRequest(
+            is_active: false,
+            completed_at: formatter.string(from: Date())
+        )
+
+        let url = URL(string: baseURL + "v1/goals/\(id)")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse,
+              (200...299).contains(httpResponse.statusCode) else {
+            throw APIError.httpError(statusCode: (response as? HTTPURLResponse)?.statusCode ?? 0)
+        }
+
+        return try decoder.decode(Goal.self, from: data)
+    }
+
     /// Deletes a goal
     func deleteGoal(id: String) async throws {
         try await delete("v1/goals/\(id)")
@@ -2000,6 +2035,7 @@ struct Goal: Codable, Identifiable {
     let isActive: Bool
     let createdAt: Date
     let updatedAt: Date
+    let completedAt: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, title, unit
@@ -2011,6 +2047,7 @@ struct Goal: Codable, Identifiable {
         case isActive = "is_active"
         case createdAt = "created_at"
         case updatedAt = "updated_at"
+        case completedAt = "completed_at"
     }
 
     init(from decoder: Decoder) throws {
@@ -2026,6 +2063,7 @@ struct Goal: Codable, Identifiable {
         isActive = try container.decodeIfPresent(Bool.self, forKey: .isActive) ?? true
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
         updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
+        completedAt = try container.decodeIfPresent(Date.self, forKey: .completedAt)
     }
 
     func encode(to encoder: Encoder) throws {
@@ -2041,6 +2079,7 @@ struct Goal: Codable, Identifiable {
         try container.encode(isActive, forKey: .isActive)
         try container.encode(createdAt, forKey: .createdAt)
         try container.encode(updatedAt, forKey: .updatedAt)
+        try container.encodeIfPresent(completedAt, forKey: .completedAt)
     }
 
     /// Progress as a percentage (0-100)
