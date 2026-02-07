@@ -253,6 +253,8 @@ class TasksStore: ObservableObject {
         if !hasLoadedDeleted {
             await loadDeletedTasks()
         }
+        // Kick off one-time full sync in background (populates SQLite with all tasks)
+        Task { await performFullSyncIfNeeded() }
     }
 
     /// Load incomplete tasks (To Do) using local-first pattern
@@ -465,6 +467,78 @@ class TasksStore: ObservableObject {
 
         isLoadingDeleted = false
         NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
+    }
+
+    /// One-time background sync that fetches ALL tasks from the API and stores in SQLite.
+    /// Ensures filter/search queries have the full dataset. Keyed per user so it runs once per account.
+    private func performFullSyncIfNeeded() async {
+        let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
+        let syncKey = "tasksFullSyncCompleted_\(userId)"
+
+        guard !UserDefaults.standard.bool(forKey: syncKey) else {
+            log("TasksStore: Full sync already completed for user \(userId)")
+            return
+        }
+
+        log("TasksStore: Starting one-time full sync for user \(userId)")
+
+        var totalSynced = 0
+        let batchSize = 500
+
+        do {
+            // Sync all incomplete tasks
+            var offset = pageSize  // Skip first page (already synced)
+            while true {
+                let response = try await APIClient.shared.getActionItems(
+                    limit: batchSize,
+                    offset: offset,
+                    completed: false
+                )
+                if response.items.isEmpty { break }
+                try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+                totalSynced += response.items.count
+                offset += response.items.count
+                log("TasksStore: Full sync progress - \(totalSynced) additional tasks synced (incomplete)")
+                if !response.hasMore { break }
+            }
+
+            // Sync all completed tasks
+            offset = pageSize
+            while true {
+                let response = try await APIClient.shared.getActionItems(
+                    limit: batchSize,
+                    offset: offset,
+                    completed: true
+                )
+                if response.items.isEmpty { break }
+                try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+                totalSynced += response.items.count
+                offset += response.items.count
+                log("TasksStore: Full sync progress - \(totalSynced) additional tasks synced (completed)")
+                if !response.hasMore { break }
+            }
+
+            // Sync all deleted tasks
+            offset = pageSize
+            while true {
+                let response = try await APIClient.shared.getActionItems(
+                    limit: batchSize,
+                    offset: offset,
+                    deleted: true
+                )
+                if response.items.isEmpty { break }
+                try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+                totalSynced += response.items.count
+                offset += response.items.count
+                log("TasksStore: Full sync progress - \(totalSynced) additional tasks synced (deleted)")
+                if !response.hasMore { break }
+            }
+
+            UserDefaults.standard.set(true, forKey: syncKey)
+            log("TasksStore: Full sync completed - \(totalSynced) additional tasks synced total")
+        } catch {
+            logError("TasksStore: Full sync failed (will retry next launch)", error: error)
+        }
     }
 
     /// Load more incomplete tasks (pagination) - local-first
