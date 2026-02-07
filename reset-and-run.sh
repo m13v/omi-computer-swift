@@ -130,7 +130,7 @@ trap cleanup EXIT
 
 # Kill existing instances
 echo "Killing existing instances..."
-pkill "$BINARY_NAME" 2>/dev/null || true
+pkill -f "$APP_NAME.app" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 
