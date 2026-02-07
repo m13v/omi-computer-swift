@@ -58,7 +58,6 @@ struct SettingsContentView: View {
     @State private var transcriptionError: String?
 
     // Log export state
-    @State private var logsCopied: Bool = false
 
     // Focus Assistant states
     @State private var focusEnabled: Bool
@@ -1826,54 +1825,40 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Export Logs
+            // Report Issue
             settingsCard {
                 HStack(spacing: 16) {
-                    Image(systemName: "doc.text")
+                    Image(systemName: "exclamationmark.bubble")
                         .font(.system(size: 16))
                         .foregroundColor(OmiColors.textSecondary)
                         .frame(width: 24, height: 24)
 
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Export Logs")
+                        Text("Report Issue")
                             .font(.system(size: 16, weight: .semibold))
                             .foregroundColor(OmiColors.textPrimary)
 
-                        Text("Save app logs for troubleshooting")
+                        Text("Send app logs and report a problem")
                             .font(.system(size: 13))
                             .foregroundColor(OmiColors.textTertiary)
                     }
 
                     Spacer()
 
-                    HStack(spacing: 8) {
-                        Button(action: copyLogsToClipboard) {
-                            Text(logsCopied ? "Copied!" : "Copy")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(logsCopied ? OmiColors.success : OmiColors.textPrimary)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(logsCopied ? OmiColors.success.opacity(0.15) : OmiColors.backgroundTertiary)
-                                )
-                                .animation(.easeInOut(duration: 0.2), value: logsCopied)
-                        }
-                        .buttonStyle(.plain)
-
-                        Button(action: exportLogs) {
-                            Text("Export")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 14)
-                                .padding(.vertical, 6)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 6)
-                                        .fill(OmiColors.purplePrimary)
-                                )
-                        }
-                        .buttonStyle(.plain)
+                    Button(action: {
+                        FeedbackWindow.show(userEmail: AuthState.shared.userEmail)
+                    }) {
+                        Text("Report")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(OmiColors.purplePrimary)
+                            )
                     }
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -2355,98 +2340,6 @@ struct SettingsContentView: View {
         AssistantSettings.shared.transcriptionEnabled = enabled
     }
 
-    private func exportLogs() {
-        let logFile = "/tmp/omi.log"
-
-        // Check if log file exists
-        guard FileManager.default.fileExists(atPath: logFile) else {
-            // Show alert that no logs exist
-            let alert = NSAlert()
-            alert.messageText = "No Logs Available"
-            alert.informativeText = "The log file doesn't exist yet. Logs are created when the app runs."
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
-        }
-
-        // Create save panel
-        let savePanel = NSSavePanel()
-        savePanel.title = "Export Omi Logs"
-        savePanel.nameFieldStringValue = "omi-logs-\(ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")).log"
-        savePanel.allowedContentTypes = [.plainText]
-        savePanel.canCreateDirectories = true
-
-        savePanel.begin { response in
-            if response == .OK, let url = savePanel.url {
-                do {
-                    try FileManager.default.copyItem(atPath: logFile, toPath: url.path)
-                    log("Exported logs to: \(url.path)")
-
-                    // Show success notification
-                    DispatchQueue.main.async {
-                        let alert = NSAlert()
-                        alert.messageText = "Logs Exported"
-                        alert.informativeText = "Logs saved to \(url.lastPathComponent)"
-                        alert.alertStyle = .informational
-                        alert.addButton(withTitle: "OK")
-                        alert.addButton(withTitle: "Show in Finder")
-                        if alert.runModal() == .alertSecondButtonReturn {
-                            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: "")
-                        }
-                    }
-                } catch {
-                    logError("Failed to export logs", error: error)
-
-                    DispatchQueue.main.async {
-                        let alert = NSAlert()
-                        alert.messageText = "Export Failed"
-                        alert.informativeText = error.localizedDescription
-                        alert.alertStyle = .warning
-                        alert.addButton(withTitle: "OK")
-                        alert.runModal()
-                    }
-                }
-            }
-        }
-    }
-
-    private func copyLogsToClipboard() {
-        let logFile = "/tmp/omi.log"
-
-        // Check if log file exists
-        guard FileManager.default.fileExists(atPath: logFile) else {
-            let alert = NSAlert()
-            alert.messageText = "No Logs Available"
-            alert.informativeText = "The log file doesn't exist yet. Logs are created when the app runs."
-            alert.alertStyle = .informational
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-            return
-        }
-
-        do {
-            let logContents = try String(contentsOfFile: logFile, encoding: .utf8)
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(logContents, forType: .string)
-            log("Copied logs to clipboard (\(logContents.count) characters)")
-
-            // Show "Copied!" feedback
-            logsCopied = true
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
-                logsCopied = false
-            }
-        } catch {
-            logError("Failed to copy logs to clipboard", error: error)
-
-            let alert = NSAlert()
-            alert.messageText = "Copy Failed"
-            alert.informativeText = error.localizedDescription
-            alert.alertStyle = .warning
-            alert.addButton(withTitle: "OK")
-            alert.runModal()
-        }
-    }
 
     private func startGlowPreview() {
         isPreviewRunning = true
