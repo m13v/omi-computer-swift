@@ -60,8 +60,7 @@ class TaskAgentManager: ObservableObject {
     /// Check if a task should trigger an agent
     func shouldTriggerAgent(for task: TaskActionItem) -> Bool {
         guard TaskAgentSettings.shared.isEnabled else { return false }
-        guard let category = task.category else { return false }
-        return Self.agentCategories.contains(category)
+        return task.tags.contains { Self.agentCategories.contains($0) }
     }
 
     /// Check if a task has an active or completed agent session
@@ -193,7 +192,7 @@ class TaskAgentManager: ObservableObject {
         var prompt = """
         # Task: \(task.description)
 
-        Category: \(task.category ?? "unknown")
+        Tags: \(task.tags.isEmpty ? "unknown" : task.tags.joined(separator: ", "))
         Priority: \(task.priority ?? "medium")
         """
 
@@ -370,21 +369,28 @@ class TaskAgentManager: ObservableObject {
     }
 
     private func isSessionCompleted(output: String) -> Bool {
-        // Look for indicators that Claude has finished planning
+        let lower = output.lowercased()
+
+        // Claude Code plan mode completion markers
         let completionMarkers = [
-            "## Implementation Plan",
-            "## Plan",
-            "Ready to implement",
-            "Waiting for approval",
-            "Plan complete",
-            "should I proceed",
-            "Would you like me to",
-            "Let me know if",
-            "Do you want me to"
+            "would you like to proceed",           // Claude Code plan mode prompt
+            "ready to execute",                     // "written a plan and is ready to execute"
+            "ready to implement",
+            // Claude Code interactive options (numbered choices shown after plan)
+            "yes, clear context and bypass",
+            "yes, and bypass permissions",
+            "yes, manually approve",
+            // Generic Claude completion patterns
+            "should i proceed",
+            "would you like me to",
+            "do you want me to",
+            "let me know if",
+            "waiting for approval",
+            "plan complete",
         ]
 
         for marker in completionMarkers {
-            if output.lowercased().contains(marker.lowercased()) {
+            if lower.contains(marker) {
                 return true
             }
         }
