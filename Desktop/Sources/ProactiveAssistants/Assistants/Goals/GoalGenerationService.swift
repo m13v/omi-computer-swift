@@ -26,7 +26,8 @@ class GoalGenerationService {
 
     // MARK: - Stale Goal Removal
 
-    /// Remove goals that haven't had any progress update in 3+ days
+    /// Complete (deactivate) goals that haven't had any progress update in 3+ days
+    /// Instead of deleting, marks them as completed so they appear in history
     private func removeStaleGoals() async {
         do {
             let goals = try await APIClient.shared.getGoals()
@@ -35,13 +36,13 @@ class GoalGenerationService {
             for goal in goals where goal.isActive {
                 let daysSinceUpdate = now.timeIntervalSince(goal.updatedAt)
                 if daysSinceUpdate >= staleGoalDays {
-                    log("GoalGenerationService: Removing stale goal '\(goal.title)' — no update for \(Int(daysSinceUpdate / 86400)) days")
-                    try await APIClient.shared.deleteGoal(id: goal.id)
+                    log("GoalGenerationService: Completing stale goal '\(goal.title)' — no update for \(Int(daysSinceUpdate / 86400)) days")
+                    _ = try await APIClient.shared.completeGoal(id: goal.id)
                     NotificationCenter.default.post(name: .goalAutoCreated, object: nil)
                 }
             }
         } catch {
-            log("GoalGenerationService: Failed to check/remove stale goals: \(error.localizedDescription)")
+            log("GoalGenerationService: Failed to check/complete stale goals: \(error.localizedDescription)")
         }
     }
 
