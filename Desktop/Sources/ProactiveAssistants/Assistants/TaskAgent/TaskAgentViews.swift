@@ -275,8 +275,10 @@ struct TaskAgentDetailView: View {
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
-                if let category = task.category {
-                    TaskClassificationBadge(category: category)
+                HStack(spacing: 4) {
+                    ForEach(task.tags.prefix(3), id: \.self) { tag in
+                        TaskClassificationBadge(category: tag)
+                    }
                 }
             }
 
