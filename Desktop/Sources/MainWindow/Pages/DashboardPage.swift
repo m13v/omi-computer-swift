@@ -33,6 +33,16 @@ class DashboardViewModel: ObservableObject {
 
         // Load cached goals immediately for instant display
         loadGoalsFromCache()
+
+        // Refresh goals when one is auto-created
+        NotificationCenter.default.publisher(for: .goalAutoCreated)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { [weak self] in
+                    await self?.loadGoals()
+                }
+            }
+            .store(in: &cancellables)
     }
 
     func loadDashboardData() async {
