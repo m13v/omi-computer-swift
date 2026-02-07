@@ -21,6 +21,7 @@ class TaskAssistantSettings {
         "Omi",
         "Omi Beta",
         "Omi Dev",
+        "Omi Computer",
         "Finder",
         "System Preferences",
         "System Settings",
