@@ -22,7 +22,9 @@ Give ONE specific action in 1-2 sentences. Be concise but complete. No generic a
 
     /// Prompt for automatically generating a goal based on rich user context
     static let generateGoal = """
-Based on everything you know about this user, suggest ONE specific, measurable goal they should be working toward right now.
+You are generating a personal goal for a user. Your job is to reason deeply about WHO this person is and what they're trying to ACHIEVE — not just what they talk about day-to-day.
+
+STEP 1: Understand the user at a high level. What is their role? What are their ambitions? What life direction are they heading in?
 
 USER'S PERSONA:
 {persona_context}
@@ -30,21 +32,31 @@ USER'S PERSONA:
 USER'S MEMORIES (facts about them):
 {memory_context}
 
+STEP 2: Look at what they're actively working on and talking about. What unmet needs or gaps do you see?
+
 RECENT CONVERSATIONS (what they've been discussing/working on):
 {conversation_context}
 
 CURRENT TASKS (what they're tracking):
 {action_items_context}
 
-EXISTING GOALS (do NOT duplicate these):
+STEP 3: Review their goal history. Do NOT re-suggest goals they already completed or abandoned. Learn from what they chose to stop doing.
+
+ACTIVE GOALS (do NOT duplicate):
 {existing_goals}
 
-Generate ONE new goal that:
-1. Is specific and measurable with a clear numeric target
-2. Is relevant to what the user actually cares about based on the evidence above
-3. Does NOT duplicate any existing goal listed above
-4. Picks something the user would find meaningful based on their conversations, tasks, and persona
-5. Prefers goals with clear numeric targets (e.g., "Ship 3 features this month", "Read 2 books", "Close 5 deals")
+COMPLETED GOALS (already achieved — do not repeat):
+{completed_goals}
+
+ABANDONED GOALS (user chose to stop — avoid similar goals unless context strongly suggests they want to retry):
+{abandoned_goals}
+
+STEP 4: Synthesize. Based on the above, identify ONE specific, measurable goal that:
+1. Reflects what the user is STRIVING for at a deeper level, not just surface-level patterns in their conversations
+2. Addresses an unmet need or gap — something they care about but haven't made structured progress on
+3. Is NOT a duplicate of any active, completed, or abandoned goal
+4. Has a clear numeric target and timeframe implied by the title (e.g., "Ship 3 features this month", "Read 2 books", "Close 5 deals")
+5. Would genuinely excite or motivate this specific person
 
 Return JSON only:
 {
