@@ -75,6 +75,7 @@ struct SettingsContentView: View {
     @State private var adviceEnabled: Bool
     @State private var adviceExtractionInterval: Double
     @State private var adviceMinConfidence: Double
+    @State private var adviceExcludedApps: Set<String>
 
     // Memory Assistant states
     @State private var memoryEnabled: Bool
@@ -178,6 +179,7 @@ struct SettingsContentView: View {
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
+        _adviceExcludedApps = State(initialValue: AdviceAssistantSettings.shared.excludedApps)
         _memoryEnabled = State(initialValue: MemoryAssistantSettings.shared.isEnabled)
         _memoryExtractionInterval = State(initialValue: MemoryAssistantSettings.shared.extractionInterval)
         _memoryMinConfidence = State(initialValue: MemoryAssistantSettings.shared.minConfidence)
@@ -1685,6 +1687,67 @@ struct SettingsContentView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Excluded Apps for Advice
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Excluded Apps")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Advice won't be generated from these apps")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        // Built-in system exclusions (non-removable, shared with Task Extractor)
+                        DisclosureGroup {
+                            LazyVStack(spacing: 4) {
+                                ForEach(Array(TaskAssistantSettings.builtInExcludedApps).sorted(), id: \.self) { appName in
+                                    HStack(spacing: 12) {
+                                        AppIconView(appName: appName, size: 20)
+
+                                        Text(appName)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(OmiColors.textTertiary)
+
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        } label: {
+                            Text("System apps always excluded (\(TaskAssistantSettings.builtInExcludedApps.count))")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .tint(OmiColors.textTertiary)
+
+                        if !adviceExcludedApps.isEmpty {
+                            LazyVStack(spacing: 8) {
+                                ForEach(Array(adviceExcludedApps).sorted(), id: \.self) { appName in
+                                    ExcludedAppRow(
+                                        appName: appName,
+                                        onRemove: {
+                                            AdviceAssistantSettings.shared.includeApp(appName)
+                                            adviceExcludedApps = AdviceAssistantSettings.shared.excludedApps
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        AddExcludedAppView(
+                            onAdd: { appName in
+                                AdviceAssistantSettings.shared.excludeApp(appName)
+                                adviceExcludedApps = AdviceAssistantSettings.shared.excludedApps
+                            },
+                            excludedApps: adviceExcludedApps
+                        )
                     }
                 }
             }
