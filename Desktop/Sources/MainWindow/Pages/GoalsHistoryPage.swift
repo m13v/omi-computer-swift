@@ -24,7 +24,7 @@ struct GoalsHistoryPage: View {
 
                 Spacer()
 
-                Text("Completed Goals")
+                Text("Goals History")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
@@ -64,10 +64,10 @@ struct GoalsHistoryPage: View {
                     Image(systemName: "trophy")
                         .font(.system(size: 40))
                         .foregroundColor(OmiColors.textTertiary.opacity(0.5))
-                    Text("No completed goals yet")
+                    Text("No goals history yet")
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(OmiColors.textTertiary)
-                    Text("Complete a goal to see it here")
+                    Text("Completed and removed goals will appear here")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary.opacity(0.7))
                 }
@@ -121,6 +121,10 @@ struct CompletedGoalRow: View {
         if title.contains("write") || title.contains("blog") || title.contains("content") { return "✍️" }
         if title.contains("habit") || title.contains("streak") || title.contains("daily") { return "🔥" }
         return "🎯"
+    }
+
+    private var isCompleted: Bool {
+        goal.completedAt != nil
     }
 
     private var completionDateText: String {
@@ -177,16 +181,26 @@ struct CompletedGoalRow: View {
 
             Spacer()
 
-            // Completion date + checkmark
+            // Status indicator
             VStack(alignment: .trailing, spacing: 4) {
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
-                    .foregroundColor(Color(red: 0.133, green: 0.773, blue: 0.369))
+                if isCompleted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(Color(red: 0.133, green: 0.773, blue: 0.369))
 
-                if !completionDateText.isEmpty {
-                    Text(completionDateText)
+                    if !completionDateText.isEmpty {
+                        Text(completionDateText)
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                } else {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16))
+                        .foregroundColor(OmiColors.textTertiary.opacity(0.5))
+
+                    Text("Removed")
                         .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary)
+                        .foregroundColor(OmiColors.textTertiary.opacity(0.7))
                 }
             }
         }
