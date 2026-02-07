@@ -221,7 +221,8 @@ struct DesktopHomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .padding(12)
-
+        }
+        .overlay {
             // Goal completion celebration overlay
             GoalCelebrationView()
         }
