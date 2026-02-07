@@ -180,7 +180,11 @@ impl LlmClient {
 
         // Ensure description is within limits
         let description = if description.len() > 250 {
-            description[..247].to_string() + "..."
+            let mut end = 247;
+            while end > 0 && !description.is_char_boundary(end) {
+                end -= 1;
+            }
+            description[..end].to_string() + "..."
         } else {
             description
         };
