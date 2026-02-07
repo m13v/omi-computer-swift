@@ -229,10 +229,10 @@ class TaskAgentManager: ObservableObject {
     }
 
     private func launchTmuxSession(sessionName: String, prompt: String, workingDir: String) async throws {
-        // Check if tmux is available (use login shell to get user's PATH)
+        // Check if tmux is available (source user's shell config to get full PATH)
         let tmuxCheck = Process()
-        tmuxCheck.executableURL = URL(fileURLWithPath: "/bin/bash")
-        tmuxCheck.arguments = ["-l", "-c", "which tmux"]
+        tmuxCheck.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        tmuxCheck.arguments = ["-c", "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; which tmux"]
         let tmuxCheckPipe = Pipe()
         tmuxCheck.standardOutput = tmuxCheckPipe
         tmuxCheck.standardError = tmuxCheckPipe
@@ -244,10 +244,10 @@ class TaskAgentManager: ObservableObject {
             throw AgentError.tmuxNotInstalled
         }
 
-        // Check if claude is available (use login shell to get user's PATH)
+        // Check if claude is available (source user's shell config to get full PATH)
         let claudeCheck = Process()
-        claudeCheck.executableURL = URL(fileURLWithPath: "/bin/bash")
-        claudeCheck.arguments = ["-l", "-c", "which claude"]
+        claudeCheck.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        claudeCheck.arguments = ["-c", "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; which claude"]
         let claudeCheckPipe = Pipe()
         claudeCheck.standardOutput = claudeCheckPipe
         claudeCheck.standardError = claudeCheckPipe
@@ -273,8 +273,8 @@ class TaskAgentManager: ObservableObject {
         """
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-l", "-c", command]
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; \(command)"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -343,8 +343,8 @@ class TaskAgentManager: ObservableObject {
 
     private func readTmuxOutput(sessionName: String) -> String {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "tmux capture-pane -t '\(sessionName)' -p -S -500 2>/dev/null"]
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", "source ~/.zprofile 2>/dev/null; tmux capture-pane -t '\(sessionName)' -p -S -500 2>/dev/null"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
@@ -358,8 +358,8 @@ class TaskAgentManager: ObservableObject {
 
     private func isSessionAlive(sessionName: String) -> Bool {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "tmux has-session -t '\(sessionName)' 2>/dev/null"]
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", "source ~/.zprofile 2>/dev/null; tmux has-session -t '\(sessionName)' 2>/dev/null"]
 
         try? process.run()
         process.waitUntilExit()
@@ -413,8 +413,8 @@ class TaskAgentManager: ObservableObject {
 
     private func killTmuxSession(sessionName: String) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", "tmux kill-session -t '\(sessionName)' 2>/dev/null"]
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-c", "source ~/.zprofile 2>/dev/null; tmux kill-session -t '\(sessionName)' 2>/dev/null"]
 
         try? process.run()
         process.waitUntilExit()
