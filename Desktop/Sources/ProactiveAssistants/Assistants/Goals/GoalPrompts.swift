@@ -4,31 +4,6 @@ import Foundation
 /// Adapted from backend: /Users/matthewdi/omi/backend/utils/llm/goals.py
 enum GoalPrompts {
 
-    /// Prompt for suggesting a goal based on user memories
-    static let suggestGoal = """
-Based on the user's memories and interests, suggest ONE meaningful personal goal they could track.
-
-User's recent memories/learnings:
-{memory_context}
-
-Generate a goal suggestion in this exact JSON format:
-{
-    "suggested_title": "Brief, actionable goal title (e.g., 'Exercise 5 times a week', 'Read 20 books this year', 'Save $10,000')",
-    "suggested_type": "scale" or "numeric" or "boolean",
-    "suggested_target": <number>,
-    "suggested_min": <minimum value>,
-    "suggested_max": <maximum value or target>,
-    "reasoning": "One sentence explaining why this goal fits the user"
-}
-
-Choose a goal type:
-- "boolean" for yes/no goals (0 or 1)
-- "scale" for rating goals (e.g., 0-10 satisfaction)
-- "numeric" for countable goals (e.g., books read, money saved, users acquired)
-
-Make the goal specific, measurable, and relevant to their interests.
-"""
-
     /// Prompt for getting actionable advice on achieving a goal
     static let goalAdvice = """
 You are a strategic advisor. Based on the user's goal and their context, give ONE specific actionable step they should take THIS WEEK.
