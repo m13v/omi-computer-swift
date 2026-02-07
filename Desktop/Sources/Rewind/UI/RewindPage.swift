@@ -225,7 +225,7 @@ struct RewindPage: View {
     private var rewindToggle: some View {
         ZStack {
             Capsule()
-                .fill(isMonitoring ? OmiColors.purplePrimary : Color.white.opacity(0.2))
+                .fill(isMonitoring ? OmiColors.purplePrimary : Color.red)
                 .frame(width: 36, height: 20)
 
             Circle()
