@@ -54,10 +54,10 @@ fn generate_appcast_xml(releases: &[ReleaseInfo], platform: &str) -> String {
             continue;
         }
 
-        // Show prominent manual download link for users with broken auto-update
+        // Show manual download link for users with broken auto-update
         let download_base = release.download_url.replace("Omi.zip", "Omi.Beta.dmg");
         let changelog_html = format!(
-            r#"<h2 style="color:red;font-size:18px;text-align:center;">IMPORTANT</h2><p style="font-size:15px;font-weight:bold;text-align:center;">Auto-update may not work on some versions.<br/>Please <a href="{}">click here to download the latest version manually</a>.</p><p style="font-size:13px;font-weight:bold;text-align:center;">After installing, delete the old "Omi Computer" app from your Applications folder.<br/>The new app is called "Omi Beta". Your data will be preserved.</p><h2 style="color:red;font-size:18px;text-align:center;">IMPORTANT</h2>"#,
+            r#"<p><b>IMPORTANT:</b> Auto-update may not work on some versions. If the update fails to install, please <a href="{}">download the latest version manually</a>.</p><p>After installing, you can delete the old "Omi Computer" app from your Applications folder. The new app is called "Omi Beta". Your data will be preserved.</p>"#,
             download_base
         );
 
