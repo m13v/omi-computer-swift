@@ -87,7 +87,7 @@ struct ExtractedTask: Codable {
     let sourceApp: String
     let inferredDeadline: String?
     let confidence: Double
-    let category: TaskClassification
+    let tags: [String]
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -96,7 +96,18 @@ struct ExtractedTask: Codable {
         case sourceApp = "source_app"
         case inferredDeadline = "inferred_deadline"
         case confidence
-        case category
+        case tags
+    }
+
+    /// Primary tag (first tag) for backward compatibility
+    var primaryTag: String? {
+        tags.first
+    }
+
+    /// Check if any tag should trigger agent execution
+    var shouldTriggerAgent: Bool {
+        let agentTags: Set<String> = ["feature", "bug", "code"]
+        return tags.contains { agentTags.contains($0) }
     }
 
     /// Convert to dictionary for Flutter
@@ -106,7 +117,8 @@ struct ExtractedTask: Codable {
             "priority": priority.rawValue,
             "sourceApp": sourceApp,
             "confidence": confidence,
-            "category": category.rawValue
+            "tags": tags.map { $0 },
+            "category": primaryTag ?? "other"
         ]
         if let description = description {
             dict["description"] = description
