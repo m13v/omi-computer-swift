@@ -415,10 +415,8 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Get current window info (use real app name, not cached)
         let (realAppName, windowTitle, windowID) = WindowMonitor.getActiveWindowInfoStatic()
 
-        // Check if the current app is excluded from capture
-        if let appName = realAppName, RewindSettings.shared.isAppExcluded(appName) {
-            return
-        }
+        // Check if the current app is excluded from Rewind capture
+        let isRewindExcluded = realAppName.map { RewindSettings.shared.isAppExcluded($0) } ?? false
 
         // Track window ID changes
         if let windowID = windowID, windowID != currentWindowID {
@@ -471,14 +469,16 @@ public class ProactiveAssistantsPlugin: NSObject {
                     }
                 }
 
-                // Pass CGImage directly to RewindIndexer (no JPEG decode needed)
-                Task {
-                    await RewindIndexer.shared.processFrame(
-                        cgImage: cgImage,
-                        appName: appName,
-                        windowTitle: currentWindowTitle,
-                        captureTime: captureTime
-                    )
+                // Pass CGImage directly to RewindIndexer (only if not excluded from Rewind)
+                if !isRewindExcluded {
+                    Task {
+                        await RewindIndexer.shared.processFrame(
+                            cgImage: cgImage,
+                            appName: appName,
+                            windowTitle: currentWindowTitle,
+                            captureTime: captureTime
+                        )
+                    }
                 }
             } else {
                 consecutiveFailures += 1
@@ -515,8 +515,10 @@ public class ProactiveAssistantsPlugin: NSObject {
                 AssistantCoordinator.shared.distributeFrame(frame)
             }
 
-            Task {
-                await RewindIndexer.shared.processFrame(frame)
+            if !isRewindExcluded {
+                Task {
+                    await RewindIndexer.shared.processFrame(frame)
+                }
             }
         } else {
             // Track capture failures
