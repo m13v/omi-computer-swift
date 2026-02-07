@@ -221,6 +221,9 @@ struct DesktopHomeView: View {
                 .clipShape(RoundedRectangle(cornerRadius: 16))
             }
             .padding(12)
+
+            // Goal completion celebration overlay
+            GoalCelebrationView()
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToRewindSettings)) { _ in
             // Set the section directly and navigate to settings
