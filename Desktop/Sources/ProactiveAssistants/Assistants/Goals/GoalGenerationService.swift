@@ -1,6 +1,7 @@
 import Foundation
 
 /// Service that automatically generates goals every 100 conversations
+/// and removes stale goals with no progress for 3+ days
 @MainActor
 class GoalGenerationService {
     static let shared = GoalGenerationService()
@@ -8,17 +9,43 @@ class GoalGenerationService {
     private static let kLastGenerationConversationCount = "goalGeneration_lastConversationCount"
     private let conversationInterval = 100
     private let maxActiveGoals = 3
+    private let staleGoalDays: TimeInterval = 3 * 86400 // 3 days
 
     private init() {}
 
-    // MARK: - Conversation Milestone Check
+    // MARK: - Conversation Hook
 
-    /// Called after each conversation is saved. Checks if we've hit the 100-conversation milestone.
+    /// Called after each conversation is saved.
+    /// Removes stale goals and checks if we've hit the 100-conversation milestone.
     func onConversationCreated() {
         Task {
+            await removeStaleGoals()
             await checkConversationMilestone()
         }
     }
+
+    // MARK: - Stale Goal Removal
+
+    /// Remove goals that haven't had any progress update in 3+ days
+    private func removeStaleGoals() async {
+        do {
+            let goals = try await APIClient.shared.getGoals()
+            let now = Date()
+
+            for goal in goals where goal.isActive {
+                let daysSinceUpdate = now.timeIntervalSince(goal.updatedAt)
+                if daysSinceUpdate >= staleGoalDays {
+                    log("GoalGenerationService: Removing stale goal '\(goal.title)' — no update for \(Int(daysSinceUpdate / 86400)) days")
+                    try await APIClient.shared.deleteGoal(id: goal.id)
+                    NotificationCenter.default.post(name: .goalAutoCreated, object: nil)
+                }
+            }
+        } catch {
+            log("GoalGenerationService: Failed to check/remove stale goals: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: - Conversation Milestone Check
 
     /// Check if the user has crossed the next 100-conversation milestone
     private func checkConversationMilestone() async {
@@ -35,7 +62,6 @@ class GoalGenerationService {
 
             let conversationsSinceLast = totalCount - lastCount
             if conversationsSinceLast < conversationInterval {
-                log("GoalGenerationService: \(conversationsSinceLast)/\(conversationInterval) conversations since last generation, waiting...")
                 return
             }
 
@@ -55,7 +81,6 @@ class GoalGenerationService {
 
             if activeGoals.count >= maxActiveGoals {
                 log("GoalGenerationService: User already has \(activeGoals.count) active goals (max \(maxActiveGoals)), skipping")
-                // Still update the count so we don't keep checking every conversation
                 UserDefaults.standard.set(totalCount, forKey: Self.kLastGenerationConversationCount)
                 return
             }
@@ -67,14 +92,12 @@ class GoalGenerationService {
             UserDefaults.standard.set(totalCount, forKey: Self.kLastGenerationConversationCount)
             log("GoalGenerationService: Successfully created goal '\(goal.title)' at conversation #\(totalCount)")
 
-            // Notify the user
             NotificationService.shared.sendNotification(
                 title: "New Goal",
                 message: goal.title,
                 assistantId: "goals"
             )
 
-            // Notify the UI to refresh
             NotificationCenter.default.post(name: .goalAutoCreated, object: goal)
 
         } catch {
@@ -85,6 +108,7 @@ class GoalGenerationService {
     /// Manual trigger that bypasses the conversation count check
     func generateNow() async {
         log("GoalGenerationService: Manual generation triggered")
+        await removeStaleGoals()
         let totalCount = (try? await APIClient.shared.getConversationsCount()) ?? 0
         await generateGoalIfNeeded(totalCount: totalCount)
     }
