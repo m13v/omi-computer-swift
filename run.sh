@@ -59,14 +59,17 @@ trap cleanup EXIT
 AUTH_DEBUG_LOG=/private/tmp/auth-debug.log
 rm -f $AUTH_DEBUG_LOG
 auth_debug() { echo "[AUTH DEBUG][$(date +%H:%M:%S)] $1" >> $AUTH_DEBUG_LOG; }
+touch $AUTH_DEBUG_LOG
 
 step "Killing existing instances..."
-auth_debug "BEFORE pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+auth_debug "BEFORE pkill: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+auth_debug "BEFORE pkill: ALL_KEYS=$(defaults read "$BUNDLE_ID" 2>&1 | grep -E 'auth_|hasCompleted|hasLaunched|currentTier|userShow' || true)"
 pkill -f "$APP_NAME.app" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 sleep 0.5  # Let cfprefsd flush after process death
-auth_debug "AFTER pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+auth_debug "AFTER pkill: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+auth_debug "AFTER pkill: ALL_KEYS=$(defaults read "$BUNDLE_ID" 2>&1 | grep -E 'auth_|hasCompleted|hasLaunched|currentTier|userShow' || true)"
 
 # Clear log file for fresh run (must be before backend starts)
 rm -f /tmp/omi.log 2>/dev/null || true
@@ -147,6 +150,8 @@ fi
 step "Building Swift app (swift build -c debug)..."
 xcrun swift build -c debug --package-path Desktop
 
+auth_debug "AFTER swift build: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+
 step "Creating app bundle..."
 substep "Creating directories"
 mkdir -p "$APP_BUNDLE/Contents/MacOS"
@@ -175,6 +180,8 @@ cp -f Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName $APP_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleURLTypes:0:CFBundleURLSchemes:0 omi-computer-dev" "$APP_BUNDLE/Contents/Info.plist"
 
+auth_debug "AFTER plist edits: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
+
 substep "Copying GoogleService-Info.plist"
 cp -f Desktop/Sources/GoogleService-Info.plist "$APP_BUNDLE/Contents/Resources/"
 
@@ -199,7 +206,7 @@ cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null ||
 substep "Creating PkgInfo"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-auth_debug " BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
+auth_debug "BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
 step "Removing extended attributes (xattr -cr)..."
 xattr -cr "$APP_BUNDLE"
@@ -242,7 +249,7 @@ echo "Using backend: $TUNNEL_URL"
 echo "========================================"
 echo ""
 
-auth_debug " BEFORE launch: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
+auth_debug "BEFORE launch: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 open "$APP_BUNDLE" || "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" &
 
 # Wait for backend process (keeps script running and shows logs)
