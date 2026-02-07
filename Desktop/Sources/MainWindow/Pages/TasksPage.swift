@@ -370,7 +370,7 @@ class TasksViewModel: ObservableObject {
     @Published var sortOption: TaskSortOption = .dueDate {
         didSet { recomputeDisplayCaches() }
     }
-    @Published var expandedCategories: Set<TaskCategory> = Set(TaskCategory.allCases)
+
 
     // Filter tags (Memories-style dropdown)
     @Published var selectedTags: Set<TaskFilterTag> = [] {
@@ -1109,13 +1109,8 @@ class TasksViewModel: ObservableObject {
         await store.deleteTask(task)
     }
 
-    func toggleCategory(_ category: TaskCategory) {
-        if expandedCategories.contains(category) {
-            expandedCategories.remove(category)
-        } else {
-            expandedCategories.insert(category)
-        }
-    }
+
+
 
     // MARK: - Multi-Select
 
@@ -1787,8 +1782,6 @@ struct TasksPage: View {
                             TaskCategorySection(
                                 category: category,
                                 tasks: tasksInCategory,
-                                isExpanded: viewModel.expandedCategories.contains(category),
-                                onToggle: { viewModel.toggleCategory(category) },
                                 viewModel: viewModel
                             )
                         }
@@ -1830,8 +1823,6 @@ struct TasksPage: View {
 struct TaskCategorySection: View {
     let category: TaskCategory
     let tasks: [TaskActionItem]
-    let isExpanded: Bool
-    let onToggle: () -> Void
     @ObservedObject var viewModel: TasksViewModel
 
     /// Get ordered tasks respecting custom drag order
@@ -1842,39 +1833,31 @@ struct TaskCategorySection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             // Category header
-            Button(action: onToggle) {
-                HStack(spacing: 8) {
-                    Image(systemName: category.icon)
-                        .font(.system(size: 14))
-                        .foregroundColor(category.color)
+            HStack(spacing: 8) {
+                Image(systemName: category.icon)
+                    .font(.system(size: 14))
+                    .foregroundColor(category.color)
 
-                    Text(category.rawValue)
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundColor(OmiColors.textPrimary)
+                Text(category.rawValue)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
 
-                    Text("\(tasks.count)")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 2)
-                        .background(
-                            Capsule()
-                                .fill(OmiColors.textTertiary.opacity(0.1))
-                        )
+                Text("\(tasks.count)")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(OmiColors.textTertiary.opacity(0.1))
+                    )
 
-                    Spacer()
-
-                    Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                .padding(.horizontal, 4)
-                .contentShape(Rectangle())
+                Spacer()
             }
-            .buttonStyle(.plain)
+            .padding(.horizontal, 4)
 
             // Tasks in category with drag-and-drop reordering
-            if isExpanded && !viewModel.isMultiSelectMode {
+            if !viewModel.isMultiSelectMode {
                 VStack(spacing: 8) {
                     ForEach(orderedTasks) { task in
                         TaskRow(task: task, viewModel: viewModel, category: category)
