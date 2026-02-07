@@ -10,9 +10,9 @@ struct GoalsWidget: View {
 
     @State private var editingGoal: Goal? = nil
     @State private var showingCreateSheet = false
+    @State private var isGeneratingGoal = false
 
     // AI Features
-    @State private var showingSuggestionSheet = false
     @State private var selectedGoalForAdvice: Goal? = nil
 
     var body: some View {
@@ -25,14 +25,21 @@ struct GoalsWidget: View {
 
                 Spacer()
 
-                // AI suggestion button (when there are goals but room for more)
+                // AI goal generation button (when there are goals but room for more)
                 if goals.count > 0 && goals.count < 3 {
-                    Button(action: { showingSuggestionSheet = true }) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 14, weight: .medium))
-                            .foregroundColor(OmiColors.purplePrimary.opacity(0.8))
+                    Button(action: { triggerGoalGeneration() }) {
+                        if isGeneratingGoal {
+                            ProgressView()
+                                .scaleEffect(0.6)
+                                .frame(width: 14, height: 14)
+                        } else {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OmiColors.purplePrimary.opacity(0.8))
+                        }
                     }
                     .buttonStyle(.plain)
+                    .disabled(isGeneratingGoal)
                 }
 
                 // Add goal button (only if less than 3 goals)
@@ -65,12 +72,18 @@ struct GoalsWidget: View {
                     }
                     .buttonStyle(.plain)
 
-                    // AI Suggestion button
-                    Button(action: { showingSuggestionSheet = true }) {
+                    // AI goal generation button
+                    Button(action: { triggerGoalGeneration() }) {
                         HStack(spacing: 6) {
-                            Image(systemName: "sparkles")
-                                .font(.system(size: 12))
-                            Text("Get AI Suggestion")
+                            if isGeneratingGoal {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 12, height: 12)
+                            } else {
+                                Image(systemName: "sparkles")
+                                    .font(.system(size: 12))
+                            }
+                            Text(isGeneratingGoal ? "Generating..." : "Generate AI Goal")
                                 .font(.system(size: 12, weight: .medium))
                         }
                         .foregroundColor(OmiColors.purplePrimary)
@@ -82,6 +95,7 @@ struct GoalsWidget: View {
                         )
                     }
                     .buttonStyle(.plain)
+                    .disabled(isGeneratingGoal)
                 }
                 .padding(.vertical, 12)
             } else {
@@ -132,18 +146,6 @@ struct GoalsWidget: View {
                 onDismiss: { editingGoal = nil }
             )
         }
-        .sheet(isPresented: $showingSuggestionSheet) {
-            GoalSuggestionSheet(
-                onAccept: { suggestion in
-                    onCreateGoal(
-                        suggestion.suggestedTitle,
-                        0,  // Start at 0
-                        suggestion.suggestedTarget
-                    )
-                },
-                onDismiss: { showingSuggestionSheet = false }
-            )
-        }
         .sheet(item: $selectedGoalForAdvice) { goal in
             GoalAdviceSheet(
                 goal: goal,
@@ -152,6 +154,13 @@ struct GoalsWidget: View {
         }
     }
 
+    private func triggerGoalGeneration() {
+        isGeneratingGoal = true
+        Task {
+            await GoalGenerationService.shared.generateNow()
+            isGeneratingGoal = false
+        }
+    }
 }
 
 // MARK: - Goal Row View
