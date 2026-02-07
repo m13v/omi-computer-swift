@@ -18,7 +18,12 @@ actor MemoryStorage {
         }
 
         // Initialize RewindDatabase which creates our tables via migrations
-        try await RewindDatabase.shared.initialize()
+        do {
+            try await RewindDatabase.shared.initialize()
+        } catch {
+            log("MemoryStorage: Database initialization failed: \(error.localizedDescription)")
+            throw error
+        }
 
         guard let db = await RewindDatabase.shared.getDatabaseQueue() else {
             throw MemoryStorageError.databaseNotInitialized
