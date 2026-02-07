@@ -268,8 +268,9 @@ class TaskAgentManager: ObservableObject {
         let escapedWorkingDir = workingDir.replacingOccurrences(of: "'", with: "'\\''")
 
         // Build command that reads prompt from file
+        // Source shell profiles INSIDE the tmux session so claude (via nvm) is in PATH
         let command = """
-        tmux new-session -d -s '\(sessionName)' "cd '\(escapedWorkingDir)' && claude --dangerously-skip-permissions \"$(cat '\(promptFile.path)')\" ; rm -f '\(promptFile.path)'"
+        tmux new-session -d -s '\(sessionName)' "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; cd '\(escapedWorkingDir)' && claude --dangerously-skip-permissions \"$(cat '\(promptFile.path)')\" ; rm -f '\(promptFile.path)'"
         """
 
         let process = Process()
@@ -397,10 +398,16 @@ class TaskAgentManager: ObservableObject {
     }
 
     private func openTmuxSessionInTerminal(sessionName: String) {
+        // Check if session is alive before opening terminal
+        guard isSessionAlive(sessionName: sessionName) else {
+            logMessage("TaskAgentManager: Cannot open terminal - session '\(sessionName)' does not exist")
+            return
+        }
+
         let script = """
         tell application "Terminal"
             activate
-            do script "tmux attach -t '\(sessionName)'"
+            do script "source ~/.zprofile 2>/dev/null; tmux attach -t '\(sessionName)'"
         end tell
         """
 
