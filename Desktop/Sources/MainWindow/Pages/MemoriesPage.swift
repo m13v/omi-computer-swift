@@ -1683,6 +1683,34 @@ private struct MemoryCardView: View {
                     .cornerRadius(4)
                 }
 
+                // Tags (filter out redundant ones already shown as category/tip badges)
+                let displayTags = memory.tags.filter { tag in
+                    let lower = tag.lowercased()
+                    // Skip tags already represented by category badge or tip badges
+                    if lower == memory.category.rawValue { return false }
+                    if lower == "tips" || lower == (memory.tipCategory ?? "") { return false }
+                    if lower == "has-message" { return false }
+                    return true
+                }
+                if !displayTags.isEmpty {
+                    ForEach(Array(displayTags.prefix(3)), id: \.self) { tag in
+                        Text(tag)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(tagColorFor(tag))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(tagColorFor(tag).opacity(0.15))
+                            .cornerRadius(4)
+                    }
+                    if displayTags.count > 3 {
+                        Text("+\(displayTags.count - 3)")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 2)
+                    }
+                }
+
                 // Source device
                 if let sourceName = memory.sourceName {
                     HStack(spacing: 4) {
@@ -1976,6 +2004,26 @@ struct MemoryDetailSheet: View {
                             .foregroundColor(OmiColors.textPrimary)
                     }
                     .font(.system(size: 13))
+
+                    if !memory.tags.isEmpty {
+                        HStack(alignment: .top) {
+                            Text("Tags")
+                                .foregroundColor(OmiColors.textSecondary)
+                                .font(.system(size: 13))
+                            Spacer()
+                            FlowLayout(spacing: 4) {
+                                ForEach(memory.tags, id: \.self) { tag in
+                                    Text(tag)
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(tagColorFor(tag))
+                                        .padding(.horizontal, 6)
+                                        .padding(.vertical, 2)
+                                        .background(tagColorFor(tag).opacity(0.15))
+                                        .cornerRadius(4)
+                                }
+                            }
+                        }
+                    }
                 }
                 .padding(12)
                 .background(OmiColors.backgroundTertiary)
