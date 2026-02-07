@@ -106,8 +106,8 @@ actor AdviceAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
-        // Skip apps from the built-in skip list (utility/media/system apps)
-        let excluded = await MainActor.run { TaskAssistantSettings.builtInExcludedApps.contains(frame.appName) }
+        // Skip apps excluded from advice extraction (built-in + user's custom list)
+        let excluded = await MainActor.run { AdviceAssistantSettings.shared.isAppExcluded(frame.appName) }
         if excluded {
             return nil
         }
