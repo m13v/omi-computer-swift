@@ -12,6 +12,7 @@ class MemoryAssistantSettings {
     private let extractionIntervalKey = "memoryExtractionInterval"
     private let minConfidenceKey = "memoryMinConfidence"
     private let notificationsEnabledKey = "memoryNotificationsEnabled"
+    private let excludedAppsKey = "memoryExcludedApps"
 
     // MARK: - Default Values
 
@@ -230,6 +231,41 @@ class MemoryAssistantSettings {
         }
     }
 
+    /// Apps excluded from memory extraction (user's custom list, on top of the shared built-in list)
+    var excludedApps: Set<String> {
+        get {
+            if let saved = UserDefaults.standard.array(forKey: excludedAppsKey) as? [String] {
+                return Set(saved)
+            }
+            return []
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: excludedAppsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Check if an app is excluded from memory extraction (built-in list + user's custom list)
+    func isAppExcluded(_ appName: String) -> Bool {
+        TaskAssistantSettings.builtInExcludedApps.contains(appName) || excludedApps.contains(appName)
+    }
+
+    /// Add an app to the memory extraction exclusion list
+    func excludeApp(_ appName: String) {
+        var apps = excludedApps
+        apps.insert(appName)
+        excludedApps = apps
+        log("Memory: Excluded app '\(appName)' from memory extraction")
+    }
+
+    /// Remove an app from the memory extraction exclusion list
+    func includeApp(_ appName: String) {
+        var apps = excludedApps
+        apps.remove(appName)
+        excludedApps = apps
+        log("Memory: Included app '\(appName)' for memory extraction")
+    }
+
     /// Reset only the analysis prompt to default
     func resetPromptToDefault() {
         UserDefaults.standard.removeObject(forKey: analysisPromptKey)
@@ -243,6 +279,7 @@ class MemoryAssistantSettings {
         extractionInterval = defaultExtractionInterval
         minConfidence = defaultMinConfidence
         notificationsEnabled = defaultNotificationsEnabled
+        excludedApps = []
         resetPromptToDefault()
     }
 }
