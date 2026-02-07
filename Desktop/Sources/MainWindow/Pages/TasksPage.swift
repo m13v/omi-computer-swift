@@ -136,16 +136,16 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .todo: return !task.completed
         case .done: return task.completed
         case .removedByAI: return task.deleted == true
-        case .personal: return task.category == "personal"
-        case .work: return task.category == "work"
-        case .feature: return task.category == "feature"
-        case .bug: return task.category == "bug"
-        case .code: return task.category == "code"
-        case .research: return task.category == "research"
-        case .communication: return task.category == "communication"
-        case .finance: return task.category == "finance"
-        case .health: return task.category == "health"
-        case .other: return task.category == "other"
+        case .personal: return task.tags.contains("personal")
+        case .work: return task.tags.contains("work")
+        case .feature: return task.tags.contains("feature")
+        case .bug: return task.tags.contains("bug")
+        case .code: return task.tags.contains("code")
+        case .research: return task.tags.contains("research")
+        case .communication: return task.tags.contains("communication")
+        case .finance: return task.tags.contains("finance")
+        case .health: return task.tags.contains("health")
+        case .other: return task.tags.contains("other")
         case .sourceScreen: return task.source == "screenshot"
         case .sourceOmi: return task.source == "transcription:omi"
         case .sourceDesktop: return task.source == "transcription:desktop"
@@ -240,7 +240,7 @@ struct DynamicFilterTag: Identifiable, Hashable {
         case .source:
             return task.source == rawValue
         case .category:
-            return task.category == rawValue
+            return task.tags.contains(rawValue)
         default:
             return false
         }
@@ -701,8 +701,8 @@ class TasksViewModel: ObservableObject {
             if let source = task.source, !source.isEmpty {
                 allSources[source, default: 0] += 1
             }
-            if let category = task.category, !category.isEmpty {
-                allCategories[category, default: 0] += 1
+            for tag in task.tags {
+                allCategories[tag, default: 0] += 1
             }
         }
 
@@ -1144,8 +1144,8 @@ class TasksViewModel: ObservableObject {
         isMultiSelectMode = false
     }
 
-    func createTask(description: String, dueAt: Date?, priority: String?) async {
-        await store.createTask(description: description, dueAt: dueAt, priority: priority)
+    func createTask(description: String, dueAt: Date?, priority: String?, tags: [String]? = nil) async {
+        await store.createTask(description: description, dueAt: dueAt, priority: priority, tags: tags)
         showingCreateTask = false
     }
 
@@ -2273,9 +2273,9 @@ struct TaskRow: View {
                             }
                         }
 
-                    // Category badge
-                    if let taskCategory = task.category {
-                        TaskClassificationBadge(category: taskCategory)
+                    // Tag badges (show up to 3)
+                    ForEach(task.tags.prefix(3), id: \.self) { tag in
+                        TaskClassificationBadge(category: tag)
                     }
 
                     // Agent status indicator and detail button
@@ -2729,6 +2729,7 @@ struct TaskCreateSheet: View {
     @State private var hasDueDate: Bool = false
     @State private var dueDate: Date = Date()
     @State private var priority: String? = nil
+    @State private var selectedTags: Set<String> = []
     @State private var isSaving = false
 
     @Environment(\.dismiss) private var environmentDismiss
@@ -2818,6 +2819,50 @@ struct TaskCreateSheet: View {
                             createPriorityButton(label: "High", value: "high", color: .red)
                         }
                     }
+
+                    // Tags
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Tags")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+
+                        // Flow layout of toggleable tag pills
+                        let allTags = TaskClassification.allCases
+                        LazyVGrid(columns: [
+                            GridItem(.adaptive(minimum: 90), spacing: 6)
+                        ], spacing: 6) {
+                            ForEach(allTags, id: \.rawValue) { classification in
+                                let isSelected = selectedTags.contains(classification.rawValue)
+                                let tagColor = Color(hex: classification.color) ?? OmiColors.textSecondary
+                                Button {
+                                    if isSelected {
+                                        selectedTags.remove(classification.rawValue)
+                                    } else {
+                                        selectedTags.insert(classification.rawValue)
+                                    }
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: classification.icon)
+                                            .font(.system(size: 9))
+                                        Text(classification.label)
+                                            .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                                    }
+                                    .foregroundColor(isSelected ? .white : tagColor)
+                                    .padding(.horizontal, 10)
+                                    .padding(.vertical, 6)
+                                    .background(
+                                        Capsule()
+                                            .fill(isSelected ? tagColor : tagColor.opacity(0.1))
+                                    )
+                                    .overlay(
+                                        Capsule()
+                                            .stroke(isSelected ? Color.clear : tagColor.opacity(0.3), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
                 }
                 .padding(20)
             }
@@ -2847,7 +2892,7 @@ struct TaskCreateSheet: View {
             }
             .padding(20)
         }
-        .frame(width: 420, height: 380)
+        .frame(width: 420, height: 500)
         .background(OmiColors.backgroundPrimary)
     }
 
@@ -2877,7 +2922,8 @@ struct TaskCreateSheet: View {
         let trimmed = description.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         isSaving = true
-        await viewModel.createTask(description: trimmed, dueAt: hasDueDate ? dueDate : nil, priority: priority)
+        let tags = selectedTags.isEmpty ? nil : Array(selectedTags)
+        await viewModel.createTask(description: trimmed, dueAt: hasDueDate ? dueDate : nil, priority: priority, tags: tags)
         isSaving = false
         dismissSheet()
     }
