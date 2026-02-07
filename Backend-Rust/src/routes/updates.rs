@@ -63,6 +63,12 @@ fn generate_appcast_xml(releases: &[ReleaseInfo], platform: &str) -> String {
                 .collect();
             format!("<ul>{}</ul>", items.join(""))
         };
+        // Append manual download link as fallback for users with broken auto-update
+        let download_base = release.download_url.replace("Omi.zip", "Omi.Beta.dmg");
+        let changelog_html = format!(
+            r#"{}<p style="margin-top:12px;font-size:11px;color:#666;">If the update fails to install, <a href="{}">download the latest version manually</a>.</p>"#,
+            changelog_html, download_base
+        );
 
         xml.push_str(&format!(r#"    <item>
       <title>Omi {}</title>
