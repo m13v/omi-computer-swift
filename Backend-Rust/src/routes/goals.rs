@@ -180,20 +180,35 @@ async fn get_goal_history(
     }
 }
 
-/// DELETE /v1/goals/:id - Delete a goal
+/// DELETE /v1/goals/:id - Soft-delete a goal (set is_active=false, no completed_at)
 async fn delete_goal(
     State(state): State<AppState>,
     user: AuthUser,
     Path(goal_id): Path<String>,
 ) -> Result<Json<GoalStatusResponse>, StatusCode> {
-    tracing::info!("Deleting goal {} for user {}", goal_id, user.uid);
+    tracing::info!("Soft-deleting goal {} for user {}", goal_id, user.uid);
 
-    match state.firestore.delete_goal(&user.uid, &goal_id).await {
-        Ok(()) => Ok(Json(GoalStatusResponse {
+    match state
+        .firestore
+        .update_goal(
+            &user.uid,
+            &goal_id,
+            None,  // title
+            None,  // target_value
+            None,  // current_value
+            None,  // min_value
+            None,  // max_value
+            None,  // unit
+            Some(false),  // is_active = false
+            None,  // completed_at = None (distinguishes abandoned from completed)
+        )
+        .await
+    {
+        Ok(_) => Ok(Json(GoalStatusResponse {
             status: "deleted".to_string(),
         })),
         Err(e) => {
-            tracing::error!("Failed to delete goal: {}", e);
+            tracing::error!("Failed to soft-delete goal: {}", e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
