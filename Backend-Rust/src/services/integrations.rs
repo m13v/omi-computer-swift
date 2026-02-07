@@ -8,6 +8,18 @@ use std::time::Duration;
 
 use crate::models::{App, Conversation, TriggerEvent};
 
+/// Truncate a string to at most `max_bytes` bytes at a valid UTF-8 character boundary.
+fn truncate_str(s: &str, max_bytes: usize) -> &str {
+    if s.len() <= max_bytes {
+        return s;
+    }
+    let mut end = max_bytes;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 /// Response from an app's webhook
 #[derive(Debug, Clone, Deserialize)]
 pub struct WebhookResponse {
@@ -173,11 +185,12 @@ impl IntegrationService {
                         .text()
                         .await
                         .unwrap_or_else(|_| "Unknown error".to_string());
+                    let truncated = truncate_str(&error_text, 100);
                     tracing::warn!(
                         "Webhook failed for app {}: status={}, error={}",
                         app.id,
                         status,
-                        &error_text[..error_text.len().min(100)]
+                        truncated
                     );
 
                     return IntegrationResult {
@@ -185,7 +198,7 @@ impl IntegrationService {
                         app_name: app.name.clone(),
                         success: false,
                         message: None,
-                        error: Some(format!("HTTP {}: {}", status, &error_text[..error_text.len().min(100)])),
+                        error: Some(format!("HTTP {}: {}", status, truncated)),
                     };
                 }
 
