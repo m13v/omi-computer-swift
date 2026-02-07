@@ -65,8 +65,8 @@ class TaskAgentSettings: ObservableObject {
 
     private func checkCommandExists(_ command: String) async -> Bool {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        process.arguments = [command]
+        process.executableURL = URL(fileURLWithPath: "/bin/bash")
+        process.arguments = ["-l", "-c", "which \(command)"]
 
         let pipe = Pipe()
         process.standardOutput = pipe
