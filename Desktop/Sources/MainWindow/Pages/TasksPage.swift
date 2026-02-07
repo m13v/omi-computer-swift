@@ -1314,10 +1314,10 @@ struct TasksPage: View {
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10))
             }
-            .foregroundColor(viewModel.hasActiveFilters ? .black : OmiColors.textSecondary)
+            .foregroundColor(viewModel.hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
-            .background(viewModel.hasActiveFilters ? Color.white : OmiColors.backgroundSecondary)
+            .background(OmiColors.backgroundSecondary)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
