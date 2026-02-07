@@ -56,13 +56,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
+AUTH_DEBUG_LOG="/tmp/auth-debug.log"
+rm -f "$AUTH_DEBUG_LOG"
+auth_debug() { auth_debug " $1" | tee -a "$AUTH_DEBUG_LOG"; }
+
 step "Killing existing instances..."
-echo "[AUTH DEBUG] BEFORE pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
+auth_debug "BEFORE pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
 pkill -f "$APP_NAME.app" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
 sleep 0.5  # Let cfprefsd flush after process death
-echo "[AUTH DEBUG] AFTER pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
+auth_debug " AFTER pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
 
 # Clear log file for fresh run (must be before backend starts)
 rm -f /tmp/omi.log 2>/dev/null || true
@@ -195,7 +199,7 @@ cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null ||
 substep "Creating PkgInfo"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
-echo "[AUTH DEBUG] BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
+auth_debug " BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
 
 step "Removing extended attributes (xattr -cr)..."
 xattr -cr "$APP_BUNDLE"
@@ -238,7 +242,7 @@ echo "Using backend: $TUNNEL_URL"
 echo "========================================"
 echo ""
 
-echo "[AUTH DEBUG] BEFORE launch: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
+auth_debug " BEFORE launch: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
 open "$APP_BUNDLE" || "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME" &
 
 # Wait for backend process (keeps script running and shows logs)
