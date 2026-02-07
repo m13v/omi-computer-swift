@@ -64,6 +64,7 @@ struct SettingsContentView: View {
     @State private var cooldownInterval: Int
     @State private var glowOverlayEnabled: Bool
     @State private var analysisDelay: Int
+    @State private var focusExcludedApps: Set<String>
 
     // Task Assistant states
     @State private var taskEnabled: Bool
@@ -173,6 +174,7 @@ struct SettingsContentView: View {
         _cooldownInterval = State(initialValue: FocusAssistantSettings.shared.cooldownInterval)
         _glowOverlayEnabled = State(initialValue: settings.glowOverlayEnabled)
         _analysisDelay = State(initialValue: settings.analysisDelay)
+        _focusExcludedApps = State(initialValue: FocusAssistantSettings.shared.excludedApps)
         _taskEnabled = State(initialValue: TaskAssistantSettings.shared.isEnabled)
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
@@ -1504,6 +1506,67 @@ struct SettingsContentView: View {
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Excluded Apps for Focus Analysis
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Excluded Apps")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Focus coaching won't trigger for these apps")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        // Built-in system exclusions (non-removable)
+                        DisclosureGroup {
+                            LazyVStack(spacing: 4) {
+                                ForEach(Array(TaskAssistantSettings.builtInExcludedApps).sorted(), id: \.self) { appName in
+                                    HStack(spacing: 12) {
+                                        AppIconView(appName: appName, size: 20)
+
+                                        Text(appName)
+                                            .font(.system(size: 13))
+                                            .foregroundColor(OmiColors.textTertiary)
+
+                                        Spacer()
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        } label: {
+                            Text("System apps always excluded (\(TaskAssistantSettings.builtInExcludedApps.count))")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .tint(OmiColors.textTertiary)
+
+                        if !focusExcludedApps.isEmpty {
+                            LazyVStack(spacing: 8) {
+                                ForEach(Array(focusExcludedApps).sorted(), id: \.self) { appName in
+                                    ExcludedAppRow(
+                                        appName: appName,
+                                        onRemove: {
+                                            FocusAssistantSettings.shared.includeApp(appName)
+                                            focusExcludedApps = FocusAssistantSettings.shared.excludedApps
+                                        }
+                                    )
+                                }
+                            }
+                        }
+
+                        AddExcludedAppView(
+                            onAdd: { appName in
+                                FocusAssistantSettings.shared.excludeApp(appName)
+                                focusExcludedApps = FocusAssistantSettings.shared.excludedApps
+                            },
+                            excludedApps: focusExcludedApps
+                        )
                     }
                 }
             }
