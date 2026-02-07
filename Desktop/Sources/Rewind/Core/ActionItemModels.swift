@@ -259,6 +259,18 @@ extension ActionItemRecord {
         // Use backendId if available, otherwise use local ID prefixed with "local_"
         let taskId = backendId ?? "local_\(id ?? 0)"
 
+        // Ensure metadata contains tags from tagsJson for the TaskActionItem.tags computed property
+        var finalMetadata = metadataJson
+        let recordTags = tags
+        if !recordTags.isEmpty {
+            var metaDict = metadata ?? [:]
+            metaDict["tags"] = recordTags
+            if let data = try? JSONSerialization.data(withJSONObject: metaDict),
+               let json = String(data: data, encoding: .utf8) {
+                finalMetadata = json
+            }
+        }
+
         return TaskActionItem(
             id: taskId,
             description: description,
@@ -270,7 +282,7 @@ extension ActionItemRecord {
             conversationId: conversationId,
             source: source,
             priority: priority,
-            metadata: metadataJson,
+            metadata: finalMetadata,
             category: category,
             deleted: deleted,
             deletedBy: nil,  // Not stored locally
