@@ -109,6 +109,7 @@ actor AdviceAssistant: ProactiveAssistant {
         // Skip apps excluded from advice extraction (built-in + user's custom list)
         let excluded = await MainActor.run { AdviceAssistantSettings.shared.isAppExcluded(frame.appName) }
         if excluded {
+            log("Advice: Skipping excluded app '\(frame.appName)'")
             return nil
         }
 
