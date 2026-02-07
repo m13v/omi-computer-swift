@@ -35,17 +35,17 @@ actor GoalsAIService {
 
     /// Fetch rich user context for goal generation/suggestion
     private func fetchRichContext() async -> (memories: String, conversations: String, actionItems: String, persona: String, existingGoals: String) {
-        // Fetch all context in parallel
+        // Fetch all context in parallel — no truncation, full items
         async let memoriesFetch = { () async -> [ServerMemory] in
-            do { return try await APIClient.shared.getMemories(limit: 30) }
+            do { return try await APIClient.shared.getMemories(limit: 500) }
             catch { log("GoalsAI: Failed to fetch memories: \(error.localizedDescription)"); return [] }
         }()
         async let conversationsFetch = { () async -> [ServerConversation] in
-            do { return try await APIClient.shared.getConversations(limit: 10, statuses: [.completed]) }
+            do { return try await APIClient.shared.getConversations(limit: 100, statuses: [.completed]) }
             catch { log("GoalsAI: Failed to fetch conversations: \(error.localizedDescription)"); return [] }
         }()
         async let actionItemsFetch = { () async -> ActionItemsListResponse? in
-            do { return try await APIClient.shared.getActionItems(limit: 30, completed: false) }
+            do { return try await APIClient.shared.getActionItems(limit: 100, completed: false) }
             catch { log("GoalsAI: Failed to fetch action items: \(error.localizedDescription)"); return nil }
         }()
         async let personaFetch = { () async -> Persona? in
@@ -59,21 +59,18 @@ actor GoalsAIService {
 
         let (memories, conversations, actionItems, persona, goals) = await (memoriesFetch, conversationsFetch, actionItemsFetch, personaFetch, goalsFetch)
 
-        log("GoalsAI: Fetched context — \(memories.count) memories, \(conversations.count) conversations, \((actionItems?.items ?? []).count) tasks, persona: \(persona != nil ? "yes" : "no"), \(goals.count) existing goals")
+        let tasks = actionItems?.items ?? []
+        log("GoalsAI: Fetched context — \(memories.count) memories, \(conversations.count) conversations, \(tasks.count) tasks, persona: \(persona != nil ? "yes" : "no"), \(goals.count) existing goals")
 
-        // Build context strings with truncation limits
-        let memoryContext = String(memories.map { $0.content }.joined(separator: "\n").prefix(800))
-        let conversationContext = String(conversations
+        // Build context strings — full content, no truncation
+        let memoryContext = memories.map { $0.content }.joined(separator: "\n")
+        let conversationContext = conversations
             .compactMap { $0.structured.overview.isEmpty ? nil : $0.structured.overview }
             .joined(separator: "\n")
-            .prefix(1500))
-        let actionItemsContext = String((actionItems?.items ?? [])
-            .map { $0.description }
-            .joined(separator: "\n")
-            .prefix(600))
+        let actionItemsContext = tasks.map { $0.description }.joined(separator: "\n")
         let personaContext: String
         if let p = persona {
-            personaContext = String("\(p.name): \(p.description)".prefix(400))
+            personaContext = "\(p.name): \(p.description)"
         } else {
             personaContext = "No persona set"
         }
