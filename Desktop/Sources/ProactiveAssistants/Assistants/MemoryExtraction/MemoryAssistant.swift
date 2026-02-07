@@ -107,6 +107,12 @@ actor MemoryAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
+        // Skip apps excluded from memory extraction (built-in + user's custom list)
+        let excluded = await MainActor.run { MemoryAssistantSettings.shared.isAppExcluded(frame.appName) }
+        if excluded {
+            return nil
+        }
+
         // Store the latest frame - we'll process it when the interval has passed
         let hadPending = pendingFrame != nil
         pendingFrame = frame
