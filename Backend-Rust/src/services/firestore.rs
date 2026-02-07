@@ -6028,7 +6028,7 @@ impl FirestoreService {
         if existing_goals.len() >= 3 {
             if let Some(oldest) = existing_goals.last() {
                 tracing::info!("Deactivating oldest goal {} to make room for new goal", oldest.id);
-                self.update_goal(uid, &oldest.id, None, None, None, None, None, None, Some(false)).await?;
+                self.update_goal(uid, &oldest.id, None, None, None, None, None, None, Some(false), None).await?;
             }
         }
 
@@ -6094,6 +6094,7 @@ impl FirestoreService {
             is_active: true,
             created_at: now,
             updated_at: now,
+            completed_at: None,
         };
 
         tracing::info!("Created goal {} for user {}", goal.id, uid);
@@ -6112,6 +6113,7 @@ impl FirestoreService {
         max_value: Option<f64>,
         unit: Option<&str>,
         is_active: Option<bool>,
+        completed_at: Option<DateTime<Utc>>,
     ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
         // Build update mask and fields
         let mut update_fields: Vec<&str> = vec![];
@@ -6145,6 +6147,10 @@ impl FirestoreService {
         if let Some(active) = is_active {
             update_fields.push("is_active");
             fields.insert("is_active".to_string(), json!({"booleanValue": active}));
+        }
+        if let Some(cat) = completed_at {
+            update_fields.push("completed_at");
+            fields.insert("completed_at".to_string(), json!({"timestampValue": cat.to_rfc3339()}));
         }
 
         // Always update updated_at
@@ -6195,14 +6201,85 @@ impl FirestoreService {
         goal_id: &str,
         current_value: f64,
     ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
-        let goal = self.update_goal(uid, goal_id, None, None, Some(current_value), None, None, None, None).await?;
+        let goal = self.update_goal(uid, goal_id, None, None, Some(current_value), None, None, None, None, None).await?;
 
         // Also save history entry (inline, fast write)
         if let Err(e) = self.save_goal_progress_history(uid, goal_id, current_value).await {
             tracing::warn!("Failed to save goal progress history: {}", e);
         }
 
+        // Auto-complete if current_value >= target_value
+        if current_value >= goal.target_value && goal.completed_at.is_none() {
+            tracing::info!("Goal {} completed! current_value={} >= target_value={}", goal_id, current_value, goal.target_value);
+            let completed_goal = self.update_goal(uid, goal_id, None, None, None, None, None, None, Some(false), Some(Utc::now())).await?;
+            return Ok(completed_goal);
+        }
+
         Ok(goal)
+    }
+
+    /// Get completed goals for a user (is_active == false with completed_at set)
+    pub async fn get_completed_goals(
+        &self,
+        uid: &str,
+        limit: usize,
+    ) -> Result<Vec<GoalDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}:runQuery",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid
+        );
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": GOALS_SUBCOLLECTION}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "is_active"},
+                        "op": "EQUAL",
+                        "value": {"booleanValue": false}
+                    }
+                }
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query completed goals error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let mut goals = Vec::new();
+
+        for result in results {
+            if let Some(doc) = result.get("document") {
+                if let Ok(goal) = self.parse_goal(doc) {
+                    // Only include goals that have completed_at set
+                    if goal.completed_at.is_some() {
+                        goals.push(goal);
+                    }
+                }
+            }
+        }
+
+        // Sort by completed_at descending (most recently completed first)
+        goals.sort_by(|a, b| {
+            let a_time = a.completed_at.unwrap_or(a.updated_at);
+            let b_time = b.completed_at.unwrap_or(b.updated_at);
+            b_time.cmp(&a_time)
+        });
+        goals.truncate(limit);
+
+        tracing::info!("Found {} completed goals for user {}", goals.len(), uid);
+        Ok(goals)
     }
 
     /// Save a progress history entry for a goal
@@ -6595,6 +6672,13 @@ impl FirestoreService {
             is_active: self.parse_bool(fields, "is_active").unwrap_or(true),
             created_at: self.parse_timestamp_optional(fields, "created_at").unwrap_or_else(Utc::now),
             updated_at: self.parse_timestamp_optional(fields, "updated_at").unwrap_or_else(Utc::now),
+            completed_at: {
+                if fields.get("completed_at").is_some() {
+                    Some(self.parse_timestamp_optional(fields, "completed_at").unwrap_or_else(Utc::now))
+                } else {
+                    None
+                }
+            },
         })
     }
 
