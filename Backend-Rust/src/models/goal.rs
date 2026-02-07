@@ -53,6 +53,9 @@ pub struct GoalDB {
     pub created_at: DateTime<Utc>,
     /// When the goal was last updated
     pub updated_at: DateTime<Utc>,
+    /// When the goal was completed (None if not completed)
+    #[serde(default)]
+    pub completed_at: Option<DateTime<Utc>>,
 }
 
 fn default_max_value() -> f64 {
@@ -100,6 +103,8 @@ pub struct UpdateGoalRequest {
     pub unit: Option<String>,
     /// New active status (optional)
     pub is_active: Option<bool>,
+    /// When the goal was completed (optional)
+    pub completed_at: Option<String>,
 }
 
 /// Query parameters for updating goal progress
