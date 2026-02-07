@@ -1868,6 +1868,47 @@ struct TasksPage: View {
                     }
                     .padding(.vertical, 12)
                 }
+
+                // "Load more" button
+                if !viewModel.displayTasks.isEmpty && !viewModel.isLoadingMore {
+                    if viewModel.isInFilteredMode && viewModel.hasMoreFilteredResults {
+                        Button {
+                            viewModel.loadMoreFiltered()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.circle")
+                                Text("Load more tasks")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    } else if !viewModel.isInFilteredMode && viewModel.hasMoreTasks {
+                        Button {
+                            Task { await viewModel.loadMoreIfNeeded(currentTask: viewModel.displayTasks.last!) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.down.circle")
+                                Text("Load more tasks")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 10)
+                            .background(OmiColors.backgroundTertiary)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                    }
+                }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
