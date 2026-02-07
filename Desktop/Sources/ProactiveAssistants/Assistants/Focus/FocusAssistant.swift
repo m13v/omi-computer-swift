@@ -122,6 +122,12 @@ actor FocusAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
+        // Skip apps excluded from focus analysis
+        let excluded = await MainActor.run { FocusAssistantSettings.shared.isAppExcluded(frame.appName) }
+        if excluded {
+            return nil
+        }
+
         // Smart filtering: Skip analysis if user is focused on the same context
         if shouldSkipAnalysis(for: frame) {
             return nil
