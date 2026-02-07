@@ -268,6 +268,7 @@ actor GeminiClient {
     }
 
     /// Send a text-only request to the Gemini API
+    /// Retries up to 2 times for transient errors (3 total attempts).
     /// - Parameters:
     ///   - prompt: Text prompt to send
     ///   - systemPrompt: System instructions for the model
@@ -276,41 +277,58 @@ actor GeminiClient {
         prompt: String,
         systemPrompt: String
     ) async throws -> String {
-        let request = GeminiRequest(
-            contents: [
-                GeminiRequest.Content(parts: [
-                    GeminiRequest.Part(text: prompt)
-                ])
-            ],
-            systemInstruction: GeminiRequest.SystemInstruction(
-                parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
-            ),
-            generationConfig: nil
-        )
+        let maxRetries = 2
+        var lastError: Error?
 
-        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.timeoutInterval = 300
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+        for attempt in 0...maxRetries {
+            do {
+                let request = GeminiRequest(
+                    contents: [
+                        GeminiRequest.Content(parts: [
+                            GeminiRequest.Part(text: prompt)
+                        ])
+                    ],
+                    systemInstruction: GeminiRequest.SystemInstruction(
+                        parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
+                    ),
+                    generationConfig: nil
+                )
 
-        let (data, _) = try await URLSession.shared.data(for: urlRequest)
+                let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "POST"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                urlRequest.timeoutInterval = 300
+                urlRequest.httpBody = try JSONEncoder().encode(request)
 
-        let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+                let (data, _) = try await URLSession.shared.data(for: urlRequest)
 
-        if let error = response.error {
-            throw GeminiClientError.apiError(error.message)
+                let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+
+                if let error = response.error {
+                    throw GeminiClientError.apiError(error.message)
+                }
+
+                guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+                    throw GeminiClientError.invalidResponse
+                }
+
+                return text
+            } catch {
+                lastError = error
+                guard attempt < maxRetries && isTransientError(error) else {
+                    throw error
+                }
+                let backoffSeconds = UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
         }
 
-        guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-            throw GeminiClientError.invalidResponse
-        }
-
-        return text
+        throw lastError!
     }
 
     /// Send a text-only request with structured JSON output
+    /// Retries up to 2 times for transient errors (3 total attempts).
     /// - Parameters:
     ///   - prompt: Text prompt to send
     ///   - systemPrompt: System instructions for the model
@@ -321,41 +339,57 @@ actor GeminiClient {
         systemPrompt: String,
         responseSchema: GeminiRequest.GenerationConfig.ResponseSchema
     ) async throws -> String {
-        let request = GeminiRequest(
-            contents: [
-                GeminiRequest.Content(parts: [
-                    GeminiRequest.Part(text: prompt)
-                ])
-            ],
-            systemInstruction: GeminiRequest.SystemInstruction(
-                parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
-            ),
-            generationConfig: GeminiRequest.GenerationConfig(
-                responseMimeType: "application/json",
-                responseSchema: responseSchema
-            )
-        )
+        let maxRetries = 2
+        var lastError: Error?
 
-        let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
-        var urlRequest = URLRequest(url: url)
-        urlRequest.httpMethod = "POST"
-        urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        urlRequest.timeoutInterval = 300
-        urlRequest.httpBody = try JSONEncoder().encode(request)
+        for attempt in 0...maxRetries {
+            do {
+                let request = GeminiRequest(
+                    contents: [
+                        GeminiRequest.Content(parts: [
+                            GeminiRequest.Part(text: prompt)
+                        ])
+                    ],
+                    systemInstruction: GeminiRequest.SystemInstruction(
+                        parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
+                    ),
+                    generationConfig: GeminiRequest.GenerationConfig(
+                        responseMimeType: "application/json",
+                        responseSchema: responseSchema
+                    )
+                )
 
-        let (data, _) = try await URLSession.shared.data(for: urlRequest)
+                let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "POST"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                urlRequest.timeoutInterval = 300
+                urlRequest.httpBody = try JSONEncoder().encode(request)
 
-        let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+                let (data, _) = try await URLSession.shared.data(for: urlRequest)
 
-        if let error = response.error {
-            throw GeminiClientError.apiError(error.message)
+                let response = try JSONDecoder().decode(GeminiResponse.self, from: data)
+
+                if let error = response.error {
+                    throw GeminiClientError.apiError(error.message)
+                }
+
+                guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+                    throw GeminiClientError.invalidResponse
+                }
+
+                return text
+            } catch {
+                lastError = error
+                guard attempt < maxRetries && isTransientError(error) else {
+                    throw error
+                }
+                let backoffSeconds = UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
         }
 
-        guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-            throw GeminiClientError.invalidResponse
-        }
-
-        return text
+        throw lastError!
     }
 
     /// Send a multi-turn chat request with streaming response
