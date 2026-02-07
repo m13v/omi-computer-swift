@@ -72,6 +72,7 @@ async fn create_goal(
         .create_goal(
             &user.uid,
             &request.title,
+            request.description.as_deref(),
             request.goal_type,
             target_value,
             request.current_value.unwrap_or(0.0),
@@ -108,6 +109,7 @@ async fn update_goal(
             &user.uid,
             &goal_id,
             request.title.as_deref(),
+            request.description.as_deref(),
             request.target_value,
             request.current_value,
             request.min_value,
@@ -194,6 +196,7 @@ async fn delete_goal(
             &user.uid,
             &goal_id,
             None,  // title
+            None,  // description
             None,  // target_value
             None,  // current_value
             None,  // min_value
