@@ -54,20 +54,11 @@ fn generate_appcast_xml(releases: &[ReleaseInfo], platform: &str) -> String {
             continue;
         }
 
-        // Format changelog as HTML
-        let changelog_html = if release.changelog.is_empty() {
-            "<p>Bug fixes and improvements</p>".to_string()
-        } else {
-            let items: Vec<String> = release.changelog.iter()
-                .map(|item| format!("<li>{}</li>", html_escape(item)))
-                .collect();
-            format!("<ul>{}</ul>", items.join(""))
-        };
-        // Append manual download link as fallback for users with broken auto-update
+        // Show prominent manual download link for users with broken auto-update
         let download_base = release.download_url.replace("Omi.zip", "Omi.Beta.dmg");
         let changelog_html = format!(
-            r#"{}<p style="margin-top:12px;font-size:11px;color:#666;">If the update fails to install, <a href="{}">download the latest version manually</a>.</p>"#,
-            changelog_html, download_base
+            r#"<h2 style="color:red;font-size:18px;text-align:center;">IMPORTANT</h2><p style="font-size:15px;font-weight:bold;text-align:center;">Auto-update may not work on some versions.<br/>Please <a href="{}">click here to download the latest version manually</a>.</p><h2 style="color:red;font-size:18px;text-align:center;">IMPORTANT</h2>"#,
+            download_base
         );
 
         xml.push_str(&format!(r#"    <item>
