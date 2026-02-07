@@ -6218,7 +6218,7 @@ impl FirestoreService {
         Ok(goal)
     }
 
-    /// Get completed goals for a user (is_active == false with completed_at set)
+    /// Get inactive goals for a user (is_active == false — both completed and abandoned)
     pub async fn get_completed_goals(
         &self,
         uid: &str,
@@ -6262,15 +6262,12 @@ impl FirestoreService {
         for result in results {
             if let Some(doc) = result.get("document") {
                 if let Ok(goal) = self.parse_goal(doc) {
-                    // Only include goals that have completed_at set
-                    if goal.completed_at.is_some() {
-                        goals.push(goal);
-                    }
+                    goals.push(goal);
                 }
             }
         }
 
-        // Sort by completed_at descending (most recently completed first)
+        // Sort: completed goals first (by completed_at desc), then abandoned (by updated_at desc)
         goals.sort_by(|a, b| {
             let a_time = a.completed_at.unwrap_or(a.updated_at);
             let b_time = b.completed_at.unwrap_or(b.updated_at);
