@@ -351,7 +351,7 @@ struct AppsPage: View {
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
-                .background(appProvider.selectedCategory != nil ? Color.white : OmiColors.backgroundSecondary)
+                .background(OmiColors.backgroundSecondary)
                 .foregroundColor(appProvider.selectedCategory != nil ? OmiColors.textPrimary : OmiColors.textSecondary)
                 .cornerRadius(8)
                 .overlay(
