@@ -15,6 +15,22 @@ use crate::models::{
 };
 use crate::AppState;
 
+/// GET /v1/goals/completed - Get completed goals for history
+async fn get_completed_goals(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<GoalsListResponse>, StatusCode> {
+    tracing::info!("Getting completed goals for user {}", user.uid);
+
+    match state.firestore.get_completed_goals(&user.uid, 50).await {
+        Ok(goals) => Ok(Json(GoalsListResponse { goals })),
+        Err(e) => {
+            tracing::error!("Failed to get completed goals: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 /// GET /v1/goals/all - Get all active goals (up to 3)
 async fn get_all_goals(
     State(state): State<AppState>,
@@ -82,6 +98,10 @@ async fn update_goal(
 ) -> Result<Json<GoalDB>, StatusCode> {
     tracing::info!("Updating goal {} for user {}", goal_id, user.uid);
 
+    let completed_at = request.completed_at.as_ref().and_then(|s| {
+        chrono::DateTime::parse_from_rfc3339(s).ok().map(|dt| dt.with_timezone(&chrono::Utc))
+    });
+
     match state
         .firestore
         .update_goal(
@@ -94,6 +114,7 @@ async fn update_goal(
             request.max_value,
             request.unit.as_deref(),
             request.is_active,
+            completed_at,
         )
         .await
     {
@@ -182,6 +203,7 @@ async fn delete_goal(
 pub fn goals_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/goals/all", get(get_all_goals))
+        .route("/v1/goals/completed", get(get_completed_goals))
         .route("/v1/goals", post(create_goal))
         .route("/v1/goals/:id", patch(update_goal).delete(delete_goal))
         .route("/v1/goals/:id/progress", patch(update_goal_progress))
