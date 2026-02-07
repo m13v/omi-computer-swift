@@ -1491,16 +1491,18 @@ extension APIClient {
         completed: Bool? = nil,
         description: String? = nil,
         dueAt: Date? = nil,
-        priority: String? = nil
+        priority: String? = nil,
+        metadata: [String: Any]? = nil
     ) async throws -> TaskActionItem {
         struct UpdateRequest: Encodable {
             let completed: Bool?
             let description: String?
             let dueAt: String?
             let priority: String?
+            let metadata: String?
 
             enum CodingKeys: String, CodingKey {
-                case completed, description, priority
+                case completed, description, priority, metadata
                 case dueAt = "due_at"
             }
         }
@@ -1508,11 +1510,20 @@ extension APIClient {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
+        var metadataString: String? = nil
+        if let metadata = metadata {
+            if let data = try? JSONSerialization.data(withJSONObject: metadata),
+               let str = String(data: data, encoding: .utf8) {
+                metadataString = str
+            }
+        }
+
         let request = UpdateRequest(
             completed: completed,
             description: description,
             dueAt: dueAt.map { formatter.string(from: $0) },
-            priority: priority
+            priority: priority,
+            metadata: metadataString
         )
 
         return try await patch("v1/action-items/\(id)", body: request)
@@ -1912,10 +1923,25 @@ struct TaskActionItem: Codable, Identifiable {
     /// Categories that trigger Claude agent execution
     static let agentCategories: Set<String> = ["feature", "bug", "code"]
 
-    /// Check if this task should trigger an agent
+    /// Get tags array from metadata or fall back to single category
+    var tags: [String] {
+        // First try to get tags from metadata JSON
+        if let metadata = metadata,
+           let data = metadata.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let metaTags = json["tags"] as? [String], !metaTags.isEmpty {
+            return metaTags
+        }
+        // Fall back to single category for backward compat
+        if let category = category {
+            return [category]
+        }
+        return []
+    }
+
+    /// Check if this task should trigger an agent (checks any tag)
     var shouldTriggerAgent: Bool {
-        guard let category = category else { return false }
-        return Self.agentCategories.contains(category)
+        return tags.contains { Self.agentCategories.contains($0) }
     }
 
     /// Parse metadata JSON to extract source app name
