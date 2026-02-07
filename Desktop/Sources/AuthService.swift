@@ -35,7 +35,19 @@ class AuthService {
     // API Configuration
     // Production: Cloud Run backend
     private let apiBaseURL: String = "https://omi-desktop-auth-208440318997.us-central1.run.app/"
-    private let redirectURI: String = "omi-computer://auth/callback"
+    private var redirectURI: String {
+        return "\(urlScheme)://auth/callback"
+    }
+
+    private var urlScheme: String {
+        if let urlTypes = Bundle.main.infoDictionary?["CFBundleURLTypes"] as? [[String: Any]],
+           let firstType = urlTypes.first,
+           let schemes = firstType["CFBundleURLSchemes"] as? [String],
+           let scheme = schemes.first {
+            return scheme
+        }
+        return "omi-computer"
+    }
 
     // UserDefaults keys for auth persistence (dev builds with ad-hoc signing)
     private let kAuthIsSignedIn = "auth_isSignedIn"
@@ -352,7 +364,7 @@ class AuthService {
         }
 
         // Check if this is our auth callback
-        guard url.scheme == "omi-computer" && url.host == "auth" && url.path == "/callback" else {
+        guard url.scheme == urlScheme && url.host == "auth" && url.path == "/callback" else {
             NSLog("OMI AUTH: Not an auth callback URL")
             return
         }
