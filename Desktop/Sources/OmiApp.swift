@@ -625,40 +625,84 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func migrateAppNameToBeta() {
-        let key = "didMigrateAppNameToBetaV1"
-        guard !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
-
         let currentPath = Bundle.main.bundlePath
-        guard currentPath.hasSuffix("Omi Computer.app") else { return }
 
-        let dir = (currentPath as NSString).deletingLastPathComponent
-        let newPath = dir + "/Omi Beta.app"
-        guard !FileManager.default.fileExists(atPath: newPath) else { return }
+        // Case 1: Running as "Omi Computer.app" — rename self to "Omi Beta.app"
+        if currentPath.hasSuffix("Omi Computer.app") {
+            let key = "didMigrateAppNameToBetaV1"
+            guard !UserDefaults.standard.bool(forKey: key) else { return }
+            UserDefaults.standard.set(true, forKey: key)
 
-        do {
-            try FileManager.default.moveItem(atPath: currentPath, toPath: newPath)
-            log("App rename migration: moved to \(newPath)")
+            let dir = (currentPath as NSString).deletingLastPathComponent
+            let newPath = dir + "/Omi Beta.app"
+            guard !FileManager.default.fileExists(atPath: newPath) else { return }
 
-            // Re-register with Launch Services
-            let lsregister = Process()
-            lsregister.executableURL = URL(fileURLWithPath:
-                "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
-            lsregister.arguments = ["-f", newPath]
-            try? lsregister.run()
-            lsregister.waitUntilExit()
+            do {
+                try FileManager.default.moveItem(atPath: currentPath, toPath: newPath)
+                log("App rename migration: moved to \(newPath)")
 
-            // Relaunch from new path
-            let relaunch = Process()
-            relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
-            relaunch.arguments = [newPath]
-            try? relaunch.run()
+                // Re-register with Launch Services
+                let lsregister = Process()
+                lsregister.executableURL = URL(fileURLWithPath:
+                    "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister")
+                lsregister.arguments = ["-f", newPath]
+                try? lsregister.run()
+                lsregister.waitUntilExit()
 
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-                NSApp.terminate(nil)
+                // Relaunch from new path
+                let relaunch = Process()
+                relaunch.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+                relaunch.arguments = [newPath]
+                try? relaunch.run()
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                    NSApp.terminate(nil)
+                }
+            } catch {
+                log("App rename migration failed: \(error.localizedDescription)")
             }
-        } catch {
-            log("App rename migration failed: \(error.localizedDescription)")
+            return
+        }
+
+        // Case 2: Running as "Omi Beta.app" — kill and delete old "Omi Computer.app" if it exists
+        cleanupOldOmiComputerApp()
+    }
+
+    private func cleanupOldOmiComputerApp() {
+        let oldAppPaths = [
+            "/Applications/Omi Computer.app",
+            NSHomeDirectory() + "/Applications/Omi Computer.app",
+        ]
+
+        for oldPath in oldAppPaths {
+            guard FileManager.default.fileExists(atPath: oldPath) else { continue }
+
+            log("Found old Omi Computer.app at \(oldPath), cleaning up...")
+
+            // Kill the old app if it's running
+            let running = NSRunningApplication.runningApplications(withBundleIdentifier: "com.omi.computer-macos")
+            for app in running {
+                guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { continue }
+                log("Terminating old Omi Computer process (PID \(app.processIdentifier))")
+                app.forceTerminate()
+            }
+
+            // Wait briefly for termination, then delete
+            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 1.0) {
+                do {
+                    try FileManager.default.removeItem(atPath: oldPath)
+                    log("Deleted old Omi Computer.app at \(oldPath)")
+                } catch {
+                    log("Failed to delete old Omi Computer.app: \(error.localizedDescription)")
+                    // Try moving to trash as fallback
+                    do {
+                        try FileManager.default.trashItem(at: URL(fileURLWithPath: oldPath), resultingItemURL: nil)
+                        log("Moved old Omi Computer.app to trash")
+                    } catch {
+                        log("Failed to trash old Omi Computer.app: \(error.localizedDescription)")
+                    }
+                }
+            }
         }
     }
 
