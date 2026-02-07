@@ -58,7 +58,7 @@ trap cleanup EXIT
 
 AUTH_DEBUG_LOG="/tmp/auth-debug.log"
 rm -f "$AUTH_DEBUG_LOG"
-auth_debug() { auth_debug " $1" | tee -a "$AUTH_DEBUG_LOG"; }
+auth_debug() { echo "[AUTH DEBUG][$(date +%H:%M:%S)] $1" | tee -a "$AUTH_DEBUG_LOG"; }
 
 step "Killing existing instances..."
 auth_debug "BEFORE pkill: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1)"
