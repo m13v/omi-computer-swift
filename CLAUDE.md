@@ -20,9 +20,8 @@ When debugging issues for a specific user (crashes, errors, behavior), use the *
 See `.claude/skills/user-logs/SKILL.md` for full documentation and API queries.
 
 ## Related Repositories
-- **OMI Main Repo**: `/Users/matthewdi/omi`
-  - Backend: `/Users/matthewdi/omi/backend` (FastAPI Python)
-  - Flutter App: `/Users/matthewdi/omi/app`
+- **This repo (`omi-desktop`)** is the current main OMI repo (macOS app + Rust backend)
+- **Legacy repo**: `/Users/matthewdi/omi` — old Flutter app + FastAPI Python backend (deprecated)
 
 ## Firebase Connection
 Use `/firebase` command or see `.claude/skills/firebase/SKILL.md`
