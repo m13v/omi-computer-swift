@@ -18,7 +18,12 @@ actor ActionItemStorage {
         }
 
         // Initialize RewindDatabase which creates our tables via migrations
-        try await RewindDatabase.shared.initialize()
+        do {
+            try await RewindDatabase.shared.initialize()
+        } catch {
+            log("ActionItemStorage: Database initialization failed: \(error.localizedDescription)")
+            throw error
+        }
 
         guard let db = await RewindDatabase.shared.getDatabaseQueue() else {
             throw ActionItemStorageError.databaseNotInitialized
@@ -63,9 +68,12 @@ actor ActionItemStorage {
                 query = query.filter(Column("createdAt") >= startDate)
             }
 
-            // Filter by category
+            // Filter by category (check both tagsJson and legacy category column)
             if let category = category {
-                query = query.filter(Column("category") == category)
+                query = query.filter(
+                    Column("tagsJson").like("%\"\(category)\"%") ||
+                    Column("category") == category
+                )
             }
 
             // Filter by source
@@ -143,9 +151,15 @@ actor ActionItemStorage {
                 // If both true and false, no filter needed (show all)
             }
 
-            // Filter by categories (OR logic)
+            // Filter by categories (OR logic, checking tagsJson and legacy category)
             if let categories = categories, !categories.isEmpty {
-                query = query.filter(categories.contains(Column("category")))
+                let tagConditions = categories.map { cat in
+                    Column("tagsJson").like("%\"\(cat)\"%") || Column("category") == cat
+                }
+                if let combined = tagConditions.first {
+                    let merged = tagConditions.dropFirst().reduce(combined) { result, next in result || next }
+                    query = query.filter(merged)
+                }
             }
 
             // Filter by sources (OR logic)
@@ -198,7 +212,10 @@ actor ActionItemStorage {
             }
 
             if let category = category {
-                query = query.filter(Column("category") == category)
+                query = query.filter(
+                    Column("tagsJson").like("%\"\(category)\"%") ||
+                    Column("category") == category
+                )
             }
 
             if let source = source {
@@ -245,7 +262,10 @@ actor ActionItemStorage {
             }
 
             if let category = category {
-                query = query.filter(Column("category") == category)
+                query = query.filter(
+                    Column("tagsJson").like("%\"\(category)\"%") ||
+                    Column("category") == category
+                )
             }
 
             if let source = source {
@@ -286,16 +306,16 @@ actor ActionItemStorage {
                 .filter(Column("deleted") == true)
                 .fetchCount(database)
 
-            // Category counts
+            // Category/tag counts - count each known tag using LIKE on tagsJson
             var categories: [String: Int] = [:]
-            let categoryRows = try Row.fetchAll(database, sql: """
-                SELECT category, COUNT(*) as count FROM action_items
-                WHERE deleted = 0 AND category IS NOT NULL
-                GROUP BY category
-            """)
-            for row in categoryRows {
-                if let cat: String = row["category"], let count: Int = row["count"] {
-                    categories[cat] = count
+            let knownTags = ["personal", "work", "feature", "bug", "code", "research", "communication", "finance", "health", "other"]
+            for tag in knownTags {
+                let count = try Int.fetchOne(database, sql: """
+                    SELECT COUNT(*) FROM action_items
+                    WHERE deleted = 0 AND (tagsJson LIKE ? OR (tagsJson IS NULL AND category = ?))
+                """, arguments: ["%\"\(tag)\"%", tag]) ?? 0
+                if count > 0 {
+                    categories[tag] = count
                 }
             }
 
