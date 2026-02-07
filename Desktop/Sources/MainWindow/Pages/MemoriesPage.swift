@@ -538,6 +538,49 @@ class MemoriesViewModel: ObservableObject {
         }
 
         isLoading = false
+
+        // Kick off one-time full sync in background (populates SQLite with all memories)
+        Task { await performFullSyncIfNeeded() }
+    }
+
+    /// One-time background sync that fetches ALL memories from the API and stores in SQLite.
+    /// Ensures filter/search queries have the full dataset. Keyed per user so it runs once per account.
+    private func performFullSyncIfNeeded() async {
+        let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
+        let syncKey = "memoriesFullSyncCompleted_\(userId)"
+
+        guard !UserDefaults.standard.bool(forKey: syncKey) else {
+            log("MemoriesViewModel: Full sync already completed for user \(userId)")
+            return
+        }
+
+        log("MemoriesViewModel: Starting one-time full sync for user \(userId)")
+
+        var offset = pageSize  // Skip first page (already synced above)
+        var totalSynced = 0
+        let batchSize = 500
+
+        do {
+            while true {
+                let batch = try await APIClient.shared.getMemories(limit: batchSize, offset: offset)
+                if batch.isEmpty { break }
+
+                try await MemoryStorage.shared.syncServerMemories(batch)
+                totalSynced += batch.count
+                offset += batch.count
+                log("MemoriesViewModel: Full sync progress - \(totalSynced) additional memories synced")
+
+                if batch.count < batchSize { break }
+            }
+
+            UserDefaults.standard.set(true, forKey: syncKey)
+            log("MemoriesViewModel: Full sync completed - \(totalSynced) additional memories synced")
+
+            // Refresh tag counts now that SQLite has everything
+            await loadTagCountsFromDatabase()
+        } catch {
+            logError("MemoriesViewModel: Full sync failed (will retry next launch)", error: error)
+        }
     }
 
     /// Whether we're currently in a filtered/search mode
