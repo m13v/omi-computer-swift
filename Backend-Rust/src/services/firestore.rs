@@ -6014,6 +6014,7 @@ impl FirestoreService {
         &self,
         uid: &str,
         title: &str,
+        description: Option<&str>,
         goal_type: GoalType,
         target_value: f64,
         current_value: f64,
@@ -6028,7 +6029,7 @@ impl FirestoreService {
         if existing_goals.len() >= 3 {
             if let Some(oldest) = existing_goals.last() {
                 tracing::info!("Deactivating oldest goal {} to make room for new goal", oldest.id);
-                self.update_goal(uid, &oldest.id, None, None, None, None, None, None, Some(false), None).await?;
+                self.update_goal(uid, &oldest.id, None, None, None, None, None, None, None, Some(false), None).await?;
             }
         }
 
@@ -6061,6 +6062,13 @@ impl FirestoreService {
             "updated_at": {"timestampValue": now.to_rfc3339()}
         });
 
+        if let Some(d) = description {
+            fields.as_object_mut().unwrap().insert(
+                "description".to_string(),
+                json!({"stringValue": d}),
+            );
+        }
+
         if let Some(u) = unit {
             fields.as_object_mut().unwrap().insert(
                 "unit".to_string(),
@@ -6085,6 +6093,7 @@ impl FirestoreService {
         let goal = GoalDB {
             id: goal_id,
             title: title.to_string(),
+            description: description.map(|s| s.to_string()),
             goal_type,
             target_value,
             current_value,
@@ -6107,6 +6116,7 @@ impl FirestoreService {
         uid: &str,
         goal_id: &str,
         title: Option<&str>,
+        description: Option<&str>,
         target_value: Option<f64>,
         current_value: Option<f64>,
         min_value: Option<f64>,
@@ -6123,6 +6133,10 @@ impl FirestoreService {
         if let Some(t) = title {
             update_fields.push("title");
             fields.insert("title".to_string(), json!({"stringValue": t}));
+        }
+        if let Some(d) = description {
+            update_fields.push("description");
+            fields.insert("description".to_string(), json!({"stringValue": d}));
         }
         if let Some(v) = target_value {
             update_fields.push("target_value");
@@ -6201,7 +6215,7 @@ impl FirestoreService {
         goal_id: &str,
         current_value: f64,
     ) -> Result<GoalDB, Box<dyn std::error::Error + Send + Sync>> {
-        let goal = self.update_goal(uid, goal_id, None, None, Some(current_value), None, None, None, None, None).await?;
+        let goal = self.update_goal(uid, goal_id, None, None, None, Some(current_value), None, None, None, None, None).await?;
 
         // Also save history entry (inline, fast write)
         if let Err(e) = self.save_goal_progress_history(uid, goal_id, current_value).await {
@@ -6211,7 +6225,7 @@ impl FirestoreService {
         // Auto-complete if current_value >= target_value
         if current_value >= goal.target_value && goal.completed_at.is_none() {
             tracing::info!("Goal {} completed! current_value={} >= target_value={}", goal_id, current_value, goal.target_value);
-            let completed_goal = self.update_goal(uid, goal_id, None, None, None, None, None, None, Some(false), Some(Utc::now())).await?;
+            let completed_goal = self.update_goal(uid, goal_id, None, None, None, None, None, None, None, Some(false), Some(Utc::now())).await?;
             return Ok(completed_goal);
         }
 
@@ -6660,6 +6674,7 @@ impl FirestoreService {
         Ok(GoalDB {
             id,
             title: self.parse_string(fields, "title").unwrap_or_default(),
+            description: self.parse_string(fields, "description"),
             goal_type,
             target_value: self.parse_double(fields, "target_value").unwrap_or(1.0),
             current_value: self.parse_double(fields, "current_value").unwrap_or(0.0),
