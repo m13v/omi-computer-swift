@@ -34,7 +34,7 @@ actor GoalsAIService {
     // MARK: - Rich Context Fetching
 
     /// Fetch rich user context for goal generation/suggestion
-    private func fetchRichContext() async -> (memories: String, conversations: String, actionItems: String, persona: String, existingGoals: String) {
+    private func fetchRichContext() async -> (memories: String, conversations: String, actionItems: String, persona: String, existingGoals: String, completedGoals: String, abandonedGoals: String) {
         // Fetch all context in parallel — no truncation, full items
         async let memoriesFetch = { () async -> [ServerMemory] in
             do { return try await APIClient.shared.getMemories(limit: 500) }
@@ -56,11 +56,19 @@ actor GoalsAIService {
             do { return try await APIClient.shared.getGoals() }
             catch { log("GoalsAI: Failed to fetch goals: \(error.localizedDescription)"); return [] }
         }()
+        async let historyFetch = { () async -> [Goal] in
+            do { return try await APIClient.shared.getCompletedGoals() }
+            catch { log("GoalsAI: Failed to fetch goal history: \(error.localizedDescription)"); return [] }
+        }()
 
-        let (memories, conversations, actionItems, persona, goals) = await (memoriesFetch, conversationsFetch, actionItemsFetch, personaFetch, goalsFetch)
+        let (memories, conversations, actionItems, persona, goals, goalHistory) = await (memoriesFetch, conversationsFetch, actionItemsFetch, personaFetch, goalsFetch, historyFetch)
+
+        // Split goal history into completed vs abandoned
+        let completed = goalHistory.filter { $0.completedAt != nil }
+        let abandoned = goalHistory.filter { $0.completedAt == nil }
 
         let tasks = actionItems?.items ?? []
-        log("GoalsAI: Fetched context — \(memories.count) memories, \(conversations.count) conversations, \(tasks.count) tasks, persona: \(persona != nil ? "yes" : "no"), \(goals.count) existing goals")
+        log("GoalsAI: Fetched context — \(memories.count) memories, \(conversations.count) conversations, \(tasks.count) tasks, persona: \(persona != nil ? "yes" : "no"), \(goals.count) existing goals, \(completed.count) completed, \(abandoned.count) abandoned")
 
         // Build context strings — full content, no truncation
         let memoryContext = memories.map { $0.content }.joined(separator: "\n")
@@ -77,8 +85,14 @@ actor GoalsAIService {
         let existingGoalsContext = goals.isEmpty
             ? "None"
             : goals.map { "- \($0.title) (\(Int($0.currentValue))/\(Int($0.targetValue)))" }.joined(separator: "\n")
+        let completedGoalsContext = completed.isEmpty
+            ? "None"
+            : completed.map { "- \($0.title) (achieved \(Int($0.currentValue))/\(Int($0.targetValue)))" }.joined(separator: "\n")
+        let abandonedGoalsContext = abandoned.isEmpty
+            ? "None"
+            : abandoned.map { "- \($0.title) (stopped at \(Int($0.currentValue))/\(Int($0.targetValue)))" }.joined(separator: "\n")
 
-        return (memoryContext, conversationContext, actionItemsContext, personaContext, existingGoalsContext)
+        return (memoryContext, conversationContext, actionItemsContext, personaContext, existingGoalsContext, completedGoalsContext, abandonedGoalsContext)
     }
 
     // MARK: - Generate Goal (automatic)
@@ -104,9 +118,11 @@ actor GoalsAIService {
             .replacingOccurrences(of: "{conversation_context}", with: ctx.conversations.isEmpty ? "No recent conversations" : ctx.conversations)
             .replacingOccurrences(of: "{action_items_context}", with: ctx.actionItems.isEmpty ? "No active tasks" : ctx.actionItems)
             .replacingOccurrences(of: "{existing_goals}", with: ctx.existingGoals)
+            .replacingOccurrences(of: "{completed_goals}", with: ctx.completedGoals)
+            .replacingOccurrences(of: "{abandoned_goals}", with: ctx.abandonedGoals)
 
         log("GoalsAI: Model: gemini-3-pro-preview")
-        log("GoalsAI: Context sizes — memories: \(ctx.memories.count) chars, conversations: \(ctx.conversations.count) chars, tasks: \(ctx.actionItems.count) chars, persona: \(ctx.persona.count) chars, existing goals: \(ctx.existingGoals)")
+        log("GoalsAI: Context sizes — memories: \(ctx.memories.count) chars, conversations: \(ctx.conversations.count) chars, tasks: \(ctx.actionItems.count) chars, persona: \(ctx.persona.count) chars, existing goals: \(ctx.existingGoals), completed: \(ctx.completedGoals.count) chars, abandoned: \(ctx.abandonedGoals.count) chars")
         log("GoalsAI: Full prompt:\n\(prompt)")
 
         // Call Gemini
