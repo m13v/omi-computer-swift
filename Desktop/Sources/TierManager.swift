@@ -114,8 +114,9 @@ class TierManager {
     func userDidSetTier(_ tier: Int) {
         let clamped = max(0, min(6, tier))
         UserDefaults.standard.set(clamped, forKey: currentTierKey)
-        // Mark as manual override so auto-check doesn't change it
-        UserDefaults.standard.set(true, forKey: userShowAllKey)
+        // Only lock out auto-check when user explicitly picks "Show All Features" (tier 0).
+        // For other tiers, allow auto-upgrade to continue working.
+        UserDefaults.standard.set(clamped == 0, forKey: userShowAllKey)
         AnalyticsManager.shared.tierChanged(tier: clamped, reason: "manual")
         log("TierManager: User manually set tier to \(clamped)")
     }
@@ -126,26 +127,45 @@ class TierManager {
     /// - `tierGatingEnabled=true` → tier 1
     static func migrateExistingUsersIfNeeded() {
         let migrationKey = "didMigrateTierGatingV2"
-        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
-        UserDefaults.standard.set(true, forKey: migrationKey)
+        if !UserDefaults.standard.bool(forKey: migrationKey) {
+            UserDefaults.standard.set(true, forKey: migrationKey)
 
-        // Only for existing users (not first launch)
-        guard UserDefaults.standard.bool(forKey: "hasLaunchedBefore") else { return }
+            // Only for existing users (not first launch)
+            if UserDefaults.standard.bool(forKey: "hasLaunchedBefore") {
+                let oldGatingEnabled = UserDefaults.standard.bool(forKey: "tierGatingEnabled")
+                let userOverrode = UserDefaults.standard.bool(forKey: "userOverrodeTier")
 
-        let oldGatingEnabled = UserDefaults.standard.bool(forKey: "tierGatingEnabled")
-        let userOverrode = UserDefaults.standard.bool(forKey: "userOverrodeTier")
+                if !oldGatingEnabled || userOverrode {
+                    UserDefaults.standard.set(0, forKey: "currentTierLevel")
+                    UserDefaults.standard.set(0, forKey: "lastSeenTierLevel")
+                    UserDefaults.standard.set(true, forKey: "userShowAllFeatures")
+                    log("TierManager: Migration V2 - existing user preserved at tier 0 (show all)")
+                } else {
+                    UserDefaults.standard.set(1, forKey: "currentTierLevel")
+                    UserDefaults.standard.set(1, forKey: "lastSeenTierLevel")
+                    log("TierManager: Migration V2 - existing user migrated to tier 1")
+                }
+            }
+        }
 
-        if !oldGatingEnabled || userOverrode {
-            // Was Tier 2 (all features) or user overrode — preserve as tier 0 (show all)
-            UserDefaults.standard.set(0, forKey: "currentTierLevel")
-            UserDefaults.standard.set(0, forKey: "lastSeenTierLevel")
-            UserDefaults.standard.set(true, forKey: "userShowAllFeatures")
-            log("TierManager: Migration V2 - existing user preserved at tier 0 (show all)")
-        } else {
-            // Was Tier 1 (gated)
-            UserDefaults.standard.set(1, forKey: "currentTierLevel")
-            UserDefaults.standard.set(1, forKey: "lastSeenTierLevel")
-            log("TierManager: Migration V2 - existing user migrated to tier 1")
+        // V3: Fix V2 migration that incorrectly locked all existing users at tier 0.
+        // V2 set userShowAllFeatures=true for everyone because tierGatingEnabled didn't
+        // exist before tiers were introduced (defaulting to false). Clear the flag so
+        // auto-evaluation can compute their actual tier. Only users who manually pick
+        // "Show All Features" in Settings should be locked at tier 0.
+        let v3Key = "didMigrateTierGatingV3"
+        if !UserDefaults.standard.bool(forKey: v3Key) {
+            UserDefaults.standard.set(true, forKey: v3Key)
+
+            if UserDefaults.standard.bool(forKey: "userShowAllFeatures") {
+                UserDefaults.standard.set(false, forKey: "userShowAllFeatures")
+                // Reset to tier 1 so auto-check can compute the real tier
+                UserDefaults.standard.set(1, forKey: "currentTierLevel")
+                UserDefaults.standard.set(1, forKey: "lastSeenTierLevel")
+                // Clear last check date so checkTierIfNeeded() runs immediately
+                UserDefaults.standard.removeObject(forKey: "lastTierCheckDate")
+                log("TierManager: Migration V3 - cleared userShowAllFeatures, reset to tier 1 for re-evaluation")
+            }
         }
     }
 }
