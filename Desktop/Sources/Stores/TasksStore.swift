@@ -612,13 +612,20 @@ class TasksStore: ObservableObject {
         }
     }
 
-    func createTask(description: String, dueAt: Date?, priority: String?) async {
+    func createTask(description: String, dueAt: Date?, priority: String?, tags: [String]? = nil) async {
         do {
+            var metadata: [String: Any]? = nil
+            if let tags = tags, !tags.isEmpty {
+                metadata = ["tags": tags]
+            }
+
             let created = try await APIClient.shared.createActionItem(
                 description: description,
                 dueAt: dueAt,
                 source: "manual",
-                priority: priority
+                priority: priority,
+                category: tags?.first,
+                metadata: metadata
             )
             // New tasks are incomplete, add to incomplete list
             incompleteTasks.insert(created, at: 0)
@@ -645,11 +652,22 @@ class TasksStore: ObservableObject {
 
     func updateTask(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
         do {
+            // Track manual edits: if description is changed, mark as manually edited
+            var metadata: [String: Any]? = nil
+            if description != nil {
+                metadata = ["manually_edited": true]
+                // Preserve existing tags in metadata
+                if !task.tags.isEmpty {
+                    metadata?["tags"] = task.tags
+                }
+            }
+
             let updated = try await APIClient.shared.updateActionItem(
                 id: task.id,
                 description: description,
                 dueAt: dueAt,
-                priority: priority
+                priority: priority,
+                metadata: metadata
             )
             // Update in appropriate list
             if task.completed {
