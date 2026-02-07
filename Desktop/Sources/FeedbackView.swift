@@ -34,7 +34,7 @@ class FeedbackWindow {
     }
 }
 
-/// SwiftUI view for collecting user feedback
+/// SwiftUI view for collecting user feedback and sending logs
 struct FeedbackView: View {
     let userEmail: String?
     let onDismiss: () -> Void
@@ -63,7 +63,7 @@ struct FeedbackView: View {
                         .font(.system(size: 48))
                         .foregroundColor(.green)
 
-                    Text("Thanks for your feedback!")
+                    Text("Report sent!")
                         .font(.headline)
 
                     Text("We'll look into this issue.")
@@ -80,7 +80,7 @@ struct FeedbackView: View {
                 Text("Report an Issue")
                     .font(.headline)
 
-                Text("Describe what went wrong or what you expected to happen.")
+                Text("App logs will be included automatically. Optionally describe what went wrong.")
                     .font(.caption)
                     .foregroundColor(.secondary)
 
@@ -115,11 +115,11 @@ struct FeedbackView: View {
 
                     Spacer()
 
-                    Button("Submit") {
+                    Button("Send Report") {
                         submitFeedback()
                     }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(feedbackText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isSubmitting)
+                    .disabled(isSubmitting)
                 }
             }
         }
@@ -130,26 +130,38 @@ struct FeedbackView: View {
     private func submitFeedback() {
         isSubmitting = true
 
+        let message = feedbackText.trimmingCharacters(in: .whitespacesAndNewlines)
+
         // Track feedback submitted
-        AnalyticsManager.shared.feedbackSubmitted(feedbackLength: feedbackText.count)
+        AnalyticsManager.shared.feedbackSubmitted(feedbackLength: message.count)
 
-        // Submit to Sentry (skip in dev builds)
+        // Submit to Sentry with log file attachment (skip in dev builds)
         if !AnalyticsManager.isDevBuild {
-            // Create a Sentry event ID (capture a message to attach feedback to)
-            let eventId = SentrySDK.capture(message: "User Feedback Submitted")
+            let sentryMessage = message.isEmpty ? "User Report (logs only)" : "User Report: \(message)"
 
-            // Create feedback using new API
-            let feedback = SentryFeedback(
-                message: feedbackText.trimmingCharacters(in: .whitespacesAndNewlines),
-                name: name.trimmingCharacters(in: .whitespacesAndNewlines),
-                email: email.trimmingCharacters(in: .whitespacesAndNewlines),
-                associatedEventId: eventId
-            )
+            // Capture event with log file attached via scope
+            let eventId = SentrySDK.capture(message: sentryMessage) { scope in
+                let logPath = "/tmp/omi.log"
+                if FileManager.default.fileExists(atPath: logPath) {
+                    let attachment = Attachment(path: logPath, filename: "omi.log", contentType: "text/plain")
+                    scope.addAttachment(attachment)
+                }
+            }
 
-            SentrySDK.capture(feedback: feedback)
-            log("User feedback submitted to Sentry")
+            // Also send as Sentry feedback if there's a message
+            if !message.isEmpty {
+                let feedback = SentryFeedback(
+                    message: message,
+                    name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                    email: email.trimmingCharacters(in: .whitespacesAndNewlines),
+                    associatedEventId: eventId
+                )
+                SentrySDK.capture(feedback: feedback)
+            }
+
+            log("User report submitted to Sentry (logs attached, message: \(message.isEmpty ? "none" : "yes"))")
         } else {
-            log("User feedback (dev build - not sent to Sentry): \(feedbackText.trimmingCharacters(in: .whitespacesAndNewlines))")
+            log("User report (dev build - not sent to Sentry). Message: \(message.isEmpty ? "none" : message)")
         }
 
         // Show success
