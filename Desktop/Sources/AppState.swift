@@ -1401,6 +1401,11 @@ class AppState: ObservableObject {
                 }
             }
 
+            // Check if we've hit the 100-conversation milestone for auto goal generation
+            Task { @MainActor in
+                GoalGenerationService.shared.onConversationCreated()
+            }
+
             return .saved
         } catch {
             logError("Transcription: Failed to save conversation", error: error)
