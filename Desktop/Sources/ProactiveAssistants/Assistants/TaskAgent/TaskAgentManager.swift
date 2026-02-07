@@ -1,6 +1,5 @@
 import Foundation
 import Combine
-import AppKit
 
 /// Manages Claude Code agent sessions for code-related tasks
 class TaskAgentManager: ObservableObject {
@@ -405,26 +404,27 @@ class TaskAgentManager: ObservableObject {
             return
         }
 
-        // Use a .command file with bash shebang to bypass .zshrc
-        // (which has claude auto-resume that hijacks the shell via exec)
-        let scriptPath = FileManager.default.temporaryDirectory
-            .appendingPathComponent("omi-tmux-attach-\(sessionName).command")
-        let scriptContent = """
-        #!/bin/bash
-        source ~/.zprofile 2>/dev/null
-        exec tmux attach -t '\(sessionName)'
+        // Create flag file to skip .zshrc auto-resume (which hijacks the shell via exec)
+        let flagPath = "/tmp/.omi-skip-resume"
+        FileManager.default.createFile(atPath: flagPath, contents: nil)
+
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; tmux attach -t '\(sessionName)'"
+        end tell
         """
 
-        do {
-            try scriptContent.write(to: scriptPath, atomically: true, encoding: .utf8)
-            try FileManager.default.setAttributes(
-                [.posixPermissions: 0o755],
-                ofItemAtPath: scriptPath.path
-            )
-            NSWorkspace.shared.open(scriptPath)
-            logMessage("TaskAgentManager: Opened terminal for session '\(sessionName)'")
-        } catch {
-            logMessage("TaskAgentManager: Failed to open terminal - \(error)")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        process.arguments = ["-e", script]
+
+        try? process.run()
+        logMessage("TaskAgentManager: Opened terminal for session '\(sessionName)'")
+
+        // Remove flag file after Terminal has started (delay to ensure .zshrc has been sourced)
+        DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
+            try? FileManager.default.removeItem(atPath: flagPath)
         }
     }
 
