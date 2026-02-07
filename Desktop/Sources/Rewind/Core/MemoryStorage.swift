@@ -218,6 +218,21 @@ actor MemoryStorage {
         }
     }
 
+    /// Get count of unread tips from SQLite
+    func getUnreadTipsCount() async throws -> Int {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let sql = """
+                SELECT COUNT(*) FROM memories
+                WHERE deleted = 0 AND isDismissed = 0
+                AND tagsJson LIKE '%"tips"%'
+                AND isRead = 0
+            """
+            return try Int.fetchOne(database, sql: sql) ?? 0
+        }
+    }
+
     /// Get count of memories matching search query
     func searchLocalMemoriesCount(
         query searchText: String,
