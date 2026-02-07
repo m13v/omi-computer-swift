@@ -269,8 +269,9 @@ class TaskAgentManager: ObservableObject {
 
         // Build command that reads prompt from file
         // Source shell profiles INSIDE the tmux session so claude (via nvm) is in PATH
+        // Note: \\" produces \" in the output (escaped quote for the shell), NOT just "
         let command = """
-        tmux new-session -d -s '\(sessionName)' "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; cd '\(escapedWorkingDir)' && claude --dangerously-skip-permissions \"$(cat '\(promptFile.path)')\" ; rm -f '\(promptFile.path)'"
+        tmux new-session -d -s '\(sessionName)' "source ~/.zprofile 2>/dev/null; source ~/.zshrc 2>/dev/null; cd '\(escapedWorkingDir)' && claude --dangerously-skip-permissions \\"$(cat '\(promptFile.path)')\\" ; rm -f '\(promptFile.path)'"
         """
 
         let process = Process()
