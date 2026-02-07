@@ -229,10 +229,10 @@ class TaskAgentManager: ObservableObject {
     }
 
     private func launchTmuxSession(sessionName: String, prompt: String, workingDir: String) async throws {
-        // Check if tmux is available
+        // Check if tmux is available (use login shell to get user's PATH)
         let tmuxCheck = Process()
-        tmuxCheck.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        tmuxCheck.arguments = ["tmux"]
+        tmuxCheck.executableURL = URL(fileURLWithPath: "/bin/bash")
+        tmuxCheck.arguments = ["-l", "-c", "which tmux"]
         let tmuxCheckPipe = Pipe()
         tmuxCheck.standardOutput = tmuxCheckPipe
         tmuxCheck.standardError = tmuxCheckPipe
@@ -244,10 +244,10 @@ class TaskAgentManager: ObservableObject {
             throw AgentError.tmuxNotInstalled
         }
 
-        // Check if claude is available
+        // Check if claude is available (use login shell to get user's PATH)
         let claudeCheck = Process()
-        claudeCheck.executableURL = URL(fileURLWithPath: "/usr/bin/which")
-        claudeCheck.arguments = ["claude"]
+        claudeCheck.executableURL = URL(fileURLWithPath: "/bin/bash")
+        claudeCheck.arguments = ["-l", "-c", "which claude"]
         let claudeCheckPipe = Pipe()
         claudeCheck.standardOutput = claudeCheckPipe
         claudeCheck.standardError = claudeCheckPipe
@@ -274,7 +274,7 @@ class TaskAgentManager: ObservableObject {
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
-        process.arguments = ["-c", command]
+        process.arguments = ["-l", "-c", command]
 
         let pipe = Pipe()
         process.standardOutput = pipe
