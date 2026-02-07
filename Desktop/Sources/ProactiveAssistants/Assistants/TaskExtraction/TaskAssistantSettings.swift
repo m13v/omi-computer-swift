@@ -20,6 +20,7 @@ class TaskAssistantSettings {
     static let builtInExcludedApps: Set<String> = [
         "Omi",
         "Omi Beta",
+        "Omi Dev",
         "Finder",
         "System Preferences",
         "System Settings",
