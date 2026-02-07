@@ -15,8 +15,11 @@ class TaskAssistantSettings {
 
     // MARK: - Built-in Skip List
 
-    /// Apps that can never contain requests from other people — utility/media/system apps.
+    /// Apps that never contain useful content for proactive assistants — utility/media/system apps + our own app.
+    /// Shared across Task, Advice, and Memory assistants.
     static let builtInExcludedApps: Set<String> = [
+        "Omi",
+        "Omi Beta",
         "Finder",
         "System Preferences",
         "System Settings",
