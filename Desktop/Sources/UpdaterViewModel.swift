@@ -81,6 +81,9 @@ final class UpdaterViewModel: ObservableObject {
         // Initialize published property from updater state
         automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
 
+        // Check for updates every 10 minutes
+        updaterController.updater.updateCheckInterval = 600
+
         // Observe updater state changes
         updaterController.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: DispatchQueue.main)
