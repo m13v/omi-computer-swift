@@ -52,6 +52,9 @@ pub struct ActionItemDB {
     /// Category: "work", "personal", "health", "finance", "education", "shopping", "social", "travel", "home", "other"
     #[serde(default)]
     pub category: Option<String>,
+    /// ID of the goal this task is linked to
+    #[serde(default)]
+    pub goal_id: Option<String>,
 }
 
 /// Request body for updating an action item
@@ -67,6 +70,8 @@ pub struct UpdateActionItemRequest {
     pub priority: Option<String>,
     /// New category: "work", "personal", "health", etc.
     pub category: Option<String>,
+    /// Link to a goal
+    pub goal_id: Option<String>,
 }
 
 /// Response for action item status operations
