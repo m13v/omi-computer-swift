@@ -434,7 +434,7 @@ struct SidebarView: View {
 
             if !isCollapsed {
                 // Brand name
-                Text("Omi")
+                Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String ?? "Omi")
                     .font(.system(size: 22, weight: .bold))
                     .foregroundColor(OmiColors.textPrimary)
                     .tracking(-0.5)
