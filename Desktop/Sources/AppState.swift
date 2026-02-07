@@ -1996,4 +1996,6 @@ extension Notification.Name {
     static let appsPageDidLoad = Notification.Name("appsPageDidLoad")
     /// Posted when a goal is auto-created by GoalGenerationService
     static let goalAutoCreated = Notification.Name("goalAutoCreated")
+    /// Posted when a goal is completed (current_value >= target_value)
+    static let goalCompleted = Notification.Name("goalCompleted")
 }
