@@ -344,6 +344,7 @@ class TasksViewModel: ObservableObject {
     @Published var searchText = "" {
         didSet {
             if oldValue != searchText {
+                displayLimit = 100
                 Task { await performSearch() }
             }
         }
@@ -375,6 +376,8 @@ class TasksViewModel: ObservableObject {
     // Filter tags (Memories-style dropdown)
     @Published var selectedTags: Set<TaskFilterTag> = [] {
         didSet {
+            // Reset display limit when filters change
+            displayLimit = 100
             // Map status tags to showCompleted for server-side loading
             let hasStatusFilter = selectedTags.contains(where: { $0.group == .status })
             if hasStatusFilter {
@@ -423,6 +426,7 @@ class TasksViewModel: ObservableObject {
     /// Selected dynamic tags
     @Published var selectedDynamicTags: Set<DynamicFilterTag> = [] {
         didSet {
+            displayLimit = 100
             if !selectedDynamicTags.isEmpty {
                 Task { await loadFilteredTasksFromDatabase() }
             } else if selectedTags.isEmpty || !selectedTags.contains(where: { $0.group != .status }) {
@@ -496,6 +500,15 @@ class TasksViewModel: ObservableObject {
     @Published private(set) var categorizedTasks: [TaskCategory: [TaskActionItem]] = [:]
     @Published private(set) var todoCount: Int = 0
     @Published private(set) var doneCount: Int = 0
+
+    /// Whether there are more filtered/search results beyond the display limit
+    @Published private(set) var hasMoreFilteredResults = false
+
+    /// Full filtered results before display cap (kept for pagination)
+    private var allFilteredDisplayTasks: [TaskActionItem] = []
+
+    /// Current display limit for filtered/search results
+    private var displayLimit = 100
 
     // Delegate to store
     var isLoading: Bool { store.isLoading }
@@ -814,7 +827,7 @@ class TasksViewModel: ObservableObject {
 
         do {
             let results = try await ActionItemStorage.shared.getFilteredActionItems(
-                limit: 500,
+                limit: 10000,
                 completedStates: completedStates,
                 includeDeleted: includeDeleted,
                 categories: categories.isEmpty ? nil : categories,
@@ -942,7 +955,7 @@ class TasksViewModel: ObservableObject {
             // Search across all tasks in SQLite
             let results = try await ActionItemStorage.shared.searchLocalActionItems(
                 query: query,
-                limit: 200,  // Higher limit for search
+                limit: 10000,
                 completed: nil,  // Search all
                 includeDeleted: selectedTags.contains(.removedByAI)
             )
@@ -955,6 +968,11 @@ class TasksViewModel: ObservableObject {
 
         isSearching = false
         recomputeDisplayCaches()
+    }
+
+    /// Whether we're currently in a filtered/search mode
+    var isInFilteredMode: Bool {
+        !searchText.isEmpty || hasActiveFilters
     }
 
     /// Recompute display-related caches when filters or sort change
@@ -987,10 +1005,39 @@ class TasksViewModel: ObservableObject {
             filteredTasks = applyTagFilters(sourceTasks)
         }
 
-        // Sort and store
-        displayTasks = sortTasks(filteredTasks)
+        // Sort
+        let sorted = sortTasks(filteredTasks)
+
+        // Apply display cap for filtered/search mode
+        if isInFilteredMode {
+            allFilteredDisplayTasks = sorted
+            displayTasks = Array(sorted.prefix(displayLimit))
+            hasMoreFilteredResults = sorted.count > displayLimit
+        } else {
+            allFilteredDisplayTasks = []
+            hasMoreFilteredResults = false
+            displayTasks = sorted
+        }
 
         // Compute categorizedTasks for category view
+        var result: [TaskCategory: [TaskActionItem]] = [:]
+        for category in TaskCategory.allCases {
+            result[category] = []
+        }
+        for task in displayTasks {
+            let category = categoryFor(task: task)
+            result[category, default: []].append(task)
+        }
+        categorizedTasks = result
+    }
+
+    /// Load more filtered/search results (pagination within already-queried results)
+    func loadMoreFiltered() {
+        displayLimit += 100
+        displayTasks = Array(allFilteredDisplayTasks.prefix(displayLimit))
+        hasMoreFilteredResults = allFilteredDisplayTasks.count > displayLimit
+
+        // Recompute categorized tasks
         var result: [TaskCategory: [TaskActionItem]] = [:]
         for category in TaskCategory.allCases {
             result[category] = []
@@ -1097,7 +1144,20 @@ class TasksViewModel: ObservableObject {
     }
 
     func loadMoreIfNeeded(currentTask: TaskActionItem) async {
-        await store.loadMoreIfNeeded(currentTask: currentTask)
+        if isInFilteredMode {
+            // In filtered mode, check if we need to show more from already-queried results
+            let hasMore = hasMoreFilteredResults
+            guard hasMore else { return }
+
+            let thresholdIndex = displayTasks.index(displayTasks.endIndex, offsetBy: -10, limitedBy: displayTasks.startIndex) ?? displayTasks.startIndex
+            guard let taskIndex = displayTasks.firstIndex(where: { $0.id == currentTask.id }),
+                  taskIndex >= thresholdIndex else {
+                return
+            }
+            loadMoreFiltered()
+        } else {
+            await store.loadMoreIfNeeded(currentTask: currentTask)
+        }
     }
 
     func toggleTask(_ task: TaskActionItem) async {
