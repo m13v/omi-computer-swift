@@ -6,7 +6,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 /// Executes the given block and catches any ObjC NSException.
 /// Returns the exception if one was thrown, or nil on success.
-+ (nullable NSException *)tryBlock:(void (NS_NOESCAPE ^)(void))block;
++ (nullable NSException *)catchException:(void (NS_NOESCAPE ^)(void))block NS_SWIFT_NAME(catching(_:));
 
 @end
 
