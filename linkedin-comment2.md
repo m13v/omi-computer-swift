@@ -1,0 +1,1539 @@
+- generic [ref=e2]:
+  - heading "0 notifications" [level=2] [ref=e3]
+  - generic [ref=e4]:
+    - generic:
+      - button [ref=e5] [cursor=pointer]:
+        - generic [ref=e7]: Skip to main content
+      - button [ref=e8] [cursor=pointer]:
+        - img [ref=e117]
+    - generic [ref=e11]:
+      - banner [ref=e13]:
+        - generic [ref=e16]:
+          - button "LinkedIn" [ref=e119] [cursor=pointer]:
+            - img "LinkedIn" [ref=e120]
+          - search [ref=e123]:
+            - generic [ref=e124]:
+              - img [ref=e126]
+              - textbox "I’m looking for..." [ref=e128]: "\"CLAUDE.md\" agent"
+          - generic [ref=e20]:
+            - figure [ref=e133]
+            - navigation [ref=e23]:
+              - list [ref=e24]:
+                - listitem [ref=e25]:
+                  - button "Home, 1 new notification" [ref=e26] [cursor=pointer]:
+                    - img [ref=e134]
+                    - generic [ref=e30]: Home
+                - listitem [ref=e31]:
+                  - button "My Network, 0 new notifications" [ref=e32] [cursor=pointer]:
+                    - img [ref=e137]
+                    - generic [ref=e36]: My Network
+                - listitem [ref=e37]:
+                  - link "Jobs, 0 new notifications" [ref=e38] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/
+                    - img [ref=e139]
+                    - generic [ref=e42]: Jobs
+                - listitem [ref=e43]:
+                  - link "Messaging, 0 new notifications" [ref=e44] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/
+                    - img [ref=e141]
+                    - generic [ref=e48]: Messaging
+                - listitem [ref=e49]:
+                  - link "Notifications, 7 new notifications" [ref=e50] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/
+                    - generic [ref=e51]:
+                      - img [ref=e143]
+                      - generic [ref=e145]: "7"
+                    - generic [ref=e54]: Notifications
+                - listitem [ref=e55]:
+                  - button "Me" [ref=e56] [cursor=pointer]:
+                    - figure [ref=e58]
+                    - generic [ref=e60]:
+                      - text: Me
+                      - img [ref=e146]
+            - navigation [ref=e64]:
+              - list [ref=e65]:
+                - listitem [ref=e66]:
+                  - button "For Business" [ref=e67] [cursor=pointer]:
+                    - img [ref=e148]
+                    - generic [ref=e71]:
+                      - text: For Business
+                      - img [ref=e150]
+                - listitem [ref=e73]:
+                  - link "0 new notifications" [ref=e74] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts/
+                    - img [ref=e152]
+                    - generic [ref=e78]: Advertise
+      - generic [ref=e79]:
+        - toolbar [ref=e80]:
+          - generic [ref=e156]:
+            - button "Posts" [ref=e158] [cursor=pointer]:
+              - generic [ref=e159]:
+                - checkbox "Posts" [checked]
+                - generic [ref=e160]:
+                  - text: Posts
+                  - img [ref=e161]
+            - generic [ref=e163]:
+              - button "Latest" [ref=e164] [cursor=pointer]:
+                - generic [ref=e165]:
+                  - checkbox "Latest" [checked]
+                  - generic [ref=e166]:
+                    - text: Latest
+                    - img [ref=e167]
+              - button "Past 24 hours" [ref=e169] [cursor=pointer]:
+                - generic [ref=e170]:
+                  - checkbox "Past 24 hours" [checked]
+                  - generic [ref=e171]:
+                    - text: Past 24 hours
+                    - img [ref=e172]
+              - button "Content type" [ref=e174] [cursor=pointer]:
+                - generic [ref=e175]:
+                  - checkbox "Content type"
+                  - generic [ref=e176]:
+                    - text: Content type
+                    - img [ref=e177]
+              - button "From member" [ref=e179] [cursor=pointer]:
+                - generic [ref=e180]:
+                  - checkbox "From member"
+                  - generic [ref=e181]:
+                    - text: From member
+                    - img [ref=e182]
+            - generic [ref=e184]:
+              - button "All filters" [ref=e185] [cursor=pointer]:
+                - generic [ref=e187]: All filters
+              - button "Reset" [ref=e188] [cursor=pointer]:
+                - generic [ref=e190]: Reset
+        - main [ref=e94]:
+          - main [ref=e95]:
+            - generic [ref=e99]:
+              - generic [ref=e102]:
+                - listitem [ref=e194]:
+                  - generic [ref=e196]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e197]: Feed post
+                    - generic [ref=e198]:
+                      - link "View Matthew Diakonov’s profile" [ref=e199] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/m13v/
+                        - figure "View Matthew Diakonov’s profile" [ref=e200]:
+                          - img "View Matthew Diakonov’s profile" [ref=e201]
+                      - link "Matthew Diakonov • You AI Copilot for old Windows apps- Mediar AI 8m •" [ref=e202] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/m13v/
+                        - generic [ref=e203]:
+                          - paragraph [ref=e205]:
+                            - text: Matthew Diakonov
+                            - img [ref=e207]
+                            - generic [ref=e209]: • You
+                          - paragraph [ref=e211]: AI Copilot for old Windows apps- Mediar AI
+                          - paragraph [ref=e213]:
+                            - text: 8m •
+                            - img [ref=e214]
+                      - button "View more options" [ref=e216] [cursor=pointer]:
+                        - img [ref=e218]
+                    - paragraph [ref=e220]:
+                      - generic [ref=e221]:
+                        - text: We built something at Omi that fundamentally changed how we handle bug reports.
+                        - text: "When a user emails a bug report, our system automatically:"
+                        - text: 1. Adds it to the to-do list
+                        - text: 2. Spins up a Claude Code agent session with full codebase context
+                        - text: 3. The agent investigates logs (Sentry, PostHog), traces the code path, and identifies the root cause
+                        - text: 4. Creates a detailed fix plan — before any developer even opens the terminal
+                        - text: The key was giving the agent a well-structured
+                        - link "CLAUDE.md" [ref=e223] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=T0nPqx0QuRTmIL-GDT0kgCDqSsbpNJ8yTShkjwVxQ3O7lw28fZV9ST1ckk-PiYDBZpFcM6Fv3V1gekPnOFHPDVkmezmq51c-LURANWwcNWEpkVkCDZNArBik&isSdui=true
+                          - strong [ref=e225]: CLAUDE.md
+                        - text: file with skills (Sentry lookup, PostHog queries, Firebase access) — essentially the same debugging toolkit a senior engineer would use.
+                        - text: Bug triage went from hours to minutes. The developer gets a pre-investigated ticket with root cause analysis and a proposed fix.
+                        - text: "Demo video of the full pipeline:"
+                        - link "https://lnkd.in/gUPWFwmu" [ref=e226] [cursor=pointer]:
+                          - /url: https://lnkd.in/gUPWFwmu
+                          - strong [ref=e228]: https://lnkd.in/gUPWFwmu
+                        - text: Built with Claude Code + Omi Desktop (native macOS app, Swift + Rust).
+                        - link "#AI" [ref=e229] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e231]: "#AI"
+                        - link "#DeveloperTools" [ref=e232] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23developertools&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e234]: "#DeveloperTools"
+                        - link "#ClaudeCode" [ref=e235] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23claudecode&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e237]: "#ClaudeCode"
+                        - link "#macOS" [ref=e238] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23macos&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e240]: "#macOS"
+                        - link "#Automation" [ref=e241] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23automation&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e243]: "#Automation"
+                        - link "#DevOps" [ref=e244] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23devops&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e246]: "#DevOps"
+                        - button:
+                          - generic [ref=e248] [cursor=pointer]: … more
+                    - 'link "From the ClaudeAI community on Reddit: We connected user bug report emails to Claude Code — it auto-investigates the codebase and creates a fix plan before a dev opens the terminal reddit.com" [ref=e249] [cursor=pointer]':
+                      - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fwww%2Ereddit%2Ecom%2Fr%2FClaudeAI%2Fcomments%2F1qyyssy%2F&urlhash=ECjj&mt=LVIqDghieF4JVviGhD-qK74GRv76l6tkY1DRwTrQ7TgTk6t-3JlibFrs3ylXVqhHPPpurElF5v-xiKDTqDkK6dTim0Zs3nQhq4YndqkvZfzDU1EYSrKu1G6d&isSdui=true
+                      - generic [ref=e250]:
+                        - figure [ref=e251]
+                        - generic [ref=e252]:
+                          - paragraph [ref=e254]: "From the ClaudeAI community on Reddit: We connected user bug report emails to Claude Code — it auto-investigates the codebase and creates a fix plan before a dev opens the terminal"
+                          - paragraph [ref=e256]: reddit.com
+                    - generic [ref=e257]:
+                      - button "Open actor selection screen" [ref=e258] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e259]:
+                          - figure [ref=e260]
+                          - img [ref=e261]
+                      - generic [ref=e263]:
+                        - generic [ref=e265]:
+                          - 'button "Reaction button state: no reaction" [ref=e268] [cursor=pointer]':
+                            - generic [ref=e269]:
+                              - img [ref=e270]
+                              - generic [ref=e272]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e274] [cursor=pointer]
+                        - button "Comment" [ref=e276] [cursor=pointer]:
+                          - generic [ref=e277]:
+                            - img [ref=e278]
+                            - generic [ref=e281]: Comment
+                        - button "Repost" [ref=e282] [cursor=pointer]:
+                          - generic [ref=e283]:
+                            - img [ref=e284]
+                            - generic [ref=e287]: Repost
+                        - button "Send" [ref=e288] [cursor=pointer]:
+                          - generic [ref=e289]:
+                            - img [ref=e290]
+                            - generic [ref=e293]: Send
+                - listitem [ref=e297]:
+                  - generic [ref=e299]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e300]: Feed post
+                    - generic [ref=e301]:
+                      - link "View Kamil M.’s profile" [ref=e302] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/kamilmufti/
+                        - figure "View Kamil M.’s profile" [ref=e303]:
+                          - img "View Kamil M.’s profile" [ref=e304]
+                      - link "Kamil M. • 2nd Senior AI/Platform Product Manager | Product Ops | Regulated industries | MLOps & Data Platforms 34m • Edited •" [ref=e305] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/kamilmufti/
+                        - generic [ref=e306]:
+                          - paragraph [ref=e308]:
+                            - text: Kamil M.
+                            - img [ref=e310]
+                            - generic [ref=e312]: • 2nd
+                          - paragraph [ref=e314]: Senior AI/Platform Product Manager | Product Ops | Regulated industries | MLOps & Data Platforms
+                          - paragraph [ref=e316]:
+                            - text: 34m • Edited •
+                            - img [ref=e317]
+                      - button "Follow Kamil M." [ref=e322] [cursor=pointer]:
+                        - generic [ref=e323]:
+                          - img [ref=e324]
+                          - generic [ref=e327]: Follow
+                      - button "View more options" [ref=e328] [cursor=pointer]:
+                        - img [ref=e330]
+                    - paragraph [ref=e332]:
+                      - generic [ref=e333]:
+                        - text: AI coding tools are powerful. But most people use them like autocomplete on steroids.
+                        - link "Claude.md" [ref=e334] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FClaude%2Emd&urlhash=4bqu&mt=yvUW5WIqyEttrW1fmhpOkt6INEipFpkIEHPmygo7A1acwttrkoDUmFjfTaLpdtfO1hxVCp_e6IgKlhWeWD7cnA9kIydkl4iFXOWs6sBJf9XS2ID3g7AEWVnM&isSdui=true
+                          - strong [ref=e336]: Claude.md
+                        - text: changes that.
+                        - text: Drop it in your project folder. Claude Code reads it before every session. It's like giving a new hire an onboarding doc, except the new hire is an AI agent with access to your entire codebase.
+                        - text: Without it, Claude guesses your preferences. With it, Claude follows your engineering standards every time.
+                        - text: "Here's what mine covers in under 60 lines:"
+                        - text: 🔹 Plan before building. Claude writes a checklist, confirms with you, then executes. No more "I built the wrong thing for 30 minutes."
+                        - text: 🔹 Know when to stop. Two failed approaches? Scope creeping? Claude pauses and checks in instead of charging ahead.
+                        - text: 🔹 Prove the work. Nothing gets marked done without passing tests. Claude asks itself, "Would a staff engineer approve this?"
+                        - text: 🔹 Learn from mistakes. Every correction gets logged. Claude reviews its own failure patterns at the start of each session.
+                        - text: 🔹 Explain what it did. Autonomy without transparency is a liability. Claude fixes bugs independently but always tells you what broke and why.
+                        - text: This isn't theory. This is a ready-to-use template you can paste into any project today.
+                        - text: I've linked the full file below. Take it, change it, make it fit your team.
+                        - text: The teams that figure out how to manage AI agents like junior engineers will ship faster than the ones still copy-pasting prompts.
+                        - text: This file is step one.
+                        - link "#ClaudeCode" [ref=e338] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23claudecode&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e340]: "#ClaudeCode"
+                        - link "#AIEngineering" [ref=e341] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiengineering&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e343]: "#AIEngineering"
+                        - link "#AIDevelopment" [ref=e344] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aidevelopment&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e346]: "#AIDevelopment"
+                        - link "#PromptEngineering" [ref=e347] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23promptengineering&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e349]: "#PromptEngineering"
+                        - link "#DeveloperTools" [ref=e350] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23developertools&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e352]: "#DeveloperTools"
+                        - link "#AIProductivity" [ref=e353] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiproductivity&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e355]: "#AIProductivity"
+                        - link "#GitHub" [ref=e356] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23github&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e358]: "#GitHub"
+                        - link "#AITools" [ref=e359] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aitools&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e361]: "#AITools"
+                        - link "#TechLeadership" [ref=e362] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23techleadership&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e364]: "#TechLeadership"
+                        - link "#CodingWithAI" [ref=e365] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23codingwithai&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e367]: "#CodingWithAI"
+                        - button:
+                          - generic [ref=e369] [cursor=pointer]: … more
+                    - generic [ref=e370]:
+                      - button [ref=e371] [cursor=pointer]:
+                        - figure [ref=e372]
+                      - button "This image has content credentials." [ref=e373] [cursor=pointer]:
+                        - figure [ref=e375]:
+                          - img [ref=e376]
+                    - generic [ref=e379]:
+                      - button "1 reaction" [ref=e380] [cursor=pointer]:
+                        - generic [ref=e381]:
+                          - img [ref=e382]
+                          - paragraph [ref=e389]:
+                            - generic [ref=e390]: 1 reaction
+                            - text: "1"
+                      - generic [ref=e391]:
+                        - button "2 comments" [ref=e1093] [cursor=pointer]:
+                          - paragraph [ref=e393]: 2 comments
+                        - button:
+                          - paragraph
+                    - generic [ref=e394]:
+                      - button "Open actor selection screen" [ref=e395] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e396]:
+                          - figure [ref=e397]
+                          - img [ref=e398]
+                      - generic [ref=e400]:
+                        - generic [ref=e402]:
+                          - 'button "Reaction button state: no reaction" [ref=e405] [cursor=pointer]':
+                            - generic [ref=e406]:
+                              - img [ref=e407]
+                              - generic [ref=e409]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e411] [cursor=pointer]
+                        - button "Comment" [ref=e413] [cursor=pointer]:
+                          - generic [ref=e414]:
+                            - img [ref=e415]
+                            - generic [ref=e418]: Comment
+                        - button "Repost" [ref=e419] [cursor=pointer]:
+                          - generic [ref=e420]:
+                            - img [ref=e421]
+                            - generic [ref=e424]: Repost
+                        - button "Send" [ref=e425] [cursor=pointer]:
+                          - generic [ref=e426]:
+                            - img [ref=e427]
+                            - generic [ref=e430]: Send
+                  - generic "Text editor for creating comment" [ref=e983]:
+                    - generic [ref=e984]:
+                      - textbox [ref=e989]:
+                        - paragraph [ref=e990]: Add a comment...
+                      - generic [ref=e1094]:
+                        - button "Show Emoji Picker" [ref=e1095] [cursor=pointer]:
+                          - img [ref=e1097]
+                        - button "Share photo" [ref=e1099] [cursor=pointer]:
+                          - img [ref=e1101]
+                  - generic [ref=e1000]:
+                    - button "Most relevant Most relevant" [ref=e1104] [cursor=pointer]:
+                      - generic [ref=e1107]:
+                        - paragraph [ref=e1108]: Most relevant
+                        - img "Most relevant" [ref=e1109]
+                    - generic [ref=e1001]:
+                      - generic [ref=e1115]:
+                        - link [ref=e1117] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/m13v/
+                          - figure [ref=e1118]
+                        - generic [ref=e1119]:
+                          - generic [ref=e1121]:
+                            - link "Matthew Diakonov • You AI Copilot for old Windows apps- Mediar AI" [ref=e1122] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/in/m13v/
+                              - generic [ref=e1123]:
+                                - paragraph [ref=e1126]:
+                                  - text: Matthew Diakonov
+                                  - img [ref=e1128]
+                                  - generic [ref=e1130]: • You
+                                - paragraph [ref=e1132]: AI Copilot for old Windows apps- Mediar AI
+                            - paragraph [ref=e1134]: now
+                            - button "View more options" [ref=e1135] [cursor=pointer]:
+                              - img [ref=e1137]
+                          - generic [ref=e1140]:
+                            - paragraph [ref=e1142]:
+                              - generic [ref=e1143]:
+                                - text: Great breakdown of the markdown-driven orchestration approach. We're running exactly this at Omi (open-source desktop AI) —
+                                - link "CLAUDE.md" [ref=e1144] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=z3mJ4Cbx8GAP9luWkDvH7TqbGKPfBfCTCn_rKxqgTdZzJ4_APH7yPj1bwhTVIeltBnQEQ0iwODld8jLnnBFqGb0vfgu4Yt9EyywjZk4FRuVM-x63gPM9gWN5hLkU6LEO_TgBs--PNTuH_BU9TXVsMEdnZVzaHfavKeYSElET-g&isSdui=true
+                                  - strong [ref=e1146]: CLAUDE.md
+                                - text: "with skills for Sentry, PostHog, and Firebase gives Claude Code agents the full debugging toolkit. When a bug report comes in, the agent autonomously investigates across services and produces a fix plan before a dev opens the terminal. The \"Sub-Agents as experts\" pattern you describe is spot on — we use skills as specialized subagent workflows. Demo of the full pipeline:"
+                                - link "https://www.reddit.com/r/ClaudeAI/comments/1qyyssy/" [ref=e1147] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fwww%2Ereddit%2Ecom%2Fr%2FClaudeAI%2Fcomments%2F1qyyssy%2F&urlhash=ECjj&mt=LwF0uS94o5SXYphFAd4ha_qgj-G5XZs1U40jTApvPWVzVsNHOoFNS9uw9OS6e0_RPywXUJtd4DgPb-X96z8vzkaygnfSuLGf4V-gzwF0ZE00qxQYfMvE3rb38k__MKrOYH72Uz93xWnEFdoyuaxmtnra4gEIzY0k7GIQNjKyIw&isSdui=true
+                                  - strong [ref=e1149]: https://www.reddit.com/r/ClaudeAI/comments/1qyyssy/
+                                - button:
+                                  - generic [ref=e1151] [cursor=pointer]: … more
+                            - 'link "From the ClaudeAI community on Reddit: We connected user bug report emails to Claude Code — it auto-investigates the codebase and creates a fix plan before a dev opens the terminal reddit.com" [ref=e1153] [cursor=pointer]':
+                              - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fwww%2Ereddit%2Ecom%2Fr%2FClaudeAI%2Fcomments%2F1qyyssy%2Fwe_connected_user_bug_report_emails_to_claude%2F%3Fseeker-session%3Dtrue&urlhash=rMEE&isSdui=true
+                              - generic [ref=e1154]:
+                                - figure [ref=e1155]
+                                - generic [ref=e1156]:
+                                  - paragraph [ref=e1158]: "From the ClaudeAI community on Reddit: We connected user bug report emails to Claude Code — it auto-investigates the codebase and creates a fix plan before a dev opens the terminal"
+                                  - paragraph [ref=e1160]: reddit.com
+                          - generic [ref=e1162]:
+                            - generic [ref=e1165]:
+                              - 'button "Reaction button state: no reaction" [ref=e1166] [cursor=pointer]':
+                                - 'button "Reaction button state: no reaction" [ref=e1169]':
+                                  - 'button "Reaction button state: no reaction" [ref=e1171]':
+                                    - generic [ref=e1172]: "Reaction button state: no reaction"
+                                    - text: Like
+                              - button "Open reactions menu":
+                                - img [ref=e1174] [cursor=pointer]
+                            - button "Reply" [ref=e1177] [cursor=pointer]:
+                              - generic [ref=e1179]: Reply
+                      - generic [ref=e1006]:
+                        - link [ref=e1008] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/kamilmufti/
+                          - figure [ref=e1009]
+                        - generic [ref=e1010]:
+                          - generic [ref=e1012]:
+                            - link "Kamil M. Author Senior AI/Platform Product Manager | Product Ops | Regulated industries | MLOps & Data Platforms" [ref=e1013] [cursor=pointer]:
+                              - /url: https://www.linkedin.com/in/kamilmufti/
+                              - generic [ref=e1014]:
+                                - generic [ref=e1015]:
+                                  - paragraph [ref=e1017]: Kamil M.
+                                  - paragraph [ref=e1018]: Author
+                                - paragraph [ref=e1020]: Senior AI/Platform Product Manager | Product Ops | Regulated industries | MLOps & Data Platforms
+                            - paragraph [ref=e1022]: 33m
+                            - button "View more options" [ref=e1023] [cursor=pointer]:
+                              - img [ref=e1025]
+                          - generic [ref=e1028]:
+                            - paragraph [ref=e1030]:
+                              - generic [ref=e1031]:
+                                - text: "Grab the free template:"
+                                - link "https://github.com/kmufti7/claude-md-template" [ref=e1032] [cursor=pointer]:
+                                  - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fgithub%2Ecom%2Fkmufti7%2Fclaude-md-template&urlhash=uTT8&mt=d9GTppe3d-HP5RwJMGdLsXxC-6odndRDa7FdSN7v5Fb94opMFvqC-piYK7uiORnjTQmNBpZvmwfqnR1fpUhJRTTkqjwYtu9YzIQJvEkMWZ_-Es4A5KCpSBVxbOgX1EZMcHITf8Wl3qpOPoXWVsqInkKtpFVTAi20Vnlws53jgQ&isSdui=true
+                                  - strong [ref=e1034]: https://github.com/kmufti7/claude-md-template
+                            - 'link "GitHub - kmufti7/claude-md-template: A ready-to-use CLAUDE.md configuration file for Claude Code. github.com" [ref=e1036] [cursor=pointer]':
+                              - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fgithub%2Ecom%2Fkmufti7%2Fclaude-md-template&urlhash=uTT8&isSdui=true
+                              - generic [ref=e1037]:
+                                - figure [ref=e1038]
+                                - generic [ref=e1039]:
+                                  - paragraph [ref=e1041]: "GitHub - kmufti7/claude-md-template: A ready-to-use CLAUDE.md configuration file for Claude Code."
+                                  - paragraph [ref=e1043]: github.com
+                          - generic [ref=e1045]:
+                            - generic [ref=e1048]:
+                              - 'button "Reaction button state: no reaction" [ref=e1049] [cursor=pointer]':
+                                - 'button "Reaction button state: no reaction" [ref=e1052]':
+                                  - 'button "Reaction button state: no reaction" [ref=e1054]':
+                                    - generic [ref=e1055]: "Reaction button state: no reaction"
+                                    - text: Like
+                              - button "Open reactions menu":
+                                - img [ref=e1057] [cursor=pointer]
+                            - button "Reply" [ref=e1060] [cursor=pointer]:
+                              - generic [ref=e1062]: Reply
+                - listitem [ref=e434]:
+                  - generic [ref=e436]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e437]: Feed post
+                    - generic [ref=e438]:
+                      - link "View Christopher Haigood’s profile" [ref=e439] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/mestophales/
+                        - figure "View Christopher Haigood’s profile" [ref=e440]:
+                          - img "View Christopher Haigood’s profile" [ref=e441]
+                      - link "Christopher Haigood • 2nd AI-Powered Solutions Architect | Senior .NET/C#, Python / REACT Engineer | 3D Modeling & Creative Media Founder Visit my website 1h •" [ref=e442] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/mestophales/
+                        - generic [ref=e443]:
+                          - paragraph [ref=e445]:
+                            - text: Christopher Haigood
+                            - img [ref=e447]
+                            - generic [ref=e449]: • 2nd
+                          - paragraph [ref=e451]: AI-Powered Solutions Architect | Senior .NET/C#, Python / REACT Engineer | 3D Modeling & Creative Media Founder
+                          - link "Visit my website" [ref=e453]:
+                            - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fwww%2Etigunny%2Ecom&urlhash=QHkI&mt=6_3lucbGfAZBiW-nADOCGdlvnkdX6uZWMLsvJngVXaLrUV9pe3KWuK-IV79v7wonrFwLcbss1yqcsm6TCEikyJepj2PkwKRUF6LDTOE&isSdui=true
+                            - paragraph [ref=e454]: Visit my website
+                          - paragraph [ref=e456]:
+                            - text: 1h •
+                            - img [ref=e457]
+                      - button "Follow Christopher Haigood" [ref=e462] [cursor=pointer]:
+                        - generic [ref=e463]:
+                          - img [ref=e464]
+                          - generic [ref=e467]: Follow
+                      - button "View more options" [ref=e468] [cursor=pointer]:
+                        - img [ref=e470]
+                    - paragraph [ref=e472]:
+                      - generic [ref=e473]:
+                        - text: "Agent-Native Engineering: Claude Code & Team Agents"
+                        - text: Tech consultants talk "scaling productivity," but usually it's just context-switching. Anthropic’s launch of Claude Code and Agent Teams marks the end of chatbots and the start of Agent-Native Engineering.
+                        - text: If you aren't integrating this into your SDLC, you're missing exponential gains. Here is why this shift is vital and easy to deploy.
+                        - text: Markdown-Driven Orchestration
+                        - text: Claude Code’s genius is simplicity. No complex JSON; Anthropic uses Markdown (.md) for "Agentic Memory."
+                        - link "CLAUDE.md" [ref=e474] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=Cma34He3wzmY3qRxyV9CGPq09x7euxryaz7kIcADloYs37z-pxhd1ZamZirvDGktIPDL4p61PR07WNXYcYzvz3zE098Iz6so0fTF4H77R1WRU7pQFLwsiC4W&isSdui=true
+                          - strong [ref=e476]: CLAUDE.md
+                        - text: ": The \"Global Brain\" for project standards and tech stacks."
+                        - text: "Sub-Agents: Spin up experts via .claude/agents/"
+                        - link "agent-name.md" [ref=e477] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fagent-name%2Emd&urlhash=8b7c&mt=UuBYfZxpkR2X_xI6Iunde5xJ8Ay6pykOrSxREeSqFhtVFAqPLamabWpj6jkI1SH_brCtVv9OKwmXTcocc59_AbZin6mLTBWVsGo-DnbckSbenAypXKoHLkMk&isSdui=true
+                          - strong [ref=e479]: agent-name.md
+                        - text: .
+                        - text: "YAML Frontmatter: Define models, tools, and permissions in a simple header."
+                        - text: "Tip: Agent definitions now live in Git. You aren't just sharing code; you're sharing the experts who manage it."
+                        - text: "Sample Scenarios: The \"Agent Swarm\""
+                        - text: With CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1, agents coordinate autonomously.
+                        - text: ScenarioAgent ConfigValueCode GuardRead-only security/PR agent.Ensures zero-trust deployment.Legacy SpecialistAgent with COBOL-to-Java .md skill.3x faster modernization.
+                        - text: Swarm ReviewerParallel agents splitting large
+                        - link "builds.Reviews" [ref=e480] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fbuilds%2EReviews&urlhash=Re_j&mt=n1oYLwldAb6i9JfkSmN77fU_kkEAbOSIGYSHTT3JwtaIdmnWyYGloIQ0n-DsXRYSC9iaazs2uTvfB_Y7rG8X_CDT3GuhuTy2UvQOqoF5oYyYvhw30dnjMlQ5&isSdui=true
+                          - strong [ref=e482]: builds.Reviews
+                        - text: "in minutes, not hours.Example:"
+                        - text: The "Performance Architect"
+                        - text: Create
+                        - link "performance-expert.md" [ref=e483] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fperformance-expert%2Emd&urlhash=uuYV&mt=vj70m4rwxCLYjv22ietselZnkXoKLR5EWv_v_15QWgptSXUzq1Z3B_0ALIlfcqfoivd7vCCcMxyoGdpxaNY-rDUgksagC5_JrDuSKIP8znVBjUWkq41q30R-&isSdui=true
+                          - strong [ref=e485]: performance-expert.md
+                        - text: "in seconds:"
+                        - text: Markdown
+                        - text: "---"
+                        - text: "name: Performance Architect"
+                        - text: "model: claude-3-5-sonnet"
+                        - text: "tools: [read_file, ls, grep]"
+                        - text: "---"
+                        - text: Analyze /src/telemetry for latency. Use docs/
+                        - link "PERFORMANCE_GUIDE.md" [ref=e486] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FPERFORMANCE_GUIDE%2Emd&urlhash=0ExY&mt=-M8fBUp8tLQ3R39Aodf82RjlB9K1wWZozQLtqUp9QaglVsS8IjUiLbcNGmVNAoH2ZIiKwKT9MgfHfBKYqE4NG5S40t7_8QlrnaSg5CZ7jZY8bn61GlsCouzU&isSdui=true
+                          - strong [ref=e488]: PERFORMANCE_GUIDE.md
+                        - text: .
+                        - text: Pointing Claude to this file deploys a persistent consultant any dev can invoke instantly.
+                        - button:
+                          - generic [ref=e490] [cursor=pointer]: … more
+                    - generic [ref=e491]:
+                      - button [ref=e492] [cursor=pointer]:
+                        - figure [ref=e493]
+                      - button "This image has content credentials." [ref=e494] [cursor=pointer]:
+                        - figure [ref=e496]:
+                          - img [ref=e497]
+                    - generic [ref=e500]:
+                      - button "Open actor selection screen" [ref=e501] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e502]:
+                          - figure [ref=e503]
+                          - img [ref=e504]
+                      - generic [ref=e506]:
+                        - generic [ref=e508]:
+                          - 'button "Reaction button state: no reaction" [ref=e511] [cursor=pointer]':
+                            - generic [ref=e512]:
+                              - img [ref=e513]
+                              - generic [ref=e515]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e517] [cursor=pointer]
+                        - button "Comment" [ref=e519] [cursor=pointer]:
+                          - generic [ref=e520]:
+                            - img [ref=e521]
+                            - generic [ref=e524]: Comment
+                        - button "Repost" [ref=e525] [cursor=pointer]:
+                          - generic [ref=e526]:
+                            - img [ref=e527]
+                            - generic [ref=e530]: Repost
+                        - button "Send" [ref=e531] [cursor=pointer]:
+                          - generic [ref=e532]:
+                            - img [ref=e533]
+                            - generic [ref=e536]: Send
+                  - generic "Text editor for creating comment" [ref=e1184]:
+                    - textbox [active] [ref=e1190]:
+                      - paragraph [ref=e1191]: "Point 6 resonates — updating AGENTS.md, CLAUDE.md, and skills after every change is crucial. We do the same at Omi. Our CLAUDE.md skills give agents direct access to Sentry, PostHog, and Firebase, so when a user reports a bug, a Claude Code agent investigates the full stack autonomously and produces a fix plan. The \"never start from scratch\" philosophy is key. Demo: https://www.reddit.com/r/ClaudeAI/comments/1qyyssy/"
+                    - 'link "Preview image From the ClaudeAI community on Reddit: We connected user bug report emails to Claude Code — it auto-investigates the codebase and creates a fix plan before a dev opens the terminal Explore this post and more from the ClaudeAI community Dismiss" [ref=e1599] [cursor=pointer]':
+                      - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fwww%2Ereddit%2Ecom%2Fr%2FClaudeAI%2Fcomments%2F1qyyssy%2Fwe_connected_user_bug_report_emails_to_claude%2F%3Fseeker-session%3Dtrue&urlhash=rMEE&isSdui=true
+                      - generic [ref=e1600]:
+                        - figure "Preview image" [ref=e1601]:
+                          - img "Preview image" [ref=e1602]
+                        - generic [ref=e1603]:
+                          - generic [ref=e1604]:
+                            - paragraph [ref=e1606]: "From the ClaudeAI community on Reddit: We connected user bug report emails to Claude Code — it auto-investigates the codebase and creates a fix plan before a dev opens the terminal"
+                            - paragraph [ref=e1608]: Explore this post and more from the ClaudeAI community
+                          - button "Dismiss" [ref=e1609]:
+                            - img [ref=e1611]
+                    - generic [ref=e1613]:
+                      - generic [ref=e1614]:
+                        - button "Show Emoji Picker" [ref=e1615] [cursor=pointer]:
+                          - img [ref=e1617]
+                        - button "Share photo" [ref=e1619] [cursor=pointer]:
+                          - img [ref=e1621]
+                      - button "Comment" [ref=e1624] [cursor=pointer]:
+                        - generic [ref=e1626]: Comment
+                - generic [ref=e540]:
+                  - generic [ref=e541]:
+                    - paragraph [ref=e542]: Are these results helpful?
+                    - paragraph [ref=e543]: Your feedback helps us improve search results
+                  - generic [ref=e544]:
+                    - button "Are these results helpful? Yes, these search results are helpful" [ref=e545] [cursor=pointer]:
+                      - img [ref=e547]
+                    - button "Are these results helpful? No, these search results are not helpful" [ref=e549] [cursor=pointer]:
+                      - img [ref=e551]
+                - listitem [ref=e556]:
+                  - generic [ref=e558]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e559]: Feed post
+                    - generic [ref=e560]:
+                      - link "View John Rocela’s profile" [ref=e561] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/jmrocela/
+                        - figure "View John Rocela’s profile" [ref=e562]:
+                          - img "View John Rocela’s profile" [ref=e563]
+                      - link "John Rocela • 2nd CTO at OSOME and Human in the Loop 1h •" [ref=e564] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/jmrocela/
+                        - generic [ref=e565]:
+                          - paragraph [ref=e567]:
+                            - text: John Rocela
+                            - img [ref=e569]
+                            - generic [ref=e571]: • 2nd
+                          - paragraph [ref=e573]: CTO at OSOME and Human in the Loop
+                          - paragraph [ref=e575]:
+                            - text: 1h •
+                            - img [ref=e576]
+                      - button "Follow John Rocela" [ref=e581] [cursor=pointer]:
+                        - generic [ref=e582]:
+                          - img [ref=e583]
+                          - generic [ref=e586]: Follow
+                      - button "View more options" [ref=e587] [cursor=pointer]:
+                        - img [ref=e589]
+                    - paragraph [ref=e591]:
+                      - generic [ref=e592]:
+                        - text: (Not written by AI) Been working with Opus since my deep dive last winter and I’ve come up with personal tips to get the most out of your LLM sessions.
+                        - text: 1. Use Anomaly’s, Opencode CLI or Desktop App. It has drastically better developer experience than Claude Code, Codex, or Gemini CLI. The harnesses are just smoother. Safer too.
+                        - text: 2. Stick with Claude Opus 4.5 as long as you can. 4.6 is marginally better but much more expensive. 4.5 reached that balance of performance, correctness, and expertise.
+                        - text: 3. In Opencode, do as much planning as you can by staying in the Plan agent for as long as possible. Make it describe the plan in diagrams, lists, or whatever palatable format you can easily understand.
+                        - text: 4. On every codebase that you build or work on. Create an INTROSPECTION tool that hooks into the server, ui, api, app’s low level architecture and lifecycle. This will make it easy for your LLM to perform more agentic debugging and exploration. Since it can perform its own debugging, stepping, and fixes, the agent can perform much more effectively. This has been a game changer for me.
+                        - text: "5. Best advice I can give: start your codebases with this rule. Keep Cyclomatic Complexity to < 5 and keep logic and signatures declarative over imperative. LLMs work best in smaller more descriptive chunks. These rules have a positive feedback loop."
+                        - text: 6. At the end of your coding sessions, or when you switch from Build to Test mode, Ask your LLM to updated docs,
+                        - link "AGENTS.md" [ref=e594] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FAGENTS%2Emd&urlhash=jh-H&mt=lbyIEN7vNlNm_NhAVKBg5aNrvtBtRLUKTXFmNyWPmzjd56DJwdvYkhwEclvgqUEhme2o1NqTmyGYgW1I498bRUljDp9bkb4z3VFhfhvK7HrnNgQxoEvzx89n&isSdui=true
+                          - strong [ref=e596]: AGENTS.md
+                        - text: ","
+                        - link "CLAUDE.md" [ref=e597] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=ANWcpbIf1KfGpyoEuvzq05q2XshjTvYsQqCRPWB6xnbGg2GEKT0kpo6fKYJmw8CCX4I3ckg_N2Pv4xiFo4KdGaB7SVmHuEUtjBt_cRKBrftw2qbES86sOiRL&isSdui=true
+                          - strong [ref=e599]: CLAUDE.md
+                        - text: ", and skills relevant to the change. This makes sure that future sessions dont start from scratch."
+                        - text: The product and engineering team in OSOME is also full steam ahead with adopting a fully LLM workflow. I’ll share more as we progress!
+                        - button:
+                          - generic [ref=e601] [cursor=pointer]: … more
+                    - generic [ref=e602]:
+                      - button "1 reaction" [ref=e603] [cursor=pointer]:
+                        - generic [ref=e604]:
+                          - img [ref=e605]
+                          - paragraph [ref=e612]:
+                            - generic [ref=e613]: 1 reaction
+                            - text: "1"
+                      - generic [ref=e614]:
+                        - button "2 comments" [ref=e615] [cursor=pointer]:
+                          - paragraph [ref=e616]: 2 comments
+                        - paragraph [ref=e617]: •
+                        - button "1 repost" [ref=e618] [cursor=pointer]:
+                          - paragraph [ref=e619]: 1 repost
+                    - generic [ref=e620]:
+                      - button "Open actor selection screen" [ref=e621] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e622]:
+                          - figure [ref=e623]
+                          - img [ref=e624]
+                      - generic [ref=e626]:
+                        - generic [ref=e628]:
+                          - 'button "Reaction button state: no reaction" [ref=e631] [cursor=pointer]':
+                            - generic [ref=e632]:
+                              - img [ref=e633]
+                              - generic [ref=e635]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e637] [cursor=pointer]
+                        - button "Comment" [ref=e639] [cursor=pointer]:
+                          - generic [ref=e640]:
+                            - img [ref=e641]
+                            - generic [ref=e644]: Comment
+                        - button "Repost" [ref=e645] [cursor=pointer]:
+                          - generic [ref=e646]:
+                            - img [ref=e647]
+                            - generic [ref=e650]: Repost
+                        - button "Send" [ref=e651] [cursor=pointer]:
+                          - generic [ref=e652]:
+                            - img [ref=e653]
+                            - generic [ref=e656]: Send
+                - listitem [ref=e660]:
+                  - generic [ref=e662]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e663]: Feed post
+                    - generic [ref=e664]:
+                      - link "View Rahul Kohli’s profile" [ref=e665] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/rahul-kohli-ssd/
+                        - figure "View Rahul Kohli’s profile" [ref=e666]:
+                          - img "View Rahul Kohli’s profile" [ref=e667]
+                      - link "Rahul Kohli • 3rd+ Senior Developer 1h •" [ref=e668] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/rahul-kohli-ssd/
+                        - generic [ref=e669]:
+                          - paragraph [ref=e671]:
+                            - text: Rahul Kohli
+                            - img [ref=e673]
+                            - generic [ref=e675]: • 3rd+
+                          - paragraph [ref=e677]: Senior Developer
+                          - paragraph [ref=e679]:
+                            - text: 1h •
+                            - img [ref=e680]
+                      - button "Follow Rahul Kohli" [ref=e685] [cursor=pointer]:
+                        - generic [ref=e686]:
+                          - img [ref=e687]
+                          - generic [ref=e690]: Follow
+                      - button "View more options" [ref=e691] [cursor=pointer]:
+                        - img [ref=e693]
+                    - paragraph [ref=e695]:
+                      - generic [ref=e696]:
+                        - text: Remember when searching Stack Overflow was our best "AI assistant"? 😅
+                        - text: "Here is a chronology of my experience with AI:"
+                        - text: 1) It all started with endless web searches
+                        - text: 2) Then came the helpful sidekick living in the right-side IDE tab (hello, first-gen Copilot 👋)
+                        - text: 3) Made me curious, Now I shifted from VS code to Cursor
+                        - text: 4) Now it's full-blown terminal + agent mode — writing, debugging, and committing like a pair-programming wizard on steroids
+                        - text: 5) Who knows what’s next… maybe the AI just builds the whole sprint while we review pull requests over coffee? ☕
+                        - text: For now, I'm genuinely grateful that I still have enough original thoughts left to review and guide. The real skill in 2026 might just be "AI oversight" until my
+                        - link "claude.md" [ref=e698] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fclaude%2Emd&urlhash=zAjz&mt=jR0TTN0dVL9GZTh3bA7lHiSdaL4-9jJNDHVE5f0Uj5vtUHDuOO1Qkbm398gUy0vCJqQiL5ry4Rj7qNEQbU7MlEjaYh4DGzarnWckqLPW2zuX4DmAVadL0l-y&isSdui=true
+                          - strong [ref=e700]: claude.md
+                        - text: file becomes enough 🤫
+                        - text: How has this evolution hit your workflow?
+                        - text: "- Which tool made you go \"wow\" the most recently (Cursor, Claude Code, Copilot agent, something else)?"
+                        - text: "- Are you feeling more productive… ? 😏"
+                        - text: "- What's one thing you refuse to let AI touch in your code?"
+                        - text: Drop your stage in the comments — curious to hear where everyone is on this ride! 🚀
+                        - link "#SoftwareEngineering" [ref=e701] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23softwareengineering&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e703]: "#SoftwareEngineering"
+                        - link "#AICoding" [ref=e704] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aicoding&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e706]: "#AICoding"
+                        - link "#DeveloperTools" [ref=e707] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23developertools&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e709]: "#DeveloperTools"
+                        - link "#FutureOfCoding" [ref=e710] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23futureofcoding&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e712]: "#FutureOfCoding"
+                        - link "#ArtificialIntelligence" [ref=e713] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23artificialintelligence&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e715]: "#ArtificialIntelligence"
+                        - link "#Coding" [ref=e716] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23coding&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e718]: "#Coding"
+                        - link "#Tech" [ref=e719] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23tech&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e721]: "#Tech"
+                        - link "#AIForDevs" [ref=e722] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aifordevs&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e724]: "#AIForDevs"
+                        - link "#SoftwareDevelopment" [ref=e725] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23softwaredevelopment&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e727]: "#SoftwareDevelopment"
+                        - button:
+                          - generic [ref=e729] [cursor=pointer]: … more
+                    - link "Claude Code overview - Claude Code Docs code.claude.com" [ref=e730] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fclaude%2Emd&urlhash=zAjz&mt=9EdmdXQRfptsx-6qegt6ProVhZggW9_qsqdgMSj5GBUud5lpo_w3b5uaK4Lx-QpfbHunh-I8PSU6CI0WZOe49kAzDbFj94HxyBPHpesGA4kaOo7Xo-wVhyc7&isSdui=true
+                      - generic [ref=e731]:
+                        - figure [ref=e732]
+                        - generic [ref=e733]:
+                          - paragraph [ref=e735]: Claude Code overview - Claude Code Docs
+                          - paragraph [ref=e737]: code.claude.com
+                    - generic [ref=e738]:
+                      - button "Open actor selection screen" [ref=e739] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e740]:
+                          - figure [ref=e741]
+                          - img [ref=e742]
+                      - generic [ref=e744]:
+                        - generic [ref=e746]:
+                          - 'button "Reaction button state: no reaction" [ref=e749] [cursor=pointer]':
+                            - generic [ref=e750]:
+                              - img [ref=e751]
+                              - generic [ref=e753]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e755] [cursor=pointer]
+                        - button "Comment" [ref=e757] [cursor=pointer]:
+                          - generic [ref=e758]:
+                            - img [ref=e759]
+                            - generic [ref=e762]: Comment
+                        - button "Repost" [ref=e763] [cursor=pointer]:
+                          - generic [ref=e764]:
+                            - img [ref=e765]
+                            - generic [ref=e768]: Repost
+                        - button "Send" [ref=e769] [cursor=pointer]:
+                          - generic [ref=e770]:
+                            - img [ref=e771]
+                            - generic [ref=e774]: Send
+                - listitem [ref=e778]:
+                  - generic [ref=e780]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e781]: Feed post
+                    - generic [ref=e782]:
+                      - 'link "View group: Data Science, Python, Generative AI, Agentic AI & Agents, Scientist, BI Analyst, Developer, Engineer" [ref=e783] [cursor=pointer]':
+                        - /url: https://www.linkedin.com/groups/10308230/?q=highlightedFeedForGroups&highlightedUpdateUrn=urn%3Ali%3Aactivity%3A7426094966277447680
+                        - 'generic "View group: Data Science, Python, Generative AI, Agentic AI & Agents, Scientist, BI Analyst, Developer, Engineer" [ref=e784]':
+                          - figure [ref=e785]
+                          - figure [ref=e786]
+                      - link "Data Science, Python, Generative AI, Agentic AI & Agents, Scientist, BI Analyst, Developer, Engineer Dibya Jyoti Datta • 3rd+ 1h •" [ref=e787] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/groups/10308230/?q=highlightedFeedForGroups&highlightedUpdateUrn=urn%3Ali%3Aactivity%3A7426094966277447680
+                        - generic [ref=e788]:
+                          - paragraph [ref=e790]: Data Science, Python, Generative AI, Agentic AI & Agents, Scientist, BI Analyst, Developer, Engineer
+                          - paragraph [ref=e792]:
+                            - text: Dibya Jyoti Datta
+                            - generic [ref=e793]: • 3rd+
+                          - paragraph [ref=e795]:
+                            - text: 1h •
+                            - img [ref=e796]
+                      - button "Join" [ref=e798] [cursor=pointer]:
+                        - generic [ref=e800]: Join
+                      - button "View more options" [ref=e801] [cursor=pointer]:
+                        - img [ref=e803]
+                    - paragraph [ref=e805]:
+                      - generic [ref=e806]:
+                        - text: Claude Code is the most powerful AI today.
+                        - text: Especially after the Opus 4.6 release.
+                        - text: It reached $1B ARR in 6 months for one reason.
+                        - text: It is not a chat app.
+                        - text: It is a work engine.
+                        - text: Most people still use Claude in the browser.
+                        - text: That is like using a supercomputer as a calculator.
+                        - text: Here is what makes Claude Code different.
+                        - text: It has full system access.
+                        - text: It can run hours long tasks.
+                        - text: It can spin up multiple agents at once.
+                        - text: It works directly in your codebase and tools.
+                        - text: Chat Claude cannot do this.
+                        - text: Cowork is just a thin layer on top.
+                        - text: Start with these two guides.
+                        - text: Guide to Claude
+                        - link "https://lnkd.in/eZ6UBbAQ" [ref=e808] [cursor=pointer]:
+                          - /url: https://lnkd.in/eZ6UBbAQ
+                          - strong [ref=e810]: https://lnkd.in/eZ6UBbAQ
+                        - text: Guide to Cowork
+                        - link "https://lnkd.in/g6MhB3YJ" [ref=e811] [cursor=pointer]:
+                          - /url: https://lnkd.in/g6MhB3YJ
+                          - strong [ref=e813]: https://lnkd.in/g6MhB3YJ
+                        - text: What Claude Code can actually do is wild.
+                        - text: It can scan 10,000 files in minutes.
+                        - text: You can tell it what you want in plain English.
+                        - text: It runs bash commands without you knowing syntax.
+                        - text: One interface connects 200 plus tools.
+                        - text: It feels like managing a small team.
+                        - text: Learn the basics first.
+                        - text: Basic Claude Code Guide
+                        - link "https://lnkd.in/eUyPEAma" [ref=e814] [cursor=pointer]:
+                          - /url: https://lnkd.in/eUyPEAma
+                          - strong [ref=e816]: https://lnkd.in/eUyPEAma
+                        - text: Advanced workflows
+                        - link "https://lnkd.in/gvA6rZtX" [ref=e817] [cursor=pointer]:
+                          - /url: https://lnkd.in/gvA6rZtX
+                          - strong [ref=e819]: https://lnkd.in/gvA6rZtX
+                        - text: The core workflow looks like this.
+                        - text: Analyze
+                        - text: Plan
+                        - text: Create
+                        - text: Scale
+                        - text: One meeting transcript turns into a PRD.
+                        - text: The PRD becomes Jira tickets.
+                        - text: Tickets become Slack updates and dashboards.
+                        - text: All inside one tool.
+                        - text: AI PRD Guide
+                        - link "https://lnkd.in/eMu59p_z" [ref=e820] [cursor=pointer]:
+                          - /url: https://lnkd.in/eMu59p_z
+                          - strong [ref=e822]: https://lnkd.in/eMu59p_z
+                        - text: AI Roadmap Guide
+                        - link "https://lnkd.in/eEuNcj-m" [ref=e823] [cursor=pointer]:
+                          - /url: https://lnkd.in/eEuNcj-m
+                          - strong [ref=e825]: https://lnkd.in/eEuNcj-m
+                        - text: Getting started is simple.
+                        - text: Use Cursor.
+                        - text: Open terminal.
+                        - text: Type claude.
+                        - text: Press Enter.
+                        - text: Supported on macOS 13 plus, Ubuntu 20 plus, and Windows 10 plus.
+                        - text: Plans range from $20 to $200 per month.
+                        - text: Pro setup guide
+                        - link "https://lnkd.in/eadQ5fN6" [ref=e826] [cursor=pointer]:
+                          - /url: https://lnkd.in/eadQ5fN6
+                          - strong [ref=e828]: https://lnkd.in/eadQ5fN6
+                        - text: Official setup
+                        - link "https://lnkd.in/gPthuahX" [ref=e829] [cursor=pointer]:
+                          - /url: https://lnkd.in/gPthuahX
+                          - strong [ref=e831]: https://lnkd.in/gPthuahX
+                        - text: The real power is MCP.
+                        - text: Think USB C for AI tools.
+                        - text: One protocol.
+                        - text: Hundreds of integrations.
+                        - text: GitHub, Slack, Notion, Jira, databases, email.
+                        - text: Start here.
+                        - text: PM Operating System
+                        - link "https://lnkd.in/gsH9RSfJ" [ref=e832] [cursor=pointer]:
+                          - /url: https://lnkd.in/gsH9RSfJ
+                          - strong [ref=e834]: https://lnkd.in/gsH9RSfJ
+                        - text: Anthropic MCP servers
+                        - link "https://lnkd.in/g-sx7vXP" [ref=e835] [cursor=pointer]:
+                          - /url: https://lnkd.in/g-sx7vXP
+                          - strong [ref=e837]: https://lnkd.in/g-sx7vXP
+                        - text: MCP collection
+                        - link "https://mcp.so" [ref=e838] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fmcp%2Eso&urlhash=5cd5&mt=WlYqn2AsoN3nJxCOVoHivr8q8V8rWM8aLoxATPQYc5EqjKH69ERDwBY6KiqRRqT9Wozn-ATCi6Wb89ln-CAQsrhJEmi3JfjQhTuXBGKWy3BBXfnZ3VP_N7dl&isSdui=true
+                          - strong [ref=e840]: https://mcp.so
+                        - text: Learn the essential commands early.
+                        - text: /help
+                        - text: /clear
+                        - text: /compact
+                        - text: /model
+                        - text: /mcp
+                        - text: Use @ to reference files and folders.
+                        - text: Prompting matters more than people think.
+                        - text: Plan first.
+                        - text: Review before execution.
+                        - text: Create checkpoints.
+                        - text: Rewind if it breaks.
+                        - text: Iterate with clear feedback.
+                        - text: Prompt engineering
+                        - link "https://lnkd.in/d_qYCBT7" [ref=e841] [cursor=pointer]:
+                          - /url: https://lnkd.in/d_qYCBT7
+                          - strong [ref=e843]: https://lnkd.in/d_qYCBT7
+                        - text: Best practices
+                        - link "https://lnkd.in/gNSNWmKB" [ref=e844] [cursor=pointer]:
+                          - /url: https://lnkd.in/gNSNWmKB
+                          - strong [ref=e846]: https://lnkd.in/gNSNWmKB
+                        - text: Finally, learn Skills and
+                        - link "CLAUDE.md" [ref=e847] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=9csOfCDgzi7y8EhOv-15lXM65T-nPyt-r1lY5Hc371P1h7a0HyVRkeSixNWuZotFiyHOnZ5sTy56O6fZzI7JyZmWVeu_7GnboY3ZzrWPUYwO58va8OaZfRyj&isSdui=true
+                          - strong [ref=e849]: CLAUDE.md
+                        - text: .
+                        - text: Skills are reusable automations.
+                        - link "CLAUDE.md" [ref=e850] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=KsGOEzQTlYq7fuml_5-9DE94YmX_HktRFQ7EOjJtsJUDcLRUb7OSPvwzxfdLvn0b4oPg5BGjQWH2dYkUdkBjCuGLCeYToNc8vgT2y38HTAgduOV0RBdMRR4C&isSdui=true
+                          - strong [ref=e852]: CLAUDE.md
+                        - text: is long term project memory.
+                        - text: This is where serious teams win.
+                        - text: Skills tutorial
+                        - link "https://lnkd.in/eRidpGSR" [ref=e853] [cursor=pointer]:
+                          - /url: https://lnkd.in/eRidpGSR
+                          - strong [ref=e855]: https://lnkd.in/eRidpGSR
+                        - text: Context engineering
+                        - link "https://lnkd.in/eUUPMmJK" [ref=e856] [cursor=pointer]:
+                          - /url: https://lnkd.in/eUUPMmJK
+                          - strong [ref=e858]: https://lnkd.in/eUUPMmJK
+                        - text: Claude Code is not just powerful.
+                        - text: It changes how work gets done.
+                        - text: I share my learning journey here. Join me and let’s grow together.
+                        - text: Enjoy this? Repost it to your network and follow
+                        - link "Dibya Jyoti Datta" [ref=e859] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/dibya-jyoti-datta-b84a7029a/
+                          - strong [ref=e861]: Dibya Jyoti Datta
+                        - text: for more.
+                        - button:
+                          - generic [ref=e863] [cursor=pointer]: … more
+                    - button [ref=e865] [cursor=pointer]:
+                      - figure [ref=e866]
+                    - generic [ref=e867]:
+                      - button "10 reactions" [ref=e868] [cursor=pointer]:
+                        - generic [ref=e869]:
+                          - img [ref=e870]
+                          - paragraph [ref=e877]:
+                            - generic [ref=e878]: 10 reactions
+                            - text: "10"
+                      - generic [ref=e879]:
+                        - button:
+                          - paragraph
+                        - button:
+                          - paragraph
+                    - generic [ref=e880]:
+                      - generic [ref=e882]:
+                        - 'button "Reaction button state: no reaction" [ref=e885] [cursor=pointer]':
+                          - generic [ref=e886]:
+                            - img [ref=e887]
+                            - generic [ref=e889]: Like
+                        - button "Open reactions menu":
+                          - img [ref=e891] [cursor=pointer]
+                      - button "Comment" [disabled] [ref=e893]:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic: Comment
+                      - button "Repost" [ref=e894] [cursor=pointer]:
+                        - generic [ref=e895]:
+                          - img [ref=e896]
+                          - generic [ref=e899]: Repost
+                      - button "Send" [ref=e900] [cursor=pointer]:
+                        - generic [ref=e901]:
+                          - img [ref=e902]
+                          - generic [ref=e905]: Send
+                - listitem [ref=e1204]:
+                  - generic [ref=e1206]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e1207]: Feed post
+                    - generic [ref=e1208]:
+                      - link "View Harang Ju’s profile" [ref=e1209] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/harangju/
+                        - figure "View Harang Ju’s profile" [ref=e1210]:
+                          - img "View Harang Ju’s profile" [ref=e1211]
+                      - link "Harang Ju • 2nd Assistant Professor at Johns Hopkins 1h •" [ref=e1212] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/harangju/
+                        - generic [ref=e1213]:
+                          - paragraph [ref=e1215]:
+                            - text: Harang Ju
+                            - img [ref=e1217]
+                            - generic [ref=e1219]: • 2nd
+                          - paragraph [ref=e1221]: Assistant Professor at Johns Hopkins
+                          - paragraph [ref=e1223]:
+                            - text: 1h •
+                            - img [ref=e1224]
+                      - button "Follow Harang Ju" [ref=e1229] [cursor=pointer]:
+                        - generic [ref=e1230]:
+                          - img [ref=e1231]
+                          - generic [ref=e1234]: Follow
+                      - button "View more options" [ref=e1235] [cursor=pointer]:
+                        - img [ref=e1237]
+                    - paragraph [ref=e1239]:
+                      - generic [ref=e1240]:
+                        - text: There are many ways to scale an organization's capabilities.
+                        - text: People. Capital. Knowledge. Code. Process.
+                        - text: Each one comes with real overhead. Hiring takes months. Capital requires governance. Code requires engineering teams to build and maintain.
+                        - text: "AI agents introduce a new scaling medium: plain text files."
+                        - text: You can define what an agent knows how to do in a text file. You can set the norms for how it operates, what it prioritizes, what it avoids in a text file. You can give it access to your company's institutional knowledge through text.
+                        - text: Capabilities, norms, and knowledge. Three pillars of organizational capacity, all scalable through something any knowledge worker can read, write, and maintain.
+                        - text: "This is already real. Anthropic's Claude ecosystem is built around this idea:"
+                        - text: 1. Skill files teach agents new tasks (like a how-to doc anyone can edit)
+                        - text: 2. Agent config files (like
+                        - link "CLAUDE.md" [ref=e1242] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=x-M1g5E41gOZvTF96DFONwD2ZwEOZCvpxjVujRjGu61Re5iB8z0GNx4PgPULotYvcs9jUQ6-7H45_6VUjAigzNBaSExUwwTOthBTQGKsfD0JiXpAkIalhBrZ&isSdui=true
+                          - strong [ref=e1244]: CLAUDE.md
+                        - text: ) set operating norms (like a company handbook for your agents)
+                        - text: 3. Knowledge bases connect agents to company data through agentic search (like giving them access to your shared drive)
+                        - text: All plain text. No pipelines, no retraining, no vendor lock-in on model logic.
+                        - text: At the AI Agent Lab, we're building around this architecture. A very thin application layer, so organizations benefit directly from every advance in foundation models and agentic capabilities without thick middleware becoming the next legacy system.
+                        - button:
+                          - generic [ref=e1246] [cursor=pointer]: … more
+                    - generic [ref=e1247]:
+                      - button "8 reactions" [ref=e1248] [cursor=pointer]:
+                        - generic [ref=e1249]:
+                          - img [ref=e1250]
+                          - img [ref=e1256]
+                          - paragraph [ref=e1263]:
+                            - generic [ref=e1264]: 8 reactions
+                            - text: "8"
+                      - generic [ref=e1265]:
+                        - button "2 comments" [ref=e1266] [cursor=pointer]:
+                          - paragraph [ref=e1267]: 2 comments
+                        - button:
+                          - paragraph
+                    - generic [ref=e1268]:
+                      - button "Open actor selection screen" [ref=e1269] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e1270]:
+                          - figure [ref=e1271]
+                          - img [ref=e1272]
+                      - generic [ref=e1274]:
+                        - generic [ref=e1276]:
+                          - 'button "Reaction button state: no reaction" [ref=e1279] [cursor=pointer]':
+                            - generic [ref=e1280]:
+                              - img [ref=e1281]
+                              - generic [ref=e1283]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e1285] [cursor=pointer]
+                        - button "Comment" [ref=e1287] [cursor=pointer]:
+                          - generic [ref=e1288]:
+                            - img [ref=e1289]
+                            - generic [ref=e1292]: Comment
+                        - button "Repost" [ref=e1293] [cursor=pointer]:
+                          - generic [ref=e1294]:
+                            - img [ref=e1295]
+                            - generic [ref=e1298]: Repost
+                        - button "Send" [ref=e1299] [cursor=pointer]:
+                          - generic [ref=e1300]:
+                            - img [ref=e1301]
+                            - generic [ref=e1304]: Send
+                - listitem [ref=e1308]:
+                  - generic [ref=e1310]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e1311]: Feed post
+                    - generic [ref=e1312]:
+                      - 'link "View group: Big Data 🟥 Data Science | Machine Learning | Deep Learning | Artificial Intelligence" [ref=e1313] [cursor=pointer]':
+                        - /url: https://www.linkedin.com/groups/762547/?q=highlightedFeedForGroups&highlightedUpdateUrn=urn%3Ali%3Aactivity%3A7426067245841305600
+                        - 'generic "View group: Big Data 🟥 Data Science | Machine Learning | Deep Learning | Artificial Intelligence" [ref=e1314]':
+                          - figure [ref=e1315]
+                          - figure [ref=e1316]
+                      - link "Big Data 🟥 Data Science | Machine Learning | Deep Learning | Artificial Intelligence Ultan O. • 2nd Visit my website 3h •" [ref=e1317] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/groups/762547/?q=highlightedFeedForGroups&highlightedUpdateUrn=urn%3Ali%3Aactivity%3A7426067245841305600
+                        - generic [ref=e1318]:
+                          - paragraph [ref=e1320]: Big Data 🟥 Data Science | Machine Learning | Deep Learning | Artificial Intelligence
+                          - paragraph [ref=e1322]:
+                            - text: Ultan O.
+                            - generic [ref=e1323]: • 2nd
+                          - link "Visit my website" [ref=e1325]:
+                            - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fdata4%2Ecarrd%2Eco%2F&urlhash=i7GG&mt=XHOyOi1s6OA6heo5CTHDEZUUpaS_abXSauJNw5oyoTgWDTmqwisR0_sopu0CLixIITYSn2ibNyirMGivBh6z84ev750apMIQD-7qD1wf&isSdui=true
+                            - paragraph [ref=e1326]: Visit my website
+                          - paragraph [ref=e1328]:
+                            - text: 3h •
+                            - img [ref=e1329]
+                      - button "Join" [ref=e1331] [cursor=pointer]:
+                        - generic [ref=e1333]: Join
+                      - button "View more options" [ref=e1334] [cursor=pointer]:
+                        - img [ref=e1336]
+                    - paragraph [ref=e1338]:
+                      - generic [ref=e1339]:
+                        - text: Claude Code is the most powerful AI today.
+                        - text: (Especially with the Opus-4.6 release)
+                        - text: "Here's why it reached $1B ARR in 6 months and how to master it:"
+                        - text: 1. It changes everything
+                        - text: Full system access, agent swarms, hours-long tasks. Chat Claude is browser-only. Cowork is a limited skin.
+                        - text: "Guide to Claude:"
+                        - link "https://lnkd.in/eZ6UBbAQ" [ref=e1341] [cursor=pointer]:
+                          - /url: https://lnkd.in/eZ6UBbAQ
+                          - strong [ref=e1343]: https://lnkd.in/eZ6UBbAQ
+                        - text: "Guide to Cowork:"
+                        - link "https://lnkd.in/g6MhB3YJ" [ref=e1344] [cursor=pointer]:
+                          - /url: https://lnkd.in/g6MhB3YJ
+                          - strong [ref=e1346]: https://lnkd.in/g6MhB3YJ
+                        - text: 2. What Claude Code can do
+                        - text: Process 10,000 files in minutes. Run bash without learning syntax. One interface for 200+ tools. Delegate like you have 5 junior employees.
+                        - text: "Basic Guide:"
+                        - link "https://lnkd.in/eUyPEAma" [ref=e1347] [cursor=pointer]:
+                          - /url: https://lnkd.in/eUyPEAma
+                          - strong [ref=e1349]: https://lnkd.in/eUyPEAma
+                        - text: "Advanced Guide:"
+                        - link "https://lnkd.in/gvA6rZtX" [ref=e1350] [cursor=pointer]:
+                          - /url: https://lnkd.in/gvA6rZtX
+                          - strong [ref=e1352]: https://lnkd.in/gvA6rZtX
+                        - text: 3. The Claude Code workflow
+                        - text: Analyze → Plan → Create → Scale
+                        - text: Meeting transcript → PRD → Jira tickets → Slack summary → dashboard. One tool.
+                        - text: "AI PRD Guide:"
+                        - link "https://lnkd.in/eMu59p_z" [ref=e1353] [cursor=pointer]:
+                          - /url: https://lnkd.in/eMu59p_z
+                          - strong [ref=e1355]: https://lnkd.in/eMu59p_z
+                        - text: "AI Roadmap Guide:"
+                        - link "https://lnkd.in/eEuNcj-m" [ref=e1356] [cursor=pointer]:
+                          - /url: https://lnkd.in/eEuNcj-m
+                          - strong [ref=e1358]: https://lnkd.in/eEuNcj-m
+                        - text: 4. Getting started
+                        - text: Use Cursor. Open terminal, type "claude", press Enter.
+                        - text: macOS 13+, Ubuntu 20+, or Windows 10+. Pro ($20/mo), Max ($100-200/mo), or API.
+                        - text: "Pro Guide:"
+                        - link "https://lnkd.in/eadQ5fN6" [ref=e1359] [cursor=pointer]:
+                          - /url: https://lnkd.in/eadQ5fN6
+                          - strong [ref=e1361]: https://lnkd.in/eadQ5fN6
+                        - text: "Official Setup:"
+                        - link "https://lnkd.in/gPthuahX" [ref=e1362] [cursor=pointer]:
+                          - /url: https://lnkd.in/gPthuahX
+                          - strong [ref=e1364]: https://lnkd.in/gPthuahX
+                        - text: 5. Connect everything (MCP)
+                        - text: USB-C for AI. One protocol, hundreds of connections. GitHub, Sentry, Linear, Notion, Slack, Jira, PostgreSQL, Gmail, Typefully, Buffer, Discord.
+                        - text: "PM Operating System:"
+                        - link "https://lnkd.in/gsH9RSfJ" [ref=e1365] [cursor=pointer]:
+                          - /url: https://lnkd.in/gsH9RSfJ
+                          - strong [ref=e1367]: https://lnkd.in/gsH9RSfJ
+                        - text: "Anthropic MCP Servers:"
+                        - link "https://lnkd.in/g-sx7vXP" [ref=e1368] [cursor=pointer]:
+                          - /url: https://lnkd.in/g-sx7vXP
+                          - strong [ref=e1370]: https://lnkd.in/g-sx7vXP
+                        - text: "MCP Collection:"
+                        - link "https://mcp.so" [ref=e1371] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fmcp%2Eso&urlhash=5cd5&mt=8xCOiZQ4jOkUacvbxalFu6kyQR4k7nF4jKi7SnPa_YVvuELa6GGriPWs6zWxpo2qv--oWvHzd6Dc-94ZmE--JQeaLke1pcQdZ-3TyinPK7fr0i2SslA_JRGo&isSdui=true
+                          - strong [ref=e1373]: https://mcp.so
+                        - text: 6. Essential commands
+                        - text: /help → all commands
+                        - text: /clear → reset context
+                        - text: /compact → save tokens
+                        - text: /model → switch models
+                        - text: /mcp → check connections
+                        - text: Use @ to reference files (@filename, @folder/).
+                        - text: "Prompt Engineering:"
+                        - link "https://lnkd.in/d_qYCBT7" [ref=e1374] [cursor=pointer]:
+                          - /url: https://lnkd.in/d_qYCBT7
+                          - strong [ref=e1376]: https://lnkd.in/d_qYCBT7
+                        - text: "Best Practices:"
+                        - link "https://lnkd.in/gNSNWmKB" [ref=e1377] [cursor=pointer]:
+                          - /url: https://lnkd.in/gNSNWmKB
+                          - strong [ref=e1379]: https://lnkd.in/gNSNWmKB
+                        - text: 7. Skills &
+                        - link "CLAUDE.md" [ref=e1380] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=d1fAi2zLek1jCb5z-EVrzWAy3GivnxCZ_oUxfaRyTwcsMC0BAcqKeWseTxWJ4ApwychDrjru8jKagxZYifx3bG_e-U0BcG1UOIv7tmgX6FQ-jw2CBa73UDdv&isSdui=true
+                          - strong [ref=e1382]: CLAUDE.md
+                        - text: Skills are reusable automations Claude auto-loads. Built-in for docx, xlsx, pptx, pdf.
+                        - link "CLAUDE.md" [ref=e1383] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=kl02yzooshKr2DT-RnYkDRVAcolwqjJybDB339vg8dwfWF50HumkN5PqmMo7Vx4RQlPNYsV1n-DMfJyUGmhvaisJ91XJh24cNl2xBbN2FiiR91xCUOY7wkBH&isSdui=true
+                          - strong [ref=e1385]: CLAUDE.md
+                        - text: is project memory. Commands, style guides, context that persists.
+                        - text: "Skills Tutorial:"
+                        - link "https://lnkd.in/eRidpGSR" [ref=e1386] [cursor=pointer]:
+                          - /url: https://lnkd.in/eRidpGSR
+                          - strong [ref=e1388]: https://lnkd.in/eRidpGSR
+                        - text: "Steal 6 of My Skills:"
+                        - link "https://lnkd.in/eZyJzMnH" [ref=e1389] [cursor=pointer]:
+                          - /url: https://lnkd.in/eZyJzMnH
+                          - strong [ref=e1391]: https://lnkd.in/eZyJzMnH
+                        - text: "Context Engineering:"
+                        - link "https://lnkd.in/eUUPMmJK" [ref=e1392] [cursor=pointer]:
+                          - /url: https://lnkd.in/eUUPMmJK
+                          - strong [ref=e1394]: https://lnkd.in/eUUPMmJK
+                        - text: 8. Prompting techniques
+                        - text: "Pro pattern: Checkpoint + Iterate."
+                        - text: Plan first. Review before execution. Create checkpoints. Rewind (Esc twice) if it breaks. Iterate with specific feedback.
+                        - text: "Prompt Engineering:"
+                        - link "https://lnkd.in/d_qYCBT7" [ref=e1395] [cursor=pointer]:
+                          - /url: https://lnkd.in/d_qYCBT7
+                          - strong [ref=e1397]: https://lnkd.in/d_qYCBT7
+                        - text: "ChatGPT for PMs:"
+                        - link "https://lnkd.in/eyfUi8ZN" [ref=e1398] [cursor=pointer]:
+                          - /url: https://lnkd.in/eyfUi8ZN
+                          - strong [ref=e1400]: https://lnkd.in/eyfUi8ZN
+                        - text: 9. Resources
+                        - text: All links above
+                        - text: "Podcast:"
+                        - link "https://lnkd.in/eyt7agKj" [ref=e1401] [cursor=pointer]:
+                          - /url: https://lnkd.in/eyt7agKj
+                          - strong [ref=e1403]: https://lnkd.in/eyt7agKj
+                        - text: "MCP Reference:"
+                        - link "https://lnkd.in/gPUWGa7S" [ref=e1404] [cursor=pointer]:
+                          - /url: https://lnkd.in/gPUWGa7S
+                          - strong [ref=e1406]: https://lnkd.in/gPUWGa7S
+                        - text: 🔖 Save this. Repost so your network sees it too.
+                        - text: ➕ Credit to Aakash Gupta for the post
+                        - text: 👉 Follow
+                        - link "Ultan O." [ref=e1407] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/in/ultanorourke/
+                          - strong [ref=e1409]: Ultan O.
+                        - text: for more
+                        - button:
+                          - generic [ref=e1411] [cursor=pointer]: … more
+                    - button [ref=e1413] [cursor=pointer]:
+                      - figure [ref=e1414]
+                    - generic [ref=e1415]:
+                      - button "3 reactions" [ref=e1416] [cursor=pointer]:
+                        - generic [ref=e1417]:
+                          - img [ref=e1418]
+                          - paragraph [ref=e1425]:
+                            - generic [ref=e1426]: 3 reactions
+                            - text: "3"
+                      - generic [ref=e1427]:
+                        - button:
+                          - paragraph
+                        - button:
+                          - paragraph
+                    - generic [ref=e1428]:
+                      - generic [ref=e1430]:
+                        - 'button "Reaction button state: no reaction" [ref=e1433] [cursor=pointer]':
+                          - generic [ref=e1434]:
+                            - img [ref=e1435]
+                            - generic [ref=e1437]: Like
+                        - button "Open reactions menu":
+                          - img [ref=e1439] [cursor=pointer]
+                      - button "Comment" [disabled] [ref=e1441]:
+                        - generic:
+                          - img
+                          - generic:
+                            - generic: Comment
+                      - button "Repost" [ref=e1442] [cursor=pointer]:
+                        - generic [ref=e1443]:
+                          - img [ref=e1444]
+                          - generic [ref=e1447]: Repost
+                      - button "Send" [ref=e1448] [cursor=pointer]:
+                        - generic [ref=e1449]:
+                          - img [ref=e1450]
+                          - generic [ref=e1453]: Send
+                - listitem [ref=e1457]:
+                  - generic [ref=e1459]:
+                    - heading "Feed post" [level=2]:
+                      - generic [ref=e1460]: Feed post
+                    - generic [ref=e1461]:
+                      - link "View Mohit Sachdeva’s profile" [ref=e1462] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/mohit-sachdeva-pm/
+                        - figure "View Mohit Sachdeva’s profile" [ref=e1463]:
+                          - img "View Mohit Sachdeva’s profile" [ref=e1464]
+                      - link "Mohit Sachdeva • 2nd Senior Technical PM | AI Fraud & Identity Leader | Enabling Sub-Second Payment Decisions | ex-Visa 4h •" [ref=e1465] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/in/mohit-sachdeva-pm/
+                        - generic [ref=e1466]:
+                          - paragraph [ref=e1468]:
+                            - text: Mohit Sachdeva
+                            - img [ref=e1470]
+                            - generic [ref=e1472]: • 2nd
+                          - paragraph [ref=e1474]: Senior Technical PM | AI Fraud & Identity Leader | Enabling Sub-Second Payment Decisions | ex-Visa
+                          - paragraph [ref=e1476]:
+                            - text: 4h •
+                            - img [ref=e1477]
+                      - button "Follow Mohit Sachdeva" [ref=e1482] [cursor=pointer]:
+                        - generic [ref=e1483]:
+                          - img [ref=e1484]
+                          - generic [ref=e1487]: Follow
+                      - button "View more options" [ref=e1488] [cursor=pointer]:
+                        - img [ref=e1490]
+                    - paragraph [ref=e1492]:
+                      - generic [ref=e1493]:
+                        - link "#ContextRot" [ref=e1494] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23contextrot&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e1496]: "#ContextRot"
+                        - text: in
+                        - link "#AIConversations" [ref=e1497] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiconversations&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e1499]: "#AIConversations"
+                        - text: Why Your AI Assistant Keeps Forgetting What You Just Said
+                        - text: "I've been building and using AI-powered products for a while now, and there's one thing that troubled me was context rot: - now I just understood better on how to deal with it."
+                        - text: It's called context rot. And if you're working with AI—whether you're building products or just using ChatGPT daily—you need to understand why it happens.
+                        - link "#Must" [ref=e1501] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23must&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e1503]: "#Must"
+                        - link "#Read" [ref=e1504] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23read&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e1506]: "#Read"
+                        - text: "## What is Context Rot?"
+                        - text: "- AI performance degrades the longer you chat with it"
+                        - text: "- The more input given to an LLM, the worse it tends to perform"
+                        - text: "- It may ignore some inputs or over-index on others"
+                        - text: "## Understanding the Context Window"
+                        - text: "- Acts as the model's **short-term memory**"
+                        - text: "- Has a fixed size (varies by model: 200K-1M tokens)"
+                        - text: "- Includes system prompts, conversation history, tools, and user messages"
+                        - text: "- Fills up quickly despite large capacities"
+                        - text: "## How Context Degrades"
+                        - link "#Important" [ref=e1507] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23important&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e1509]: "#Important"
+                        - text: "When <50% full:"
+                        - text: "- U-shaped pattern: favors tokens at beginning and end"
+                        - text: "- Tokens in the middle get \"lost\" -> (Remember)"
+                        - text: "When >50% full:"
+                        - text: "- Favors recent tokens over early ones"
+                        - text: "- Earliest tokens get lost first"
+                        - text: "Key insight: - It's not a retrieval problem—it's a function of input length"
+                        - text: "## Managing Context Rot"
+                        - text: "### In Web Browsers (ChatGPT, Claude, Gemini)"
+                        - text: "**Limitations:** No visibility into context window usage"
+                        - text: "**Solutions:**"
+                        - text: "- Start fresh chats when changing topics"
+                        - text: "- Reset after problematic responses"
+                        - text: "- Summarize and restart after ~15 messages"
+                        - text: In Claude Code (Advanced Control)
+                        - text: "Visibility features:"
+                        - text: "- Shows context window percentage"
+                        - text: "- `/context` command to examine contents"
+                        - text: "- `/clear` command to reset"
+                        - text: "- `/compact` command for compression"
+                        - text: "## Best Practices"
+                        - text: 1. Monitor context usage - Keep window as small as possible
+                        - text: 2. Clear strategically - Reset for complex tasks
+                        - text: 3. Use file system - Offload context to files
+                        - text: 4. Keep instructions concise - Minimize
+                        - link "CLAUDE.md" [ref=e1510] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2FCLAUDE%2Emd&urlhash=onXc&mt=aTHA9ouvrUswLTTlMe98gkE_aD4g9fnrE8w60CgPL_kmGRgjw1RHYS___BRL_iX1NR3Wr4XdpbKmOMoe9LzWKkfZj9iDZ3-7YHk14gY8n185yNvmqHHvk0zA&isSdui=true
+                          - strong [ref=e1512]: CLAUDE.md
+                        - text: size
+                        - text: 5. Leverage sub-agents - Offload token-intensive tasks
+                        - text: 6. Start fresh often - Don't let conversations run too long
+                        - link "#BottomLine" [ref=e1513] [cursor=pointer]:
+                          - /url: https://www.linkedin.com/search/results/all/?keywords=%23bottomline&origin=HASH_TAG_FROM_FEED
+                          - strong [ref=e1515]: "#BottomLine"
+                        - text: Context window management is a critical skill to learn whether you are building with AI or using AI
+                        - text: "A great article here :"
+                        - link "https://lnkd.in/gAs6AJzM" [ref=e1516] [cursor=pointer]:
+                          - /url: https://lnkd.in/gAs6AJzM
+                          - strong [ref=e1518]: https://lnkd.in/gAs6AJzM
+                        - button:
+                          - generic [ref=e1520] [cursor=pointer]: … more
+                    - 'link "Context Rot: Why AI Gets Worse the Longer You Chat (And How to Fix It) producttalk.org" [ref=e1521] [cursor=pointer]':
+                      - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Fwww%2Eproducttalk%2Eorg%2Fcontext-rot%2F&urlhash=VAZR&mt=DhBhChq5u06Mfuuhb0aGQs97qGtriqDDsVyEZL1NtD8Lu_NgY-Ul2LzAn92oDIHHt5BujejBMtPb-vp0YAa1AbnnuxrkfxlFDQnz5CXOMgERZBDDcwVLp0Sc&isSdui=true
+                      - generic [ref=e1522]:
+                        - figure [ref=e1523]
+                        - generic [ref=e1524]:
+                          - paragraph [ref=e1526]: "Context Rot: Why AI Gets Worse the Longer You Chat (And How to Fix It)"
+                          - paragraph [ref=e1528]: producttalk.org
+                    - generic [ref=e1529]:
+                      - button "2 reactions" [ref=e1530] [cursor=pointer]:
+                        - generic [ref=e1531]:
+                          - img [ref=e1532]
+                          - img [ref=e1538]
+                          - paragraph [ref=e1553]:
+                            - generic [ref=e1554]: 2 reactions
+                            - text: "2"
+                      - generic [ref=e1555]:
+                        - button:
+                          - paragraph
+                        - button:
+                          - paragraph
+                    - generic [ref=e1556]:
+                      - button "Open actor selection screen" [ref=e1557] [cursor=pointer]:
+                        - generic "Open actor selection screen" [ref=e1558]:
+                          - figure [ref=e1559]
+                          - img [ref=e1560]
+                      - generic [ref=e1562]:
+                        - generic [ref=e1564]:
+                          - 'button "Reaction button state: no reaction" [ref=e1567] [cursor=pointer]':
+                            - generic [ref=e1568]:
+                              - img [ref=e1569]
+                              - generic [ref=e1571]: Like
+                          - button "Open reactions menu":
+                            - img [ref=e1573] [cursor=pointer]
+                        - button "Comment" [ref=e1575] [cursor=pointer]:
+                          - generic [ref=e1576]:
+                            - img [ref=e1577]
+                            - generic [ref=e1580]: Comment
+                        - button "Repost" [ref=e1581] [cursor=pointer]:
+                          - generic [ref=e1582]:
+                            - img [ref=e1583]
+                            - generic [ref=e1586]: Repost
+                        - button "Send" [ref=e1587] [cursor=pointer]:
+                          - generic [ref=e1588]:
+                            - img [ref=e1589]
+                            - generic [ref=e1592]: Send
+                - button "Load more" [ref=e1594] [cursor=pointer]:
+                  - generic [ref=e1596]: Load more
+              - generic [ref=e912]:
+                - iframe [ref=e913]:
+                  - generic [ref=f44e3]:
+                    - banner [ref=f44e4]:
+                      - img [ref=f44e6]:
+                        - img [ref=f44e7]
+                        - img [ref=f44e11]
+                      - link "Singapore EDB" [ref=f44e15] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F165979&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGcO5FRWqka8pTPvhIOZ_L36ok-NlBPjlWCm48eRKbP_dzTfaJITxEfnaAc6QSeAxk7VC5x-b6JG2PHXSV3NUImhzRIGJsnu5IjN5-2TZ30NbTgjA13MiSIJBImZ3Y7PXegJKYhqoDsxR0rWeUZXqskcn6D7PtHyqPnEBb-wXehNGmb1S62O3T69YZ8hAO2fb_hPkQLFg07ChX3BDeBwm5q-R60tlFKKGppOyRX6ZZ1CkCkUW28NhDuKOUGWoNT-EufFWxX8H3ZR-9DdU9rwMCyzzzC4ntdAGPDZ1FkF1fqzbMBMBzFEw9GixO7dyNVL05eN7-WoA0rX64Zc6oPWxvRygas7SGL29oF_Hz5y64iQXhvmEowl4aNThrQba3atIXUQoAa-tl6al98UoEa0Ij0a6sXRtN9xSgZyRrMC2ZxozULC2YxyVDD413RqgpsJUjwSjxFb92C2u3kHVVwd4L64CUAUlMf7z_VtGTMqbvK4tAJiZByqHg0U3i8NV7uJ0-Xz9gGyZZq4XKzfx-etFM_KIomWIPNcIpLcbcQVajIhVbghze9qOxBfP5VRaD6wGI1Bcd0yN5hLcImpvx7H7tY6U2BPousLhjfdJFeps1B_dmukqx8HedgRSI2cbELFWiYvaZMDf3aruIKUEKc8wY2kuycePKIpTe1KAIel2x1c55CKI9j_819WKNZ9vsb58W6RCrdYWHLylqatuu4dKc-YKN4Oli6RsJt9ikVB6zT7s01VchBoLTt5A-tfhBo2upnIKCdI_MrCzmHLiuY0an6sN0bAIjE7k8M_bTIyCFmdBplII0ZwMsJu_L84E8bMkNk9p4I8JSyqd23BwOvq5TMX1EMRz7sU8ooN_pG5FSQ2P7WNIdrgUjwyNlph753-kOe_MDmcI7t85xgjsXfVswsDGOnsvg14Z3g9RQW0kXPcSweIOiem5dsHj0GuqTKrsiPuzhohLkvxRSg_wMQPW0SYTxHf2B6IrSDcSi5N9FNtT8jQ_yesX4QvKmyGIfdPZOB6GAWFMQxDlFP_UpcqHhyQEKnCu_HxJ8leH3rkF_-s2lyrAAXetYRKh82lEU7CvJZe43Zp9BcO3UjovRQnUf3paboHGIPwz_ybPFKC0LuzG9hGx0ztqqwDVRnI3wJ__ZGnCRC8Q6d_SILWKt6Je7SPwRN8WTapAhsvQ1Zm8y3ZOdKXa3SpDRlhQ%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_search_srp_content%22%2C%22trackingId%22%3A%22d38dc871-1ccc-4c55-b555-e0de07989710%22%7D%2C%22time%22%3A1770525905187%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_search_srp_content%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8394451240307040389
+                        - img "Singapore EDB" [ref=f44e16]
+                      - generic [ref=f44e17]:
+                        - paragraph [ref=f44e18]: Promoted
+                        - button "Ad Options" [ref=f44e19] [cursor=pointer]:
+                          - img [ref=f44e20]
+                          - generic [ref=f44e24]: Ad Options
+                    - generic [ref=f44e25]:
+                      - link "Singapore EDB" [ref=f44e26] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F165979&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGcO5FRWqka8pTPvhIOZ_L36ok-NlBPjlWCm48eRKbP_dzTfaJITxEfnaAc6QSeAxk7VC5x-b6JG2PHXSV3NUImhzRIGJsnu5IjN5-2TZ30NbTgjA13MiSIJBImZ3Y7PXegJKYhqoDsxR0rWeUZXqskcn6D7PtHyqPnEBb-wXehNGmb1S62O3T69YZ8hAO2fb_hPkQLFg07ChX3BDeBwm5q-R60tlFKKGppOyRX6ZZ1CkCkUW28NhDuKOUGWoNT-EufFWxX8H3ZR-9DdU9rwMCyzzzC4ntdAGPDZ1FkF1fqzbMBMBzFEw9GixO7dyNVL05eN7-WoA0rX64Zc6oPWxvRygas7SGL29oF_Hz5y64iQXhvmEowl4aNThrQba3atIXUQoAa-tl6al98UoEa0Ij0a6sXRtN9xSgZyRrMC2ZxozULC2YxyVDD413RqgpsJUjwSjxFb92C2u3kHVVwd4L64CUAUlMf7z_VtGTMqbvK4tAJiZByqHg0U3i8NV7uJ0-Xz9gGyZZq4XKzfx-etFM_KIomWIPNcIpLcbcQVajIhVbghze9qOxBfP5VRaD6wGI1Bcd0yN5hLcImpvx7H7tY6U2BPousLhjfdJFeps1B_dmukqx8HedgRSI2cbELFWiYvaZMDf3aruIKUEKc8wY2kuycePKIpTe1KAIel2x1c55CKI9j_819WKNZ9vsb58W6RCrdYWHLylqatuu4dKc-YKN4Oli6RsJt9ikVB6zT7s01VchBoLTt5A-tfhBo2upnIKCdI_MrCzmHLiuY0an6sN0bAIjE7k8M_bTIyCFmdBplII0ZwMsJu_L84E8bMkNk9p4I8JSyqd23BwOvq5TMX1EMRz7sU8ooN_pG5FSQ2P7WNIdrgUjwyNlph753-kOe_MDmcI7t85xgjsXfVswsDGOnsvg14Z3g9RQW0kXPcSweIOiem5dsHj0GuqTKrsiPuzhohLkvxRSg_wMQPW0SYTxHf2B6IrSDcSi5N9FNtT8jQ_yesX4QvKmyGIfdPZOB6GAWFMQxDlFP_UpcqHhyQEKnCu_HxJ8leH3rkF_-s2lyrAAXetYRKh82lEU7CvJZe43Zp9BcO3UjovRQnUf3paboHGIPwz_ybPFKC0LuzG9hGx0ztqqwDVRnI3wJ__ZGnCRC8Q6d_SILWKt6Je7SPwRN8WTapAhsvQ1Zm8y3ZOdKXa3SpDRlhQ%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_search_srp_content%22%2C%22trackingId%22%3A%22d38dc871-1ccc-4c55-b555-e0de07989710%22%7D%2C%22time%22%3A1770525905187%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_search_srp_content%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8394451240307040389
+                        - heading "Singapore EDB" [level=2] [ref=f44e27]
+                      - paragraph [ref=f44e29]: Follow the Singapore Economic Development Board!
+                      - paragraph [ref=f44e31]: Matthew, turn your AI ambitions into reality in Singapore
+                      - generic [ref=f44e32]:
+                        - generic [ref=f44e33]:
+                          - img "Leon Gerard" [ref=f44e34]
+                          - img "Sree" [ref=f44e35]
+                        - paragraph [ref=f44e36]: Leon Gerard & 27 other connections also follow
+                      - link "Follow" [ref=f44e37] [cursor=pointer]:
+                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F165979%3FisFollowingPage%3Dtrue&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGcO5FRWkFFUxdqTbFNjUv1P_BCqFRNFvMkVP6vN3xBi4-_QQYac51hM8zLXhYRN7azU2puDpzjSBIaETQe7VkprFXyKCOQK2R6uMZYM-ki74c-oYYUrwENUnRjUQh7lrsFql_lrejH_Sr3m1wHXEOoWpwko8iv66PepYpmEmwermpbhXNUneevgjfzIdXTqMHHEDD6dsMRPduN0JVjiyp0LiGUHqN4lCrLvMelJTH0IvFXh_GRhS1w48R3SFrs_jHsFDDEfGNiHa3e7AXyczEqNsUbY2qDc-umAp2ivUq2FAIU_dJ6djdiiCqZX5j2fkSH_6gSSVniVRKO2LuvGRxuSJ4NBdXLLHn1SdsEXZsop2fXw0fUTILF1x-nL8nCaGKBU6gyTv_jhmK7HCUgltLqZsFhmmgWoGAHb9INSeLn7gHQWu6CprMZfuCH3zgVPgjdQumTbnr_VHONTzG3pw-shnOY91UJtmwtfHMZxlaL3xbE1_xpxcmuFtSrtE_x77VQ2yErQiYpYl-Heru9CkJhQdpMEPNJOzl-DH9Tu7fGgFdm8tT8LvDGkpOKvosdqI3GXwS9DOjmYEQlxxrGYlwwyMplTGfUkmZCV2Wf9FiBjgjcEW87FT7gmNvHcB8W95U3CQgjUPdWaV60ZqeJWiIz5mK3NkEVWvPKwulqSejbixThMLajO3jJjcrqUQTyq1FsW48Rg5jiBQUGCYZ24geHn-jBp2nSPnt1pPojlByGH1Flm_d-jfZmIyStZrkY9Dm2GYk1SaR6UxPNWbAlVEBESt7TlwvgDJuISUPmLzvfOoFfUjV1EdRBsF2PRCRYFdCJtp472Af0332MlKZhYFEafGK4H7cjQAgUT2JYK0cWRvOcC8LukvrjuSCGRa6cbCEGQ_IWc4g7OZEaVWoycyIEfEuLKcGJUvO9n-paceywGBBB314GIXq09UBD3aXPSlKZ0pkczq7KNCa1jptrHn-decW-jxpq_ISDI9kldrSZyCRiGeXbmy45ndXbQvp_0EWmNKBqEwUz54oYCU5imnSMpBQuetU-DvB0EeUAq7PMaNTWXU2Z0xCxr5BlkYUUA818JaC1mckF4SLR6eAESf3BjpbL6dF_HWN3Pvt0X_DcCcQ4dBSaw6Om3g5CrIoXcu-bkHVUfvHXlNduggaNno7odiEN8vjYa5GUJ2lkc5l_dTRMHZ4iE3OVp7AtxD6UFgMag7w7zQw7JR5YhVpjQOQboPLkiqnwXkg%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_search_srp_content%22%2C%22trackingId%22%3A%229ff10d96-89ca-415a-bd11-ad8a7aa0e85d%22%7D%2C%22time%22%3A1770525905187%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_search_srp_content%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8394451240307040389
+                - generic [ref=e914]:
+                  - generic [ref=e915]:
+                    - link "About" [ref=e916] [cursor=pointer]:
+                      - /url: https://about.linkedin.com/
+                      - paragraph [ref=e917]: About
+                    - link "Accessibility" [ref=e918] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/accessibility/
+                      - paragraph [ref=e919]: Accessibility
+                    - link "Help Center" [ref=e920] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/help/linkedin/
+                      - paragraph [ref=e921]: Help Center
+                    - button "Privacy & Terms" [ref=e922] [cursor=pointer]:
+                      - generic [ref=e923]:
+                        - paragraph [ref=e924]: Privacy & Terms
+                        - img [ref=e925]
+                    - link "Ad Choices" [ref=e927] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/help/linkedin/answer/62931/
+                      - paragraph [ref=e928]: Ad Choices
+                    - link "Advertising" [ref=e929] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/ad/start/?trk=n_nav_ads_rr
+                      - paragraph [ref=e930]: Advertising
+                    - button "Business Services" [ref=e931] [cursor=pointer]:
+                      - generic [ref=e932]:
+                        - paragraph [ref=e933]: Business Services
+                        - img [ref=e934]
+                    - link "Get the LinkedIn app" [ref=e936] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/mobile/
+                      - paragraph [ref=e937]: Get the LinkedIn app
+                    - button "More" [ref=e938] [cursor=pointer]:
+                      - paragraph [ref=e939]: More
+                  - generic [ref=e940]:
+                    - img [ref=e941]
+                    - paragraph [ref=e943]: LinkedIn Corporation © 2026
+  - generic:
+    - generic:
+      - generic:
+        - generic:
+          - complementary:
+            - generic [ref=e944]:
+              - generic [ref=e945]:
+                - generic [ref=e947] [cursor=pointer]:
+                  - generic [ref=e948]:
+                    - img "Matthew Diakonov" [ref=e949]
+                    - generic [ref=e951]: Status is online
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e952]:
+                    - generic [ref=e953]:
+                      - generic [ref=e954]: Messaging
+                      - generic [ref=e955]: You are on the messaging overlay. Press enter to open the list of conversations.
+                - generic [ref=e956]:
+                  - button "Open messenger dropdown menu" [ref=e958] [cursor=pointer]:
+                    - img "Open messenger dropdown menu" [ref=e959]
+                  - button "Compose message" [ref=e962] [cursor=pointer]:
+                    - img [ref=e963]
+                    - generic [ref=e965]: Compose message
+                  - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e966] [cursor=pointer]:
+                    - img [ref=e967]
+                    - generic [ref=e969]: You are on the messaging overlay. Press enter to open the list of conversations.
+              - generic [ref=e970]:
+                - heading "Page inboxes" [level=3] [ref=e972]
+                - generic [ref=e973] [cursor=pointer]:
+                  - generic [ref=e974]: Click to see affiliated inboxes
+                  - button "Page inboxes" [ref=e975]:
+                    - img [ref=e976]
+          - complementary "AI-powered assistant to get help with your career, jobs etc"
+  - iframe [ref=e978]:
+    - generic [active] [ref=f45e1]:
+      - generic:
+        - region "Toast message":
+          - heading "0 notifications total" [level=2] [ref=f45e3]
+          - alert
+      - generic [ref=f45e4]:
+        - generic [ref=f45e6]:
+          - button "Skip to search" [ref=f45e7] [cursor=pointer]:
+            - generic [ref=f45e8]: Skip to search
+          - button "Skip to main content" [ref=f45e9] [cursor=pointer]:
+            - generic [ref=f45e10]: Skip to main content
+          - button "Keyboard shortcuts" [ref=f45e11] [cursor=pointer]:
+            - generic [ref=f45e12]: Keyboard shortcuts
+          - button "Close jump menu" [ref=f45e13] [cursor=pointer]:
+            - img [ref=f45e14]
+            - generic [ref=f45e16]: Close jump menu
+        - banner "Global Navigation" [ref=f45e17]:
+          - generic [ref=f45e18]:
+            - link "LinkedIn" [ref=f45e19] [cursor=pointer]:
+              - /url: https://www.linkedin.com/feed/?nis=true
+              - img "LinkedIn" [ref=f45e22]:
+                - img [ref=f45e23]
+            - generic [ref=f45e27]:
+              - combobox "I’m looking for..." [ref=f45e28]
+              - generic:
+                - img
+            - navigation "Primary Navigation" [ref=f45e29]:
+              - list [ref=f45e30]:
+                - listitem [ref=f45e31]:
+                  - link "new feed updates notifications Home" [ref=f45e32] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/feed/
+                    - generic [ref=f45e33]:
+                      - generic [ref=f45e36]: new feed updates notifications
+                      - img [ref=f45e40]
+                    - generic "Home" [ref=f45e42]
+                - listitem [ref=f45e43]:
+                  - link "My Network" [ref=f45e44] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/mynetwork/?
+                    - img [ref=f45e48]
+                    - generic "My Network" [ref=f45e50]
+                - listitem [ref=f45e51]:
+                  - link "Jobs" [ref=f45e52] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/jobs/?
+                    - img [ref=f45e56]
+                    - generic "Jobs" [ref=f45e58]
+                - listitem [ref=f45e59]:
+                  - link "Messaging" [ref=f45e60] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/messaging/?
+                    - img [ref=f45e64]
+                    - generic "Messaging" [ref=f45e66]
+                - listitem [ref=f45e67]:
+                  - link "7 new notifications Notifications" [ref=f45e68] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/notifications/?
+                    - generic [ref=f45e69]:
+                      - generic [ref=f45e70]:
+                        - generic [ref=f45e71]: "7"
+                        - generic [ref=f45e72]: 7 new notifications
+                      - img [ref=f45e76]
+                    - generic "Notifications" [ref=f45e78]
+                - listitem [ref=f45e79]:
+                  - button "Matthew Diakonov Me" [ref=f45e81] [cursor=pointer]:
+                    - img "Matthew Diakonov" [ref=f45e82]
+                    - generic [ref=f45e83]:
+                      - text: Me
+                      - img [ref=f45e84]
+                - listitem [ref=f45e86]:
+                  - button "For Business" [ref=f45e88] [cursor=pointer]:
+                    - img [ref=f45e92]
+                    - generic "For Business" [ref=f45e94]:
+                      - text: For Business
+                      - img [ref=f45e95]
+                - listitem [ref=f45e97]:
+                  - link "Advertise" [ref=f45e98] [cursor=pointer]:
+                    - /url: https://www.linkedin.com/campaignmanager/accounts?
+                    - img [ref=f45e102]
+                    - generic "Advertise" [ref=f45e105]
+      - region [ref=f45e121]
