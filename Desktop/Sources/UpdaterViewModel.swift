@@ -6,7 +6,7 @@ import Sparkle
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
     /// Called when Sparkle is about to check for updates (permission gate)
-    func updater(_ updater: SPUUpdater, mayPerformUpdateCheck check: SPUUpdateCheck) throws {
+    func updater(_ updater: SPUUpdater, mayPerform check: SPUUpdateCheck) throws {
         Task { @MainActor in
             log("Sparkle: Starting update check")
             AnalyticsManager.shared.updateCheckStarted()
@@ -14,7 +14,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     }
 
     /// Called when Sparkle finishes loading the appcast
-    func updater(_ updater: SPUUpdater, didFinishLoadingAppcast appcast: SUAppcast) {
+    func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
         Task { @MainActor in
             log("Sparkle: Appcast loaded (\(appcast.items.count) items)")
         }
