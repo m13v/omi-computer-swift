@@ -573,6 +573,16 @@ class AnalyticsManager {
         PostHogManager.shared.updateInstalled(version: version)
     }
 
+    func updateNotFound() {
+        MixpanelManager.shared.updateNotFound()
+        PostHogManager.shared.updateNotFound()
+    }
+
+    func updateCheckFailed(error: String) {
+        MixpanelManager.shared.updateCheckFailed(error: error)
+        PostHogManager.shared.updateCheckFailed(error: error)
+    }
+
     // MARK: - Notification Events
 
     func notificationSent(notificationId: String, title: String, assistantId: String) {
