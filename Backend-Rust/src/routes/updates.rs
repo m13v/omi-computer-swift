@@ -108,9 +108,9 @@ async fn get_appcast(
     State(state): State<AppState>,
     Query(query): Query<AppcastQuery>,
 ) -> Response {
-    // Try to fetch releases from Firestore
+    // Try to fetch releases from Firestore (only serve the latest live release)
     let releases = match state.firestore.get_desktop_releases().await {
-        Ok(releases) => releases,
+        Ok(releases) => releases.into_iter().filter(|r| r.is_live).take(1).collect(),
         Err(e) => {
             tracing::warn!("Failed to fetch releases from Firestore: {}, using fallback", e);
             // Return empty appcast if no releases found
