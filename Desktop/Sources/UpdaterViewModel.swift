@@ -26,6 +26,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
         Task { @MainActor in
             log("Sparkle: No update available")
+            AnalyticsManager.shared.updateNotFound()
         }
     }
 
@@ -33,6 +34,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     func updater(_ updater: SPUUpdater, didFailToFindUpdateWithError error: Error) {
         Task { @MainActor in
             log("Sparkle: Update check failed - \(error.localizedDescription)")
+            AnalyticsManager.shared.updateCheckFailed(error: error.localizedDescription)
         }
     }
 
