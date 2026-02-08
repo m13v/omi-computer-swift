@@ -44,6 +44,13 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var recoveryRetryCount = 0
     private let maxRecoveryRetries = 30  // Try for 30 seconds before giving up
 
+    // Background polling state for extended recovery after initial retry fails
+    private var isInBackgroundPolling = false
+    private var backgroundPollTimer: Timer?
+    private var backgroundPollCount = 0
+    private let maxBackgroundPollAttempts = 5  // 5 attempts × 60s = 5 minutes
+    private static var hasAutoResetThisSession = false
+
     // MARK: - Initialization
 
     private override init() {
@@ -902,8 +909,82 @@ public class ProactiveAssistantsPlugin: NSObject {
                 }
             }
         } else {
-            // Recovery failed - now show the reset notification
-            log("ProactiveAssistantsPlugin: ScreenCaptureKit broken - TCC granted but capture failing")
+            // Recovery failed - enter background polling before giving up
+            log("ProactiveAssistantsPlugin: Initial recovery failed, entering background polling mode")
+            enterBackgroundPollingMode()
+        }
+    }
+
+    // MARK: - Background Polling (Extended Recovery)
+
+    /// Enter background polling mode - check every 60s for up to 5 minutes
+    /// This handles cases where the permission state resolves itself over time
+    private func enterBackgroundPollingMode() {
+        guard !isInBackgroundPolling else { return }
+
+        isInBackgroundPolling = true
+        backgroundPollCount = 0
+
+        log("ProactiveAssistantsPlugin: Starting background polling (every 60s, up to \(maxBackgroundPollAttempts) attempts)")
+
+        // Pause capture timer if still running
+        captureTimer?.invalidate()
+        captureTimer = nil
+
+        backgroundPollTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                await self?.backgroundPollAttempt()
+            }
+        }
+    }
+
+    /// Single background poll attempt
+    private func backgroundPollAttempt() async {
+        backgroundPollCount += 1
+
+        guard let screenCaptureService = screenCaptureService else {
+            exitBackgroundPolling(success: false)
+            return
+        }
+
+        log("ProactiveAssistantsPlugin: Background poll attempt \(backgroundPollCount)/\(maxBackgroundPollAttempts)")
+
+        if let _ = await screenCaptureService.captureActiveWindowAsync() {
+            log("ProactiveAssistantsPlugin: Background polling recovered after \(backgroundPollCount) attempts")
+            exitBackgroundPolling(success: true)
+        } else if backgroundPollCount >= maxBackgroundPollAttempts {
+            log("ProactiveAssistantsPlugin: Background polling exhausted, attempting auto-reset")
+            exitBackgroundPolling(success: false)
+        }
+    }
+
+    /// Exit background polling mode
+    private func exitBackgroundPolling(success: Bool) {
+        isInBackgroundPolling = false
+        backgroundPollCount = 0
+        backgroundPollTimer?.invalidate()
+        backgroundPollTimer = nil
+
+        if success {
+            consecutiveFailures = 0
+            lastCaptureSucceeded = true
+
+            // Resume normal capture
+            captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
+                Task { @MainActor in
+                    await self?.captureFrame()
+                }
+            }
+        } else {
+            attemptAutoReset()
+        }
+    }
+
+    /// Attempt automatic tccutil reset + app restart (once per launch)
+    private func attemptAutoReset() {
+        if Self.hasAutoResetThisSession {
+            // Already tried auto-reset this session - fall back to manual notification
+            log("ProactiveAssistantsPlugin: Auto-reset already attempted this session, showing notification")
 
             AnalyticsManager.shared.screenCaptureBrokenDetected()
             NotificationCenter.default.post(name: .screenCaptureKitBroken, object: nil)
@@ -913,7 +994,13 @@ public class ProactiveAssistantsPlugin: NSObject {
                 title: NotificationService.screenCaptureResetTitle,
                 message: "Permission appears granted but capture is failing. Click to reset and fix this issue."
             )
+            return
         }
+
+        Self.hasAutoResetThisSession = true
+        log("ProactiveAssistantsPlugin: Performing auto-reset + restart")
+        AnalyticsManager.shared.screenCaptureBrokenDetected()
+        ScreenCaptureService.resetScreenCapturePermissionAndRestart()
     }
 }
 
