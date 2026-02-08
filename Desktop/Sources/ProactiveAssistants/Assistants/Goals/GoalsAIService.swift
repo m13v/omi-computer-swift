@@ -21,20 +21,22 @@ actor GoalsAIService {
             type: "object",
             properties: [
                 "suggested_title": .init(type: "string", description: "Brief, actionable goal title"),
+                "suggested_description": .init(type: "string", description: "1-2 sentence description explaining why this goal matters and what success looks like"),
                 "suggested_type": .init(type: "string", enum: ["boolean", "scale", "numeric"], description: "Type of goal"),
                 "suggested_target": .init(type: "number", description: "Target value for the goal"),
                 "suggested_min": .init(type: "number", description: "Minimum value"),
                 "suggested_max": .init(type: "number", description: "Maximum value"),
-                "reasoning": .init(type: "string", description: "Why this goal fits the user")
+                "reasoning": .init(type: "string", description: "Why this goal fits the user"),
+                "linked_task_ids": .init(type: "array", description: "IDs of existing tasks relevant to this goal", items: .init(type: "string", properties: nil, required: nil))
             ],
-            required: ["suggested_title", "suggested_type", "suggested_target", "suggested_min", "suggested_max", "reasoning"]
+            required: ["suggested_title", "suggested_description", "suggested_type", "suggested_target", "suggested_min", "suggested_max", "reasoning"]
         )
     }
 
     // MARK: - Rich Context Fetching
 
     /// Fetch rich user context for goal generation/suggestion
-    private func fetchRichContext() async -> (memories: String, conversations: String, actionItems: String, persona: String, existingGoals: String, completedGoals: String, abandonedGoals: String) {
+    private func fetchRichContext() async -> (memories: String, conversations: String, actionItems: String, persona: String, existingGoals: String, completedGoals: String, abandonedGoals: String, rawTasks: [TaskActionItem]) {
         // Fetch all context in parallel — no truncation, full items
         async let memoriesFetch = { () async -> [ServerMemory] in
             do { return try await APIClient.shared.getMemories(limit: 500) }
@@ -75,7 +77,8 @@ actor GoalsAIService {
         let conversationContext = conversations
             .compactMap { $0.structured.overview.isEmpty ? nil : $0.structured.overview }
             .joined(separator: "\n")
-        let actionItemsContext = tasks.map { $0.description }.joined(separator: "\n")
+        // Include task IDs so the AI can reference them for linking
+        let actionItemsContext = tasks.map { "[\($0.id)] \($0.description)" }.joined(separator: "\n")
         let personaContext: String
         if let p = persona {
             personaContext = "\(p.name): \(p.description)"
@@ -92,7 +95,7 @@ actor GoalsAIService {
             ? "None"
             : abandoned.map { "- \($0.title) (stopped at \(Int($0.currentValue))/\(Int($0.targetValue)))" }.joined(separator: "\n")
 
-        return (memoryContext, conversationContext, actionItemsContext, personaContext, existingGoalsContext, completedGoalsContext, abandonedGoalsContext)
+        return (memoryContext, conversationContext, actionItemsContext, personaContext, existingGoalsContext, completedGoalsContext, abandonedGoalsContext, tasks)
     }
 
     // MARK: - Generate Goal (automatic)
@@ -137,11 +140,12 @@ actor GoalsAIService {
         }
 
         let suggestion = try JSONDecoder().decode(GoalSuggestion.self, from: data)
-        log("GoalsAI: Generated goal suggestion: '\(suggestion.suggestedTitle)' (\(suggestion.suggestedType))")
+        log("GoalsAI: Generated goal suggestion: '\(suggestion.suggestedTitle)' (\(suggestion.suggestedType)), description: \(suggestion.suggestedDescription ?? "none"), linked tasks: \(suggestion.linkedTaskIds ?? [])")
 
         // Auto-create the goal via API
         let goal = try await APIClient.shared.createGoal(
             title: suggestion.suggestedTitle,
+            description: suggestion.suggestedDescription,
             goalType: suggestion.goalType,
             targetValue: suggestion.suggestedTarget,
             currentValue: 0,
@@ -150,6 +154,24 @@ actor GoalsAIService {
         )
 
         log("GoalsAI: Auto-created goal '\(goal.title)' (id: \(goal.id))")
+
+        // Link suggested tasks to the goal
+        if let taskIds = suggestion.linkedTaskIds, !taskIds.isEmpty {
+            // Validate task IDs against actual fetched tasks
+            let validIds = Set(ctx.rawTasks.map { $0.id })
+            let confirmedIds = taskIds.filter { validIds.contains($0) }
+            log("GoalsAI: Linking \(confirmedIds.count) tasks to goal \(goal.id)")
+
+            for taskId in confirmedIds {
+                do {
+                    _ = try await APIClient.shared.updateActionItem(id: taskId, goalId: goal.id)
+                    log("GoalsAI: Linked task \(taskId) to goal \(goal.id)")
+                } catch {
+                    log("GoalsAI: Failed to link task \(taskId): \(error.localizedDescription)")
+                }
+            }
+        }
+
         return goal
     }
 
