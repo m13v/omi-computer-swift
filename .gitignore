@@ -56,3 +56,5 @@ Desktop/Sources/Resources/ffmpeg
 
 # Generated browser snapshots (contain PII)
 *-snapshot.md
+reddit-*.md
+linkedin-*.md
