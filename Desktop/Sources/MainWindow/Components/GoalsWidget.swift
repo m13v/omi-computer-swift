@@ -188,6 +188,9 @@ struct GoalRowView: View {
     @State private var isHovering = false
     @State private var isDragging = false
     @State private var dragValue: Double? = nil
+    @State private var isExpanded = false
+    @State private var linkedTasks: [TaskActionItem] = []
+    @State private var hasLoadedTasks = false
 
     /// The progress fraction (0-1) to display, using drag value when active
     private var displayProgress: Double {
@@ -251,6 +254,20 @@ struct GoalRowView: View {
                         .onTapGesture { onTap() }
 
                     Spacer()
+
+                    // Expand/collapse button (if has description or linked tasks)
+                    if goal.description != nil || !linkedTasks.isEmpty {
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                isExpanded.toggle()
+                            }
+                        }) {
+                            Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 9, weight: .medium))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     // Advice button (shown on hover)
                     if isHovering, let onGetAdvice = onGetAdvice {
@@ -316,6 +333,45 @@ struct GoalRowView: View {
                 }
                 .frame(height: 18)
                 .animation(.easeInOut(duration: 0.15), value: isDragging)
+
+                // Expanded section: description + linked tasks
+                if isExpanded {
+                    VStack(alignment: .leading, spacing: 8) {
+                        // Description
+                        if let desc = goal.description, !desc.isEmpty {
+                            Text(desc)
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .lineLimit(3)
+                        }
+
+                        // Linked tasks
+                        if !linkedTasks.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Linked Tasks")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .textCase(.uppercase)
+
+                                ForEach(linkedTasks) { task in
+                                    HStack(spacing: 6) {
+                                        Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
+                                            .font(.system(size: 11))
+                                            .foregroundColor(task.completed ? Color(red: 0.133, green: 0.773, blue: 0.369) : OmiColors.textTertiary)
+
+                                        Text(task.description)
+                                            .font(.system(size: 12))
+                                            .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
+                                            .strikethrough(task.completed)
+                                            .lineLimit(1)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .padding(.top, 2)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
         }
         .padding(.vertical, 8)
@@ -328,6 +384,20 @@ struct GoalRowView: View {
             withAnimation(.easeInOut(duration: 0.15)) {
                 isHovering = hovering
             }
+        }
+        .task {
+            guard !hasLoadedTasks else { return }
+            hasLoadedTasks = true
+            await loadLinkedTasks()
+        }
+    }
+
+    private func loadLinkedTasks() async {
+        do {
+            let response = try await APIClient.shared.getActionItems(limit: 100, completed: nil)
+            linkedTasks = response.items.filter { $0.goalId == goal.id }
+        } catch {
+            // Silently fail — linked tasks are supplementary
         }
     }
 
