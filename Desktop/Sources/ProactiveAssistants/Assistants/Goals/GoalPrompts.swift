@@ -37,7 +37,7 @@ STEP 2: Look at what they're actively working on and talking about. What unmet n
 RECENT CONVERSATIONS (what they've been discussing/working on):
 {conversation_context}
 
-CURRENT TASKS (what they're tracking):
+CURRENT TASKS (each prefixed with [task_id]):
 {action_items_context}
 
 STEP 3: Review their goal history. Do NOT re-suggest goals they already completed or abandoned. Learn from what they chose to stop doing.
@@ -58,14 +58,18 @@ STEP 4: Synthesize. Based on the above, identify ONE specific, measurable goal t
 4. Has a clear numeric target and timeframe implied by the title (e.g., "Ship 3 features this month", "Read 2 books", "Close 5 deals")
 5. Would genuinely excite or motivate this specific person
 
+STEP 5: Link relevant tasks. Look at the CURRENT TASKS list above. Pick any tasks (by their [task_id]) that are directly related to achieving this goal. Only link tasks that genuinely contribute to the goal — don't force connections.
+
 Return JSON only:
 {
     "suggested_title": "Brief, actionable goal title",
+    "suggested_description": "1-2 sentences explaining WHY this goal matters for the user and what achieving it looks like",
     "suggested_type": "scale" or "numeric" or "boolean",
     "suggested_target": <number>,
     "suggested_min": <minimum value>,
     "suggested_max": <maximum value or target>,
-    "reasoning": "One sentence explaining why this goal fits the user right now"
+    "reasoning": "One sentence explaining why this goal fits the user right now",
+    "linked_task_ids": ["task_id_1", "task_id_2"]
 }
 
 Choose a goal type:
