@@ -2,7 +2,7 @@
 
 @implementation ObjCExceptionCatcher
 
-+ (nullable NSException *)tryBlock:(void (NS_NOESCAPE ^)(void))block {
++ (nullable NSException *)catchException:(void (NS_NOESCAPE ^)(void))block {
     @try {
         block();
         return nil;
