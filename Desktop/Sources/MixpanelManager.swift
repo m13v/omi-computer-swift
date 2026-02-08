@@ -624,6 +624,16 @@ extension MixpanelManager {
         ])
     }
 
+    func updateNotFound() {
+        track("Update Not Found")
+    }
+
+    func updateCheckFailed(error: String) {
+        track("Update Check Failed", properties: [
+            "error": error
+        ])
+    }
+
     // MARK: - Notification Events
 
     func notificationSent(notificationId: String, title: String, assistantId: String) {
