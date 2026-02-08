@@ -1,0 +1,1131 @@
+- generic [active]:
+  - generic:
+    - generic:
+      - heading "0 notifications" [level=2]
+    - generic:
+      - generic:
+        - button:
+          - generic:
+            - generic: Skip to main content
+        - button:
+          - generic:
+            - img
+      - generic:
+        - generic:
+          - banner:
+            - generic:
+              - generic:
+                - generic:
+                  - button "LinkedIn":
+                    - img "LinkedIn"
+                  - generic:
+                    - search:
+                      - generic:
+                        - generic:
+                          - img
+                        - textbox "I’m looking for...": omi wearable
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - figure
+                      - generic:
+                        - generic:
+                          - navigation:
+                            - list:
+                              - listitem:
+                                - button "Home, 1 new notification":
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic: Home
+                              - listitem:
+                                - button "My Network, 0 new notifications":
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic: My Network
+                              - listitem:
+                                - link "Jobs, 0 new notifications":
+                                  - /url: https://www.linkedin.com/jobs/
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic: Jobs
+                              - listitem:
+                                - link "Messaging, 0 new notifications":
+                                  - /url: https://www.linkedin.com/messaging/
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic: Messaging
+                              - listitem:
+                                - link "Notifications, 6 new notifications":
+                                  - /url: https://www.linkedin.com/notifications/
+                                  - generic:
+                                    - img
+                                    - generic: "6"
+                                  - generic:
+                                    - generic: Notifications
+                              - listitem:
+                                - button "Me":
+                                  - generic:
+                                    - figure
+                                  - generic:
+                                    - generic:
+                                      - text: Me
+                                      - img
+                      - generic:
+                        - generic:
+                          - navigation:
+                            - list:
+                              - listitem:
+                                - button "For Business":
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic:
+                                      - text: For Business
+                                      - img
+                              - listitem:
+                                - link "0 new notifications":
+                                  - /url: https://www.linkedin.com/campaignmanager/accounts/
+                                  - generic:
+                                    - img
+                                  - generic:
+                                    - generic: Advertise
+        - generic:
+          - toolbar:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - button "Posts":
+                          - generic:
+                            - checkbox "Posts" [checked]
+                            - generic:
+                              - text: Posts
+                              - img
+                      - generic:
+                        - button "Sort by":
+                          - generic:
+                            - checkbox "Sort by"
+                            - generic:
+                              - text: Sort by
+                              - img
+                        - button "Date posted":
+                          - generic:
+                            - checkbox "Date posted"
+                            - generic:
+                              - text: Date posted
+                              - img
+                        - button "Content type":
+                          - generic:
+                            - checkbox "Content type"
+                            - generic:
+                              - text: Content type
+                              - img
+                        - button "From member":
+                          - generic:
+                            - checkbox "From member"
+                            - generic:
+                              - text: From member
+                              - img
+                      - generic:
+                        - button "All filters":
+                          - generic:
+                            - generic: All filters
+          - main:
+            - main:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic:
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - listitem:
+                                    - generic:
+                                      - generic:
+                                        - heading "Feed post" [level=2]:
+                                          - generic: Feed post
+                                        - generic:
+                                          - link "View Uttam Gupta’s profile":
+                                            - /url: https://www.linkedin.com/in/uttammgupta-aisolutionsexpert/
+                                            - figure "View Uttam Gupta’s profile":
+                                              - img "View Uttam Gupta’s profile"
+                                          - 'link "Uttam Gupta • 2nd Your #1 AI Solutions Partner - Helping businesses with AI Sales Voice Agents, Paid Ads & Smart AI Automations | 👉 Book FREE 1:1 AI Strategy Call to Start (Link Below) Book an appointment 16h •"':
+                                            - /url: https://www.linkedin.com/in/uttammgupta-aisolutionsexpert/
+                                            - generic:
+                                              - generic:
+                                                - paragraph:
+                                                  - text: Uttam Gupta
+                                                  - generic:
+                                                    - img
+                                                  - generic: • 2nd
+                                              - generic:
+                                                - paragraph: "Your #1 AI Solutions Partner - Helping businesses with AI Sales Voice Agents, Paid Ads & Smart AI Automations | 👉 Book FREE 1:1 AI Strategy Call to Start (Link Below)"
+                                              - generic:
+                                                - link "Book an appointment":
+                                                  - /url: https://www.linkedin.com/redir/redirect/?url=https%3A%2F%2Ftopmate%2Eio%2Futtamgupta%2F&urlhash=AaJU&mt=XW5tL0aEJnvTALE-CX0K0BMoTASQi5EIqPIuyKYbXR6HH6LFwh26-8NY2_UizrKSIEsWXpI3OKg12RJN-AjraVjjdaApNqr1dFnvA7O_&isSdui=true
+                                                  - paragraph: Book an appointment
+                                              - generic:
+                                                - paragraph:
+                                                  - text: 16h •
+                                                  - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button "Follow Uttam Gupta":
+                                                  - generic:
+                                                    - img
+                                                    - generic:
+                                                      - generic: Follow
+                                          - button "View more options":
+                                            - generic:
+                                              - img
+                                        - paragraph:
+                                          - generic:
+                                            - text: This ₹8,000 device reads your thoughts.
+                                            - text: OMI isn't another smartwatch or earbud. It's wearable AI that learns everything about you while you wear it around your neck.
+                                            - text: The company behind it developed brainwave interpretation technology. You think it, Omi responds. No typing, no tapping, no screens.
+                                            - text: "Here's what it actually does:"
+                                            - text: Records every conversation and auto-summarizes meetings in real time. You never miss context or forget what was discussed.
+                                            - text: Interprets brainwaves so typing becomes optional. The interface is your thoughts.
+                                            - text: Three-day battery life versus competitors' 6-hour limits. You wear it and forget it.
+                                            - text: All data stored locally on your device. You control everything. No cloud dependency.
+                                            - text: Open-source platform with 250+ apps already live and developers adding more daily. Customizable for any workflow
+                                            - text: .
+                                            - text: Wear as necklace or temple mount with medical tape. Fits how you work, not how they designed it.
+                                            - text: $89. Shipping globally right now. Fully open for modification.
+                                            - text: Here's why this matters. Wearable AI just dropped from ₹50,000+ flagship territory to accessible hardware anyone can buy, modify, and control. When intelligence becomes this cheap and open, adoption doesn't trickle. It floods.
+                                            - text: The shift isn't just technical. It's philosophical. Your AI doesn't live in a data center owned by a corporation. It lives on your body, runs on your terms, and answers only to you.
+                                            - text: This is what decentralized intelligence looks like in practice.
+                                            - text: Would you trust AI with your thoughts if you fully owned the data?
+                                            - text: ♻ Repost this to help your network, Follow Uttam Gupta for more such content.
+                                            - link "#OMI":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23omi&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#OMI"
+                                            - link "#AI":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#AI"
+                                            - link "#device":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23device&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#device"
+                                            - button:
+                                              - generic [ref=e241] [cursor=pointer]: … more
+                                        - generic:
+                                          - button:
+                                            - figure
+                                        - generic:
+                                          - button "174 reactions":
+                                            - generic:
+                                              - img
+                                              - img
+                                              - img
+                                              - generic:
+                                                - paragraph:
+                                                  - generic: 174 reactions
+                                                  - text: "174"
+                                          - generic:
+                                            - button "6 comments":
+                                              - paragraph: 6 comments
+                                            - button:
+                                              - paragraph
+                                        - generic:
+                                          - button "Open actor selection screen":
+                                            - generic "Open actor selection screen":
+                                              - figure
+                                              - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - 'button "Reaction button state: no reaction" [ref=e291] [cursor=pointer]':
+                                                  - generic [ref=e292]:
+                                                    - img [ref=e293]
+                                                    - generic [ref=e295]: Like
+                                                - button "Open reactions menu":
+                                                  - generic:
+                                                    - img
+                                            - button "Comment":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Comment
+                                            - button "Repost":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Repost
+                                            - button "Send":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Send
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - listitem:
+                                    - generic:
+                                      - generic:
+                                        - heading "Feed post" [level=2]:
+                                          - generic: Feed post
+                                        - generic:
+                                          - link "View Himanshu Kumar’s profile":
+                                            - /url: https://www.linkedin.com/in/himanshu-kumar-977a23265/
+                                            - figure "View Himanshu Kumar’s profile":
+                                              - img "View Himanshu Kumar’s profile"
+                                          - link "Himanshu Kumar • 3rd+ MBA student at IILM UNIVERSITY,GURUGRAMMarketing enthusiast l Learner l Current Affairs l Stocks & Mutual Fund l Communication l Digital Proficiency l Wonderlust l Business Minded 4d • Edited •":
+                                            - /url: https://www.linkedin.com/in/himanshu-kumar-977a23265/
+                                            - generic:
+                                              - generic:
+                                                - paragraph:
+                                                  - text: Himanshu Kumar
+                                                  - generic: • 3rd+
+                                              - generic:
+                                                - paragraph: MBA student at IILM UNIVERSITY,GURUGRAMMarketing enthusiast l Learner l Current Affairs l Stocks & Mutual Fund l Communication l Digital Proficiency l Wonderlust l Business Minded
+                                              - generic:
+                                                - paragraph:
+                                                  - text: 4d • Edited •
+                                                  - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button "Follow Himanshu Kumar":
+                                                  - generic:
+                                                    - img
+                                                    - generic:
+                                                      - generic: Follow
+                                          - button "View more options":
+                                            - generic:
+                                              - img
+                                        - paragraph:
+                                          - generic:
+                                            - text: As an MBA student, I’m genuinely impressed by how the
+                                            - link "Omi":
+                                              - /url: https://www.linkedin.com/company/omidotme/
+                                              - generic:
+                                                - strong: Omi
+                                            - text: wearable turns everyday conversations into actionable insights.
+                                            - text: "By capturing, summarising, and contextualising discussions in real time, Omi tackles a core modern problem: we forget more than we realise."
+                                            - text: This is smart, human-centric innovation—where AI enhances productivity instead of adding noise.
+                                            - text: Definitely a glimpse into the future of work 🚀
+                                            - link "#MBAThoughts":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23mbathoughts&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#MBAThoughts"
+                                            - link "#AIWearables":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiwearables&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#AIWearables"
+                                            - link "#ProductInnovation":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23productinnovation&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#ProductInnovation"
+                                            - link "#FutureOfWork":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23futureofwork&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#FutureOfWork"
+                                            - link "#TechTrends":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23techtrends&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#TechTrends"
+                                            - button:
+                                              - generic [ref=e373] [cursor=pointer]: … more
+                                        - generic:
+                                          - button:
+                                            - figure
+                                        - generic:
+                                          - button "8 reactions":
+                                            - generic:
+                                              - img
+                                              - generic:
+                                                - paragraph:
+                                                  - generic: 8 reactions
+                                                  - text: "8"
+                                          - generic:
+                                            - button:
+                                              - paragraph
+                                            - button:
+                                              - paragraph
+                                        - generic:
+                                          - button "Open actor selection screen":
+                                            - generic "Open actor selection screen":
+                                              - figure
+                                              - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - generic:
+                                                  - generic:
+                                                    - 'button "Reaction button state: no reaction"':
+                                                      - generic:
+                                                        - img
+                                                        - generic: Like
+                                                - button "Open reactions menu":
+                                                  - generic:
+                                                    - img
+                                            - button "Comment":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Comment
+                                            - button "Repost":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Repost
+                                            - button "Send":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Send
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - listitem:
+                                    - generic:
+                                      - generic:
+                                        - heading "Feed post" [level=2]:
+                                          - generic: Feed post
+                                        - generic:
+                                          - link "View Kyle Fonger’s profile":
+                                            - /url: https://www.linkedin.com/in/kylefonger/
+                                            - figure "View Kyle Fonger’s profile":
+                                              - img "View Kyle Fonger’s profile"
+                                          - link "Kyle Fonger • 2nd Inside Sales Account Executive | AI Strategy & Prompt Engineering | Founder, Trivance AI 4w •":
+                                            - /url: https://www.linkedin.com/in/kylefonger/
+                                            - generic:
+                                              - generic:
+                                                - paragraph:
+                                                  - text: Kyle Fonger
+                                                  - generic:
+                                                    - img
+                                                  - generic: • 2nd
+                                              - generic:
+                                                - paragraph: Inside Sales Account Executive | AI Strategy & Prompt Engineering | Founder, Trivance AI
+                                              - generic:
+                                                - paragraph:
+                                                  - text: 4w •
+                                                  - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button "Follow Kyle Fonger":
+                                                  - generic:
+                                                    - img
+                                                    - generic:
+                                                      - generic: Follow
+                                          - button "View more options":
+                                            - generic:
+                                              - img
+                                        - paragraph:
+                                          - generic:
+                                            - text: This is exactly why Omi matters.
+                                            - text: The internet is rapidly becoming AI talking to AI. Models trained on AI-generated content feeding back into themselves. Congratulatory nonsense loops. Quality drops, originality dies, and everyone pretends the graph still goes up.
+                                            - text: So the industry needs a new food source.
+                                            - text: Enter human experience.
+                                            - text: Unfiltered conversations. Actual environments. Real decisions made by real people who are not optimizing for engagement or prompts.
+                                            - text: That’s why Meta and Amazon suddenly care about AI wearables. Not because they love hardware. Because reality is the last high-signal dataset left.
+                                            - text: Omi listens too. Difference is, it’s not pretending that your memories are a public utility.
+                                            - text: I’m fine with a device that hears everything. I’m not fine with the largest data brokers on Earth owning it.
+                                            - text: Reality farming is coming. Choose your farmer.
+                                            - link "#aiwearables":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiwearables&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#aiwearables"
+                                            - link "#opensource":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23opensource&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#opensource"
+                                            - link "Trivance AI":
+                                              - /url: https://www.linkedin.com/company/trivance-ai/
+                                              - generic:
+                                                - strong: Trivance AI
+                                            - button:
+                                              - generic [ref=e477] [cursor=pointer]: … more
+                                        - generic:
+                                          - generic:
+                                            - link "View Nik Shevchenko’s profile":
+                                              - /url: https://www.linkedin.com/in/nik-shevchenko-08565b18b/
+                                              - figure "View Nik Shevchenko’s profile":
+                                                - img "View Nik Shevchenko’s profile"
+                                            - 'link "Nik Shevchenko • 1st thiel fellow, thought to action: omi.me 4w • Edited •"':
+                                              - /url: https://www.linkedin.com/in/nik-shevchenko-08565b18b/
+                                              - generic:
+                                                - generic:
+                                                  - paragraph:
+                                                    - text: Nik Shevchenko
+                                                    - generic:
+                                                      - img
+                                                    - generic: • 1st
+                                                - generic:
+                                                  - paragraph: "thiel fellow, thought to action: omi.me"
+                                                - generic:
+                                                  - paragraph:
+                                                    - text: 4w • Edited •
+                                                    - img
+                                          - link "Meta and Amazon will steal all your conversations by 2027 They've acquired all AI wearable startups they could It's time for everyone to wake up and build an opensource alternative":
+                                            - /url: https://www.linkedin.com/feed/update/urn:li:ugcPost:7415618042136670208/?originTrackingId=g8dQUGgQSziU2v9Pk1W3IQ%3D%3D
+                                            - paragraph:
+                                              - generic:
+                                                - text: Meta and Amazon will steal all your conversations by 2027 They've acquired all AI wearable startups they could It's time for everyone to wake up and build an opensource alternative
+                                                - button:
+                                                  - generic [ref=e501] [cursor=pointer]: … more
+                                          - generic:
+                                            - generic:
+                                              - region "Video Player":              
+                                            - button "Play video":
+                                              - generic:
+                                                - img
+                                        - generic:
+                                          - button "Open actor selection screen":
+                                            - generic "Open actor selection screen":
+                                              - figure
+                                              - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - generic:
+                                                  - generic:
+                                                    - 'button "Reaction button state: no reaction"':
+                                                      - generic:
+                                                        - img
+                                                        - generic: Like
+                                                - button "Open reactions menu":
+                                                  - generic:
+                                                    - img
+                                            - button "Comment":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Comment
+                                            - button "Repost":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Repost
+                                            - button "Send":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Send
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - generic:
+                                    - generic:
+                                      - paragraph: Are these results helpful?
+                                      - paragraph: Your feedback helps us improve search results
+                                    - generic:
+                                      - button "Are these results helpful? Yes, these search results are helpful":
+                                        - generic:
+                                          - img
+                                      - button "Are these results helpful? No, these search results are not helpful":
+                                        - generic:
+                                          - img
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - listitem:
+                                    - generic:
+                                      - generic:
+                                        - heading "Feed post" [level=2]:
+                                          - generic: Feed post
+                                        - generic:
+                                          - link "View Franziskus Borrmann’s profile":
+                                            - /url: https://www.linkedin.com/in/franziskusb/
+                                            - figure "View Franziskus Borrmann’s profile":
+                                              - img "View Franziskus Borrmann’s profile"
+                                          - link "Franziskus Borrmann • 3rd+ Founding Engineer at Builders AI | Making construction sites smarter with AI, real-time tracking & offline-first mobile tools | Full-Stack Developer 1w •":
+                                            - /url: https://www.linkedin.com/in/franziskusb/
+                                            - generic:
+                                              - generic:
+                                                - paragraph:
+                                                  - text: Franziskus Borrmann
+                                                  - generic:
+                                                    - img
+                                                  - generic: • 3rd+
+                                              - generic:
+                                                - paragraph: Founding Engineer at Builders AI | Making construction sites smarter with AI, real-time tracking & offline-first mobile tools | Full-Stack Developer
+                                              - generic:
+                                                - paragraph:
+                                                  - text: 1w •
+                                                  - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button "Follow Franziskus Borrmann":
+                                                  - generic:
+                                                    - img
+                                                    - generic:
+                                                      - generic: Follow
+                                          - button "View more options":
+                                            - generic:
+                                              - img
+                                        - paragraph:
+                                          - generic:
+                                            - text: Started wearing an AI wearable called
+                                            - link "Omi":
+                                              - /url: https://www.linkedin.com/company/omidotme/
+                                              - generic:
+                                                - strong: Omi
+                                            - text: . It captures and transcribes conversations throughout the day.
+                                            - text: At
+                                            - link "BuildersAI":
+                                              - /url: https://www.linkedin.com/company/buildersai/
+                                              - generic:
+                                                - strong: BuildersAI
+                                            - text: ", we're exploring how this could work on construction sites."
+                                            - text: "Imagine a site manager on their morning walk-around:"
+                                            - text: → "Remind me to chase the electrician about second fix"
+                                            - text: "→ \"Task: scaffolding inspection before Friday\""
+                                            - text: "→ \"Issue: water pooling near north entrance\""
+                                            - text: → "Client approved the change"
+                                            - text: No stopping to type. No forgetting by the time you're back at the cabin.
+                                            - text: Early days - anyone else experimenting with AI wearables?
+                                            - link "#AI":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23ai&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#AI"
+                                            - link "#Wearables":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23wearables&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#Wearables"
+                                            - link "#Construction":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23construction&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#Construction"
+                                            - link "#ConTech":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23contech&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#ConTech"
+                                            - link "#BuildingInPublic":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23buildinginpublic&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#BuildingInPublic"
+                                            - button:
+                                              - generic [ref=e628] [cursor=pointer]: … more
+                                        - generic:
+                                          - button:
+                                            - figure
+                                        - generic:
+                                          - button "7 reactions":
+                                            - generic:
+                                              - img
+                                              - generic:
+                                                - paragraph:
+                                                  - generic: 7 reactions
+                                                  - text: "7"
+                                          - generic:
+                                            - button:
+                                              - paragraph
+                                            - button "2 reposts":
+                                              - paragraph: 2 reposts
+                                        - generic:
+                                          - button "Open actor selection screen":
+                                            - generic "Open actor selection screen":
+                                              - figure
+                                              - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - generic:
+                                                  - generic:
+                                                    - 'button "Reaction button state: no reaction"':
+                                                      - generic:
+                                                        - img
+                                                        - generic: Like
+                                                - button "Open reactions menu":
+                                                  - generic:
+                                                    - img
+                                            - button "Comment":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Comment
+                                            - button "Repost":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Repost
+                                            - button "Send":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Send
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - listitem:
+                                    - generic:
+                                      - generic:
+                                        - heading "Feed post" [level=2]:
+                                          - generic: Feed post
+                                        - generic:
+                                          - link "View Devyaansh Saxena’s profile":
+                                            - /url: https://www.linkedin.com/in/devyaansh-saxena/
+                                            - figure "View Devyaansh Saxena’s profile":
+                                              - img "View Devyaansh Saxena’s profile"
+                                          - link "Devyaansh Saxena • 3rd+ Building IT Teams for new firms & custom software for the established ones | USC Alum | Co-Founder, Strategic Partner View my services 1w •":
+                                            - /url: https://www.linkedin.com/in/devyaansh-saxena/
+                                            - generic:
+                                              - generic:
+                                                - paragraph:
+                                                  - text: Devyaansh Saxena
+                                                  - generic:
+                                                    - img
+                                                  - generic: • 3rd+
+                                              - generic:
+                                                - paragraph: Building IT Teams for new firms & custom software for the established ones | USC Alum | Co-Founder, Strategic Partner
+                                              - generic:
+                                                - link "View my services":
+                                                  - /url: https://www.linkedin.com/services/page/7686793369399b8b77/
+                                                  - paragraph: View my services
+                                              - generic:
+                                                - paragraph:
+                                                  - text: 1w •
+                                                  - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button "Follow Devyaansh Saxena":
+                                                  - generic:
+                                                    - img
+                                                    - generic:
+                                                      - generic: Follow
+                                          - button "View more options":
+                                            - generic:
+                                              - img
+                                        - paragraph:
+                                          - generic:
+                                            - text: Wearable tech isn’t evolving.
+                                            - text: It’s disappearing.
+                                            - text: From smart glasses that see what you see
+                                            - text: to rings that understand your body
+                                            - text: to AI systems that decide where computation belongs
+                                            - text: We’re moving from gadgets to infrastructure.
+                                            - text: The future of computing isn’t on screens.
+                                            - text: It’s on us.
+                                            - text: Read the full piece to understand how this shift is unfolding.
+                                            - text: "[Ambient Computing Wearable Technology Multimodal AI FutureOfTech]"
+                                            - link "#WearableTech":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23wearabletech&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#WearableTech"
+                                            - link "#AmbientComputing":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23ambientcomputing&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#AmbientComputing"
+                                            - link "#AIWearables":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiwearables&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#AIWearables"
+                                            - link "#MultimodalAI":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23multimodalai&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#MultimodalAI"
+                                            - link "#FutureOfTech":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23futureoftech&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#FutureOfTech"
+                                            - link "#EdgeComputing":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23edgecomputing&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#EdgeComputing"
+                                            - link "#LifestyleTech":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23lifestyletech&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#LifestyleTech"
+                                            - link "#TechTrends":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23techtrends&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#TechTrends"
+                                            - link "#Computing":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23computing&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#Computing"
+                                            - button:
+                                              - generic [ref=e756] [cursor=pointer]: … more
+                                        - generic:
+                                          - link:
+                                            - /url: https://www.linkedin.com/pulse/revolution-tech-from-gadgets-lifestyle-devyaansh-saxena-sqzpc/
+                                            - figure
+                                          - link "The (RE)Volution of Tech - from Gadgets to Lifestyle Devyaansh Saxena":
+                                            - /url: https://www.linkedin.com/pulse/revolution-tech-from-gadgets-lifestyle-devyaansh-saxena-sqzpc/
+                                            - generic:
+                                              - generic:
+                                                - paragraph: The (RE)Volution of Tech - from Gadgets to Lifestyle
+                                              - generic:
+                                                - paragraph: Devyaansh Saxena
+                                        - generic:
+                                          - button "3 reactions":
+                                            - generic:
+                                              - img
+                                              - generic:
+                                                - paragraph:
+                                                  - generic: 3 reactions
+                                                  - text: "3"
+                                          - generic:
+                                            - button:
+                                              - paragraph
+                                            - button:
+                                              - paragraph
+                                        - generic:
+                                          - button "Open actor selection screen":
+                                            - generic "Open actor selection screen":
+                                              - figure
+                                              - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - generic:
+                                                  - generic:
+                                                    - 'button "Reaction button state: no reaction"':
+                                                      - generic:
+                                                        - img
+                                                        - generic: Like
+                                                - button "Open reactions menu":
+                                                  - generic:
+                                                    - img
+                                            - button "Comment":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Comment
+                                            - button "Repost":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Repost
+                                            - button "Send":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Send
+                            - generic:
+                              - generic:
+                                - generic:
+                                  - listitem:
+                                    - generic:
+                                      - generic:
+                                        - heading "Feed post" [level=2]:
+                                          - generic: Feed post
+                                        - generic:
+                                          - 'link "View company: Ai Killed My Start Up"':
+                                            - /url: https://www.linkedin.com/company/ai-killed-my-start-up/posts/
+                                            - 'figure "View company: Ai Killed My Start Up"':
+                                              - 'img "View company: Ai Killed My Start Up"'
+                                          - link "Ai Killed My Start Up 19 followers 1w •":
+                                            - /url: https://www.linkedin.com/company/ai-killed-my-start-up/posts/
+                                            - generic:
+                                              - generic:
+                                                - paragraph: Ai Killed My Start Up
+                                              - generic:
+                                                - paragraph: 19 followers
+                                              - generic:
+                                                - paragraph:
+                                                  - text: 1w •
+                                                  - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - button "Follow Ai Killed My Start Up":
+                                                  - generic:
+                                                    - img
+                                                    - generic:
+                                                      - generic: Follow
+                                          - button "View more options":
+                                            - generic:
+                                              - img
+                                        - paragraph:
+                                          - generic:
+                                            - text: Your calendar did not kill your focus. Your always listening lapel mic did.
+                                            - text: Ambient AI wearables like
+                                            - link "omi.me":
+                                              - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fomi%2Eme&urlhash=noHo&mt=jgCyPHigYD3t-jlx0x0M7X5UIhUSQh7VNwlXB0TBLnUkLozDFsT9OabPwTGoUZ2cYMhyvjuSueFMaC61cHn2_xEBsGD5tD9_E69UX4bx0HCHNUkVBZP1dfmo&isSdui=true
+                                              - generic:
+                                                - strong: omi.me
+                                            - text: quietly log every meeting, transcribe it, then distill it into cute 15 word memories while Firestore hoards transcripts and Pinecone vectors your action items.
+                                            - text: "Result: productivity goes up, privacy becomes a subscription add on."
+                                            - text: "If Omi can encrypt per item with AES, you can absolutely charge for:"
+                                            - text: "- Local first processing"
+                                            - text: "- Enterprise mute policies"
+                                            - text: "- Consent logs and retention controls"
+                                            - text: Founders, treat ambient AI as a compliance product, not a toy.
+                                            - text: Would you sell the eavesdrop or build the mute?
+                                            - text: Click through to study how
+                                            - link "omi.me":
+                                              - /url: https://www.linkedin.com/redir/redirect/?url=http%3A%2F%2Fomi%2Eme&urlhash=noHo&mt=Wja8lce2eu5H8IliSePb4uj1cBM3CQpWCbNSxLnaMINB5gjYBEHHDwMv0wnxqyZ6t2I9euMXECWpmZxCum7EBRXMFEQAupmo9PhmV28LYbV7sGL76YrnX9q8&isSdui=true
+                                              - generic:
+                                                - strong: omi.me
+                                            - text: "handles memories, vectors and encryption, then decide: would you sell the eavesdrop or build the mute?"
+                                            - link "#AIPrivacy":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23aiprivacy&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#AIPrivacy"
+                                            - text: ","
+                                            - link "#SaaS":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23saas&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#SaaS"
+                                            - text: ","
+                                            - link "#StartupStrategy":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23startupstrategy&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#StartupStrategy"
+                                            - text: ","
+                                            - link "#Founders":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23founders&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#Founders"
+                                            - text: ","
+                                            - link "#ProductManagement":
+                                              - /url: https://www.linkedin.com/search/results/all/?keywords=%23productmanagement&origin=HASH_TAG_FROM_FEED
+                                              - generic:
+                                                - strong: "#ProductManagement"
+                                            - button:
+                                              - generic [ref=e874] [cursor=pointer]: … more
+                                        - generic:
+                                          - button "Isometric 30-degree scene of a tiny founder facing towering GPU servers and a glowing cache, toppled desks and cracked floors.":
+                                            - figure "Isometric 30-degree scene of a tiny founder facing towering GPU servers and a glowing cache, toppled desks and cracked floors.":
+                                              - img "Isometric 30-degree scene of a tiny founder facing towering GPU servers and a glowing cache, toppled desks and cracked floors."
+                                        - generic:
+                                          - button "1 reaction":
+                                            - generic:
+                                              - img
+                                              - generic:
+                                                - paragraph:
+                                                  - generic: 1 reaction
+                                                  - text: "1"
+                                          - generic:
+                                            - button:
+                                              - paragraph
+                                            - button:
+                                              - paragraph
+                                        - generic:
+                                          - button "Open actor selection screen":
+                                            - generic "Open actor selection screen":
+                                              - figure
+                                              - img
+                                          - generic:
+                                            - generic:
+                                              - generic:
+                                                - generic:
+                                                  - generic:
+                                                    - 'button "Reaction button state: no reaction"':
+                                                      - generic:
+                                                        - img
+                                                        - generic: Like
+                                                - button "Open reactions menu":
+                                                  - generic:
+                                                    - img
+                                            - button "Comment":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Comment
+                                            - button "Repost":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Repost
+                                            - button "Send":
+                                              - generic:
+                                                - img
+                                                - generic:
+                                                  - generic: Send
+                            - generic:
+                              - button "Load more":
+                                - generic:
+                                  - generic: Load more
+                      - generic:
+                        - generic:
+                          - generic:
+                            - generic:
+                              - iframe [ref=e936]:
+                                - main "Work With Us Container" [ref=f1e3]:
+                                  - generic [ref=f1e4]:
+                                    - img [ref=f1e6]
+                                    - generic [ref=f1e7]:
+                                      - img "Matthew" [ref=f1e8]
+                                      - link "Haus" [ref=f1e9] [cursor=pointer]:
+                                        - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F87085940%2Flife&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGcO35tEsyWOywqj2n2YLYVtSkK7-QmMIsfDJriehvTDOO7wVk-bzMRfXiKFoYifnXSFU4Q0U0-K1giw8cjwb9ECAGOq9ii6PmRj9IpNcDFzgmP8d-aTXj6BFUzIbOqFnP9jPMjrCUVzi17gW3mFtipxdMCQNVXnkNDN5hlU-zMJNY4ZAb1ElJvljwU4_VD7rhyCrtQdqkRpEDa175pLB0gbqgwV1GfsT7gpCntwGbSCzQErsSoG5rCAJ9Olf-yXxnUgb-kpw22S4G6OdKhlrxsL4cjAHc7b8g7j-70D6q48kAwR0L6fZHQ0DiOpVI1_qjwwPxH90_6fO_XQg0oKh_xjKGzV8kjyNw18zKqFrBVfAr2PwbfNB7Ni59ihVxf8cEUwDrgyQ4Rl9VRr8E4sqqxWHwmnBjTjsNmgIFaOAkqu5BfeVz0WZ3nqfCS2fYMX5UOPUJOLOKewMCb6031T2ZkenS1R-O091MaUvd4Us5jCDFtuV4tQ16L0HD1tP_dWMSyvp9h37xLOrflGaqhP5BdiRaEO3dtKEMJMj_MelmqfDX_6JH_Bwcvp7PTHJIhwe0dc-mjQxt5wJpwvtihQLTuhEUKhaThbIgpU0bMOpuW-lEdFjfALyMitC3uo3gf-um-PC9G0jdyJ93ZoxE1EItr9CizzEi7xfOVm-QlonPjWTYC5u0ep-2JcKGtiA8_YX5a9o1XmgvzU1Kpho1skFb_duBv2Gr70cYUuLVg1s5O2TrZnCKhl1HcCNRGDGL9pKiX-H69eKMVNeXKjlAE68EpE682cMlD_mwRS8bqExI2Ur7a4wbkiYZBCFAGefRscfEOA4GI2TLYDNT-K4McodVHznxcFg9XPPhiz4BVBKl21xB7d8KSxLxHyupi1Y35IrNhzw9G3JvRuA-zgKdTJXh_A72voYhCScHD7362UoHoKInTpvNMXbeEJeVURFeDQXVTE0dGZhGzYMenx5qfJLsGz0bwhVqdMhvKBtdFCC8y_HmxWy8qh02KCr2oYrWuuN-gAI-vRXrqbI88Tnfw39HjSzzQRatON-WeW1a6MDXTFSMpfdXJUyrvna7dBiiptkQFBua8W72nZA%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_search_srp_content%22%2C%22trackingId%22%3A%226a04319e-cade-4c1a-bec0-5586cf75140b%22%7D%2C%22time%22%3A1770524667092%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_search_srp_content%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8394451240307040389
+                                        - img "Haus" [ref=f1e10]
+                                  - generic [ref=f1e11]:
+                                    - generic [ref=f1e12]:
+                                      - paragraph [ref=f1e13]: Matthew, explore relevant opportunities with Haus
+                                      - paragraph [ref=f1e14]: Get the latest jobs and industry news
+                                    - link "Follow" [ref=f1e15] [cursor=pointer]:
+                                      - /url: https://www.linkedin.com/li/tscp/sct?destinationUrl=http%3A%2F%2Fwww.linkedin.com%2Fcompany%2F87085940%2Flife%3FisFollowingPage%3Dtrue&trackingEvent=%5B%7B%22eventInfo%22%3A%7B%22appId%22%3A%22com.linkedin.ads.rendering.d_web%22%2C%22eventName%22%3A%22SponsoredRightRailContentActionEvent%22%2C%22topicName%22%3A%22SponsoredRightRailContentActionEvent%22%7D%2C%22eventBody%22%3A%7B%22sponsoredEventHeader%22%3A%7B%22encryptedTrackingData%22%3A%22CwEAAAGcO35tEmjN5Qtrev5sHt3OU7Lnmw-N56bNFj1BNHd351NFBfOZ321q6jPG9wGt5XE22OJtZQyFM5DcwJUF-7J5EOY8OXqCN6mbOu3t0orVcvwvT9T91p3cAQfZ5CXmEvImBa0IyrHFwkoja48ga5eglZo-bkRFDQGk6pA5L_AxGbDwYyI_8AkXZXPLbf_zP3waunA7LumS3XFwCZ3ljORZNU1IKRmAO7dgOfdM588Z00D_sGmHoSKecV4eGC5Qj1OCU2NFWRGbXYYmkIzB_RXveLT07_oBaeJIAx8oAYxSIqFOLULCLlQQitkO_XYIG4Pee8gSbQ1zvciExmkSbyej0RUVuxv17wTf1-571nvcJm2PUGpE4Ycjc6nerXAkSSbZ9XOyPFiAeHuUkHhxuEvz9yPVFkny_ICbJfwWjjX_70Nx50KEoUaLOohi2i0yJTwuY1XI09I6xDnkiNvyCtlC9W-RlVauK1TGpAdY_UCggKUhn5VhXEWYcGnUDQXdjx1rX2zy3WzXE75cEJQ9xqfJWbsAk72qvuhkfNbeYYenMkwST-2IfYRPhVV9ywI2mXTkWRwYVql0CH9RCAjVzKASBNAGjAitJAaiMk3U6j8FjMb_ZHobPIwIhIiWFfW0WUmr_099Ognd0_TlqFRKxXOjiXFL9P12El5Hv86_hfMAAwgvwIvhBhp3YnbJ0fd1VLu_CkVzX3hNu_EcwRxfOwBYSAgXPojFVQdTgxdnCJmv6OT5t-Ly_ehy8LJtQbSU4-IrqM1lsypqgT65Ru5khD2F-ufyVln17RonBuSOLaJN9-58UYxYpUc8vdW6Fu8Z3TKvG4vPa5a2nqmog1l2Dzf0wtM76ThiSDdD8-l2sKwcTlSDOJ1r90PMYuc6AviD2VNJrO0TBhF85YuVWuHFAGKth4xxUIGmqfxS46FfaQth81elBoC-9kgW55F_HyMcbIsw3axwPfNMU9jXvgv7pX2QvKN_1Hjn8BwjWoIsTWT8F4es6dML84bwjXgzkfD5KA769WCBmQyFEJjiimPXK5Z_tfiZy49xJyq7nJDGBgm981_EfxB2v2JWu3Uc10pCl67zsqoDB_5L4SDen6UTtr6e0PNJ4whJG7qZgQKqmKy-RZz-uAa1l8pnhw%22%7D%2C%22header%22%3A%7B%22pageInstance%22%3A%7B%22pageUrn%22%3A%22urn%3Ali%3Apage%3Ad_flagship3_search_srp_content%22%2C%22trackingId%22%3A%2285874101-3eff-4355-b7ad-dcc5d3b4833c%22%7D%2C%22time%22%3A1770524667092%2C%22version%22%3A%220.0.0%22%7D%2C%22requestHeader%22%3A%7B%22pageKey%22%3A%22d_flagship3_search_srp_content%22%2C%22interfaceLocale%22%3A%22en-US%22%7D%7D%7D%5D&csrfToken=ajax%3A8394451240307040389
+                                  - generic [ref=f1e16]:
+                                    - paragraph [ref=f1e17]: Promoted
+                                    - button "Ad Options" [ref=f1e18] [cursor=pointer]:
+                                      - img [ref=f1e19]
+                                      - generic [ref=f1e23]: Ad Options
+                              - generic:
+                                - generic:
+                                  - link "About":
+                                    - /url: https://about.linkedin.com/
+                                    - paragraph: About
+                                  - link "Accessibility":
+                                    - /url: https://www.linkedin.com/accessibility/
+                                    - paragraph: Accessibility
+                                  - link "Help Center":
+                                    - /url: https://www.linkedin.com/help/linkedin/
+                                    - paragraph: Help Center
+                                  - button "Privacy & Terms":
+                                    - generic:
+                                      - paragraph: Privacy & Terms
+                                      - img
+                                  - link "Ad Choices":
+                                    - /url: https://www.linkedin.com/help/linkedin/answer/62931/
+                                    - paragraph: Ad Choices
+                                  - link "Advertising":
+                                    - /url: https://www.linkedin.com/ad/start/?trk=n_nav_ads_rr
+                                    - paragraph: Advertising
+                                  - button "Business Services":
+                                    - generic:
+                                      - paragraph: Business Services
+                                      - img
+                                  - link "Get the LinkedIn app":
+                                    - /url: https://www.linkedin.com/mobile/
+                                    - paragraph: Get the LinkedIn app
+                                  - button "More":
+                                    - paragraph: More
+                                - generic:
+                                  - img
+                                  - paragraph: LinkedIn Corporation © 2026
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - complementary:
+              - generic [ref=e967]:
+                - generic [ref=e968]:
+                  - generic [ref=e970] [cursor=pointer]:
+                    - generic [ref=e971]:
+                      - img "Matthew Diakonov" [ref=e972]
+                      - generic [ref=e974]: Status is online
+                    - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e975]:
+                      - generic [ref=e976]:
+                        - generic [ref=e977]: Messaging
+                        - generic [ref=e978]: You are on the messaging overlay. Press enter to open the list of conversations.
+                  - generic [ref=e979]:
+                    - button "Open messenger dropdown menu" [ref=e981] [cursor=pointer]:
+                      - img "Open messenger dropdown menu" [ref=e982]
+                    - button "Compose message" [ref=e985] [cursor=pointer]:
+                      - img [ref=e986]
+                      - generic [ref=e988]: Compose message
+                    - button "You are on the messaging overlay. Press enter to open the list of conversations." [ref=e989] [cursor=pointer]:
+                      - img [ref=e990]
+                      - generic [ref=e992]: You are on the messaging overlay. Press enter to open the list of conversations.
+                - generic [ref=e993]:
+                  - heading "Page inboxes" [level=3] [ref=e995]
+                  - generic [ref=e996] [cursor=pointer]:
+                    - generic [ref=e997]: Click to see affiliated inboxes
+                    - button "Page inboxes" [ref=e998]:
+                      - img [ref=e999]
+            - complementary "AI-powered assistant to get help with your career, jobs etc"
+    - iframe [ref=e1001]:
+      - generic [active] [ref=f2e1]:
+        - generic:
+          - region "Toast message":
+            - heading "0 notifications total" [level=2] [ref=f2e3]
+            - alert
+        - generic [ref=f2e4]:
+          - generic [ref=f2e6]:
+            - button "Skip to search" [ref=f2e7] [cursor=pointer]:
+              - generic [ref=f2e8]: Skip to search
+            - button "Skip to main content" [ref=f2e9] [cursor=pointer]:
+              - generic [ref=f2e10]: Skip to main content
+            - button "Keyboard shortcuts" [ref=f2e11] [cursor=pointer]:
+              - generic [ref=f2e12]: Keyboard shortcuts
+            - button "Close jump menu" [ref=f2e13] [cursor=pointer]:
+              - img [ref=f2e14]
+              - generic [ref=f2e16]: Close jump menu
+          - banner "Global Navigation" [ref=f2e17]:
+            - generic [ref=f2e18]:
+              - link "LinkedIn" [ref=f2e19] [cursor=pointer]:
+                - /url: https://www.linkedin.com/feed/?nis=true
+                - img "LinkedIn" [ref=f2e22]:
+                  - img [ref=f2e23]
+              - generic [ref=f2e27]:
+                - combobox "I’m looking for..." [ref=f2e28]
+                - generic:
+                  - img
+              - navigation "Primary Navigation" [ref=f2e29]:
+                - list [ref=f2e30]:
+                  - listitem [ref=f2e31]:
+                    - link "new feed updates notifications Home" [ref=f2e32] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/feed/
+                      - generic [ref=f2e33]:
+                        - generic [ref=f2e36]: new feed updates notifications
+                        - img [ref=f2e40]
+                      - generic "Home" [ref=f2e42]
+                  - listitem [ref=f2e43]:
+                    - link "My Network" [ref=f2e44] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/mynetwork/?
+                      - img [ref=f2e48]
+                      - generic "My Network" [ref=f2e50]
+                  - listitem [ref=f2e51]:
+                    - link "Jobs" [ref=f2e52] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/jobs/?
+                      - img [ref=f2e56]
+                      - generic "Jobs" [ref=f2e58]
+                  - listitem [ref=f2e59]:
+                    - link "Messaging" [ref=f2e60] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/messaging/?
+                      - img [ref=f2e64]
+                      - generic "Messaging" [ref=f2e66]
+                  - listitem [ref=f2e67]:
+                    - link "6 new notifications Notifications" [ref=f2e68] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/notifications/?
+                      - generic [ref=f2e69]:
+                        - generic [ref=f2e70]:
+                          - generic [ref=f2e71]: "6"
+                          - generic [ref=f2e72]: 6 new notifications
+                        - img [ref=f2e76]
+                      - generic "Notifications" [ref=f2e78]
+                  - listitem [ref=f2e79]:
+                    - button "Matthew Diakonov Me" [ref=f2e81] [cursor=pointer]:
+                      - img "Matthew Diakonov" [ref=f2e82]
+                      - generic [ref=f2e83]:
+                        - text: Me
+                        - img [ref=f2e84]
+                  - listitem [ref=f2e86]:
+                    - button "For Business" [ref=f2e88] [cursor=pointer]:
+                      - img [ref=f2e92]
+                      - generic "For Business" [ref=f2e94]:
+                        - text: For Business
+                        - img [ref=f2e95]
+                  - listitem [ref=f2e97]:
+                    - link "Advertise" [ref=f2e98] [cursor=pointer]:
+                      - /url: https://www.linkedin.com/campaignmanager/accounts?
+                      - img [ref=f2e102]
+                      - generic "Advertise" [ref=f2e105]
+        - region [ref=f2e121]
+  - list [ref=e1002]:
+    - button "Like" [ref=e1003] [cursor=pointer]:
+      - img [ref=e1007]
+    - button "Celebrate" [ref=e1013] [cursor=pointer]:
+      - img [ref=e1017]
+    - button "Support" [ref=e1033] [cursor=pointer]:
+      - img [ref=e1037]
+    - button "Love" [ref=e1048] [cursor=pointer]:
+      - img [ref=e1052]
+    - button "Insightful" [ref=e1059] [cursor=pointer]:
+      - img [ref=e1063]
+    - button "Funny" [ref=e1073] [cursor=pointer]:
+      - img [ref=e1077]
