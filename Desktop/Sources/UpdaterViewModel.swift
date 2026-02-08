@@ -5,11 +5,18 @@ import Sparkle
 /// Delegate to track Sparkle update events for analytics
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
-    /// Called when Sparkle starts checking for updates
-    func updater(_ updater: SPUUpdater, didStartLoading request: URLRequest) {
+    /// Called when Sparkle is about to check for updates (permission gate)
+    func updater(_ updater: SPUUpdater, mayPerformUpdateCheck check: SPUUpdateCheck) throws {
         Task { @MainActor in
-            log("Sparkle: Started checking for updates")
+            log("Sparkle: Starting update check")
             AnalyticsManager.shared.updateCheckStarted()
+        }
+    }
+
+    /// Called when Sparkle finishes loading the appcast
+    func updater(_ updater: SPUUpdater, didFinishLoadingAppcast appcast: SUAppcast) {
+        Task { @MainActor in
+            log("Sparkle: Appcast loaded (\(appcast.items.count) items)")
         }
     }
 
@@ -30,8 +37,8 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         }
     }
 
-    /// Called when update check fails
-    func updater(_ updater: SPUUpdater, didFailToFindUpdateWithError error: Error) {
+    /// Called when the update driver aborts with an error
+    func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
         Task { @MainActor in
             log("Sparkle: Update check failed - \(error.localizedDescription)")
             AnalyticsManager.shared.updateCheckFailed(error: error.localizedDescription)
