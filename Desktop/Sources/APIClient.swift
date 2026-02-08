@@ -1922,6 +1922,7 @@ struct TaskActionItem: Codable, Identifiable {
         deletedAt = try container.decodeIfPresent(Date.self, forKey: .deletedAt)
         deletedReason = try container.decodeIfPresent(String.self, forKey: .deletedReason)
         keptTaskId = try container.decodeIfPresent(String.self, forKey: .keptTaskId)
+        goalId = try container.decodeIfPresent(String.self, forKey: .goalId)
 
         // Agent fields are local-only, not decoded from API
         agentStatus = nil
