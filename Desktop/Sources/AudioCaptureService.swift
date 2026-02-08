@@ -193,13 +193,15 @@ class AudioCaptureService {
         }
     }
 
+    private static let maxRetries = 3
+
     private func reconfigureAfterChange(retryCount: Int) {
         let inputNode = audioEngine.inputNode
         let newHwFormat = inputNode.inputFormat(forBus: 0)
 
         guard newHwFormat.channelCount > 0, newHwFormat.sampleRate > 0 else {
             log("AudioCapture: No valid input after config change (attempt \(retryCount + 1))")
-            if retryCount < 3 {
+            if retryCount < Self.maxRetries {
                 DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
                     self?.reconfigureAfterChange(retryCount: retryCount + 1)
                 }
@@ -210,7 +212,7 @@ class AudioCaptureService {
             return
         }
 
-        log("AudioCapture: New hardware format - \(newHwFormat.sampleRate)Hz, \(newHwFormat.channelCount) channels")
+        log("AudioCapture: New hardware format - \(newHwFormat.sampleRate)Hz, \(newHwFormat.channelCount) channels (attempt \(retryCount + 1))")
 
         // Update stored format info
         detectedSampleRate = newHwFormat.sampleRate
@@ -220,7 +222,7 @@ class AudioCaptureService {
         guard let targetFmt = targetFormat,
               let newConverter = AVAudioConverter(from: newHwFormat, to: targetFmt) else {
             logError("AudioCapture: Failed to create converter for new format")
-            isReconfiguring = false
+            retryOrGiveUp(retryCount: retryCount)
             return
         }
         audioConverter = newConverter
@@ -234,8 +236,8 @@ class AudioCaptureService {
         }
 
         if let exception = exception {
-            logError("AudioCapture: Failed to install tap after config change: \(exception.name.rawValue) - \(exception.reason ?? "unknown")")
-            isReconfiguring = false
+            logError("AudioCapture: Failed to install tap: \(exception.name.rawValue) - \(exception.reason ?? "unknown") (attempt \(retryCount + 1))")
+            retryOrGiveUp(retryCount: retryCount)
             return
         }
 
@@ -243,12 +245,28 @@ class AudioCaptureService {
         do {
             try audioEngine.start()
             log("AudioCapture: Restarted with new configuration")
+            isReconfiguring = false
         } catch {
-            logError("AudioCapture: Failed to restart after config change", error: error)
+            logError("AudioCapture: Failed to restart engine: \(error.localizedDescription) (attempt \(retryCount + 1))")
             inputNode.removeTap(onBus: 0)
+            audioEngine.reset()
+            retryOrGiveUp(retryCount: retryCount)
         }
+    }
 
-        isReconfiguring = false
+    private func retryOrGiveUp(retryCount: Int) {
+        if retryCount < Self.maxRetries {
+            let delay = Double(retryCount + 1) * 1.0  // 1s, 2s, 3s backoff
+            log("AudioCapture: Retrying in \(delay)s...")
+            audioEngine.stop()
+            audioEngine.reset()
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                self?.reconfigureAfterChange(retryCount: retryCount + 1)
+            }
+        } else {
+            logError("AudioCapture: Giving up after \(retryCount + 1) attempts")
+            isReconfiguring = false
+        }
     }
 
     /// Stop capturing audio
