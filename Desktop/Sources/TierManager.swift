@@ -153,18 +153,17 @@ class TierManager {
         // exist before tiers were introduced (defaulting to false). Clear the flag so
         // auto-evaluation can compute their actual tier. Only users who manually pick
         // "Show All Features" in Settings should be locked at tier 0.
+        // Keep currentTierLevel at 0 (show all) so users don't flash to a reduced UI;
+        // checkTierIfNeeded() will "upgrade" from 0 to their computed tier in one step.
         let v3Key = "didMigrateTierGatingV3"
         if !UserDefaults.standard.bool(forKey: v3Key) {
             UserDefaults.standard.set(true, forKey: v3Key)
 
             if UserDefaults.standard.bool(forKey: "userShowAllFeatures") {
                 UserDefaults.standard.set(false, forKey: "userShowAllFeatures")
-                // Reset to tier 1 so auto-check can compute the real tier
-                UserDefaults.standard.set(1, forKey: "currentTierLevel")
-                UserDefaults.standard.set(1, forKey: "lastSeenTierLevel")
                 // Clear last check date so checkTierIfNeeded() runs immediately
                 UserDefaults.standard.removeObject(forKey: "lastTierCheckDate")
-                log("TierManager: Migration V3 - cleared userShowAllFeatures, reset to tier 1 for re-evaluation")
+                log("TierManager: Migration V3 - cleared userShowAllFeatures, keeping tier 0 for seamless re-evaluation")
             }
         }
     }
