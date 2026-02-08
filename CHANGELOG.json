@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.4.1",
+      "date": "2026-02-08",
+      "changes": [
+        "Auto-updater now starts checking for updates immediately at launch",
+        "Appcast filtered to serve only the latest live release",
+        "Analytics tracking for update check results",
+        "Fixed audio reconfiguration crash with retry logic and backoff",
+        "Added Objective-C exception catching to prevent audio capture crashes"
+      ]
+    },
+    {
       "version": "0.4.0",
       "date": "2026-02-07",
       "changes": [
