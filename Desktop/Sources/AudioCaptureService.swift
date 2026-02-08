@@ -229,7 +229,7 @@ class AudioCaptureService {
 
         // Install tap with ObjC exception handling (installTap throws NSException, not Swift Error)
         let bufferSize: AVAudioFrameCount = 512
-        let exception = ObjCExceptionCatcher.tryBlock {
+        let exception = ObjCExceptionCatcher.catching {
             inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: newHwFormat) { [weak self] buffer, time in
                 self?.processAudioBuffer(buffer)
             }
