@@ -116,6 +116,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // This ensures notifications display properly when app is in foreground
         _ = NotificationService.shared
 
+        // Initialize Sparkle auto-updater early so the 10-minute check timer starts at launch
+        // Without this, the updater only starts when the user opens Settings or clicks "Check for Updates"
+        _ = UpdaterViewModel.shared
+
         // Initialize Sentry for crash reporting and error tracking (including dev builds)
         let isDev = AnalyticsManager.isDevBuild
         SentrySDK.start { options in
