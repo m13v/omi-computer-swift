@@ -1,6 +1,7 @@
 import Foundation
 import AVFoundation
 import CoreAudio
+import ObjCExceptionCatcher
 
 /// Service for capturing microphone audio as 16-bit PCM at 16kHz
 /// Suitable for streaming to speech-to-text services like DeepGram
@@ -180,19 +181,32 @@ class AudioCaptureService {
 
         log("AudioCapture: Configuration changed, restarting with new device...")
 
-        // Save the current callback
-        let savedCallback = onAudioChunk
-
-        // Remove old tap (engine is already stopped by the system)
+        // Fully stop and reset the engine to ensure clean state
+        // This removes all taps and resets internal connections
         audioEngine.inputNode.removeTap(onBus: 0)
+        audioEngine.stop()
+        audioEngine.reset()
 
-        // Get the NEW hardware format (may have changed)
+        // Delay to let the audio hardware settle after device change
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            self?.reconfigureAfterChange(retryCount: 0)
+        }
+    }
+
+    private func reconfigureAfterChange(retryCount: Int) {
         let inputNode = audioEngine.inputNode
         let newHwFormat = inputNode.inputFormat(forBus: 0)
 
-        guard newHwFormat.channelCount > 0 else {
-            log("AudioCapture: No input available after config change")
-            isReconfiguring = false
+        guard newHwFormat.channelCount > 0, newHwFormat.sampleRate > 0 else {
+            log("AudioCapture: No valid input after config change (attempt \(retryCount + 1))")
+            if retryCount < 3 {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                    self?.reconfigureAfterChange(retryCount: retryCount + 1)
+                }
+            } else {
+                logError("AudioCapture: Giving up after \(retryCount + 1) attempts")
+                isReconfiguring = false
+            }
             return
         }
 
@@ -211,10 +225,18 @@ class AudioCaptureService {
         }
         audioConverter = newConverter
 
-        // Reinstall tap with new format
+        // Install tap with ObjC exception handling (installTap throws NSException, not Swift Error)
         let bufferSize: AVAudioFrameCount = 512
-        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: newHwFormat) { [weak self] buffer, time in
-            self?.processAudioBuffer(buffer)
+        let exception = ObjCExceptionCatcher.tryBlock {
+            inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: newHwFormat) { [weak self] buffer, time in
+                self?.processAudioBuffer(buffer)
+            }
+        }
+
+        if let exception = exception {
+            logError("AudioCapture: Failed to install tap after config change: \(exception.name.rawValue) - \(exception.reason ?? "unknown")")
+            isReconfiguring = false
+            return
         }
 
         // Restart the engine
@@ -223,8 +245,7 @@ class AudioCaptureService {
             log("AudioCapture: Restarted with new configuration")
         } catch {
             logError("AudioCapture: Failed to restart after config change", error: error)
-            // Try to restore callback for potential retry
-            onAudioChunk = savedCallback
+            inputNode.removeTap(onBus: 0)
         }
 
         isReconfiguring = false
