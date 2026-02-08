@@ -1,6 +1,29 @@
 {
   "releases": [
     {
+      "version": "0.4.0",
+      "date": "2026-02-07",
+      "changes": [
+        "AI-powered goal generation: goals are automatically suggested based on your conversation history",
+        "Goal completion tracking with celebration animations when you hit your targets",
+        "Goal history page showing completed and removed goals",
+        "Goals now include descriptions and linked tasks for better context",
+        "Task tags: tasks support multiple tags instead of a single category",
+        "App exclusion settings for Memory, Focus, Advice, and Task assistants",
+        "Background sync for tasks and memories with local-first offline support",
+        "Pagination and 'Load more' for tasks, memories, and search results",
+        "Task agent now shows editing status and file counts",
+        "Tags displayed on memory cards and detail sheets",
+        "Dashboard updated to 2x2 grid layout with full-width conversations",
+        "Screen capture auto-recovery with background polling",
+        "Upgraded to Gemini 3 for smarter goal generation",
+        "Retry logic with backoff for Gemini API reliability",
+        "Fixed crashes from UTF-8 boundary panics in backend",
+        "Fixed auth race condition causing login issues",
+        "Fixed UI flash during tier migration"
+      ]
+    },
+    {
       "version": "0.3.7",
       "date": "2026-02-06",
       "changes": [
