@@ -16,9 +16,15 @@ let package = Package(
         .package(url: "https://github.com/gonzalezreal/swift-markdown-ui", from: "2.4.0"),
     ],
     targets: [
+        .target(
+            name: "ObjCExceptionCatcher",
+            path: "ObjCExceptionCatcher",
+            publicHeadersPath: "include"
+        ),
         .executableTarget(
             name: "Omi Computer",
             dependencies: [
+                "ObjCExceptionCatcher",
                 .product(name: "FirebaseCore", package: "firebase-ios-sdk"),
                 .product(name: "FirebaseAuth", package: "firebase-ios-sdk"),
                 .product(name: "Mixpanel", package: "mixpanel-swift"),
