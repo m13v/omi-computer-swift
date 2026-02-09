@@ -35,6 +35,7 @@ enum TaskFilterGroup: String, CaseIterable {
     case category = "Category"
     case source = "Source"
     case priority = "Priority"
+    case origin = "Origin"
 }
 
 enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
@@ -68,6 +69,14 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     case priorityMedium
     case priorityLow
 
+    // Origin (source classification)
+    case originDirectRequest
+    case originSelfGenerated
+    case originCalendarDriven
+    case originReactive
+    case originExternalSystem
+    case originOther
+
     var id: String { rawValue }
 
     var group: TaskFilterGroup {
@@ -76,6 +85,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
         case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual, .sourceOmiAnalytics: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
+        case .originDirectRequest, .originSelfGenerated, .originCalendarDriven, .originReactive, .originExternalSystem, .originOther: return .origin
         }
     }
 
@@ -103,6 +113,12 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .priorityHigh: return "High"
         case .priorityMedium: return "Medium"
         case .priorityLow: return "Low"
+        case .originDirectRequest: return "Direct Request"
+        case .originSelfGenerated: return "Self-Generated"
+        case .originCalendarDriven: return "Calendar-Driven"
+        case .originReactive: return "Reactive"
+        case .originExternalSystem: return "External System"
+        case .originOther: return "Other Origin"
         }
     }
 
@@ -130,6 +146,12 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .priorityHigh: return "flag.fill"
         case .priorityMedium: return "flag"
         case .priorityLow: return "flag"
+        case .originDirectRequest: return "bubble.left.fill"
+        case .originSelfGenerated: return "lightbulb.fill"
+        case .originCalendarDriven: return "calendar"
+        case .originReactive: return "exclamationmark.triangle.fill"
+        case .originExternalSystem: return "server.rack"
+        case .originOther: return "questionmark.circle"
         }
     }
 
@@ -158,6 +180,12 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .priorityHigh: return task.priority == "high"
         case .priorityMedium: return task.priority == "medium"
         case .priorityLow: return task.priority == "low"
+        case .originDirectRequest: return task.sourceClassification?.category == .direct_request
+        case .originSelfGenerated: return task.sourceClassification?.category == .self_generated
+        case .originCalendarDriven: return task.sourceClassification?.category == .calendar_driven
+        case .originReactive: return task.sourceClassification?.category == .reactive
+        case .originExternalSystem: return task.sourceClassification?.category == .external_system
+        case .originOther: return task.sourceClassification?.category == .other
         }
     }
 
@@ -191,6 +219,19 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .finance: return "finance"
         case .health: return "health"
         case .other: return "other"
+        default: return nil
+        }
+    }
+
+    /// Get the raw origin category value this tag matches
+    var originCategoryValue: String? {
+        switch self {
+        case .originDirectRequest: return "direct_request"
+        case .originSelfGenerated: return "self_generated"
+        case .originCalendarDriven: return "calendar_driven"
+        case .originReactive: return "reactive"
+        case .originExternalSystem: return "external_system"
+        case .originOther: return "other"
         default: return nil
         }
     }
@@ -317,6 +358,14 @@ enum UnifiedFilterTag: Identifiable, Hashable {
         switch self {
         case .predefined(let tag): return tag.categoryValue
         case .dynamic(let tag): return tag.group == .category ? tag.rawValue : nil
+        }
+    }
+
+    /// Get the raw origin category value if this is an origin filter
+    var originCategoryValue: String? {
+        switch self {
+        case .predefined(let tag): return tag.originCategoryValue
+        case .dynamic(_): return nil
         }
     }
 }
@@ -818,6 +867,9 @@ class TasksViewModel: ObservableObject {
             }
         }
 
+        // Get origin categories
+        let originCategories: [String]? = tagsByGroup[.origin]?.compactMap { $0.originCategoryValue }
+
         // Determine completed states from status filters
         let statusTags = selectedTags.filter { $0.group == .status }
         let completedStates: [Bool]?
@@ -839,7 +891,8 @@ class TasksViewModel: ObservableObject {
                 includeDeleted: includeDeleted,
                 categories: categories.isEmpty ? nil : categories,
                 sources: sources.isEmpty ? nil : sources,
-                priorities: priorities
+                priorities: priorities,
+                originCategories: originCategories
             )
             filteredFromDatabase = results
             log("TasksViewModel: Loaded \(results.count) filtered tasks from SQLite")
@@ -892,6 +945,14 @@ class TasksViewModel: ObservableObject {
             counts[.priorityHigh] = filterCounts.priorities["high"] ?? 0
             counts[.priorityMedium] = filterCounts.priorities["medium"] ?? 0
             counts[.priorityLow] = filterCounts.priorities["low"] ?? 0
+
+            // Origin counts
+            counts[.originDirectRequest] = filterCounts.origins["direct_request"] ?? 0
+            counts[.originSelfGenerated] = filterCounts.origins["self_generated"] ?? 0
+            counts[.originCalendarDriven] = filterCounts.origins["calendar_driven"] ?? 0
+            counts[.originReactive] = filterCounts.origins["reactive"] ?? 0
+            counts[.originExternalSystem] = filterCounts.origins["external_system"] ?? 0
+            counts[.originOther] = filterCounts.origins["other"] ?? 0
 
             tagCounts = counts
 
