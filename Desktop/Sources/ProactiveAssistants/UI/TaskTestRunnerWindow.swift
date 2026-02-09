@@ -190,7 +190,7 @@ struct TaskTestRunnerView: View {
             Text(testResult.timestamp, format: .dateTime.hour().minute().second())
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary)
-                .frame(width: 70, alignment: .leading)
+                .frame(width: 90, alignment: .leading)
 
             // App name
             Text(testResult.appName)
@@ -397,16 +397,23 @@ struct TaskTestRunnerView: View {
                 return
             }
 
-            // Fetch all available screenshots in the full time range, then sample N evenly-spaced ones.
-            // This naturally skips gaps when the app was off or the computer was sleeping.
-            let allScreenshots: [Screenshot]
+            // Build filter parameters from current settings
+            let (allowedApps, browserApps, browserPatterns) = await MainActor.run { () -> (Set<String>, Set<String>, [String]) in
+                let settings = TaskAssistantSettings.shared
+                return (settings.allowedApps, TaskAssistantSettings.browserApps, settings.browserKeywords)
+            }
+
+            // Fetch screenshots filtered at the SQL level by allowed apps + browser window patterns
+            let filtered: [Screenshot]
             do {
-                // Fetch up to 10x the requested count to have plenty to sample from (1 per second means thousands exist)
-                allScreenshots = try await RewindDatabase.shared.getScreenshots(
+                filtered = try await RewindDatabase.shared.getScreenshotsFiltered(
                     from: periodStart,
                     to: now,
-                    limit: screenshotCount * 600  // ~10 min of frames per sample
-                ).reversed()  // getScreenshots returns desc, we want chronological
+                    allowedApps: allowedApps,
+                    browserApps: browserApps,
+                    browserWindowPatterns: browserPatterns,
+                    limit: screenshotCount * 600
+                ).reversed()  // getScreenshotsFiltered returns desc, we want chronological
             } catch {
                 await MainActor.run {
                     statusMessage = "Failed to load screenshots: \(error.localizedDescription)"
@@ -415,28 +422,9 @@ struct TaskTestRunnerView: View {
                 return
             }
 
-            guard !allScreenshots.isEmpty else {
-                await MainActor.run {
-                    statusMessage = "No screenshots found in the last \(periodMinutes) minutes"
-                    isRunning = false
-                }
-                return
-            }
-
-            // Filter to only allowed apps + browser heuristic matches
-            let filtered = await MainActor.run {
-                allScreenshots.filter { screenshot in
-                    guard TaskAssistantSettings.shared.isAppAllowed(screenshot.appName) else { return false }
-                    return TaskAssistantSettings.shared.isWindowAllowed(
-                        appName: screenshot.appName,
-                        windowTitle: screenshot.windowTitle
-                    )
-                }
-            }
-
             guard !filtered.isEmpty else {
                 await MainActor.run {
-                    statusMessage = "Found \(allScreenshots.count) screenshots but none passed filters (check allowed apps & browser heuristics)"
+                    statusMessage = "No screenshots matched allowed apps & browser filters in the last \(periodMinutes) minutes"
                     isRunning = false
                 }
                 return
@@ -454,7 +442,7 @@ struct TaskTestRunnerView: View {
             }
 
             await MainActor.run {
-                statusMessage = "Found \(allScreenshots.count) screenshots, \(filtered.count) passed filters, sampling \(sampled.count)..."
+                statusMessage = "Found \(filtered.count) matching screenshots, sampling \(sampled.count)..."
             }
 
             // Process each sampled screenshot
