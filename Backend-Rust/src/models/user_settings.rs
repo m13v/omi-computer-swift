@@ -1,6 +1,7 @@
 // User settings models - stored in Firestore user document
 // Path: users/{uid}
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 /// Daily summary notification settings
@@ -139,4 +140,20 @@ pub struct UserSettingsResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct UserSettingsStatusResponse {
     pub status: String,
+}
+
+/// User AI persona — AI-generated profile of the user (distinct from PersonaDB which is user-created AI characters)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UserAIPersona {
+    pub persona_text: String,
+    pub generated_at: DateTime<Utc>,
+    pub data_sources_used: i32,
+}
+
+/// Request to update user AI persona
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateUserAIPersonaRequest {
+    pub persona_text: String,
+    pub generated_at: String,
+    pub data_sources_used: i32,
 }
