@@ -878,6 +878,300 @@ extension GeminiClient {
     }
 }
 
+// MARK: - Image + Tool Calling Request
+
+/// Request type combining image analysis with tool calling
+struct GeminiImageToolRequest: Encodable {
+    let contents: [Content]
+    let systemInstruction: SystemInstruction?
+    let tools: [GeminiTool]?
+    let toolConfig: ToolConfig?
+
+    enum CodingKeys: String, CodingKey {
+        case contents
+        case systemInstruction = "system_instruction"
+        case tools
+        case toolConfig = "tool_config"
+    }
+
+    struct Content: Encodable {
+        let role: String
+        let parts: [Part]
+    }
+
+    struct Part: Encodable {
+        let text: String?
+        let inlineData: InlineData?
+        let functionCall: FunctionCallPart?
+        let functionResponse: FunctionResponsePart?
+
+        enum CodingKeys: String, CodingKey {
+            case text
+            case inlineData = "inline_data"
+            case functionCall = "functionCall"
+            case functionResponse = "functionResponse"
+        }
+
+        init(text: String) {
+            self.text = text
+            self.inlineData = nil
+            self.functionCall = nil
+            self.functionResponse = nil
+        }
+
+        init(mimeType: String, data: String) {
+            self.text = nil
+            self.inlineData = InlineData(mimeType: mimeType, data: data)
+            self.functionCall = nil
+            self.functionResponse = nil
+        }
+
+        init(functionCall: FunctionCallPart) {
+            self.text = nil
+            self.inlineData = nil
+            self.functionCall = functionCall
+            self.functionResponse = nil
+        }
+
+        init(functionResponse: FunctionResponsePart) {
+            self.text = nil
+            self.inlineData = nil
+            self.functionCall = nil
+            self.functionResponse = functionResponse
+        }
+    }
+
+    struct InlineData: Encodable {
+        let mimeType: String
+        let data: String
+
+        enum CodingKeys: String, CodingKey {
+            case mimeType = "mime_type"
+            case data
+        }
+    }
+
+    struct FunctionCallPart: Encodable {
+        let name: String
+        let args: [String: String]
+    }
+
+    struct FunctionResponsePart: Encodable {
+        let name: String
+        let response: ResponseContent
+
+        struct ResponseContent: Encodable {
+            let result: String
+        }
+    }
+
+    struct SystemInstruction: Encodable {
+        let parts: [TextPart]
+
+        struct TextPart: Encodable {
+            let text: String
+        }
+    }
+
+    struct ToolConfig: Encodable {
+        let functionCallingConfig: FunctionCallingConfig
+
+        enum CodingKeys: String, CodingKey {
+            case functionCallingConfig = "function_calling_config"
+        }
+
+        struct FunctionCallingConfig: Encodable {
+            let mode: String  // "ANY", "AUTO", "NONE"
+        }
+    }
+}
+
+// MARK: - GeminiClient Image + Tool Extensions
+
+extension GeminiClient {
+
+    /// Send image + text + tools, returns the model's function call
+    /// Retries up to 2 times for transient errors.
+    func sendImageToolRequest(
+        prompt: String,
+        imageData: Data,
+        systemPrompt: String,
+        tools: [GeminiTool],
+        forceToolCall: Bool = true
+    ) async throws -> ToolChatResult {
+        let maxRetries = 2
+        var lastError: Error?
+
+        for attempt in 0...maxRetries {
+            do {
+                let base64Data = imageData.base64EncodedString()
+
+                let toolConfig = forceToolCall ? GeminiImageToolRequest.ToolConfig(
+                    functionCallingConfig: .init(mode: "ANY")
+                ) : nil
+
+                let request = GeminiImageToolRequest(
+                    contents: [
+                        GeminiImageToolRequest.Content(
+                            role: "user",
+                            parts: [
+                                GeminiImageToolRequest.Part(text: prompt),
+                                GeminiImageToolRequest.Part(mimeType: "image/jpeg", data: base64Data)
+                            ]
+                        )
+                    ],
+                    systemInstruction: GeminiImageToolRequest.SystemInstruction(
+                        parts: [.init(text: systemPrompt)]
+                    ),
+                    tools: tools,
+                    toolConfig: toolConfig
+                )
+
+                let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "POST"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                urlRequest.timeoutInterval = 300
+                urlRequest.httpBody = try JSONEncoder().encode(request)
+
+                let (data, _) = try await URLSession.shared.data(for: urlRequest)
+
+                let response = try JSONDecoder().decode(GeminiToolResponse.self, from: data)
+
+                if let error = response.error {
+                    throw GeminiClientError.apiError(error.message)
+                }
+
+                guard let candidate = response.candidates?.first,
+                      let parts = candidate.content?.parts else {
+                    throw GeminiClientError.invalidResponse
+                }
+
+                var toolCalls: [ToolCall] = []
+                var textResponse = ""
+
+                for part in parts {
+                    if let functionCall = part.functionCall {
+                        let args = functionCall.args?.mapValues { $0.value } ?? [:]
+                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args))
+                    }
+                    if let text = part.text {
+                        textResponse += text
+                    }
+                }
+
+                return ToolChatResult(
+                    text: textResponse,
+                    toolCalls: toolCalls,
+                    requiresToolExecution: !toolCalls.isEmpty
+                )
+            } catch {
+                lastError = error
+                guard attempt < maxRetries && isTransientError(error) else {
+                    throw error
+                }
+                let backoffSeconds = UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
+        }
+
+        throw lastError!
+    }
+
+    /// Continue conversation after tool execution: sends full history + tool result, returns text
+    /// No tools on continuation — model returns plain JSON guided by system prompt.
+    func continueImageToolRequest(
+        originalPrompt: String,
+        originalImageData: Data,
+        toolCall: ToolCall,
+        toolResult: String,
+        systemPrompt: String
+    ) async throws -> String {
+        let maxRetries = 2
+        var lastError: Error?
+
+        for attempt in 0...maxRetries {
+            do {
+                let base64Data = originalImageData.base64EncodedString()
+
+                // Build the full conversation:
+                // 1. User message with image + text
+                // 2. Model's function call
+                // 3. Function response with results
+                let contents: [GeminiImageToolRequest.Content] = [
+                    // User turn: image + prompt
+                    GeminiImageToolRequest.Content(
+                        role: "user",
+                        parts: [
+                            GeminiImageToolRequest.Part(text: originalPrompt),
+                            GeminiImageToolRequest.Part(mimeType: "image/jpeg", data: base64Data)
+                        ]
+                    ),
+                    // Model turn: function call
+                    GeminiImageToolRequest.Content(
+                        role: "model",
+                        parts: [
+                            GeminiImageToolRequest.Part(functionCall: .init(
+                                name: toolCall.name,
+                                args: toolCall.arguments.compactMapValues { "\($0)" }
+                            ))
+                        ]
+                    ),
+                    // User turn: function response
+                    GeminiImageToolRequest.Content(
+                        role: "user",
+                        parts: [
+                            GeminiImageToolRequest.Part(functionResponse: .init(
+                                name: toolCall.name,
+                                response: .init(result: toolResult)
+                            ))
+                        ]
+                    )
+                ]
+
+                let request = GeminiImageToolRequest(
+                    contents: contents,
+                    systemInstruction: GeminiImageToolRequest.SystemInstruction(
+                        parts: [.init(text: systemPrompt)]
+                    ),
+                    tools: nil,   // No tools on continuation
+                    toolConfig: nil
+                )
+
+                let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "POST"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                urlRequest.timeoutInterval = 300
+                urlRequest.httpBody = try JSONEncoder().encode(request)
+
+                let (data, _) = try await URLSession.shared.data(for: urlRequest)
+
+                let response = try JSONDecoder().decode(GeminiToolResponse.self, from: data)
+
+                if let error = response.error {
+                    throw GeminiClientError.apiError(error.message)
+                }
+
+                guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+                    throw GeminiClientError.invalidResponse
+                }
+
+                return text
+            } catch {
+                lastError = error
+                guard attempt < maxRetries && isTransientError(error) else {
+                    throw error
+                }
+                let backoffSeconds = UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
+        }
+
+        throw lastError!
+    }
+}
+
 /// Response type for tool-enabled requests
 struct GeminiToolResponse: Decodable {
     let candidates: [Candidate]?
