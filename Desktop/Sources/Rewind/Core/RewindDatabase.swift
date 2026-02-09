@@ -1044,6 +1044,55 @@ actor RewindDatabase {
             }
         }
 
+        // Migration 18: Add embedding column to action_items for vector search
+        migrator.registerMigration("addActionItemEmbedding") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "embedding", .blob)  // 768 Float32s = 3072 bytes
+            }
+        }
+
+        // Migration 19: Create FTS5 virtual table on action_items.description for keyword search
+        migrator.registerMigration("createActionItemsFTS") { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE action_items_fts USING fts5(
+                    description,
+                    content='action_items',
+                    content_rowid='id',
+                    tokenize='unicode61'
+                )
+                """)
+
+            // Sync triggers
+            try db.execute(sql: """
+                CREATE TRIGGER action_items_fts_ai AFTER INSERT ON action_items BEGIN
+                    INSERT INTO action_items_fts(rowid, description)
+                    VALUES (new.id, new.description);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER action_items_fts_ad AFTER DELETE ON action_items BEGIN
+                    INSERT INTO action_items_fts(action_items_fts, rowid, description)
+                    VALUES ('delete', old.id, old.description);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER action_items_fts_au AFTER UPDATE ON action_items BEGIN
+                    INSERT INTO action_items_fts(action_items_fts, rowid, description)
+                    VALUES ('delete', old.id, old.description);
+                    INSERT INTO action_items_fts(rowid, description)
+                    VALUES (new.id, new.description);
+                END
+                """)
+
+            // Populate with existing data
+            try db.execute(sql: """
+                INSERT INTO action_items_fts(rowid, description)
+                SELECT id, description FROM action_items
+                """)
+        }
+
         try migrator.migrate(queue)
     }
 
