@@ -71,7 +71,7 @@ struct SettingsContentView: View {
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
     @State private var taskAllowedApps: Set<String>
-    @State private var taskDisabledHeuristics: Set<String>
+    @State private var taskBrowserKeywords: [String]
 
     // Advice Assistant states
     @State private var adviceEnabled: Bool
@@ -189,7 +189,7 @@ struct SettingsContentView: View {
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
         _taskAllowedApps = State(initialValue: TaskAssistantSettings.shared.allowedApps)
-        _taskDisabledHeuristics = State(initialValue: TaskAssistantSettings.shared.disabledHeuristicIds)
+        _taskBrowserKeywords = State(initialValue: TaskAssistantSettings.shared.browserKeywords)
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
@@ -1799,56 +1799,45 @@ struct SettingsContentView: View {
                             Text("Allowed Apps")
                                 .font(.system(size: 14))
                                 .foregroundColor(OmiColors.textSecondary)
-                            Text("Tasks will only be extracted from these apps. Browsers have additional window filters below.")
+                            Text("Tasks will only be extracted from these apps. Browsers are also filtered by keywords below.")
                                 .font(.system(size: 12))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
 
-                        // Built-in allowed apps (non-removable)
-                        DisclosureGroup {
-                            LazyVStack(spacing: 4) {
-                                ForEach(Array(TaskAssistantSettings.builtInAllowedApps).sorted(), id: \.self) { appName in
-                                    HStack(spacing: 12) {
-                                        AppIconView(appName: appName, size: 20)
+                        // Editable list of all allowed apps
+                        LazyVStack(spacing: 4) {
+                            ForEach(Array(taskAllowedApps).sorted(), id: \.self) { appName in
+                                HStack(spacing: 12) {
+                                    AppIconView(appName: appName, size: 20)
 
-                                        Text(appName)
-                                            .font(.system(size: 13))
-                                            .foregroundColor(OmiColors.textTertiary)
+                                    Text(appName)
+                                        .font(.system(size: 13))
+                                        .foregroundColor(OmiColors.textPrimary)
 
-                                        if TaskAssistantSettings.isBrowser(appName) {
-                                            Text("browser")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(OmiColors.purplePrimary)
-                                                .padding(.horizontal, 6)
-                                                .padding(.vertical, 2)
-                                                .background(OmiColors.purplePrimary.opacity(0.15))
-                                                .cornerRadius(4)
-                                        }
-
-                                        Spacer()
+                                    if TaskAssistantSettings.isBrowser(appName) {
+                                        Text("browser")
+                                            .font(.system(size: 10))
+                                            .foregroundColor(OmiColors.purplePrimary)
+                                            .padding(.horizontal, 6)
+                                            .padding(.vertical, 2)
+                                            .background(OmiColors.purplePrimary.opacity(0.15))
+                                            .cornerRadius(4)
                                     }
-                                    .padding(.horizontal, 12)
-                                    .padding(.vertical, 4)
-                                }
-                            }
-                        } label: {
-                            Text("Default allowed apps (\(TaskAssistantSettings.builtInAllowedApps.count))")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-                        .tint(OmiColors.textTertiary)
 
-                        if !taskAllowedApps.isEmpty {
-                            LazyVStack(spacing: 8) {
-                                ForEach(Array(taskAllowedApps).sorted(), id: \.self) { appName in
-                                    ExcludedAppRow(
-                                        appName: appName,
-                                        onRemove: {
-                                            TaskAssistantSettings.shared.disallowApp(appName)
-                                            taskAllowedApps = TaskAssistantSettings.shared.allowedApps
-                                        }
-                                    )
+                                    Spacer()
+
+                                    Button {
+                                        TaskAssistantSettings.shared.disallowApp(appName)
+                                        taskAllowedApps = TaskAssistantSettings.shared.allowedApps
+                                    } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(OmiColors.textTertiary)
+                                    }
+                                    .buttonStyle(.plain)
                                 }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
                             }
                         }
 
@@ -1864,45 +1853,29 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    // Browser Window Filters (Heuristics)
+                    // Browser Window Keywords
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Browser Window Filters")
+                            Text("Browser Window Keywords")
                                 .font(.system(size: 14))
                                 .foregroundColor(OmiColors.textSecondary)
-                            Text("For browser apps, only analyze windows matching these categories. Non-browser apps are always analyzed.")
+                            Text("For browser apps, only analyze windows whose title contains one of these keywords.")
                                 .font(.system(size: 12))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
 
-                        LazyVStack(spacing: 4) {
-                            ForEach(TaskAssistantSettings.builtInHeuristics) { heuristic in
-                                HStack(spacing: 12) {
-                                    Toggle(isOn: Binding(
-                                        get: {
-                                            TaskAssistantSettings.shared.isHeuristicEnabled(heuristic)
-                                        },
-                                        set: { newValue in
-                                            TaskAssistantSettings.shared.setHeuristicEnabled(heuristic.id, enabled: newValue)
-                                            taskDisabledHeuristics = TaskAssistantSettings.shared.disabledHeuristicIds
-                                        }
-                                    )) {
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(heuristic.name)
-                                                .font(.system(size: 13))
-                                                .foregroundColor(OmiColors.textPrimary)
-                                            Text(heuristic.description)
-                                                .font(.system(size: 11))
-                                                .foregroundColor(OmiColors.textTertiary)
-                                        }
-                                    }
-                                    .toggleStyle(.switch)
-                                    .controlSize(.small)
-                                }
-                                .padding(.horizontal, 12)
-                                .padding(.vertical, 4)
+                        // Keyword chips (filterable, deletable)
+                        BrowserKeywordListView(
+                            keywords: $taskBrowserKeywords,
+                            onAdd: { keyword in
+                                TaskAssistantSettings.shared.addBrowserKeyword(keyword)
+                                taskBrowserKeywords = TaskAssistantSettings.shared.browserKeywords
+                            },
+                            onRemove: { keyword in
+                                TaskAssistantSettings.shared.removeBrowserKeyword(keyword)
+                                taskBrowserKeywords = TaskAssistantSettings.shared.browserKeywords
                             }
-                        }
+                        )
                     }
                 }
             }
@@ -3244,6 +3217,147 @@ struct AddAllowedAppView: View {
         // Remove duplicates while preserving order
         var seen = Set<String>()
         runningApps = apps.filter { seen.insert($0).inserted }
+    }
+}
+
+// MARK: - Browser Keyword List View
+
+struct BrowserKeywordListView: View {
+    @Binding var keywords: [String]
+    let onAdd: (String) -> Void
+    let onRemove: (String) -> Void
+
+    @State private var newKeyword: String = ""
+    @State private var filterText: String = ""
+
+    private var filteredKeywords: [String] {
+        if filterText.isEmpty {
+            return keywords
+        }
+        return keywords.filter { $0.lowercased().contains(filterText.lowercased()) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // Filter field
+            HStack(spacing: 8) {
+                Image(systemName: "line.3.horizontal.decrease")
+                    .font(.system(size: 11))
+                    .foregroundColor(OmiColors.textTertiary)
+                TextField("Filter keywords...", text: $filterText)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 12))
+                if !filterText.isEmpty {
+                    Button {
+                        filterText = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(OmiColors.backgroundTertiary)
+            .cornerRadius(6)
+
+            // Keyword chips in a wrapping flow layout
+            ScrollView {
+                FlowLayout(spacing: 6) {
+                    ForEach(filteredKeywords, id: \.self) { keyword in
+                        HStack(spacing: 4) {
+                            Text(keyword)
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textPrimary)
+                            Button {
+                                onRemove(keyword)
+                            } label: {
+                                Image(systemName: "xmark")
+                                    .font(.system(size: 8, weight: .bold))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(OmiColors.backgroundTertiary)
+                        .cornerRadius(6)
+                    }
+                }
+                .padding(.vertical, 2)
+            }
+            .frame(maxHeight: 150)
+
+            // Add new keyword
+            HStack(spacing: 8) {
+                TextField("Add keyword...", text: $newKeyword)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(size: 12))
+                    .onSubmit { addKeyword() }
+
+                Button("Add") { addKeyword() }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(newKeyword.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            Text("\(keywords.count) keywords")
+                .font(.system(size: 11))
+                .foregroundColor(OmiColors.textTertiary)
+        }
+    }
+
+    private func addKeyword() {
+        let trimmed = newKeyword.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        onAdd(trimmed)
+        newKeyword = ""
+    }
+}
+
+// MARK: - Flow Layout (wrapping horizontal layout)
+
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let result = layout(in: proposal.width ?? 0, subviews: subviews)
+        return result.size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let result = layout(in: bounds.width, subviews: subviews)
+        for (index, position) in result.positions.enumerated() {
+            subviews[index].place(
+                at: CGPoint(x: bounds.minX + position.x, y: bounds.minY + position.y),
+                proposal: ProposedViewSize(subviews[index].sizeThatFits(.unspecified))
+            )
+        }
+    }
+
+    private func layout(in width: CGFloat, subviews: Subviews) -> (size: CGSize, positions: [CGPoint]) {
+        var positions: [CGPoint] = []
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var maxWidth: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x + size.width > width && x > 0 {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            positions.append(CGPoint(x: x, y: y))
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
+            maxWidth = max(maxWidth, x)
+        }
+
+        return (CGSize(width: maxWidth, height: y + rowHeight), positions)
     }
 }
 
