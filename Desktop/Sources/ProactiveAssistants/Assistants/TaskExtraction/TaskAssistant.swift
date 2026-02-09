@@ -140,10 +140,10 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
-        // Skip apps excluded from task extraction
-        let excluded = await MainActor.run { TaskAssistantSettings.shared.isAppExcluded(frame.appName) }
-        if excluded {
-            log("Task: Skipping excluded app '\(frame.appName)'")
+        // Only analyze apps on the whitelist
+        let allowed = await MainActor.run { TaskAssistantSettings.shared.isAppAllowed(frame.appName) }
+        if !allowed {
+            log("Task: Skipping non-whitelisted app '\(frame.appName)'")
             return nil
         }
 
