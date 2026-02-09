@@ -125,6 +125,14 @@ actor TaskAssistant: ProactiveAssistant {
         log("Task assistant stopped")
     }
 
+    // MARK: - Test Analysis (for test runner)
+
+    /// Run the extraction pipeline on arbitrary JPEG data without side effects (no saving, no events).
+    /// Used by the test runner to replay past screenshots.
+    func testAnalyze(jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
+        return try await extractTaskSingleStage(from: jpegData, appName: appName)
+    }
+
     // MARK: - ProactiveAssistant Protocol Methods
 
     func shouldAnalyze(frameNumber: Int, timeSinceLastAnalysis: TimeInterval) -> Bool {
