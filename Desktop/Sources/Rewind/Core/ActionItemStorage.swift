@@ -285,6 +285,8 @@ actor ActionItemStorage {
         todo: Int,
         done: Int,
         deleted: Int,
+        deletedByAI: Int,
+        deletedByUser: Int,
         categories: [String: Int],
         sources: [String: Int],
         priorities: [String: Int]
@@ -304,6 +306,16 @@ actor ActionItemStorage {
 
             let deleted = try ActionItemRecord
                 .filter(Column("deleted") == true)
+                .fetchCount(database)
+
+            let deletedByAI = try Int.fetchOne(database, sql: """
+                SELECT COUNT(*) FROM action_items
+                WHERE deleted = 1 AND (deletedBy IS NULL OR deletedBy != 'user')
+            """) ?? 0
+
+            let deletedByUser = try ActionItemRecord
+                .filter(Column("deleted") == true)
+                .filter(Column("deletedBy") == "user")
                 .fetchCount(database)
 
             // Category/tag counts - count each known tag using LIKE on tagsJson
@@ -345,7 +357,7 @@ actor ActionItemStorage {
                 }
             }
 
-            return (todo, done, deleted, categories, sources, priorities)
+            return (todo, done, deleted, deletedByAI, deletedByUser, categories, sources, priorities)
         }
     }
 
@@ -557,6 +569,156 @@ actor ActionItemStorage {
         }
 
         log("ActionItemStorage: Soft deleted action item with backendId \(backendId) (by: \(deletedBy ?? "unknown"))")
+    }
+
+    // MARK: - FTS5 Search & Context Methods
+
+    /// Full-text search on action item descriptions using FTS5 with BM25 ranking
+    func searchFTS(
+        query: String,
+        limit: Int = 20,
+        includeCompleted: Bool = true,
+        includeDeleted: Bool = false
+    ) async throws -> [(id: Int64, description: String, completed: Bool, deleted: Bool, deletedBy: String?)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var sql = """
+                SELECT a.id, a.description, a.completed, a.deleted, a.deletedBy
+                FROM action_items a
+                JOIN action_items_fts fts ON fts.rowid = a.id
+                WHERE action_items_fts MATCH ?
+                """
+            var arguments: [DatabaseValueConvertible] = [query]
+
+            if !includeCompleted {
+                sql += " AND a.completed = 0"
+            }
+            if !includeDeleted {
+                sql += " AND a.deleted = 0"
+            }
+
+            sql += " ORDER BY bm25(action_items_fts) ASC LIMIT ?"
+            arguments.append(limit)
+
+            return try Row.fetchAll(database, sql: sql, arguments: StatementArguments(arguments)).map { row in
+                (
+                    id: row["id"] as Int64,
+                    description: row["description"] as String,
+                    completed: row["completed"] as Bool,
+                    deleted: row["deleted"] as Bool,
+                    deletedBy: row["deletedBy"] as String?
+                )
+            }
+        }
+    }
+
+    /// Get recent active (incomplete, not deleted) tasks
+    func getRecentActiveTasks(limit: Int = 30) async throws -> [(id: Int64, description: String, priority: String?)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try Row.fetchAll(database, sql: """
+                SELECT id, description, priority FROM action_items
+                WHERE completed = 0 AND deleted = 0
+                ORDER BY createdAt DESC LIMIT ?
+            """, arguments: [limit]).map { row in
+                (
+                    id: row["id"] as Int64,
+                    description: row["description"] as String,
+                    priority: row["priority"] as String?
+                )
+            }
+        }
+    }
+
+    /// Get recent completed tasks
+    func getRecentCompletedTasks(limit: Int = 10) async throws -> [(id: Int64, description: String)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try Row.fetchAll(database, sql: """
+                SELECT id, description FROM action_items
+                WHERE completed = 1 AND deleted = 0
+                ORDER BY updatedAt DESC LIMIT ?
+            """, arguments: [limit]).map { row in
+                (
+                    id: row["id"] as Int64,
+                    description: row["description"] as String
+                )
+            }
+        }
+    }
+
+    /// Get recent user-deleted tasks (deletedBy = "user")
+    func getRecentDeletedTasks(limit: Int = 10, deletedBy: String? = "user") async throws -> [(id: Int64, description: String)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var sql = "SELECT id, description FROM action_items WHERE deleted = 1"
+            var arguments: [DatabaseValueConvertible] = []
+
+            if let deletedBy = deletedBy {
+                sql += " AND deletedBy = ?"
+                arguments.append(deletedBy)
+            }
+
+            sql += " ORDER BY updatedAt DESC LIMIT ?"
+            arguments.append(limit)
+
+            return try Row.fetchAll(database, sql: sql, arguments: StatementArguments(arguments)).map { row in
+                (
+                    id: row["id"] as Int64,
+                    description: row["description"] as String
+                )
+            }
+        }
+    }
+
+    /// Get all embeddings for loading into memory index
+    func getAllEmbeddings() async throws -> [(id: Int64, embedding: Data)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try Row.fetchAll(database, sql: """
+                SELECT id, embedding FROM action_items
+                WHERE embedding IS NOT NULL
+            """).compactMap { row in
+                guard let id: Int64 = row["id"],
+                      let embedding: Data = row["embedding"] else { return nil }
+                return (id: id, embedding: embedding)
+            }
+        }
+    }
+
+    /// Get action items missing embeddings (for backfill)
+    func getItemsMissingEmbeddings(limit: Int = 100) async throws -> [(id: Int64, description: String)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try Row.fetchAll(database, sql: """
+                SELECT id, description FROM action_items
+                WHERE embedding IS NULL AND deleted = 0
+                ORDER BY createdAt DESC LIMIT ?
+            """, arguments: [limit]).map { row in
+                (
+                    id: row["id"] as Int64,
+                    description: row["description"] as String
+                )
+            }
+        }
+    }
+
+    /// Store embedding BLOB for a specific action item
+    func updateEmbedding(id: Int64, embedding: Data) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE action_items SET embedding = ? WHERE id = ?",
+                arguments: [embedding, id]
+            )
+        }
     }
 
     // MARK: - Stats
