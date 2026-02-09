@@ -13,8 +13,8 @@ use crate::auth::AuthUser;
 use crate::models::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
     TranscriptionPreferences, UpdateDailySummaryRequest, UpdateLanguageRequest,
-    UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest, UserLanguage,
-    UserProfile, UserSettingsStatusResponse,
+    UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest, UpdateUserAIPersonaRequest,
+    UserAIPersona, UserLanguage, UserProfile, UserSettingsStatusResponse,
 };
 use crate::AppState;
 
@@ -352,6 +352,57 @@ async fn get_profile(
 }
 
 // ============================================================================
+// User Persona
+// ============================================================================
+
+/// GET /v1/users/persona
+async fn get_persona(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<Option<UserAIPersona>>, StatusCode> {
+    tracing::info!("Getting AI persona for user {}", user.uid);
+
+    match state.firestore.get_user_ai_persona(&user.uid).await {
+        Ok(persona) => Ok(Json(persona)),
+        Err(e) => {
+            tracing::error!("Failed to get AI persona: {}", e);
+            Ok(Json(None))
+        }
+    }
+}
+
+/// PATCH /v1/users/persona
+async fn update_persona(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<UpdateUserAIPersonaRequest>,
+) -> Result<Json<UserAIPersona>, StatusCode> {
+    tracing::info!("Updating AI persona for user {}", user.uid);
+
+    if request.persona_text.len() > 2000 {
+        tracing::warn!("Persona text too long: {} chars (max 2000)", request.persona_text.len());
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    match state
+        .firestore
+        .update_user_ai_persona(
+            &user.uid,
+            &request.persona_text,
+            &request.generated_at,
+            request.data_sources_used,
+        )
+        .await
+    {
+        Ok(persona) => Ok(Json(persona)),
+        Err(e) => {
+            tracing::error!("Failed to update AI persona: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -389,4 +440,9 @@ pub fn users_routes() -> Router<AppState> {
         )
         // Profile
         .route("/v1/users/profile", get(get_profile))
+        // Persona
+        .route(
+            "/v1/users/persona",
+            get(get_persona).patch(update_persona),
+        )
 }
