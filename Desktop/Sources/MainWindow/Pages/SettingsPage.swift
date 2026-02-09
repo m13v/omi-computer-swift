@@ -1797,7 +1797,7 @@ struct SettingsContentView: View {
                             Text("Allowed Apps")
                                 .font(.system(size: 14))
                                 .foregroundColor(OmiColors.textSecondary)
-                            Text("Tasks will only be extracted from these apps")
+                            Text("Tasks will only be extracted from these apps. Browsers have additional window filters below.")
                                 .font(.system(size: 12))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
@@ -1812,6 +1812,16 @@ struct SettingsContentView: View {
                                         Text(appName)
                                             .font(.system(size: 13))
                                             .foregroundColor(OmiColors.textTertiary)
+
+                                        if TaskAssistantSettings.isBrowser(appName) {
+                                            Text("browser")
+                                                .font(.system(size: 10))
+                                                .foregroundColor(OmiColors.purplePrimary)
+                                                .padding(.horizontal, 6)
+                                                .padding(.vertical, 2)
+                                                .background(OmiColors.purplePrimary.opacity(0.15))
+                                                .cornerRadius(4)
+                                        }
 
                                         Spacer()
                                     }
@@ -1847,6 +1857,50 @@ struct SettingsContentView: View {
                             },
                             allowedApps: taskAllowedApps
                         )
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Browser Window Filters (Heuristics)
+                    VStack(alignment: .leading, spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Browser Window Filters")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("For browser apps, only analyze windows matching these categories. Non-browser apps are always analyzed.")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        LazyVStack(spacing: 4) {
+                            ForEach(TaskAssistantSettings.builtInHeuristics) { heuristic in
+                                HStack(spacing: 12) {
+                                    Toggle(isOn: Binding(
+                                        get: {
+                                            TaskAssistantSettings.shared.isHeuristicEnabled(heuristic)
+                                        },
+                                        set: { newValue in
+                                            TaskAssistantSettings.shared.setHeuristicEnabled(heuristic.id, enabled: newValue)
+                                            taskDisabledHeuristics = TaskAssistantSettings.shared.disabledHeuristicIds
+                                        }
+                                    )) {
+                                        VStack(alignment: .leading, spacing: 2) {
+                                            Text(heuristic.name)
+                                                .font(.system(size: 13))
+                                                .foregroundColor(OmiColors.textPrimary)
+                                            Text(heuristic.description)
+                                                .font(.system(size: 11))
+                                                .foregroundColor(OmiColors.textTertiary)
+                                        }
+                                    }
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+                                }
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 4)
+                            }
+                        }
                     }
                 }
             }
