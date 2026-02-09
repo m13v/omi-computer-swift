@@ -25,6 +25,8 @@ actor MemoryAssistant: ProactiveAssistant {
     private var currentApp: String?
     private var pendingFrame: CapturedFrame?
     private var processingTask: Task<Void, Never>?
+    private let frameSignal: AsyncStream<Void>
+    private let frameSignalContinuation: AsyncStream<Void>.Continuation
 
     /// Get the current system prompt from settings (accessed on MainActor for thread safety)
     private var systemPrompt: String {
@@ -59,6 +61,10 @@ actor MemoryAssistant: ProactiveAssistant {
         // Use Gemini 3 Pro for better memory extraction quality
         self.geminiClient = try GeminiClient(apiKey: apiKey, model: "gemini-3-pro-preview")
 
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        self.frameSignal = stream
+        self.frameSignalContinuation = continuation
+
         // Start processing loop
         Task {
             await self.startProcessing()
@@ -77,21 +83,25 @@ actor MemoryAssistant: ProactiveAssistant {
     private func processLoop() async {
         log("Memory assistant started")
 
-        while isRunning {
-            // Check if we have a pending frame and enough time has passed
-            if let frame = pendingFrame {
-                let interval = await extractionInterval
-                let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime)
+        for await _ in frameSignal {
+            guard isRunning else { break }
+            guard pendingFrame != nil else { continue }
 
-                if timeSinceLastAnalysis >= interval {
-                    log("Memory: Starting analysis (interval: \(Int(interval))s, waited: \(Int(timeSinceLastAnalysis))s)")
-                    pendingFrame = nil
-                    lastAnalysisTime = Date()
-                    await processFrame(frame)
-                }
+            // Wait until the extraction interval has passed
+            let interval = await extractionInterval
+            let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime)
+            if timeSinceLastAnalysis < interval {
+                let remaining = interval - timeSinceLastAnalysis
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
             }
 
-            try? await Task.sleep(nanoseconds: 500_000_000) // Check every 0.5 seconds
+            // Grab the latest frame (may have been updated or cleared during sleep)
+            guard let frame = pendingFrame else { continue }
+            let waited = Date().timeIntervalSince(lastAnalysisTime)
+            log("Memory: Starting analysis (interval: \(Int(interval))s, waited: \(Int(waited))s)")
+            pendingFrame = nil
+            lastAnalysisTime = Date()
+            await processFrame(frame)
         }
 
         log("Memory assistant stopped")
@@ -120,7 +130,8 @@ actor MemoryAssistant: ProactiveAssistant {
         if !hadPending {
             log("Memory: Received frame from \(frame.appName), queued for analysis")
         }
-        // Note: This overwrites the previous frame, not a queue
+        // Signal the processing loop that a frame is available
+        frameSignalContinuation.yield()
         return nil
     }
 
@@ -289,6 +300,7 @@ actor MemoryAssistant: ProactiveAssistant {
 
     func stop() async {
         isRunning = false
+        frameSignalContinuation.finish()
         processingTask?.cancel()
         pendingFrame = nil
     }
