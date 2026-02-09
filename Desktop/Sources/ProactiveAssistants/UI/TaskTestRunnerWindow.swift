@@ -11,6 +11,7 @@ struct TaskTestResult: Identifiable {
     let result: TaskExtractionResult?
     let error: String?
     let duration: TimeInterval
+    let searchCount: Int
 }
 
 // MARK: - SwiftUI View
@@ -42,6 +43,10 @@ struct TaskTestRunnerView: View {
 
     private var errorsCount: Int {
         results.filter { $0.error != nil }.count
+    }
+
+    private var totalSearches: Int {
+        results.reduce(0) { $0 + $1.searchCount }
     }
 
     var body: some View {
@@ -198,6 +203,21 @@ struct TaskTestRunnerView: View {
             decisionBadge(for: testResult)
                 .frame(width: 100, alignment: .leading)
 
+            // Search count indicator
+            if testResult.searchCount > 0 {
+                HStack(spacing: 2) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 9))
+                    Text("×\(testResult.searchCount)")
+                        .font(.system(size: 11, design: .monospaced))
+                }
+                .foregroundColor(.secondary)
+                .frame(width: 40, alignment: .leading)
+            } else {
+                Text("")
+                    .frame(width: 40)
+            }
+
             // Task title or context summary
             if let error = testResult.error {
                 Text(error)
@@ -317,6 +337,10 @@ struct TaskTestRunnerView: View {
                         .font(.system(size: 12))
                         .foregroundColor(tasksFound > 0 ? .green : .secondary)
 
+                    Label("\(totalSearches) searches", systemImage: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(totalSearches > 0 ? .blue : .secondary)
+
                     if errorsCount > 0 {
                         Label("\(errorsCount) errors", systemImage: "exclamationmark.triangle")
                             .font(.system(size: 12))
@@ -428,7 +452,7 @@ struct TaskTestRunnerView: View {
 
                     // Run extraction pipeline
                     let analyzeStart = Date()
-                    let result = try await assistant.testAnalyze(jpegData: jpegData, appName: screenshot.appName)
+                    let (result, searchCount) = try await assistant.testAnalyze(jpegData: jpegData, appName: screenshot.appName)
                     let duration = Date().timeIntervalSince(analyzeStart)
 
                     await MainActor.run {
@@ -438,7 +462,8 @@ struct TaskTestRunnerView: View {
                             appName: screenshot.appName,
                             result: result,
                             error: nil,
-                            duration: duration
+                            duration: duration,
+                            searchCount: searchCount
                         ))
                         progress = Double(i + 1) / Double(sampled.count)
                     }
@@ -450,7 +475,8 @@ struct TaskTestRunnerView: View {
                             appName: screenshot.appName,
                             result: nil,
                             error: error.localizedDescription,
-                            duration: 0
+                            duration: 0,
+                            searchCount: 0
                         ))
                         progress = Double(i + 1) / Double(sampled.count)
                     }
