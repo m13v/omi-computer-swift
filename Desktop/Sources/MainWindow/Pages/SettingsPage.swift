@@ -132,7 +132,7 @@ struct SettingsContentView: View {
     @State private var isLoadingSettings: Bool = false
 
     private let cooldownOptions = [1, 2, 5, 10, 15, 30, 60]
-    private let analysisDelayOptions = [0, 15, 30, 60, 300] // seconds: instant, 15s, 30s, 1 min, 5 min
+    private let analysisDelayOptions = [0, 10, 20, 30, 60, 300] // seconds: instant, 10s, 20s, 30s, 1 min, 5 min
     private let extractionIntervalOptions: [Double] = [10.0, 600.0, 3600.0] // 10s, 10min, 1hr
     private let hourOptions = Array(0...23)
     private let frequencyOptions = [
