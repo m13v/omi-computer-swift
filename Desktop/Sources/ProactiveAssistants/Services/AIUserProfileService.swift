@@ -178,6 +178,9 @@ actor AIUserProfileService {
         - Do NOT hallucinate names, roles, companies, or relationships not present in the data
         - Do NOT add personality descriptions or subjective assessments
         - When uncertain, omit rather than speculate
+        - NEVER fabricate email addresses, phone numbers, URLs, or contact information
+        - The provided data contains NO email addresses — do not invent any
+        - If you cannot find a piece of information verbatim in the data, do not include it
 
         The output MUST be under 2000 characters total.
         """
