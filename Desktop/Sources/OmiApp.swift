@@ -186,13 +186,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
 
             // Generate AI user profile if >24h since last generation
-            if AIUserProfileService.shared.shouldGenerate() {
-                Task {
-                    do {
-                        _ = try await AIUserProfileService.shared.generateProfile()
-                    } catch {
-                        log("AppDelegate: AI user profile generation failed: \(error.localizedDescription)")
-                    }
+            Task {
+                guard await AIUserProfileService.shared.shouldGenerate() else { return }
+                do {
+                    _ = try await AIUserProfileService.shared.generateProfile()
+                } catch {
+                    log("AppDelegate: AI user profile generation failed: \(error.localizedDescription)")
                 }
             }
         }
