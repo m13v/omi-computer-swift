@@ -1,6 +1,7 @@
 import Foundation
 
 /// Task extraction assistant that identifies tasks and action items from screen content
+/// Uses single-stage Gemini tool calling with vector + FTS5 search for deduplication
 actor TaskAssistant: ProactiveAssistant {
     // MARK: - ProactiveAssistant Protocol
 
@@ -28,11 +29,10 @@ actor TaskAssistant: ProactiveAssistant {
     private let frameSignal: AsyncStream<Void>
     private let frameSignalContinuation: AsyncStream<Void>.Continuation
 
-    // Cache for validation context (refreshed periodically)
-    private var cachedExistingTasks: [String] = []
-    private var cachedMemories: [String] = []
-    private var lastContextRefresh: Date = .distantPast
-    private let contextRefreshInterval: TimeInterval = 300 // Refresh every 5 minutes
+    // Cached goals (refreshed every 5 minutes)
+    private var cachedGoals: [Goal] = []
+    private var lastGoalsRefresh: Date = .distantPast
+    private let goalsRefreshInterval: TimeInterval = 300
 
     /// Get the current system prompt from settings (accessed on MainActor for thread safety)
     private var systemPrompt: String {
@@ -71,9 +71,21 @@ actor TaskAssistant: ProactiveAssistant {
         self.frameSignal = stream
         self.frameSignalContinuation = continuation
 
-        // Start processing loop
+        // Start processing loop + embedding index
         Task {
             await self.startProcessing()
+            await self.initializeEmbeddings()
+        }
+    }
+
+    // MARK: - Embedding Lifecycle
+
+    /// Load embedding index and kick off backfill
+    private func initializeEmbeddings() async {
+        await EmbeddingService.shared.loadIndex()
+        // Backfill in background
+        Task {
+            await EmbeddingService.shared.backfillIfNeeded()
         }
     }
 
@@ -116,9 +128,6 @@ actor TaskAssistant: ProactiveAssistant {
     // MARK: - ProactiveAssistant Protocol Methods
 
     func shouldAnalyze(frameNumber: Int, timeSinceLastAnalysis: TimeInterval) -> Bool {
-        // Task assistant analyzes less frequently - every N seconds
-        // The actual interval is checked in the processing loop
-        // Here we just accept frames to store the latest one
         return true
     }
 
@@ -130,19 +139,16 @@ actor TaskAssistant: ProactiveAssistant {
             return nil
         }
 
-        // Store the latest frame - we'll process it when the interval has passed
         let hadPending = pendingFrame != nil
         pendingFrame = frame
         if !hadPending {
             log("Task: Received frame from \(frame.appName), queued for analysis")
         }
-        // Signal the processing loop that a frame is available
         frameSignalContinuation.yield()
         return nil
     }
 
     func handleResult(_ result: AssistantResult, sendEvent: @escaping (String, [String: Any]) -> Void) async {
-        // This method is required by protocol but we use handleResultWithScreenshot instead
         guard let taskResult = result as? TaskExtractionResult else { return }
         await handleResultWithScreenshot(taskResult, screenshotId: nil, sendEvent: sendEvent)
     }
@@ -153,16 +159,13 @@ actor TaskAssistant: ProactiveAssistant {
         screenshotId: Int64?,
         sendEvent: @escaping (String, [String: Any]) -> Void
     ) async {
-        // Check if AI found a new task
         guard taskResult.hasNewTask, let task = taskResult.task else {
             return
         }
 
-        // Get min confidence threshold
         let threshold = await minConfidence
         let confidencePercent = Int(task.confidence * 100)
 
-        // Check confidence threshold
         guard task.confidence >= threshold else {
             log("Task: [\(confidencePercent)% < \(Int(threshold * 100))%] Filtered: \"\(task.title)\"")
             return
@@ -170,22 +173,27 @@ actor TaskAssistant: ProactiveAssistant {
 
         log("Task: [\(confidencePercent)% conf.] \"\(task.title)\"")
 
-        // Add to previous tasks (keep last 10 for context)
         previousTasks.insert(task, at: 0)
         if previousTasks.count > maxPreviousTasks {
             previousTasks.removeLast()
         }
 
-        // Save to SQLite first
+        // Save to SQLite + generate embedding
         let extractionRecord = await saveTaskToSQLite(
             task: task,
             screenshotId: screenshotId,
             contextSummary: taskResult.contextSummary
         )
 
+        // Generate embedding for new task in background
+        if let recordId = extractionRecord?.id {
+            Task {
+                await self.generateEmbeddingForTask(id: recordId, text: task.title)
+            }
+        }
+
         // Sync to backend
         if let backendId = await syncTaskToBackend(task: task, taskResult: taskResult) {
-            // Update SQLite record with backend ID
             if let recordId = extractionRecord?.id {
                 do {
                     try await ActionItemStorage.shared.markSynced(id: recordId, backendId: backendId)
@@ -195,20 +203,30 @@ actor TaskAssistant: ProactiveAssistant {
             }
         }
 
-        // Track task extracted
         await MainActor.run {
             AnalyticsManager.shared.taskExtracted(taskCount: 1)
         }
 
-        // Send notification
         await sendTaskNotification(task: task)
 
-        // Send event to Flutter
         sendEvent("taskExtracted", [
             "assistant": identifier,
             "task": task.toDictionary(),
             "contextSummary": taskResult.contextSummary
         ])
+    }
+
+    /// Generate embedding for a newly saved task and store it
+    private func generateEmbeddingForTask(id: Int64, text: String) async {
+        do {
+            let embedding = try await EmbeddingService.shared.embed(text: text)
+            let data = await EmbeddingService.shared.floatsToData(embedding)
+            try await ActionItemStorage.shared.updateEmbedding(id: id, embedding: data)
+            await EmbeddingService.shared.addToIndex(id: id, embedding: embedding)
+            log("Task: Generated embedding for task \(id)")
+        } catch {
+            logError("Task: Failed to generate embedding for task \(id)", error: error)
+        }
     }
 
     /// Save extracted task to SQLite using ActionItemStorage
@@ -217,7 +235,6 @@ actor TaskAssistant: ProactiveAssistant {
         screenshotId: Int64?,
         contextSummary: String
     ) async -> ActionItemRecord? {
-        // Build metadata JSON with extraction details
         var metadata: [String: Any] = [
             "tags": task.tags,
             "context_summary": contextSummary
@@ -237,7 +254,6 @@ actor TaskAssistant: ProactiveAssistant {
             metadataJson = nil
         }
 
-        // Build tagsJson
         let tagsJson: String?
         if let data = try? JSONEncoder().encode(task.tags),
            let json = String(data: data, encoding: .utf8) {
@@ -283,20 +299,16 @@ actor TaskAssistant: ProactiveAssistant {
             if let primaryTag = task.primaryTag {
                 metadata["category"] = primaryTag
             }
-
-            // Add reasoning/description if available
             if let reasoning = task.description {
                 metadata["reasoning"] = reasoning
             }
-
-            // Add inferred deadline if available
             if let deadline = task.inferredDeadline {
                 metadata["inferred_deadline"] = deadline
             }
 
             let response = try await APIClient.shared.createActionItem(
                 description: task.title,
-                dueAt: nil, // Could parse task.inferredDeadline if available
+                dueAt: nil,
                 source: "screenshot",
                 priority: task.priority.rawValue,
                 category: task.primaryTag,
@@ -314,8 +326,6 @@ actor TaskAssistant: ProactiveAssistant {
     /// Send a notification for the extracted task
     private func sendTaskNotification(task: ExtractedTask) async {
         let message = task.title
-
-        // Send notification immediately (extraction interval already throttles)
         await MainActor.run {
             NotificationService.shared.sendNotification(
                 title: "Task",
@@ -333,7 +343,6 @@ actor TaskAssistant: ProactiveAssistant {
                 log("Task: Active app: \(newApp)")
             }
             currentApp = newApp
-            // Don't clear previous tasks on app switch - we want to track across apps
         }
     }
 
@@ -349,7 +358,7 @@ actor TaskAssistant: ProactiveAssistant {
         pendingFrame = nil
     }
 
-    // MARK: - Analysis
+    // MARK: - Single-Stage Analysis with Tool Calling
 
     private func processFrame(_ frame: CapturedFrame) async {
         let enabled = await isEnabled
@@ -360,36 +369,14 @@ actor TaskAssistant: ProactiveAssistant {
 
         log("Task: Analyzing frame from \(frame.appName)...")
         do {
-            guard let result = try await extractTasks(from: frame.jpegData, appName: frame.appName) else {
+            guard let result = try await extractTaskSingleStage(from: frame.jpegData, appName: frame.appName) else {
                 log("Task: Analysis returned no result")
                 return
             }
 
             log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
 
-            // Stage 1: Log draft task and validate
-            var finalResult = result
-            if result.hasNewTask, let task = result.task {
-                let confidencePercent = Int(task.confidence * 100)
-                log("Task: [DRAFT] [\(confidencePercent)%] \"\(task.title)\"")
-
-                // Stage 2: Validate the draft task against existing context
-                let validationResult = await validateDraftTask(task: task, contextSummary: result.contextSummary)
-                log("Task: [FINAL] \(validationResult.isValid ? "APPROVED" : "REJECTED") - \"\(task.title)\" - \(validationResult.reason)")
-
-                // If validation rejects the task, override to no-task result
-                if !validationResult.isValid {
-                    finalResult = TaskExtractionResult(
-                        hasNewTask: false,
-                        task: nil,
-                        contextSummary: result.contextSummary,
-                        currentActivity: result.currentActivity
-                    )
-                }
-            }
-
-            // Handle the result with screenshot ID for SQLite storage
-            await handleResultWithScreenshot(finalResult, screenshotId: frame.screenshotId) { type, data in
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }
@@ -399,229 +386,253 @@ actor TaskAssistant: ProactiveAssistant {
         }
     }
 
-    private func extractTasks(from jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
-        // Build context with previous tasks
-        var prompt = "Screenshot from \(appName). Is there a request directed at the user from another person or AI that they haven't acted on? If yes, assign 1-3 relevant tags (e.g. a coding work task could have tags ['work', 'code']).\n\n"
+    /// Single-stage extraction: image analysis + tool call for search + final decision
+    private func extractTaskSingleStage(from jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
+        // 1. Gather context
+        let context = await refreshContext()
 
-        if !previousTasks.isEmpty {
-            prompt += "PREVIOUSLY EXTRACTED TASKS (do not re-extract these or semantically similar ones):\n"
-            for (index, task) in previousTasks.enumerated() {
-                prompt += "\(index + 1). \(task.title)"
-                if let description = task.description {
-                    prompt += " - \(description)"
+        // 2. Build prompt with injected context
+        var prompt = "Screenshot from \(appName). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
+
+        // Inject active tasks
+        if !context.activeTasks.isEmpty {
+            prompt += "ACTIVE TASKS (user is already tracking these):\n"
+            for (i, task) in context.activeTasks.enumerated() {
+                let pri = task.priority.map { " [\($0)]" } ?? ""
+                prompt += "\(i + 1). \(task.description)\(pri)\n"
+            }
+            prompt += "\n"
+        }
+
+        // Inject completed tasks
+        if !context.completedTasks.isEmpty {
+            prompt += "RECENTLY COMPLETED (user already did these):\n"
+            for (i, task) in context.completedTasks.enumerated() {
+                prompt += "\(i + 1). \(task.description)\n"
+            }
+            prompt += "\n"
+        }
+
+        // Inject user-deleted tasks
+        if !context.deletedTasks.isEmpty {
+            prompt += "USER-DELETED TASKS (user explicitly rejected these — do not re-extract similar):\n"
+            for (i, task) in context.deletedTasks.enumerated() {
+                prompt += "\(i + 1). \(task.description)\n"
+            }
+            prompt += "\n"
+        }
+
+        // Inject goals
+        if !context.goals.isEmpty {
+            prompt += "ACTIVE GOALS:\n"
+            for (i, goal) in context.goals.enumerated() {
+                prompt += "\(i + 1). \(goal.title)"
+                if let desc = goal.description {
+                    prompt += " — \(desc)"
                 }
                 prompt += "\n"
             }
-            prompt += "\nOnly extract a NEW request not already covered above."
-        } else {
-            prompt += "Is there an unaddressed request from someone?"
+            prompt += "\n"
         }
 
-        // Get current system prompt from settings
+        prompt += "If you see a potential request, you MUST call search_similar_tasks before deciding."
+
+        // 3. Define the search tool
+        let searchTool = GeminiTool(functionDeclarations: [
+            GeminiTool.FunctionDeclaration(
+                name: "search_similar_tasks",
+                description: "Search for existing tasks similar to a potential new task. MUST be called before deciding whether to extract a task. Returns matching tasks from vector similarity and keyword search.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "query": .init(type: "string", description: "A concise description of the potential task to search for")
+                    ],
+                    required: ["query"]
+                )
+            )
+        ])
+
+        // 4. Get system prompt
         let currentSystemPrompt = await systemPrompt
 
-        // Build response schema for single task extraction with conditional logic
-        let taskProperties: [String: GeminiRequest.GenerationConfig.ResponseSchema.Property] = [
-            "title": .init(type: "string", description: "Brief, actionable task title"),
-            "description": .init(type: "string", description: "Optional additional context"),
-            "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
-            "tags": .init(
-                type: "array",
-                description: "1-3 relevant tags from: 'feature' (new features/enhancements), 'bug' (bugs/issues), 'code' (coding/development), 'work' (professional), 'personal' (personal to-dos), 'research' (investigation/learning), 'communication' (messages/calls), 'finance' (money-related), 'health' (wellness), 'other' (everything else). A task can have multiple tags e.g. ['work', 'code'].",
-                items: .init(type: "string", properties: nil, required: nil)
-            ),
-            "source_app": .init(type: "string", description: "App where task was found"),
-            "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied"),
-            "confidence": .init(type: "number", description: "Confidence score 0.0-1.0")
-        ]
-
-        let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
-            type: "object",
-            properties: [
-                "has_new_task": .init(type: "boolean", description: "True if a new task was found that is not in the previous tasks list"),
-                "task": .init(
-                    type: "object",
-                    description: "The extracted task (only if has_new_task is true)",
-                    properties: taskProperties,
-                    required: ["title", "priority", "tags", "source_app", "confidence"]
-                ),
-                "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
-                "current_activity": .init(type: "string", description: "High-level description of user's activity")
-            ],
-            required: ["has_new_task", "context_summary", "current_activity"]
+        // 5. Call Gemini with image + tools (forces tool call)
+        let toolResult = try await geminiClient.sendImageToolRequest(
+            prompt: prompt,
+            imageData: jpegData,
+            systemPrompt: currentSystemPrompt,
+            tools: [searchTool],
+            forceToolCall: true
         )
 
-        do {
-            let responseText = try await geminiClient.sendRequest(
-                prompt: prompt,
-                imageData: jpegData,
-                systemPrompt: currentSystemPrompt,
-                responseSchema: responseSchema
-            )
-
-            return try JSONDecoder().decode(TaskExtractionResult.self, from: Data(responseText.utf8))
-        } catch {
-            logError("Task analysis error", error: error)
+        // 6. Execute search tool locally
+        guard let toolCall = toolResult.toolCalls.first,
+              toolCall.name == "search_similar_tasks",
+              let query = toolCall.arguments["query"] as? String else {
+            log("Task: No search_similar_tasks call received, skipping")
             return nil
         }
+
+        log("Task: search_similar_tasks query: \"\(query)\"")
+        let searchResults = await executeSearchTool(query: query)
+        log("Task: Search returned \(searchResults.count) results")
+
+        // 7. Continue with search results — model returns final JSON
+        let searchResultsJson: String
+        if let data = try? JSONEncoder().encode(searchResults),
+           let json = String(data: data, encoding: .utf8) {
+            searchResultsJson = json
+        } else {
+            searchResultsJson = "[]"
+        }
+
+        let responseText = try await geminiClient.continueImageToolRequest(
+            originalPrompt: prompt,
+            originalImageData: jpegData,
+            toolCall: toolCall,
+            toolResult: searchResultsJson,
+            systemPrompt: currentSystemPrompt
+        )
+
+        // 8. Parse JSON response
+        // Strip markdown code fences if present
+        var cleanedResponse = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        if cleanedResponse.hasPrefix("```json") {
+            cleanedResponse = String(cleanedResponse.dropFirst(7))
+        } else if cleanedResponse.hasPrefix("```") {
+            cleanedResponse = String(cleanedResponse.dropFirst(3))
+        }
+        if cleanedResponse.hasSuffix("```") {
+            cleanedResponse = String(cleanedResponse.dropLast(3))
+        }
+        cleanedResponse = cleanedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        return try JSONDecoder().decode(TaskExtractionResult.self, from: Data(cleanedResponse.utf8))
     }
 
-    // MARK: - Two-Stage Validation
+    // MARK: - Context & Search
 
-    /// Result of task validation against existing context
-    private struct ValidationResult {
-        let isValid: Bool
-        let reason: String
-        let adjustedConfidence: Double?
-    }
+    /// Refresh context from local SQLite + cached goals
+    private func refreshContext() async -> TaskExtractionContext {
+        var activeTasks: [(id: Int64, description: String, priority: String?)] = []
+        var completedTasks: [(id: Int64, description: String)] = []
+        var deletedTasks: [(id: Int64, description: String)] = []
 
-    /// Validate a draft task against existing tasks and memories
-    private func validateDraftTask(task: ExtractedTask, contextSummary: String) async -> ValidationResult {
-        // Refresh context if needed
-        await refreshValidationContext()
-
-        // Build validation prompt
-        let validationPrompt = buildValidationPrompt(task: task, contextSummary: contextSummary)
-
-        // For now, use text-only validation (no image needed)
         do {
-            let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
-                type: "object",
-                properties: [
-                    "is_valid": .init(type: "boolean", description: "True if the task should be kept, false if it should be filtered out"),
-                    "reason": .init(type: "string", description: "Brief explanation of why the task is valid or invalid"),
-                    "adjusted_confidence": .init(type: "number", description: "Adjusted confidence score 0.0-1.0 based on context validation")
-                ],
-                required: ["is_valid", "reason"]
-            )
+            activeTasks = try await ActionItemStorage.shared.getRecentActiveTasks(limit: 30)
+        } catch {
+            logError("Task: Failed to load active tasks", error: error)
+        }
 
-            let responseText = try await geminiClient.sendRequest(
-                prompt: validationPrompt,
-                systemPrompt: validationSystemPrompt,
-                responseSchema: responseSchema
-            )
+        do {
+            completedTasks = try await ActionItemStorage.shared.getRecentCompletedTasks(limit: 10)
+        } catch {
+            logError("Task: Failed to load completed tasks", error: error)
+        }
 
-            // Parse response
-            struct ValidationResponse: Codable {
-                let isValid: Bool
-                let reason: String
-                let adjustedConfidence: Double?
+        do {
+            deletedTasks = try await ActionItemStorage.shared.getRecentDeletedTasks(limit: 10, deletedBy: "user")
+        } catch {
+            logError("Task: Failed to load deleted tasks", error: error)
+        }
 
-                enum CodingKeys: String, CodingKey {
-                    case isValid = "is_valid"
-                    case reason
-                    case adjustedConfidence = "adjusted_confidence"
+        // Refresh goals if stale
+        let timeSinceGoals = Date().timeIntervalSince(lastGoalsRefresh)
+        if timeSinceGoals >= goalsRefreshInterval {
+            do {
+                cachedGoals = try await APIClient.shared.getGoals()
+                lastGoalsRefresh = Date()
+                log("Task: Refreshed \(cachedGoals.count) goals")
+            } catch {
+                logError("Task: Failed to refresh goals", error: error)
+            }
+        }
+
+        return TaskExtractionContext(
+            activeTasks: activeTasks,
+            completedTasks: completedTasks,
+            deletedTasks: deletedTasks,
+            goals: cachedGoals
+        )
+    }
+
+    /// Execute search tool: combines vector similarity + FTS5 keyword search
+    private func executeSearchTool(query: String) async -> [TaskSearchResult] {
+        var resultMap: [Int64: TaskSearchResult] = [:]
+
+        // Vector search
+        do {
+            let queryEmbedding = try await EmbeddingService.shared.embed(text: query)
+            let vectorResults = await EmbeddingService.shared.searchSimilar(query: queryEmbedding, topK: 10)
+
+            for result in vectorResults where result.similarity > 0.5 {
+                // Look up the task description and status
+                if let record = try await ActionItemStorage.shared.getActionItem(id: result.id) {
+                    let status: String
+                    if record.deleted { status = "deleted" }
+                    else if record.completed { status = "completed" }
+                    else { status = "active" }
+
+                    resultMap[result.id] = TaskSearchResult(
+                        id: result.id,
+                        description: record.description,
+                        status: status,
+                        similarity: Double(result.similarity),
+                        matchType: "vector"
+                    )
                 }
             }
-
-            let response = try JSONDecoder().decode(ValidationResponse.self, from: Data(responseText.utf8))
-            return ValidationResult(
-                isValid: response.isValid,
-                reason: response.reason,
-                adjustedConfidence: response.adjustedConfidence
-            )
         } catch {
-            logError("Task validation error", error: error)
-            // On error, default to valid to not block tasks
-            return ValidationResult(isValid: true, reason: "Validation skipped (error)", adjustedConfidence: nil)
-        }
-    }
-
-    /// Refresh cached validation context (existing tasks and memories) from local SQLite
-    private func refreshValidationContext() async {
-        let timeSinceLastRefresh = Date().timeIntervalSince(lastContextRefresh)
-        guard timeSinceLastRefresh >= contextRefreshInterval else {
-            return
+            logError("Task: Vector search failed", error: error)
         }
 
-        log("Task: Refreshing validation context...")
-        lastContextRefresh = Date()
-
-        // Fetch existing tasks from local SQLite (action_items table)
+        // FTS5 keyword search
         do {
-            let localTasks = try await ActionItemStorage.shared.getLocalActionItems(limit: 50, completed: false)
-            cachedExistingTasks = localTasks.map { $0.description }
-            log("Task: Loaded \(localTasks.count) local tasks for validation")
-        } catch {
-            logError("Task: Failed to load local tasks", error: error)
-        }
+            // Sanitize the query for FTS5 — use individual words with prefix matching
+            let words = query.components(separatedBy: .whitespaces).filter { $0.count >= 3 }
+            let ftsQuery = words.map { "\($0)*" }.joined(separator: " OR ")
 
-        // Fetch recent memories from local SQLite
-        do {
-            let memories = try await MemoryStorage.shared.getLocalMemories(limit: 30)
-            cachedMemories = memories.map { $0.content }
-            log("Task: Loaded \(memories.count) memories for validation")
-        } catch {
-            logError("Task: Failed to load memories", error: error)
-        }
-    }
+            if !ftsQuery.isEmpty {
+                let ftsResults = try await ActionItemStorage.shared.searchFTS(
+                    query: ftsQuery,
+                    limit: 10,
+                    includeCompleted: true,
+                    includeDeleted: true
+                )
 
-    /// Build the validation prompt with context
-    private func buildValidationPrompt(task: ExtractedTask, contextSummary: String) -> String {
-        var prompt = """
-        DRAFT TASK TO VALIDATE:
-        Title: \(task.title)
-        Priority: \(task.priority.rawValue)
-        Confidence: \(Int(task.confidence * 100))%
-        Source App: \(task.sourceApp)
-        Context: \(contextSummary)
-        """
+                for result in ftsResults {
+                    let status: String
+                    if result.deleted { status = "deleted" }
+                    else if result.completed { status = "completed" }
+                    else { status = "active" }
 
-        if let description = task.description {
-            prompt += "\nDescription: \(description)"
-        }
-        if let deadline = task.inferredDeadline {
-            prompt += "\nInferred Deadline: \(deadline)"
-        }
-
-        prompt += "\n\n"
-
-        // Add existing tasks
-        if !cachedExistingTasks.isEmpty {
-            prompt += "EXISTING TASKS THE USER IS ALREADY TRACKING:\n"
-            for (index, existingTask) in cachedExistingTasks.prefix(30).enumerated() {
-                prompt += "\(index + 1). \(existingTask)\n"
+                    if var existing = resultMap[result.id] {
+                        // Already found via vector — mark as "both"
+                        existing = TaskSearchResult(
+                            id: existing.id,
+                            description: existing.description,
+                            status: existing.status,
+                            similarity: existing.similarity,
+                            matchType: "both"
+                        )
+                        resultMap[result.id] = existing
+                    } else {
+                        resultMap[result.id] = TaskSearchResult(
+                            id: result.id,
+                            description: result.description,
+                            status: status,
+                            similarity: nil,
+                            matchType: "fts"
+                        )
+                    }
+                }
             }
-            prompt += "\n"
+        } catch {
+            logError("Task: FTS search failed", error: error)
         }
 
-        // Add memories for context about user's priorities
-        if !cachedMemories.isEmpty {
-            prompt += "USER'S MEMORIES (for understanding priorities and context):\n"
-            for (index, memory) in cachedMemories.prefix(20).enumerated() {
-                prompt += "\(index + 1). \(memory)\n"
-            }
-            prompt += "\n"
+        // Sort: vector matches first (highest similarity), then FTS-only
+        return Array(resultMap.values).sorted { a, b in
+            (a.similarity ?? 0) > (b.similarity ?? 0)
         }
-
-        prompt += """
-
-        Based on the above context, determine if this draft task should be kept or filtered out.
-        """
-
-        return prompt
-    }
-
-    /// System prompt for task validation
-    private var validationSystemPrompt: String {
-        """
-        You validate whether an extracted task is actually a request from another person or AI that the user needs to act on.
-
-        REJECT (is_valid = false) if:
-        1. It's NOT a request from someone — it's just something the user is doing or looking at
-        2. It's a development/terminal task (build errors, package updates, code changes)
-        3. It's semantically similar to an existing task already being tracked
-        4. It's too vague to act on ("Check things", "Follow up")
-        5. The user already responded to or completed the request
-        6. It's a notification badge without a specific actionable message
-
-        APPROVE (is_valid = true) if:
-        1. It's a clear request from a person or AI that the user hasn't addressed
-        2. It's the user's own explicit reminder ("TODO", "Remind me to…", "Don't forget")
-        3. It's genuinely new — not already tracked in existing tasks
-        4. The user would likely forget it after switching windows
-
-        Adjust confidence based on context. Be concise — one short sentence for your reason.
-        """
     }
 }
