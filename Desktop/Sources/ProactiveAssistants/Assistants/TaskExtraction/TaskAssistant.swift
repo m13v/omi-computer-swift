@@ -681,7 +681,8 @@ actor TaskAssistant: ProactiveAssistant {
                     role: "model",
                     parts: [GeminiImageToolRequest.Part(functionCall: .init(
                         name: toolCall.name,
-                        args: ["query": query]
+                        args: ["query": query],
+                        thoughtSignature: toolCall.thoughtSignature
                     ))]
                 ))
                 contents.append(GeminiImageToolRequest.Content(
@@ -713,7 +714,8 @@ actor TaskAssistant: ProactiveAssistant {
                     role: "model",
                     parts: [GeminiImageToolRequest.Part(functionCall: .init(
                         name: toolCall.name,
-                        args: ["query": query]
+                        args: ["query": query],
+                        thoughtSignature: toolCall.thoughtSignature
                     ))]
                 ))
                 contents.append(GeminiImageToolRequest.Content(
