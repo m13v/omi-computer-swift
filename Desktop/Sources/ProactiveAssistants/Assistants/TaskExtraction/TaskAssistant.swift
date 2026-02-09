@@ -38,10 +38,6 @@ actor TaskAssistant: ProactiveAssistant {
     private var latestFrame: CapturedFrame?
     /// Fallback timer that fires after extractionInterval if no context switch occurs
     private var fallbackTimerTask: Task<Void, Never>?
-    /// Time of last extraction (for 30s throttle)
-    private var lastExtractionTime: Date = .distantPast
-    /// Minimum interval between extractions to prevent rapid-fire on fast context switches
-    private let minExtractionInterval: TimeInterval = 30
 
     // Cached goals (refreshed every 5 minutes)
     private var cachedGoals: [Goal] = []
@@ -125,22 +121,12 @@ actor TaskAssistant: ProactiveAssistant {
                 }
             }()
 
-            // 30s throttle: skip if too soon since last extraction
-            let timeSinceLast = Date().timeIntervalSince(lastExtractionTime)
-            if timeSinceLast < minExtractionInterval {
-                log("Task: Throttled \(triggerType) trigger (\(Int(timeSinceLast))s < \(Int(minExtractionInterval))s min)")
-                // Restart fallback timer so we don't lose this window entirely
-                startFallbackTimer()
-                continue
-            }
-
             log("Task: Processing \(triggerType) trigger from \(frame.appName) (window: \(frame.windowTitle ?? "nil"))")
 
             // Cancel fallback timer before processing
             fallbackTimerTask?.cancel()
             fallbackTimerTask = nil
 
-            lastExtractionTime = Date()
             await processFrame(frame)
 
             // Start a new fallback timer after processing
