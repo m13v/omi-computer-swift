@@ -1700,18 +1700,33 @@ struct SettingsContentView: View {
                     }
 
                     settingRow(title: "Task Extraction Prompt", subtitle: "Customize AI instructions for task extraction") {
-                        Button(action: {
-                            TaskPromptEditorWindow.show()
-                        }) {
-                            HStack(spacing: 4) {
-                                Text("Edit")
-                                    .font(.system(size: 12))
-                                Image(systemName: "arrow.up.right.square")
-                                    .font(.system(size: 11))
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                TaskTestRunnerWindow.show()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "play.circle")
+                                        .font(.system(size: 11))
+                                    Text("Test Run")
+                                        .font(.system(size: 12))
+                                }
                             }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button(action: {
+                                TaskPromptEditorWindow.show()
+                            }) {
+                                HStack(spacing: 4) {
+                                    Text("Edit")
+                                        .font(.system(size: 12))
+                                    Image(systemName: "arrow.up.right.square")
+                                        .font(.system(size: 11))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
 
                     Divider()
