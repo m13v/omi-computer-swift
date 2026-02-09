@@ -132,7 +132,8 @@ actor ActionItemStorage {
         includeDeleted: Bool = false,
         categories: [String]? = nil,     // OR logic: matches any category
         sources: [String]? = nil,        // OR logic: matches any source
-        priorities: [String]? = nil      // OR logic: matches any priority
+        priorities: [String]? = nil,     // OR logic: matches any priority
+        originCategories: [String]? = nil // OR logic: matches any source_category in metadata
     ) async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
 
@@ -170,6 +171,17 @@ actor ActionItemStorage {
             // Filter by priorities (OR logic)
             if let priorities = priorities, !priorities.isEmpty {
                 query = query.filter(priorities.contains(Column("priority")))
+            }
+
+            // Filter by origin categories (OR logic, checking metadataJson for source_category)
+            if let originCategories = originCategories, !originCategories.isEmpty {
+                let originConditions = originCategories.map { cat in
+                    Column("metadataJson").like("%\"source_category\":\"\(cat)\"%")
+                }
+                if let combined = originConditions.first {
+                    let merged = originConditions.dropFirst().reduce(combined) { result, next in result || next }
+                    query = query.filter(merged)
+                }
             }
 
             let records = try query
@@ -289,7 +301,8 @@ actor ActionItemStorage {
         deletedByUser: Int,
         categories: [String: Int],
         sources: [String: Int],
-        priorities: [String: Int]
+        priorities: [String: Int],
+        origins: [String: Int]
     ) {
         let db = try await ensureInitialized()
 
@@ -357,7 +370,20 @@ actor ActionItemStorage {
                 }
             }
 
-            return (todo, done, deleted, deletedByAI, deletedByUser, categories, sources, priorities)
+            // Origin (source_category) counts from metadataJson
+            var origins: [String: Int] = [:]
+            let knownOrigins = ["direct_request", "self_generated", "calendar_driven", "reactive", "external_system", "other"]
+            for origin in knownOrigins {
+                let count = try Int.fetchOne(database, sql: """
+                    SELECT COUNT(*) FROM action_items
+                    WHERE deleted = 0 AND metadataJson LIKE ?
+                """, arguments: ["%\"source_category\":\"\(origin)\"%"]) ?? 0
+                if count > 0 {
+                    origins[origin] = count
+                }
+            }
+
+            return (todo, done, deleted, deletedByAI, deletedByUser, categories, sources, priorities, origins)
         }
     }
 
