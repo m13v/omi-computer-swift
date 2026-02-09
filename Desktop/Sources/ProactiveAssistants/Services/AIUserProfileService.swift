@@ -146,10 +146,53 @@ actor AIUserProfileService {
         The output MUST be under 2000 characters total.
         """
 
-        let profileText = try await gemini.sendTextRequest(prompt: prompt, systemPrompt: systemPrompt)
+        let stageOneText = try await gemini.sendTextRequest(prompt: prompt, systemPrompt: systemPrompt)
+        log("AIUserProfileService: Stage 1 complete (\(stageOneText.count) chars)")
 
-        // 5. Truncate if needed
-        let truncated = String(profileText.prefix(maxProfileLength))
+        // 5. Stage 2 — Consolidate with past profiles for holistic view
+        let pastProfiles = await getAllProfiles(limit: 50)
+        let finalText: String
+        if pastProfiles.isEmpty {
+            finalText = stageOneText
+        } else {
+            let consolidationPrompt = buildConsolidationPrompt(
+                newProfile: stageOneText,
+                pastProfiles: pastProfiles
+            )
+            let consolidationSystemPrompt = """
+            You are merging a newly generated user profile with historical profiles to create \
+            one holistic, up-to-date user profile. This profile is injected as context into AI pipelines \
+            (task extraction, goal extraction, memory extraction) that analyze the user's screen and audio activity.
+
+            OUTPUT FORMAT:
+            - A flat list of factual statements, one per line, prefixed with "- "
+            - Each statement must be a concrete fact
+            - No prose, no paragraphs, no headers, no markdown formatting
+            - No adjectives or subjective assessments
+            - Write in third person
+
+            MERGE RULES:
+            - The NEW profile reflects today's data and takes priority for current state
+            - Past profiles provide historical context — retain facts that are still relevant
+            - If a fact from the past contradicts the new profile, use the new one
+            - Remove outdated information (completed tasks, past deadlines, old routines)
+            - Keep stable facts (name, role, company, key relationships, tech stack)
+            - Accumulate knowledge: if past profiles mention people, projects, or patterns \
+              not in today's data, keep them if they seem ongoing
+            - Do NOT hallucinate — only include facts present in the provided profiles
+            - Do NOT add commentary about changes or evolution over time
+
+            The output MUST be under 2000 characters total.
+            """
+            finalText = try await gemini.sendTextRequest(
+                prompt: consolidationPrompt,
+                systemPrompt: consolidationSystemPrompt
+            )
+            log("AIUserProfileService: Stage 2 consolidation complete (\(finalText.count) chars)")
+        }
+
+        // 6. Truncate if needed
+        let truncated = String(finalText.prefix(maxProfileLength))
         let generatedAt = Date()
 
         // 6. Save to database
@@ -322,6 +365,31 @@ actor AIUserProfileService {
         and what the user's current priorities are. Under 2000 characters.
 
         \(sections.joined(separator: "\n\n"))
+        """
+    }
+
+    private func buildConsolidationPrompt(
+        newProfile: String,
+        pastProfiles: [AIUserProfileRecord]
+    ) -> String {
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateStyle = .medium
+        dateFormatter.timeStyle = .none
+
+        var pastSection = ""
+        for profile in pastProfiles {
+            let dateStr = dateFormatter.string(from: profile.generatedAt)
+            pastSection += "--- Profile from \(dateStr) ---\n\(profile.profileText)\n\n"
+        }
+
+        return """
+        Merge the following into one holistic user profile. Under 2000 characters.
+
+        === NEW PROFILE (generated today from latest data) ===
+        \(newProfile)
+
+        === PAST PROFILES (oldest to newest, up to 50) ===
+        \(pastSection)
         """
     }
 
