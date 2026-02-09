@@ -158,15 +158,37 @@ actor TaskAssistant: ProactiveAssistant {
 
     func handleResult(_ result: AssistantResult, sendEvent: @escaping (String, [String: Any]) -> Void) async {
         guard let taskResult = result as? TaskExtractionResult else { return }
-        await handleResultWithScreenshot(taskResult, screenshotId: nil, sendEvent: sendEvent)
+        await handleResultWithScreenshot(taskResult, screenshotId: nil, appName: "Unknown", sendEvent: sendEvent)
     }
 
     /// Handle result with screenshot ID for SQLite storage
     private func handleResultWithScreenshot(
         _ taskResult: TaskExtractionResult,
         screenshotId: Int64?,
+        appName: String,
         sendEvent: @escaping (String, [String: Any]) -> Void
     ) async {
+        // Save observation for every result (fire-and-forget)
+        let observationApp = taskResult.task?.sourceApp ?? appName
+        let observation = ObservationRecord(
+            screenshotId: screenshotId,
+            appName: observationApp,
+            contextSummary: taskResult.contextSummary,
+            currentActivity: taskResult.currentActivity,
+            hasTask: taskResult.hasNewTask,
+            taskTitle: taskResult.task?.title,
+            sourceCategory: taskResult.task?.sourceCategory,
+            sourceSubcategory: taskResult.task?.sourceSubcategory,
+            createdAt: Date()
+        )
+        Task {
+            do {
+                try await ActionItemStorage.shared.insertObservation(observation)
+            } catch {
+                logError("Task: Failed to insert observation", error: error)
+            }
+        }
+
         guard taskResult.hasNewTask, let task = taskResult.task else {
             return
         }
@@ -388,7 +410,7 @@ actor TaskAssistant: ProactiveAssistant {
 
             log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
 
-            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId, appName: frame.appName) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }
