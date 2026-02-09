@@ -658,6 +658,16 @@ extension PostHogManager {
         ])
     }
 
+    // MARK: - Settings State
+
+    func settingsStateTracked(screenshotsEnabled: Bool, memoryExtractionEnabled: Bool, memoryNotificationsEnabled: Bool) {
+        track("Settings State", properties: [
+            "screenshots_enabled": screenshotsEnabled,
+            "memory_extraction_enabled": memoryExtractionEnabled,
+            "memory_notifications_enabled": memoryNotificationsEnabled
+        ])
+    }
+
     // MARK: - Display Info
 
     func displayInfoTracked(info: [String: Any]) {
