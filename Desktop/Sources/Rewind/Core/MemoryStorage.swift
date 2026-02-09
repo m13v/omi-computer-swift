@@ -356,8 +356,9 @@ actor MemoryStorage {
         var insertRecord = record
         insertRecord.backendSynced = false  // Mark as not yet synced
 
+        let recordToInsert = insertRecord
         let inserted = try await db.write { database in
-            try insertRecord.inserted(database)
+            try recordToInsert.inserted(database)
         }
 
         log("MemoryStorage: Inserted local memory (id: \(inserted.id ?? -1))")
