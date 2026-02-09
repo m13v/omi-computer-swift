@@ -97,11 +97,11 @@ struct SettingsContentView: View {
     @State private var chatMessageCount: Int?
     @State private var isLoadingChatMessages = false
 
-    // AI Persona
-    @State private var personaText: String? = UserPersonaService.shared.getStoredPersonaText()
-    @State private var personaGeneratedAt: Date? = UserPersonaService.shared.getStoredGeneratedAt()
-    @State private var personaDataSourcesUsed: Int = UserPersonaService.shared.getStoredDataSourcesUsed()
-    @State private var isGeneratingPersona = false
+    // AI User Profile
+    @State private var aiProfileText: String? = AIUserProfileService.shared.getStoredProfileText()
+    @State private var aiProfileGeneratedAt: Date? = AIUserProfileService.shared.getStoredGeneratedAt()
+    @State private var aiProfileDataSourcesUsed: Int = AIUserProfileService.shared.getStoredDataSourcesUsed()
+    @State private var isGeneratingAIProfile = false
 
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
@@ -1324,7 +1324,7 @@ struct SettingsContentView: View {
 
     private var advancedSection: some View {
         VStack(spacing: 20) {
-            // AI Persona card
+            // AI User Profile card
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) {
@@ -1332,20 +1332,20 @@ struct SettingsContentView: View {
                             .font(.system(size: 16))
                             .foregroundColor(OmiColors.purplePrimary)
 
-                        Text("AI Persona")
+                        Text("AI User Profile")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
 
-                        if isGeneratingPersona {
+                        if isGeneratingAIProfile {
                             ProgressView()
                                 .controlSize(.small)
                         } else {
                             Button(action: {
-                                regeneratePersona()
+                                regenerateAIProfile()
                             }) {
-                                Text(personaText == nil ? "Generate Now" : "Regenerate")
+                                Text(aiProfileText == nil ? "Generate Now" : "Regenerate")
                                     .font(.system(size: 12))
                             }
                             .buttonStyle(.bordered)
@@ -1356,7 +1356,7 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    if let text = personaText {
+                    if let text = aiProfileText {
                         ScrollView {
                             Text(text)
                                 .font(.system(size: 13, design: .monospaced))
@@ -1367,7 +1367,7 @@ struct SettingsContentView: View {
                         .frame(maxHeight: 200)
 
                         HStack {
-                            if let date = personaGeneratedAt {
+                            if let date = aiProfileGeneratedAt {
                                 Text("Last updated: \(date.formatted(.relative(presentation: .named)))")
                                     .font(.system(size: 12))
                                     .foregroundColor(OmiColors.textTertiary)
@@ -1375,14 +1375,14 @@ struct SettingsContentView: View {
 
                             Spacer()
 
-                            if personaDataSourcesUsed > 0 {
-                                Text("Data sources: \(personaDataSourcesUsed) items")
+                            if aiProfileDataSourcesUsed > 0 {
+                                Text("Data sources: \(aiProfileDataSourcesUsed) items")
                                     .font(.system(size: 12))
                                     .foregroundColor(OmiColors.textTertiary)
                             }
                         }
-                    } else if !isGeneratingPersona {
-                        Text("Your AI persona will be generated automatically on next launch, or click \"Generate Now\" to create it now.")
+                    } else if !isGeneratingAIProfile {
+                        Text("Your AI user profile will be generated automatically on next launch, or click \"Generate Now\" to create it now.")
                             .font(.system(size: 13))
                             .foregroundColor(OmiColors.textTertiary)
                     } else {
@@ -1390,7 +1390,7 @@ struct SettingsContentView: View {
                             Spacer()
                             VStack(spacing: 8) {
                                 ProgressView()
-                                Text("Generating persona...")
+                                Text("Generating profile...")
                                     .font(.system(size: 13))
                                     .foregroundColor(OmiColors.textTertiary)
                             }
@@ -2663,21 +2663,21 @@ struct SettingsContentView: View {
         }
     }
 
-    private func regeneratePersona() {
-        isGeneratingPersona = true
+    private func regenerateAIProfile() {
+        isGeneratingAIProfile = true
         Task {
             do {
-                let result = try await UserPersonaService.shared.generatePersona()
+                let result = try await AIUserProfileService.shared.generateProfile()
                 await MainActor.run {
-                    personaText = result.text
-                    personaGeneratedAt = result.generatedAt
-                    personaDataSourcesUsed = result.dataSourcesUsed
-                    isGeneratingPersona = false
+                    aiProfileText = result.text
+                    aiProfileGeneratedAt = result.generatedAt
+                    aiProfileDataSourcesUsed = result.dataSourcesUsed
+                    isGeneratingAIProfile = false
                 }
             } catch {
-                log("Settings: Persona generation failed: \(error.localizedDescription)")
+                log("Settings: AI profile generation failed: \(error.localizedDescription)")
                 await MainActor.run {
-                    isGeneratingPersona = false
+                    isGeneratingAIProfile = false
                 }
             }
         }
