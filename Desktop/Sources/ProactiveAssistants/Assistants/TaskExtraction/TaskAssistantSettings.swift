@@ -11,12 +11,30 @@ class TaskAssistantSettings {
     private let analysisPromptKey = "taskAnalysisPrompt"
     private let extractionIntervalKey = "taskExtractionInterval"
     private let minConfidenceKey = "taskMinConfidence"
-    private let excludedAppsKey = "taskExcludedApps"
+    private let allowedAppsKey = "taskAllowedApps"
 
-    // MARK: - Built-in Skip List
+    // MARK: - Built-in Allowed Apps (Whitelist)
+
+    /// Apps that are allowed for task extraction by default — communication, browser, and productivity apps
+    /// where actionable requests are most likely to appear.
+    static let builtInAllowedApps: Set<String> = [
+        "Telegram",
+        "\u{200E}WhatsApp",  // WhatsApp uses a hidden LTR mark prefix
+        "WhatsApp",
+        "Messages",
+        "Slack",
+        "Discord",
+        "zoom.us",
+        "Google Chrome",
+        "Arc",
+        "Notes",
+        "Superhuman",
+    ]
+
+    // MARK: - Built-in Exclude List (used by other assistants: Advice, Focus, Memory)
 
     /// Apps that never contain useful content for proactive assistants — utility/media/system apps + our own app.
-    /// Shared across Task, Advice, and Memory assistants.
+    /// Shared across Advice, Focus, and Memory assistants (Task extraction uses whitelist instead).
     static let builtInExcludedApps: Set<String> = [
         "Omi",
         "Omi Beta",
@@ -198,39 +216,39 @@ class TaskAssistantSettings {
         }
     }
 
-    /// Apps excluded from task extraction (screenshots still captured for other features)
-    var excludedApps: Set<String> {
+    /// Apps allowed for task extraction (user-added, on top of built-in list)
+    var allowedApps: Set<String> {
         get {
-            if let saved = UserDefaults.standard.array(forKey: excludedAppsKey) as? [String] {
+            if let saved = UserDefaults.standard.array(forKey: allowedAppsKey) as? [String] {
                 return Set(saved)
             }
             return []
         }
         set {
-            UserDefaults.standard.set(Array(newValue), forKey: excludedAppsKey)
+            UserDefaults.standard.set(Array(newValue), forKey: allowedAppsKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
 
-    /// Check if an app is excluded from task extraction (built-in list + user's custom list)
-    func isAppExcluded(_ appName: String) -> Bool {
-        TaskAssistantSettings.builtInExcludedApps.contains(appName) || excludedApps.contains(appName)
+    /// Check if an app is allowed for task extraction (built-in whitelist + user's custom whitelist)
+    func isAppAllowed(_ appName: String) -> Bool {
+        TaskAssistantSettings.builtInAllowedApps.contains(appName) || allowedApps.contains(appName)
     }
 
-    /// Add an app to the task extraction exclusion list
-    func excludeApp(_ appName: String) {
-        var apps = excludedApps
+    /// Add an app to the task extraction allowed list
+    func allowApp(_ appName: String) {
+        var apps = allowedApps
         apps.insert(appName)
-        excludedApps = apps
-        log("Task: Excluded app '\(appName)' from task extraction")
+        allowedApps = apps
+        log("Task: Allowed app '\(appName)' for task extraction")
     }
 
-    /// Remove an app from the task extraction exclusion list
-    func includeApp(_ appName: String) {
-        var apps = excludedApps
+    /// Remove an app from the task extraction allowed list
+    func disallowApp(_ appName: String) {
+        var apps = allowedApps
         apps.remove(appName)
-        excludedApps = apps
-        log("Task: Included app '\(appName)' for task extraction")
+        allowedApps = apps
+        log("Task: Disallowed app '\(appName)' from task extraction")
     }
 
     /// Reset only the analysis prompt to default
@@ -245,7 +263,7 @@ class TaskAssistantSettings {
         isEnabled = defaultEnabled
         extractionInterval = defaultExtractionInterval
         minConfidence = defaultMinConfidence
-        excludedApps = []
+        allowedApps = []
         resetPromptToDefault()
     }
 }
