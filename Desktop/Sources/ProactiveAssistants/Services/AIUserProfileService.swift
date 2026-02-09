@@ -1,51 +1,94 @@
 import Foundation
+import GRDB
+
+// MARK: - Database Record
+
+/// Database record for AI-generated user profile history
+struct AIUserProfileRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
+    var id: Int64?
+    var profileText: String
+    var dataSourcesUsed: Int
+    var backendSynced: Bool
+    var generatedAt: Date
+
+    static let databaseTableName = "ai_user_profiles"
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+}
+
+// MARK: - Service
 
 /// Service that generates and maintains an AI-generated user profile.
 /// Inspired by the ContextAgent paper (arXiv:2505.14668).
 /// Runs once daily, fetches data from multiple sources, and calls Gemini to synthesize a concise profile.
+/// All generated profiles are stored in the local database for history tracking.
 actor AIUserProfileService {
     static let shared = AIUserProfileService()
 
     private let model = "gemini-3-pro-preview"
     private let maxProfileLength = 2000
 
-    // UserDefaults keys for local storage
-    private static let kProfileText = "aiUserProfileText"
-    private static let kProfileGeneratedAt = "aiUserProfileGeneratedAt"
-    private static let kProfileDataSourcesUsed = "aiUserProfileDataSourcesUsed"
-
     /// Whether profile generation is currently in progress
     private var isGenerating = false
+
+    /// Cached database queue
+    private var _dbQueue: DatabaseQueue?
+
+    // MARK: - Database Access
+
+    private func ensureDB() async throws -> DatabaseQueue {
+        if let db = _dbQueue { return db }
+        try await RewindDatabase.shared.initialize()
+        guard let db = await RewindDatabase.shared.getDatabaseQueue() else {
+            throw ProfileError.databaseNotAvailable
+        }
+        _dbQueue = db
+        return db
+    }
 
     // MARK: - Public Interface
 
     /// Check if we should generate a new profile (>24h since last generation)
-    nonisolated func shouldGenerate() -> Bool {
-        let lastGenerated = UserDefaults.standard.double(forKey: Self.kProfileGeneratedAt)
-        guard lastGenerated > 0 else { return true } // Never generated
-        let elapsed = Date().timeIntervalSince1970 - lastGenerated
-        return elapsed > 86400 // 24 hours
+    func shouldGenerate() async -> Bool {
+        guard let db = try? await ensureDB() else { return false }
+        do {
+            let latest = try await db.read { database in
+                try AIUserProfileRecord
+                    .order(Column("generatedAt").desc)
+                    .fetchOne(database)
+            }
+            guard let latest else { return true } // Never generated
+            return Date().timeIntervalSince(latest.generatedAt) > 86400
+        } catch {
+            return true
+        }
     }
 
-    /// Get the locally stored profile text
-    nonisolated func getStoredProfileText() -> String? {
-        UserDefaults.standard.string(forKey: Self.kProfileText)
+    /// Get the latest stored profile
+    func getLatestProfile() async -> AIUserProfileRecord? {
+        guard let db = try? await ensureDB() else { return nil }
+        return try? await db.read { database in
+            try AIUserProfileRecord
+                .order(Column("generatedAt").desc)
+                .fetchOne(database)
+        }
     }
 
-    /// Get the locally stored generation date
-    nonisolated func getStoredGeneratedAt() -> Date? {
-        let ts = UserDefaults.standard.double(forKey: Self.kProfileGeneratedAt)
-        guard ts > 0 else { return nil }
-        return Date(timeIntervalSince1970: ts)
-    }
-
-    /// Get the stored data sources count
-    nonisolated func getStoredDataSourcesUsed() -> Int {
-        UserDefaults.standard.integer(forKey: Self.kProfileDataSourcesUsed)
+    /// Get all stored profiles (newest first)
+    func getAllProfiles(limit: Int = 30) async -> [AIUserProfileRecord] {
+        guard let db = try? await ensureDB() else { return [] }
+        return (try? await db.read { database in
+            try AIUserProfileRecord
+                .order(Column("generatedAt").desc)
+                .limit(limit)
+                .fetchAll(database)
+        }) ?? []
     }
 
     /// Generate a new AI user profile from all available data sources
-    func generateProfile() async throws -> (text: String, generatedAt: Date, dataSourcesUsed: Int) {
+    func generateProfile() async throws -> AIUserProfileRecord {
         guard !isGenerating else {
             throw ProfileError.alreadyGenerating
         }
@@ -85,10 +128,20 @@ actor AIUserProfileService {
         let truncated = String(profileText.prefix(maxProfileLength))
         let generatedAt = Date()
 
-        // 6. Save locally
-        saveLocally(text: truncated, generatedAt: generatedAt, dataSourcesUsed: dataSourcesUsed)
+        // 6. Save to database
+        let db = try await ensureDB()
+        var record = AIUserProfileRecord(
+            profileText: truncated,
+            dataSourcesUsed: dataSourcesUsed,
+            backendSynced: false,
+            generatedAt: generatedAt
+        )
+        try await db.write { database in
+            try record.insert(database)
+        }
 
         // 7. Sync to backend (fire-and-forget)
+        let recordId = record.id
         Task {
             do {
                 try await APIClient.shared.syncAIUserProfile(
@@ -96,6 +149,15 @@ actor AIUserProfileService {
                     generatedAt: generatedAt,
                     dataSourcesUsed: dataSourcesUsed
                 )
+                // Mark as synced
+                if let id = recordId, let db = try? await self.ensureDB() {
+                    _ = try? await db.write { database in
+                        try database.execute(
+                            sql: "UPDATE ai_user_profiles SET backendSynced = 1 WHERE id = ?",
+                            arguments: [id]
+                        )
+                    }
+                }
                 log("AIUserProfileService: Synced profile to backend")
             } catch {
                 log("AIUserProfileService: Failed to sync profile to backend: \(error.localizedDescription)")
@@ -103,7 +165,7 @@ actor AIUserProfileService {
         }
 
         log("AIUserProfileService: Profile generated successfully (\(truncated.count) chars, \(dataSourcesUsed) data items)")
-        return (text: truncated, generatedAt: generatedAt, dataSourcesUsed: dataSourcesUsed)
+        return record
     }
 
     // MARK: - Data Fetching
@@ -236,19 +298,12 @@ actor AIUserProfileService {
         """
     }
 
-    // MARK: - Local Storage
-
-    private nonisolated func saveLocally(text: String, generatedAt: Date, dataSourcesUsed: Int) {
-        UserDefaults.standard.set(text, forKey: Self.kProfileText)
-        UserDefaults.standard.set(generatedAt.timeIntervalSince1970, forKey: Self.kProfileGeneratedAt)
-        UserDefaults.standard.set(dataSourcesUsed, forKey: Self.kProfileDataSourcesUsed)
-    }
-
     // MARK: - Errors
 
     enum ProfileError: LocalizedError {
         case alreadyGenerating
         case insufficientData
+        case databaseNotAvailable
 
         var errorDescription: String? {
             switch self {
@@ -256,6 +311,8 @@ actor AIUserProfileService {
                 return "Profile generation is already in progress"
             case .insufficientData:
                 return "Not enough data to generate a profile"
+            case .databaseNotAvailable:
+                return "Database is not available"
             }
         }
     }
