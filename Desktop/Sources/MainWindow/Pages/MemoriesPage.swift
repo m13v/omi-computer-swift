@@ -547,7 +547,7 @@ class MemoriesViewModel: ObservableObject {
     /// Ensures filter/search queries have the full dataset. Keyed per user so it runs once per account.
     private func performFullSyncIfNeeded() async {
         let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
-        let syncKey = "memoriesFullSyncCompleted_\(userId)"
+        let syncKey = "memoriesFullSyncCompleted_v2_\(userId)"
 
         guard !UserDefaults.standard.bool(forKey: syncKey) else {
             log("MemoriesViewModel: Full sync already completed for user \(userId)")
@@ -556,7 +556,7 @@ class MemoriesViewModel: ObservableObject {
 
         log("MemoriesViewModel: Starting one-time full sync for user \(userId)")
 
-        var offset = pageSize  // Skip first page (already synced above)
+        var offset = 0
         var totalSynced = 0
         let batchSize = 500
 
