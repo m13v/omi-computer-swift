@@ -394,6 +394,12 @@ actor TaskAssistant: ProactiveAssistant {
         // 2. Build prompt with injected context
         var prompt = "Screenshot from \(appName). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
 
+        // Inject AI user profile for context
+        if let profile = await AIUserProfileService.shared.getLatestProfile() {
+            prompt += "USER PROFILE (who this user is — use for context, not as a task source):\n"
+            prompt += profile.profileText + "\n\n"
+        }
+
         if !context.activeTasks.isEmpty {
             prompt += "ACTIVE TASKS (user is already tracking these):\n"
             for (i, task) in context.activeTasks.enumerated() {
@@ -505,8 +511,7 @@ actor TaskAssistant: ProactiveAssistant {
         let searchResults = await executeSearchTool(query: query)
         log("Task: Search returned \(searchResults.count) results")
 
-        // 7. Second call: separate structured request with responseSchema
-        //    Text-only — the model already analyzed the image and summarized in the query.
+        // 7. Encode search results for the prompt
         let searchResultsJson: String
         if let data = try? JSONEncoder().encode(searchResults),
            let json = String(data: data, encoding: .utf8) {
@@ -515,58 +520,132 @@ actor TaskAssistant: ProactiveAssistant {
             searchResultsJson = "[]"
         }
 
+        // 8. Choose path based on whether search found close matches
+        let hasCloseMatches = searchResults.contains { ($0.similarity ?? 0) >= 0.5 }
+
+        if hasCloseMatches {
+            // PATH A: Close matches found — ask model to decide first (decision-only schema)
+            return try await decisionThenExtract(
+                query: query, appName: appName, searchResultsJson: searchResultsJson,
+                systemPrompt: currentSystemPrompt
+            )
+        } else {
+            // PATH B: No close matches — go straight to extraction (extraction-only schema)
+            log("Task: No close matches, extracting directly")
+            return try await extractTask(
+                query: query, appName: appName, searchResultsJson: searchResultsJson,
+                systemPrompt: currentSystemPrompt
+            )
+        }
+    }
+
+    // MARK: - Path A: Decision then optional extraction (close matches found)
+
+    /// When search found close matches, first ask the model to decide if this is new or duplicate.
+    /// If new, make a follow-up call to extract full task details.
+    private func decisionThenExtract(
+        query: String, appName: String, searchResultsJson: String, systemPrompt: String
+    ) async throws -> TaskExtractionResult? {
         let decisionPrompt = """
         You analyzed a screenshot from \(appName) and identified a potential request: "\(query)"
 
         SEARCH RESULTS (existing tasks matching this request):
         \(searchResultsJson)
 
-        Based on the search results, decide: is this a genuinely NEW task, or is it already tracked / completed / rejected?
+        Is this a genuinely NEW task, or is it already tracked / completed / rejected?
 
-        Remember:
-        - Similarity > 0.8 + status "active" → duplicate, skip
-        - Status "completed" → already done, skip
-        - Status "deleted" → user rejected this, skip
-        - No close matches → new task, extract it
+        Rules:
+        - Similarity > 0.8 + status "active" → duplicate, set is_new_task to false
+        - Status "completed" → already done, set is_new_task to false
+        - Status "deleted" → user rejected this type of task, set is_new_task to false
+        - Low similarity or different scope → genuinely new, set is_new_task to true
         """
 
-        let taskProperties: [String: GeminiRequest.GenerationConfig.ResponseSchema.Property] = [
-            "title": .init(type: "string", description: "Brief, verb-first task title, ≤15 words. Include WHO and WHAT."),
-            "description": .init(type: "string", description: "Optional additional context"),
-            "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
-            "tags": .init(
-                type: "array",
-                description: "1-3 relevant tags: feature, bug, code, work, personal, research, communication, finance, health, other",
-                items: .init(type: "string", properties: nil, required: nil)
-            ),
-            "source_app": .init(type: "string", description: "App where task was found"),
-            "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied"),
-            "confidence": .init(type: "number", description: "Confidence score 0.0-1.0")
-        ]
-
-        let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+        let decisionSchema = GeminiRequest.GenerationConfig.ResponseSchema(
             type: "object",
             properties: [
-                "has_new_task": .init(type: "boolean", description: "True only if this is a genuinely new task not already covered by search results"),
-                "task": .init(
-                    type: "object",
-                    description: "The extracted task (only when has_new_task is true)",
-                    properties: taskProperties,
-                    required: ["title", "priority", "tags", "source_app", "confidence"]
-                ),
+                "is_new_task": .init(type: "boolean", description: "True only if this is genuinely new and not covered by any search result"),
+                "reason": .init(type: "string", description: "Why this is or isn't a new task (e.g. 'duplicate of task #42' or 'different scope than existing tasks')"),
                 "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
                 "current_activity": .init(type: "string", description: "What the user is actively doing")
             ],
-            required: ["has_new_task", "context_summary", "current_activity"]
+            required: ["is_new_task", "reason", "context_summary", "current_activity"]
         )
 
-        let responseText = try await geminiClient.sendRequest(
+        let decisionText = try await geminiClient.sendRequest(
             prompt: decisionPrompt,
-            systemPrompt: currentSystemPrompt,
-            responseSchema: responseSchema
+            systemPrompt: systemPrompt,
+            responseSchema: decisionSchema
         )
 
-        return try JSONDecoder().decode(TaskExtractionResult.self, from: Data(responseText.utf8))
+        let decision = try JSONDecoder().decode(TaskDecisionResult.self, from: Data(decisionText.utf8))
+        log("Task: Decision — is_new_task: \(decision.isNewTask), reason: \(decision.reason)")
+
+        guard decision.isNewTask else {
+            return TaskExtractionResult(
+                hasNewTask: false,
+                task: nil,
+                contextSummary: decision.contextSummary,
+                currentActivity: decision.currentActivity
+            )
+        }
+
+        // Decision says it's new — extract full task details
+        return try await extractTask(
+            query: query, appName: appName, searchResultsJson: searchResultsJson,
+            systemPrompt: systemPrompt
+        )
+    }
+
+    // MARK: - Path B / Follow-up: Extract task details (extraction-only schema)
+
+    /// Extract full task details. All fields required, no ambiguity.
+    private func extractTask(
+        query: String, appName: String, searchResultsJson: String, systemPrompt: String
+    ) async throws -> TaskExtractionResult {
+        let extractionPrompt = """
+        You analyzed a screenshot from \(appName) and identified this request: "\(query)"
+
+        SEARCH RESULTS (for context, all non-duplicates):
+        \(searchResultsJson)
+
+        Extract the task details. Be specific: include WHO is asking and WHAT they want.
+        - title: verb-first, ≤15 words, include the person/source and action
+        - priority: "high" (urgent/today), "medium" (this week), "low" (no deadline)
+        - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
+        - inferred_deadline: deadline if visible, otherwise empty string
+        - description: additional context, otherwise empty string
+        """
+
+        let extractionSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+            type: "object",
+            properties: [
+                "title": .init(type: "string", description: "Brief, verb-first task title, ≤15 words. Include WHO and WHAT."),
+                "description": .init(type: "string", description: "Additional context about the task. Empty string if none."),
+                "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
+                "tags": .init(
+                    type: "array",
+                    description: "1-3 relevant tags: feature, bug, code, work, personal, research, communication, finance, health, other",
+                    items: .init(type: "string", properties: nil, required: nil)
+                ),
+                "source_app": .init(type: "string", description: "App where the task was found"),
+                "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied. Empty string if none."),
+                "confidence": .init(type: "number", description: "Confidence score 0.0-1.0"),
+                "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
+                "current_activity": .init(type: "string", description: "What the user is actively doing")
+            ],
+            required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity"]
+        )
+
+        let extractionText = try await geminiClient.sendRequest(
+            prompt: extractionPrompt,
+            systemPrompt: systemPrompt,
+            responseSchema: extractionSchema
+        )
+
+        let response = try JSONDecoder().decode(TaskExtractionResponse.self, from: Data(extractionText.utf8))
+        log("Task: Extracted — \"\(response.title)\" (confidence: \(response.confidence), priority: \(response.priority))")
+        return response.toExtractionResult()
     }
 
     // MARK: - Context & Search
