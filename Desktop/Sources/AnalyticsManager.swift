@@ -631,6 +631,15 @@ class AnalyticsManager {
         PostHogManager.shared.tierChanged(tier: tier, reason: reason)
     }
 
+    // MARK: - Settings State
+
+    /// Track the current state of key settings (screenshots, memory extraction, notifications)
+    /// Called when monitoring starts and daily while monitoring is active
+    func trackSettingsState(screenshotsEnabled: Bool, memoryExtractionEnabled: Bool, memoryNotificationsEnabled: Bool) {
+        MixpanelManager.shared.settingsStateTracked(screenshotsEnabled: screenshotsEnabled, memoryExtractionEnabled: memoryExtractionEnabled, memoryNotificationsEnabled: memoryNotificationsEnabled)
+        PostHogManager.shared.settingsStateTracked(screenshotsEnabled: screenshotsEnabled, memoryExtractionEnabled: memoryExtractionEnabled, memoryNotificationsEnabled: memoryNotificationsEnabled)
+    }
+
     // MARK: - Display Info
 
     /// Track display characteristics (notch, screen size, etc.)
