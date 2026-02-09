@@ -185,13 +185,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 await TierManager.shared.checkTierIfNeeded()
             }
 
-            // Generate user persona if >24h since last generation
-            if UserPersonaService.shared.shouldGenerate() {
+            // Generate AI user profile if >24h since last generation
+            if AIUserProfileService.shared.shouldGenerate() {
                 Task {
                     do {
-                        _ = try await UserPersonaService.shared.generatePersona()
+                        _ = try await AIUserProfileService.shared.generateProfile()
                     } catch {
-                        log("AppDelegate: Persona generation failed: \(error.localizedDescription)")
+                        log("AppDelegate: AI user profile generation failed: \(error.localizedDescription)")
                     }
                 }
             }
