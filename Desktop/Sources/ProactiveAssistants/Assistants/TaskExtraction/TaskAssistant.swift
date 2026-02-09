@@ -148,6 +148,15 @@ actor TaskAssistant: ProactiveAssistant {
             return nil
         }
 
+        // For browser apps, also check window title against enabled heuristics
+        let windowAllowed = await MainActor.run {
+            TaskAssistantSettings.shared.isWindowAllowed(appName: frame.appName, windowTitle: frame.windowTitle)
+        }
+        if !windowAllowed {
+            log("Task: Skipping browser window '\(frame.windowTitle ?? "nil")' in \(frame.appName) (no heuristic match)")
+            return nil
+        }
+
         let hadPending = pendingFrame != nil
         pendingFrame = frame
         if !hadPending {
