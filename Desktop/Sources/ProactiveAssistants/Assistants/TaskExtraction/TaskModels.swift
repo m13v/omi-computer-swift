@@ -1,5 +1,111 @@
 import Foundation
 
+// MARK: - Task Source Classification
+
+/// High-level category for where a task originated
+enum TaskSourceCategory: String, Codable, CaseIterable {
+    case direct_request
+    case self_generated
+    case calendar_driven
+    case reactive
+    case external_system
+    case other
+
+    var label: String {
+        switch self {
+        case .direct_request: return "Direct Request"
+        case .self_generated: return "Self-Generated"
+        case .calendar_driven: return "Calendar-Driven"
+        case .reactive: return "Reactive"
+        case .external_system: return "External System"
+        case .other: return "Other"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .direct_request: return "bubble.left.fill"
+        case .self_generated: return "lightbulb.fill"
+        case .calendar_driven: return "calendar"
+        case .reactive: return "exclamationmark.triangle.fill"
+        case .external_system: return "server.rack"
+        case .other: return "questionmark.circle"
+        }
+    }
+
+    var validSubcategories: [TaskSourceSubcategory] {
+        switch self {
+        case .direct_request: return [.message, .meeting, .mention]
+        case .self_generated: return [.idea, .reminder, .goal_subtask]
+        case .calendar_driven: return [.event_prep, .recurring, .deadline]
+        case .reactive: return [.error, .notification, .observation]
+        case .external_system: return [.project_tool, .alert, .documentation]
+        case .other: return [.other]
+        }
+    }
+}
+
+/// Subcategory for task source — flat enum, each belongs to one or more categories
+enum TaskSourceSubcategory: String, Codable, CaseIterable {
+    // direct_request
+    case message
+    case meeting
+    case mention
+    // self_generated
+    case idea
+    case reminder
+    case goal_subtask
+    // calendar_driven
+    case event_prep
+    case recurring
+    case deadline
+    // reactive
+    case error
+    case notification
+    case observation
+    // external_system
+    case project_tool
+    case alert
+    case documentation
+    // universal
+    case other
+}
+
+/// Holds a validated category + subcategory pair
+struct TaskSourceClassification: Equatable {
+    let category: TaskSourceCategory
+    let subcategory: TaskSourceSubcategory
+
+    var isValid: Bool {
+        category.validSubcategories.contains(subcategory) || subcategory == .other
+    }
+
+    var displayString: String {
+        "\(category.label) / \(subcategory.rawValue)"
+    }
+
+    var rawString: String {
+        "\(category.rawValue)/\(subcategory.rawValue)"
+    }
+
+    static func from(rawString: String) -> TaskSourceClassification? {
+        let parts = rawString.split(separator: "/")
+        guard parts.count == 2,
+              let cat = TaskSourceCategory(rawValue: String(parts[0])),
+              let sub = TaskSourceSubcategory(rawValue: String(parts[1]))
+        else { return nil }
+        return TaskSourceClassification(category: cat, subcategory: sub)
+    }
+
+    static func from(category: String?, subcategory: String?) -> TaskSourceClassification? {
+        guard let catStr = category, let subStr = subcategory,
+              let cat = TaskSourceCategory(rawValue: catStr),
+              let sub = TaskSourceSubcategory(rawValue: subStr)
+        else { return nil }
+        return TaskSourceClassification(category: cat, subcategory: sub)
+    }
+}
+
 // MARK: - Task Priority
 
 enum TaskPriority: String, Codable {
@@ -88,6 +194,8 @@ struct ExtractedTask: Codable {
     let inferredDeadline: String?
     let confidence: Double
     let tags: [String]
+    let sourceCategory: String
+    let sourceSubcategory: String
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -97,11 +205,18 @@ struct ExtractedTask: Codable {
         case inferredDeadline = "inferred_deadline"
         case confidence
         case tags
+        case sourceCategory = "source_category"
+        case sourceSubcategory = "source_subcategory"
     }
 
     /// Primary tag (first tag) for backward compatibility
     var primaryTag: String? {
         tags.first
+    }
+
+    /// Parsed source classification
+    var sourceClassification: TaskSourceClassification? {
+        TaskSourceClassification.from(category: sourceCategory, subcategory: sourceSubcategory)
     }
 
     /// Check if any tag should trigger agent execution
@@ -118,7 +233,9 @@ struct ExtractedTask: Codable {
             "sourceApp": sourceApp,
             "confidence": confidence,
             "tags": tags.map { $0 },
-            "category": primaryTag ?? "other"
+            "category": primaryTag ?? "other",
+            "sourceCategory": sourceCategory,
+            "sourceSubcategory": sourceSubcategory
         ]
         if let description = description {
             dict["description"] = description
@@ -191,6 +308,8 @@ struct TaskExtractionResponse: Codable {
     let confidence: Double
     let contextSummary: String
     let currentActivity: String
+    let sourceCategory: String
+    let sourceSubcategory: String
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -202,6 +321,8 @@ struct TaskExtractionResponse: Codable {
         case confidence
         case contextSummary = "context_summary"
         case currentActivity = "current_activity"
+        case sourceCategory = "source_category"
+        case sourceSubcategory = "source_subcategory"
     }
 
     /// Convert to TaskExtractionResult with embedded ExtractedTask
@@ -213,7 +334,9 @@ struct TaskExtractionResponse: Codable {
             sourceApp: sourceApp,
             inferredDeadline: inferredDeadline.isEmpty ? nil : inferredDeadline,
             confidence: confidence,
-            tags: tags
+            tags: tags,
+            sourceCategory: sourceCategory,
+            sourceSubcategory: sourceSubcategory
         )
         return TaskExtractionResult(
             hasNewTask: true,
