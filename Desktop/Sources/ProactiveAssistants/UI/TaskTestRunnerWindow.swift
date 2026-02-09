@@ -366,38 +366,56 @@ struct TaskTestRunnerView: View {
                 return
             }
 
-            // Sample screenshots at extraction-interval spacing
-            for i in 0..<screenshotCount {
+            // Fetch all available screenshots in the full time range, then sample N evenly-spaced ones.
+            // This naturally skips gaps when the app was off or the computer was sleeping.
+            let allScreenshots: [Screenshot]
+            do {
+                // Fetch up to 10x the requested count to have plenty to sample from (1 per second means thousands exist)
+                allScreenshots = try await RewindDatabase.shared.getScreenshots(
+                    from: periodStart,
+                    to: now,
+                    limit: screenshotCount * 600  // ~10 min of frames per sample
+                ).reversed()  // getScreenshots returns desc, we want chronological
+            } catch {
+                await MainActor.run {
+                    statusMessage = "Failed to load screenshots: \(error.localizedDescription)"
+                    isRunning = false
+                }
+                return
+            }
+
+            guard !allScreenshots.isEmpty else {
+                await MainActor.run {
+                    statusMessage = "No screenshots found in the last \(periodMinutes) minutes"
+                    isRunning = false
+                }
+                return
+            }
+
+            // Pick N evenly-spaced screenshots from what's available
+            let sampled: [Screenshot]
+            if allScreenshots.count <= screenshotCount {
+                sampled = Array(allScreenshots)
+            } else {
+                let step = Double(allScreenshots.count - 1) / Double(screenshotCount - 1)
+                sampled = (0..<screenshotCount).map { i in
+                    allScreenshots[Int(Double(i) * step)]
+                }
+            }
+
+            await MainActor.run {
+                statusMessage = "Found \(allScreenshots.count) screenshots, sampling \(sampled.count)..."
+            }
+
+            // Process each sampled screenshot
+            for (i, screenshot) in sampled.enumerated() {
                 if cancellationRequested { break }
 
-                let targetTime = periodStart.addingTimeInterval(Double(i) * interval)
                 await MainActor.run {
-                    statusMessage = "Processing \(i + 1)/\(screenshotCount)..."
+                    statusMessage = "Processing \(i + 1)/\(sampled.count)..."
                 }
 
                 do {
-                    // Find screenshot closest to target time (30s window)
-                    let screenshots = try await RewindDatabase.shared.getScreenshots(
-                        from: targetTime.addingTimeInterval(-30),
-                        to: targetTime.addingTimeInterval(30),
-                        limit: 1
-                    )
-
-                    guard let screenshot = screenshots.first else {
-                        await MainActor.run {
-                            results.append(TaskTestResult(
-                                index: i + 1,
-                                timestamp: targetTime,
-                                appName: "—",
-                                result: nil,
-                                error: "No screenshot found",
-                                duration: 0
-                            ))
-                            progress = Double(i + 1) / Double(screenshotCount)
-                        }
-                        continue
-                    }
-
                     // Load JPEG from video chunk
                     let jpegData = try await RewindStorage.shared.loadScreenshotData(for: screenshot)
 
@@ -415,19 +433,19 @@ struct TaskTestRunnerView: View {
                             error: nil,
                             duration: duration
                         ))
-                        progress = Double(i + 1) / Double(screenshotCount)
+                        progress = Double(i + 1) / Double(sampled.count)
                     }
                 } catch {
                     await MainActor.run {
                         results.append(TaskTestResult(
                             index: i + 1,
-                            timestamp: targetTime,
-                            appName: "—",
+                            timestamp: screenshot.timestamp,
+                            appName: screenshot.appName,
                             result: nil,
                             error: error.localizedDescription,
                             duration: 0
                         ))
-                        progress = Double(i + 1) / Double(screenshotCount)
+                        progress = Double(i + 1) / Double(sampled.count)
                     }
                 }
             }
