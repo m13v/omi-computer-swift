@@ -17,10 +17,12 @@ use crate::AppState;
 pub struct SoftDeleteActionItemRequest {
     /// Who is deleting: "ai_dedup", "user"
     pub deleted_by: String,
-    /// Reason for deletion
-    pub reason: String,
-    /// ID of the task that was kept instead
-    pub kept_task_id: String,
+    /// Reason for deletion (optional for user-initiated deletes)
+    #[serde(default)]
+    pub reason: Option<String>,
+    /// ID of the task that was kept instead (optional for user-initiated deletes)
+    #[serde(default)]
+    pub kept_task_id: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -253,12 +255,15 @@ async fn soft_delete_action_item(
     Path(item_id): Path<String>,
     Json(request): Json<SoftDeleteActionItemRequest>,
 ) -> Result<Json<ActionItemDB>, StatusCode> {
+    let reason = request.reason.as_deref().unwrap_or("");
+    let kept_task_id = request.kept_task_id.as_deref().unwrap_or("");
+
     tracing::info!(
         "Soft-deleting action item {} for user {} (by: {}, reason: {})",
         item_id,
         user.uid,
         request.deleted_by,
-        request.reason
+        reason
     );
 
     match state
@@ -267,8 +272,8 @@ async fn soft_delete_action_item(
             &user.uid,
             &item_id,
             &request.deleted_by,
-            &request.reason,
-            &request.kept_task_id,
+            reason,
+            kept_task_id,
         )
         .await
     {
