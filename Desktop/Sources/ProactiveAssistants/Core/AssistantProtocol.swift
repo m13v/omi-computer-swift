@@ -39,6 +39,14 @@ protocol ProactiveAssistant: Actor {
     /// - Parameter newApp: Name of the newly active application
     func onAppSwitch(newApp: String) async
 
+    /// Called when the user switches context (app or window title change).
+    /// The departing frame is the last frame captured before the switch.
+    /// - Parameters:
+    ///   - departingFrame: The last captured frame from the context being left (nil if none available)
+    ///   - newApp: Name of the newly active application
+    ///   - newWindowTitle: Title of the new window (if available)
+    func onContextSwitch(departingFrame: CapturedFrame?, newApp: String, newWindowTitle: String?) async
+
     /// Clear any pending work (e.g., queued frames)
     func clearPendingWork() async
 
@@ -55,6 +63,9 @@ extension ProactiveAssistant {
 
     /// Default: no-op for app switch
     func onAppSwitch(newApp: String) async {}
+
+    /// Default: no-op for context switch
+    func onContextSwitch(departingFrame: CapturedFrame?, newApp: String, newWindowTitle: String?) async {}
 
     /// Default: no-op for clearing pending work
     func clearPendingWork() async {}
