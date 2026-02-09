@@ -478,6 +478,9 @@ public class ProactiveAssistantsPlugin: NSObject {
                         captureTime: captureTime
                     )
 
+                    // Always track the frame for context switch detection (even during delay)
+                    AssistantCoordinator.shared.trackFrame(frame)
+
                     if !isInDelayPeriod {
                         AssistantCoordinator.shared.distributeFrame(frame)
                     }
@@ -524,6 +527,9 @@ public class ProactiveAssistantsPlugin: NSObject {
                 windowTitle: currentWindowTitle,
                 frameNumber: frameCount
             )
+
+            // Always track the frame for context switch detection (even during delay)
+            AssistantCoordinator.shared.trackFrame(frame)
 
             if !isInDelayPeriod {
                 AssistantCoordinator.shared.distributeFrame(frame)
