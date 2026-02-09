@@ -12,6 +12,7 @@ class TaskAssistantSettings {
     private let extractionIntervalKey = "taskExtractionInterval"
     private let minConfidenceKey = "taskMinConfidence"
     private let allowedAppsKey = "taskAllowedApps"
+    private let disabledHeuristicsKey = "taskDisabledBrowserHeuristics"
 
     // MARK: - Built-in Allowed Apps (Whitelist)
 
@@ -27,8 +28,144 @@ class TaskAssistantSettings {
         "zoom.us",
         "Google Chrome",
         "Arc",
+        "Safari",
+        "Firefox",
+        "Microsoft Edge",
+        "Brave Browser",
+        "Opera",
         "Notes",
         "Superhuman",
+    ]
+
+    // MARK: - Browser Apps
+
+    /// Apps identified as browsers — these get additional window-title filtering via heuristics
+    static let browserApps: Set<String> = [
+        "Google Chrome",
+        "Arc",
+        "Safari",
+        "Firefox",
+        "Microsoft Edge",
+        "Brave Browser",
+        "Opera",
+    ]
+
+    /// Check if an app is a browser (subject to window title heuristics)
+    static func isBrowser(_ appName: String) -> Bool {
+        browserApps.contains(appName)
+    }
+
+    // MARK: - Browser Window Heuristics
+
+    /// A heuristic rule for filtering browser windows by title
+    struct BrowserHeuristic: Identifiable {
+        let id: String
+        let name: String
+        let description: String
+        let patterns: [String]  // case-insensitive substrings to match in window title
+        let defaultEnabled: Bool
+    }
+
+    /// All built-in browser window heuristics
+    static let builtInHeuristics: [BrowserHeuristic] = [
+        BrowserHeuristic(
+            id: "email",
+            name: "Email",
+            description: "Gmail, Outlook, Yahoo Mail, ProtonMail",
+            patterns: ["Gmail", "Outlook", "Yahoo Mail", "ProtonMail", "Superhuman", "Fastmail", "Mail -"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "messaging",
+            name: "Messaging",
+            description: "Slack, Discord, WhatsApp, Telegram, Messenger web apps",
+            patterns: ["Slack", "Discord", "WhatsApp", "Telegram", "Messenger", "Signal"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "project_mgmt",
+            name: "Project Management",
+            description: "Jira, Linear, Trello, Asana, Notion, ClickUp",
+            patterns: ["Jira", "Linear", "Trello", "Asana", "Notion", "Monday", "ClickUp", "Basecamp"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "calendar",
+            name: "Calendar",
+            description: "Google Calendar, Outlook Calendar, Calendly",
+            patterns: ["Google Calendar", "Outlook Calendar", "Cal.com", "Calendly"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "github",
+            name: "GitHub",
+            description: "Issues, pull requests, notifications",
+            patterns: ["GitHub", "github.com"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "google_docs",
+            name: "Google Docs/Sheets/Slides",
+            description: "Collaborative Google Workspace documents",
+            patterns: ["Google Docs", "Google Sheets", "Google Slides"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "finance",
+            name: "Finance",
+            description: "Stripe, PayPal, invoices, billing",
+            patterns: ["Stripe", "PayPal", "Invoice", "Billing", "QuickBooks"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "forms",
+            name: "Forms & Signing",
+            description: "Google Forms, Typeform, DocuSign",
+            patterns: ["Google Forms", "Typeform", "DocuSign"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "social",
+            name: "Social Media",
+            description: "Twitter/X, LinkedIn, Reddit",
+            patterns: [" / X", "Twitter", "LinkedIn", "Reddit"],
+            defaultEnabled: false
+        ),
+        BrowserHeuristic(
+            id: "ci_cd",
+            name: "CI/CD & Monitoring",
+            description: "Vercel, Netlify, Sentry, Datadog",
+            patterns: ["Vercel", "Netlify", "Railway", "Sentry", "Datadog", "PagerDuty"],
+            defaultEnabled: false
+        ),
+        BrowserHeuristic(
+            id: "cloud",
+            name: "Cloud Consoles",
+            description: "GCP, AWS, Azure, Firebase",
+            patterns: ["Google Cloud", "AWS", "Azure", "Firebase"],
+            defaultEnabled: false
+        ),
+        BrowserHeuristic(
+            id: "design",
+            name: "Design Tools",
+            description: "Figma, Canva, Miro",
+            patterns: ["Figma", "Canva", "Miro"],
+            defaultEnabled: false
+        ),
+        BrowserHeuristic(
+            id: "action_keywords",
+            name: "Action Keywords",
+            description: "Window titles containing todo, task, review, assign, request, ticket",
+            patterns: ["todo", "task", "assign", "review", "approve", "request", "ticket"],
+            defaultEnabled: true
+        ),
+        BrowserHeuristic(
+            id: "inbox_notifications",
+            name: "Inbox & Notifications",
+            description: "Window titles containing inbox, unread, notification, pending",
+            patterns: ["inbox", "unread", "notification", "pending"],
+            defaultEnabled: true
+        ),
     ]
 
     // MARK: - Built-in Exclude List (used by other assistants: Advice, Focus, Memory)
@@ -230,9 +367,75 @@ class TaskAssistantSettings {
         }
     }
 
+    /// IDs of heuristics the user has explicitly disabled (stored in UserDefaults)
+    var disabledHeuristicIds: Set<String> {
+        get {
+            if let saved = UserDefaults.standard.array(forKey: disabledHeuristicsKey) as? [String] {
+                return Set(saved)
+            }
+            return []
+        }
+        set {
+            UserDefaults.standard.set(Array(newValue), forKey: disabledHeuristicsKey)
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Check if a heuristic is enabled (respects both default state and user overrides)
+    func isHeuristicEnabled(_ heuristic: BrowserHeuristic) -> Bool {
+        let disabled = disabledHeuristicIds
+        if disabled.contains(heuristic.id) { return false }
+        // If user hasn't explicitly disabled it, use the default
+        return heuristic.defaultEnabled || enabledHeuristicIds.contains(heuristic.id)
+    }
+
+    /// IDs of heuristics the user has explicitly enabled (for non-default ones)
+    private var enabledHeuristicIds: Set<String> {
+        if let saved = UserDefaults.standard.array(forKey: "taskEnabledBrowserHeuristics") as? [String] {
+            return Set(saved)
+        }
+        return []
+    }
+
+    /// Toggle a heuristic on or off
+    func setHeuristicEnabled(_ id: String, enabled: Bool) {
+        var disabled = disabledHeuristicIds
+        var explicitlyEnabled = enabledHeuristicIds
+
+        if enabled {
+            disabled.remove(id)
+            explicitlyEnabled.insert(id)
+        } else {
+            disabled.insert(id)
+            explicitlyEnabled.remove(id)
+        }
+
+        disabledHeuristicIds = disabled
+        UserDefaults.standard.set(Array(explicitlyEnabled), forKey: "taskEnabledBrowserHeuristics")
+        log("Task: Browser heuristic '\(id)' set to \(enabled ? "enabled" : "disabled")")
+    }
+
     /// Check if an app is allowed for task extraction (built-in whitelist + user's custom whitelist)
     func isAppAllowed(_ appName: String) -> Bool {
         TaskAssistantSettings.builtInAllowedApps.contains(appName) || allowedApps.contains(appName)
+    }
+
+    /// For browser apps, check if the window title matches any enabled heuristic.
+    /// Non-browser apps always pass this check.
+    func isWindowAllowed(appName: String, windowTitle: String?) -> Bool {
+        guard TaskAssistantSettings.isBrowser(appName) else { return true }
+        guard let title = windowTitle, !title.isEmpty else { return false }
+
+        let lowercaseTitle = title.lowercased()
+        for heuristic in TaskAssistantSettings.builtInHeuristics {
+            guard isHeuristicEnabled(heuristic) else { continue }
+            for pattern in heuristic.patterns {
+                if lowercaseTitle.contains(pattern.lowercased()) {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     /// Add an app to the task extraction allowed list
@@ -264,6 +467,8 @@ class TaskAssistantSettings {
         extractionInterval = defaultExtractionInterval
         minConfidence = defaultMinConfidence
         allowedApps = []
+        disabledHeuristicIds = []
+        UserDefaults.standard.removeObject(forKey: "taskEnabledBrowserHeuristics")
         resetPromptToDefault()
     }
 }
