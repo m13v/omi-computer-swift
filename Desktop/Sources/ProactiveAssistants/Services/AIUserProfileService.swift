@@ -119,12 +119,12 @@ actor AIUserProfileService {
 
         OUTPUT FORMAT:
         - A flat list of factual statements, one per line, prefixed with "- "
-        - Each statement must be a concrete fact, not an opinion or adjective
+        - Each statement must be a concrete fact directly supported by the provided data
         - No prose, no paragraphs, no headers, no markdown formatting
-        - No filler words, no adjectives like "passionate", "dedicated", "impressive"
+        - No adjectives like "passionate", "dedicated", "impressive"
         - Write in third person ("User works at...", not "You work at...")
 
-        WHAT TO INCLUDE (prioritize information useful for understanding screen/audio context):
+        WHAT TO INCLUDE (only if clearly supported by the data):
         - Full name, role, company, industry
         - Current projects and what tools/apps they use for each
         - Key people they interact with (names, roles, relationship)
@@ -136,10 +136,12 @@ actor AIUserProfileService {
         - Pending tasks and commitments to others
         - Time zone, work schedule patterns
 
-        WHAT TO EXCLUDE:
-        - Personality descriptions ("hardworking", "detail-oriented")
-        - Vague statements ("interested in technology")
-        - Anything not grounded in the provided data
+        CRITICAL RULES:
+        - ONLY include facts that are directly evidenced in the provided data
+        - If a category has no supporting data, skip it entirely — do not guess or infer
+        - Do NOT hallucinate names, roles, companies, or relationships not present in the data
+        - Do NOT add personality descriptions or subjective assessments
+        - When uncertain, omit rather than speculate
 
         The output MUST be under 2000 characters total.
         """
