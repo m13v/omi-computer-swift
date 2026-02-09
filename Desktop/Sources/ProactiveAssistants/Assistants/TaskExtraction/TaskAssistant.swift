@@ -386,7 +386,7 @@ actor TaskAssistant: ProactiveAssistant {
         }
     }
 
-    /// Single-stage extraction: image analysis + tool call for search + final decision
+    /// Single-stage extraction: image analysis + tool call for search + structured decision
     private func extractTaskSingleStage(from jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
         // 1. Gather context
         let context = await refreshContext()
@@ -394,7 +394,6 @@ actor TaskAssistant: ProactiveAssistant {
         // 2. Build prompt with injected context
         var prompt = "Screenshot from \(appName). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
 
-        // Inject active tasks
         if !context.activeTasks.isEmpty {
             prompt += "ACTIVE TASKS (user is already tracking these):\n"
             for (i, task) in context.activeTasks.enumerated() {
@@ -404,7 +403,6 @@ actor TaskAssistant: ProactiveAssistant {
             prompt += "\n"
         }
 
-        // Inject completed tasks
         if !context.completedTasks.isEmpty {
             prompt += "RECENTLY COMPLETED (user already did these):\n"
             for (i, task) in context.completedTasks.enumerated() {
@@ -413,7 +411,6 @@ actor TaskAssistant: ProactiveAssistant {
             prompt += "\n"
         }
 
-        // Inject user-deleted tasks
         if !context.deletedTasks.isEmpty {
             prompt += "USER-DELETED TASKS (user explicitly rejected these — do not re-extract similar):\n"
             for (i, task) in context.deletedTasks.enumerated() {
@@ -422,7 +419,6 @@ actor TaskAssistant: ProactiveAssistant {
             prompt += "\n"
         }
 
-        // Inject goals
         if !context.goals.isEmpty {
             prompt += "ACTIVE GOALS:\n"
             for (i, goal) in context.goals.enumerated() {
@@ -435,13 +431,17 @@ actor TaskAssistant: ProactiveAssistant {
             prompt += "\n"
         }
 
-        prompt += "If you see a potential request, you MUST call search_similar_tasks before deciding."
+        prompt += """
+        If you see a potential request from someone, call search_similar_tasks to check for duplicates.
+        If there is clearly no request on screen (code editor, terminal, settings, media, etc.), call no_task_found immediately.
+        ~90% of screenshots have NO task — only extract when there is a clear, specific request from a person or AI.
+        """
 
-        // 3. Define the search tool
-        let searchTool = GeminiTool(functionDeclarations: [
+        // 3. Define tools: search (when potential task) + early exit (when no task)
+        let tools = GeminiTool(functionDeclarations: [
             GeminiTool.FunctionDeclaration(
                 name: "search_similar_tasks",
-                description: "Search for existing tasks similar to a potential new task. MUST be called before deciding whether to extract a task. Returns matching tasks from vector similarity and keyword search.",
+                description: "Search for existing tasks similar to a potential new task. Call this ONLY when you see a specific request from a person or AI directed at the user.",
                 parameters: GeminiTool.FunctionDeclaration.Parameters(
                     type: "object",
                     properties: [
@@ -449,26 +449,55 @@ actor TaskAssistant: ProactiveAssistant {
                     ],
                     required: ["query"]
                 )
+            ),
+            GeminiTool.FunctionDeclaration(
+                name: "no_task_found",
+                description: "Call this when there is no actionable request on screen. This is the most common outcome (~90% of screenshots). Use for: code editors, terminals, settings, media players, dashboards, or any screen without a direct request from another person or AI.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "context_summary": .init(type: "string", description: "Brief summary of what the user is looking at"),
+                        "current_activity": .init(type: "string", description: "What the user is actively doing")
+                    ],
+                    required: ["context_summary", "current_activity"]
+                )
             )
         ])
 
         // 4. Get system prompt
         let currentSystemPrompt = await systemPrompt
 
-        // 5. Call Gemini with image + tools (forces tool call)
+        // 5. Call Gemini with image + tools (forces one tool call)
         let toolResult = try await geminiClient.sendImageToolRequest(
             prompt: prompt,
             imageData: jpegData,
             systemPrompt: currentSystemPrompt,
-            tools: [searchTool],
+            tools: [tools],
             forceToolCall: true
         )
 
-        // 6. Execute search tool locally
-        guard let toolCall = toolResult.toolCalls.first,
-              toolCall.name == "search_similar_tasks",
+        guard let toolCall = toolResult.toolCalls.first else {
+            log("Task: No tool call received, skipping")
+            return nil
+        }
+
+        // 6a. Early exit: no task on screen — single API call, no search needed
+        if toolCall.name == "no_task_found" {
+            let contextSummary = toolCall.arguments["context_summary"] as? String ?? "No task on screen"
+            let currentActivity = toolCall.arguments["current_activity"] as? String ?? "Unknown"
+            log("Task: no_task_found — \(contextSummary)")
+            return TaskExtractionResult(
+                hasNewTask: false,
+                task: nil,
+                contextSummary: contextSummary,
+                currentActivity: currentActivity
+            )
+        }
+
+        // 6b. Potential task found — execute search
+        guard toolCall.name == "search_similar_tasks",
               let query = toolCall.arguments["query"] as? String else {
-            log("Task: No search_similar_tasks call received, skipping")
+            log("Task: Unexpected tool call: \(toolCall.name), skipping")
             return nil
         }
 
@@ -476,7 +505,8 @@ actor TaskAssistant: ProactiveAssistant {
         let searchResults = await executeSearchTool(query: query)
         log("Task: Search returned \(searchResults.count) results")
 
-        // 7. Continue with search results — model returns final JSON
+        // 7. Second call: separate structured request with responseSchema
+        //    Text-only — the model already analyzed the image and summarized in the query.
         let searchResultsJson: String
         if let data = try? JSONEncoder().encode(searchResults),
            let json = String(data: data, encoding: .utf8) {
@@ -485,28 +515,58 @@ actor TaskAssistant: ProactiveAssistant {
             searchResultsJson = "[]"
         }
 
-        let responseText = try await geminiClient.continueImageToolRequest(
-            originalPrompt: prompt,
-            originalImageData: jpegData,
-            toolCall: toolCall,
-            toolResult: searchResultsJson,
-            systemPrompt: currentSystemPrompt
+        let decisionPrompt = """
+        You analyzed a screenshot from \(appName) and identified a potential request: "\(query)"
+
+        SEARCH RESULTS (existing tasks matching this request):
+        \(searchResultsJson)
+
+        Based on the search results, decide: is this a genuinely NEW task, or is it already tracked / completed / rejected?
+
+        Remember:
+        - Similarity > 0.8 + status "active" → duplicate, skip
+        - Status "completed" → already done, skip
+        - Status "deleted" → user rejected this, skip
+        - No close matches → new task, extract it
+        """
+
+        let taskProperties: [String: GeminiRequest.GenerationConfig.ResponseSchema.Property] = [
+            "title": .init(type: "string", description: "Brief, verb-first task title, ≤15 words. Include WHO and WHAT."),
+            "description": .init(type: "string", description: "Optional additional context"),
+            "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
+            "tags": .init(
+                type: "array",
+                description: "1-3 relevant tags: feature, bug, code, work, personal, research, communication, finance, health, other",
+                items: .init(type: "string", properties: nil, required: nil)
+            ),
+            "source_app": .init(type: "string", description: "App where task was found"),
+            "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied"),
+            "confidence": .init(type: "number", description: "Confidence score 0.0-1.0")
+        ]
+
+        let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
+            type: "object",
+            properties: [
+                "has_new_task": .init(type: "boolean", description: "True only if this is a genuinely new task not already covered by search results"),
+                "task": .init(
+                    type: "object",
+                    description: "The extracted task (only when has_new_task is true)",
+                    properties: taskProperties,
+                    required: ["title", "priority", "tags", "source_app", "confidence"]
+                ),
+                "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
+                "current_activity": .init(type: "string", description: "What the user is actively doing")
+            ],
+            required: ["has_new_task", "context_summary", "current_activity"]
         )
 
-        // 8. Parse JSON response
-        // Strip markdown code fences if present
-        var cleanedResponse = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
-        if cleanedResponse.hasPrefix("```json") {
-            cleanedResponse = String(cleanedResponse.dropFirst(7))
-        } else if cleanedResponse.hasPrefix("```") {
-            cleanedResponse = String(cleanedResponse.dropFirst(3))
-        }
-        if cleanedResponse.hasSuffix("```") {
-            cleanedResponse = String(cleanedResponse.dropLast(3))
-        }
-        cleanedResponse = cleanedResponse.trimmingCharacters(in: .whitespacesAndNewlines)
+        let responseText = try await geminiClient.sendRequest(
+            prompt: decisionPrompt,
+            systemPrompt: currentSystemPrompt,
+            responseSchema: responseSchema
+        )
 
-        return try JSONDecoder().decode(TaskExtractionResult.self, from: Data(cleanedResponse.utf8))
+        return try JSONDecoder().decode(TaskExtractionResult.self, from: Data(responseText.utf8))
     }
 
     // MARK: - Context & Search
