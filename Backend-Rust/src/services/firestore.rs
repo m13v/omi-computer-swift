@@ -17,7 +17,7 @@ use crate::models::{
     ChatSessionDB, Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
     FocusStats, FocusStatus, GoalDB, GoalHistoryEntry, GoalType, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, PersonaDB, Structured, TranscriptSegment, TranscriptionPreferences,
-    UserAIPersona, UserProfile,
+    AIUserProfile, UserProfile,
 };
 
 /// Service account credentials from JSON file
@@ -4077,27 +4077,27 @@ impl FirestoreService {
     // USER PERSONA
     // =========================================================================
 
-    /// Get user AI persona from user document
-    pub async fn get_user_ai_persona(
+    /// Get AI-generated user profile from user document
+    pub async fn get_ai_user_profile(
         &self,
         uid: &str,
-    ) -> Result<Option<UserAIPersona>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Option<AIUserProfile>, Box<dyn std::error::Error + Send + Sync>> {
         let doc = self.get_user_document(uid).await?;
         let empty = json!({});
         let fields = doc.get("fields").unwrap_or(&empty);
 
-        let persona_fields = fields
-            .get("user_persona")
+        let profile_fields = fields
+            .get("ai_user_profile")
             .and_then(|p| p.get("mapValue"))
             .and_then(|m| m.get("fields"));
 
-        if let Some(pf) = persona_fields {
-            let persona_text = self.parse_string(pf, "persona_text").unwrap_or_default();
+        if let Some(pf) = profile_fields {
+            let profile_text = self.parse_string(pf, "profile_text").unwrap_or_default();
             let generated_at = self.parse_timestamp(pf, "generated_at")?;
             let data_sources_used = self.parse_int(pf, "data_sources_used").unwrap_or(0);
 
-            Ok(Some(UserAIPersona {
-                persona_text,
+            Ok(Some(AIUserProfile {
+                profile_text,
                 generated_at,
                 data_sources_used,
             }))
@@ -4106,23 +4106,23 @@ impl FirestoreService {
         }
     }
 
-    /// Update user AI persona in user document
-    pub async fn update_user_ai_persona(
+    /// Update AI-generated user profile in user document
+    pub async fn update_ai_user_profile(
         &self,
         uid: &str,
-        persona_text: &str,
+        profile_text: &str,
         generated_at: &str,
         data_sources_used: i32,
-    ) -> Result<UserAIPersona, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<AIUserProfile, Box<dyn std::error::Error + Send + Sync>> {
         let generated_at_dt = DateTime::parse_from_rfc3339(generated_at)
             .map(|dt| dt.with_timezone(&Utc))
             .map_err(|e| format!("Invalid generated_at timestamp: {}", e))?;
 
         let fields = json!({
-            "user_persona": {
+            "ai_user_profile": {
                 "mapValue": {
                     "fields": {
-                        "persona_text": {"stringValue": persona_text},
+                        "profile_text": {"stringValue": profile_text},
                         "generated_at": {"timestampValue": generated_at},
                         "data_sources_used": {"integerValue": data_sources_used.to_string()}
                     }
@@ -4130,10 +4130,10 @@ impl FirestoreService {
             }
         });
 
-        self.update_user_fields(uid, fields, &["user_persona"]).await?;
+        self.update_user_fields(uid, fields, &["ai_user_profile"]).await?;
 
-        Ok(UserAIPersona {
-            persona_text: persona_text.to_string(),
+        Ok(AIUserProfile {
+            profile_text: profile_text.to_string(),
             generated_at: generated_at_dt,
             data_sources_used,
         })
