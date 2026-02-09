@@ -185,15 +185,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 await TierManager.shared.checkTierIfNeeded()
             }
 
-            // Generate AI user profile if >24h since last generation
-            Task {
-                guard await AIUserProfileService.shared.shouldGenerate() else { return }
-                do {
-                    _ = try await AIUserProfileService.shared.generateProfile()
-                } catch {
-                    log("AppDelegate: AI user profile generation failed: \(error.localizedDescription)")
-                }
-            }
         }
 
         // One-time migration: Enable launch at login for existing users who haven't set it
