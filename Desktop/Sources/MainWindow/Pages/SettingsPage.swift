@@ -97,6 +97,12 @@ struct SettingsContentView: View {
     @State private var chatMessageCount: Int?
     @State private var isLoadingChatMessages = false
 
+    // AI Persona
+    @State private var personaText: String? = UserPersonaService.shared.getStoredPersonaText()
+    @State private var personaGeneratedAt: Date? = UserPersonaService.shared.getStoredGeneratedAt()
+    @State private var personaDataSourcesUsed: Int = UserPersonaService.shared.getStoredDataSourcesUsed()
+    @State private var isGeneratingPersona = false
+
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
 
@@ -1318,6 +1324,83 @@ struct SettingsContentView: View {
 
     private var advancedSection: some View {
         VStack(spacing: 20) {
+            // AI Persona card
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "brain")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("AI Persona")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        if isGeneratingPersona {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button(action: {
+                                regeneratePersona()
+                            }) {
+                                Text(personaText == nil ? "Generate Now" : "Regenerate")
+                                    .font(.system(size: 12))
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    if let text = personaText {
+                        ScrollView {
+                            Text(text)
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 200)
+
+                        HStack {
+                            if let date = personaGeneratedAt {
+                                Text("Last updated: \(date.formatted(.relative(presentation: .named)))")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            if personaDataSourcesUsed > 0 {
+                                Text("Data sources: \(personaDataSourcesUsed) items")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                        }
+                    } else if !isGeneratingPersona {
+                        Text("Your AI persona will be generated automatically on next launch, or click \"Generate Now\" to create it now.")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textTertiary)
+                    } else {
+                        HStack {
+                            Spacer()
+                            VStack(spacing: 8) {
+                                ProgressView()
+                                Text("Generating persona...")
+                                    .font(.system(size: 13))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                            Spacer()
+                        }
+                        .padding(.vertical, 20)
+                    }
+                }
+            }
+
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) {
@@ -2577,6 +2660,26 @@ struct SettingsContentView: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 7.0) {
             GlowDemoWindow.close()
             isPreviewRunning = false
+        }
+    }
+
+    private func regeneratePersona() {
+        isGeneratingPersona = true
+        Task {
+            do {
+                let result = try await UserPersonaService.shared.generatePersona()
+                await MainActor.run {
+                    personaText = result.text
+                    personaGeneratedAt = result.generatedAt
+                    personaDataSourcesUsed = result.dataSourcesUsed
+                    isGeneratingPersona = false
+                }
+            } catch {
+                log("Settings: Persona generation failed: \(error.localizedDescription)")
+                await MainActor.run {
+                    isGeneratingPersona = false
+                }
+            }
         }
     }
 
