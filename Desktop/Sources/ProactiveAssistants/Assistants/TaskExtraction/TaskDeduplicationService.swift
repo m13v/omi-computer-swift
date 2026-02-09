@@ -198,7 +198,7 @@ actor TaskDeduplicationService {
 
         // Validate and delete
         let validTaskIDs = Set(tasks.map { $0.id })
-        let taskLookup = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+        let taskLookup = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
         var deletedCount = 0
 
         for group in result.duplicateGroups {
