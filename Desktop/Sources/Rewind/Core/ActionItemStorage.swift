@@ -511,6 +511,19 @@ actor ActionItemStorage {
         return inserted
     }
 
+    /// Insert a screen observation (context captured during task extraction)
+    @discardableResult
+    func insertObservation(_ record: ObservationRecord) async throws -> ObservationRecord {
+        let db = try await ensureInitialized()
+
+        let inserted = try await db.write { database in
+            try record.inserted(database)
+        }
+
+        log("ActionItemStorage: Inserted observation (id: \(inserted.id ?? -1), app: \(inserted.appName), hasTask: \(inserted.hasTask))")
+        return inserted
+    }
+
     /// Mark a local action item as synced with backend ID
     func markSynced(id: Int64, backendId: String) async throws {
         let db = try await ensureInitialized()
