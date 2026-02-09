@@ -1957,6 +1957,17 @@ struct TaskActionItem: Codable, Identifiable {
         return tags.contains { Self.agentCategories.contains($0) }
     }
 
+    /// Parsed source classification from metadata
+    var sourceClassification: TaskSourceClassification? {
+        guard let metadata = metadata,
+              let data = metadata.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let cat = json["source_category"] as? String,
+              let sub = json["source_subcategory"] as? String
+        else { return nil }
+        return TaskSourceClassification.from(category: cat, subcategory: sub)
+    }
+
     /// Parse metadata JSON to extract source app name
     var sourceApp: String? {
         guard let metadata = metadata,
