@@ -2213,10 +2213,22 @@ struct SettingsContentView: View {
             await loadChatMessageCount()
         }
         .task {
+            // Try loading immediately (covers all restarts after first generation)
             if let profile = await AIUserProfileService.shared.getLatestProfile() {
                 aiProfileText = profile.profileText
                 aiProfileGeneratedAt = profile.generatedAt
                 aiProfileDataSourcesUsed = profile.dataSourcesUsed
+                return
+            }
+            // No profile yet — first-ever generation may be in progress, poll briefly
+            for _ in 0..<6 {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                if let profile = await AIUserProfileService.shared.getLatestProfile() {
+                    aiProfileText = profile.profileText
+                    aiProfileGeneratedAt = profile.generatedAt
+                    aiProfileDataSourcesUsed = profile.dataSourcesUsed
+                    return
+                }
             }
         }
     }
