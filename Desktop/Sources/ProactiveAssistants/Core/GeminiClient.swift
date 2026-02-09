@@ -597,11 +597,17 @@ struct GeminiTool: Encodable {
                 let type: String
                 let description: String
                 let `enum`: [String]?
+                let items: Items?
 
-                init(type: String, description: String, enumValues: [String]? = nil) {
+                init(type: String, description: String, enumValues: [String]? = nil, items: Items? = nil) {
                     self.type = type
                     self.description = description
                     self.enum = enumValues
+                    self.items = items
+                }
+
+                struct Items: Encodable {
+                    let type: String
                 }
             }
         }
@@ -1020,6 +1026,83 @@ extension GeminiClient {
                             ]
                         )
                     ],
+                    systemInstruction: GeminiImageToolRequest.SystemInstruction(
+                        parts: [.init(text: systemPrompt)]
+                    ),
+                    tools: tools,
+                    toolConfig: toolConfig
+                )
+
+                let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
+                var urlRequest = URLRequest(url: url)
+                urlRequest.httpMethod = "POST"
+                urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                urlRequest.timeoutInterval = 300
+                urlRequest.httpBody = try JSONEncoder().encode(request)
+
+                let (data, _) = try await URLSession.shared.data(for: urlRequest)
+
+                let response = try JSONDecoder().decode(GeminiToolResponse.self, from: data)
+
+                if let error = response.error {
+                    throw GeminiClientError.apiError(error.message)
+                }
+
+                guard let candidate = response.candidates?.first,
+                      let parts = candidate.content?.parts else {
+                    throw GeminiClientError.invalidResponse
+                }
+
+                var toolCalls: [ToolCall] = []
+                var textResponse = ""
+
+                for part in parts {
+                    if let functionCall = part.functionCall {
+                        let args = functionCall.args?.mapValues { $0.value } ?? [:]
+                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args))
+                    }
+                    if let text = part.text {
+                        textResponse += text
+                    }
+                }
+
+                return ToolChatResult(
+                    text: textResponse,
+                    toolCalls: toolCalls,
+                    requiresToolExecution: !toolCalls.isEmpty
+                )
+            } catch {
+                lastError = error
+                guard attempt < maxRetries && isTransientError(error) else {
+                    throw error
+                }
+                let backoffSeconds = UInt64(attempt + 1)
+                try? await Task.sleep(nanoseconds: backoffSeconds * 1_000_000_000)
+            }
+        }
+
+        throw lastError!
+    }
+
+    /// Send image + tool loop request: takes pre-built contents array for multi-turn tool calling.
+    /// Retries up to 2 times for transient errors.
+    func sendImageToolLoop(
+        contents: [GeminiImageToolRequest.Content],
+        systemPrompt: String,
+        tools: [GeminiTool],
+        forceToolCall: Bool = false
+    ) async throws -> ToolChatResult {
+        let maxRetries = 2
+        var lastError: Error?
+
+        for attempt in 0...maxRetries {
+            do {
+                let toolConfig = forceToolCall ? GeminiImageToolRequest.ToolConfig(
+                    functionCallingConfig: .init(mode: "ANY")
+                ) : nil
+
+                let request = GeminiImageToolRequest(
+                    contents: contents,
                     systemInstruction: GeminiImageToolRequest.SystemInstruction(
                         parts: [.init(text: systemPrompt)]
                     ),
