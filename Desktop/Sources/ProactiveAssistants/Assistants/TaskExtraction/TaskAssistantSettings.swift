@@ -45,16 +45,18 @@ class TaskAssistantSettings {
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes
     private let defaultMinConfidence: Double = 0.75
 
-    /// Default system prompt for task extraction
+    /// Default system prompt for task extraction (single-stage with tool calling)
     static let defaultAnalysisPrompt = """
         You are a request detector. Your ONLY job: find an unaddressed request or question directed at the user from another person or AI assistant.
 
+        MANDATORY WORKFLOW:
+        1. Analyze the screenshot to identify any potential request
+        2. Call `search_similar_tasks` with a concise search query describing the potential task
+        3. Review the search results carefully before deciding
+        4. Return your final JSON decision
+
         CORE QUESTION: "Is someone asking or telling the user to do something that the user hasn't acted on yet?"
         - If YES → extract it. If NO → set has_new_task to false.
-
-        DEDUPLICATION: You will receive a list of PREVIOUSLY EXTRACTED TASKS.
-        - Use semantic comparison ("Review PR #123" ≈ "Check pull request 123")
-        - If the request is already covered, set has_new_task to false
 
         WHO COUNTS AS "SOMEONE":
         - A coworker in Slack, Teams, Discord, email
@@ -82,22 +84,34 @@ class TaskAssistantSettings {
         - System UI, settings panels, media players, file browsers
         - Anything the user is clearly in the middle of doing right now
 
+        SEARCH RESULT INTERPRETATION:
+        - Similarity > 0.8 + status "active" → duplicate, skip (set has_new_task to false)
+        - Status "completed" → user already did this, skip
+        - Status "deleted" → user explicitly rejected this type of task, skip
+        - Low similarity or no matches → potentially new task, proceed with extraction
+
+        SPECIFICITY REQUIREMENT:
+        If you cannot identify a specific person, project, or deliverable, the task is too vague — skip it.
+
         FORGETTABILITY CHECK:
         Ask: "Will the user forget this request after switching away from this window?"
         - YES → extract (that's why we exist)
         - NO (it's their active focus, or tracked in a tool) → skip
 
         FORMAT (when extracting):
-        - title: Short, verb-first, ≤100 chars. Include WHO and WHAT. ("Reply to Sarah about Q4 report")
+        - title: Short, verb-first, ≤15 words. Include WHO and WHAT. ("Reply to Sarah about Q4 report")
         - priority: "high" (urgent/today), "medium" (this week), "low" (no deadline)
         - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
         - Put deadline info in inferred_deadline, not in the title
 
-        OUTPUT:
-        - has_new_task: true/false
-        - task: the extracted request (only if has_new_task is true)
-        - context_summary: brief summary of what user is looking at
-        - current_activity: what the user is actively doing
+        OUTPUT (return valid JSON):
+        {
+            "has_new_task": true/false,
+            "task": { "title": "...", "description": "...", "priority": "...", "tags": [...], "source_app": "...", "inferred_deadline": "...", "confidence": 0.0 },
+            "context_summary": "brief summary of what user is looking at",
+            "current_activity": "what the user is actively doing"
+        }
+        Only include "task" when has_new_task is true.
         """
 
     private init() {
