@@ -1112,6 +1112,27 @@ actor RewindDatabase {
             try db.execute(sql: "DELETE FROM ai_user_profiles")
         }
 
+        // Migration 22: Create observations table for screen context tracking
+        migrator.registerMigration("createObservations") { db in
+            try db.create(table: "observations") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("screenshotId", .integer).references("screenshots", onDelete: .setNull)
+                t.column("appName", .text).notNull()
+                t.column("contextSummary", .text).notNull()
+                t.column("currentActivity", .text).notNull()
+                t.column("hasTask", .boolean).notNull().defaults(to: false)
+                t.column("taskTitle", .text)
+                t.column("sourceCategory", .text)
+                t.column("sourceSubcategory", .text)
+                t.column("metadataJson", .text)
+                t.column("createdAt", .datetime).notNull()
+            }
+
+            try db.create(index: "idx_observations_created", on: "observations", columns: ["createdAt"])
+            try db.create(index: "idx_observations_app", on: "observations", columns: ["appName"])
+            try db.create(index: "idx_observations_screenshot", on: "observations", columns: ["screenshotId"])
+        }
+
         try migrator.migrate(queue)
     }
 
