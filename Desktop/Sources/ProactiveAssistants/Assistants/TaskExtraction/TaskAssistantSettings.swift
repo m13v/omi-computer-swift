@@ -104,10 +104,32 @@ class TaskAssistantSettings {
         - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
         - Put deadline info in inferred_deadline, not in the title
 
+        SOURCE CLASSIFICATION (mandatory for every extracted task):
+        Classify each task's origin with source_category + source_subcategory.
+        Categories and their subcategories:
+        - direct_request: Someone explicitly asked the user to do something.
+          → message (chat/email message), meeting (verbal request in meeting), mention (@mention/tag)
+        - self_generated: User created this for themselves.
+          → idea (user's own idea/note), reminder (explicit "remind me"), goal_subtask (part of a larger goal)
+        - calendar_driven: Triggered by a calendar event or deadline.
+          → event_prep (prepare for upcoming event), recurring (repeating task), deadline (approaching due date)
+        - reactive: Response to something that happened.
+          → error (build error/crash), notification (system/app notification), observation (something noticed on screen)
+        - external_system: Comes from a project tool or automated system.
+          → project_tool (Jira/Linear/Trello), alert (monitoring/CI alert), documentation (doc update needed)
+        - other: None of the above. → other
+
+        Examples:
+        - Slack message "Can you review my PR?" → direct_request / message
+        - User's own TODO comment in code → self_generated / idea
+        - Calendar event "Team standup" in 30 min → calendar_driven / event_prep
+        - Build failure notification → reactive / error
+        - Linear ticket assigned to user → external_system / project_tool
+
         OUTPUT (return valid JSON):
         {
             "has_new_task": true/false,
-            "task": { "title": "...", "description": "...", "priority": "...", "tags": [...], "source_app": "...", "inferred_deadline": "...", "confidence": 0.0 },
+            "task": { "title": "...", "description": "...", "priority": "...", "tags": [...], "source_app": "...", "inferred_deadline": "...", "confidence": 0.0, "source_category": "...", "source_subcategory": "..." },
             "context_summary": "brief summary of what user is looking at",
             "current_activity": "what the user is actively doing"
         }
