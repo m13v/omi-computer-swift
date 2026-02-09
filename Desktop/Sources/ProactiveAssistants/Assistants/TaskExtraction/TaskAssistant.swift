@@ -245,7 +245,9 @@ actor TaskAssistant: ProactiveAssistant {
     ) async -> ActionItemRecord? {
         var metadata: [String: Any] = [
             "tags": task.tags,
-            "context_summary": contextSummary
+            "context_summary": contextSummary,
+            "source_category": task.sourceCategory,
+            "source_subcategory": task.sourceSubcategory
         ]
         if let primaryTag = task.primaryTag {
             metadata["category"] = primaryTag
@@ -302,7 +304,9 @@ actor TaskAssistant: ProactiveAssistant {
                 "confidence": task.confidence,
                 "context_summary": taskResult.contextSummary,
                 "current_activity": taskResult.currentActivity,
-                "tags": task.tags
+                "tags": task.tags,
+                "source_category": task.sourceCategory,
+                "source_subcategory": task.sourceSubcategory
             ]
             if let primaryTag = task.primaryTag {
                 metadata["category"] = primaryTag
@@ -623,6 +627,14 @@ actor TaskAssistant: ProactiveAssistant {
         - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
         - inferred_deadline: deadline if visible, otherwise empty string
         - description: additional context, otherwise empty string
+        - source_category: where the task originated (direct_request, self_generated, calendar_driven, reactive, external_system, other)
+        - source_subcategory: specific origin within that category
+          direct_request → message, meeting, mention
+          self_generated → idea, reminder, goal_subtask
+          calendar_driven → event_prep, recurring, deadline
+          reactive → error, notification, observation
+          external_system → project_tool, alert, documentation
+          any category → other
         """
 
         let extractionSchema = GeminiRequest.GenerationConfig.ResponseSchema(
@@ -640,9 +652,11 @@ actor TaskAssistant: ProactiveAssistant {
                 "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied. Empty string if none."),
                 "confidence": .init(type: "number", description: "Confidence score 0.0-1.0"),
                 "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
-                "current_activity": .init(type: "string", description: "What the user is actively doing")
+                "current_activity": .init(type: "string", description: "What the user is actively doing"),
+                "source_category": .init(type: "string", enum: ["direct_request", "self_generated", "calendar_driven", "reactive", "external_system", "other"], description: "Where the task originated: direct_request (someone asked), self_generated (user's own idea/reminder), calendar_driven (calendar event), reactive (error/notification), external_system (tool/alert), other"),
+                "source_subcategory": .init(type: "string", enum: ["message", "meeting", "mention", "idea", "reminder", "goal_subtask", "event_prep", "recurring", "deadline", "error", "notification", "observation", "project_tool", "alert", "documentation", "other"], description: "Specific origin: direct_request→message/meeting/mention, self_generated→idea/reminder/goal_subtask, calendar_driven→event_prep/recurring/deadline, reactive→error/notification/observation, external_system→project_tool/alert/documentation, any→other")
             ],
-            required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity"]
+            required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity", "source_category", "source_subcategory"]
         )
 
         let extractionText = try await geminiClient.sendRequest(
