@@ -78,7 +78,7 @@ struct TaskTestRunnerView: View {
             footer
                 .padding(16)
         }
-        .frame(width: 700, height: 600)
+        .frame(width: 1400, height: 900)
         .background(Color(nsColor: .windowBackgroundColor))
     }
 
@@ -414,7 +414,7 @@ class TaskTestRunnerWindow: NSWindow {
     }
 
     private init() {
-        let contentRect = NSRect(x: 0, y: 0, width: 700, height: 600)
+        let contentRect = NSRect(x: 0, y: 0, width: 1400, height: 900)
 
         super.init(
             contentRect: contentRect,
@@ -426,7 +426,7 @@ class TaskTestRunnerWindow: NSWindow {
         self.title = "Task Extraction Test Runner"
         self.isReleasedWhenClosed = false
         self.delegate = self
-        self.minSize = NSSize(width: 600, height: 450)
+        self.minSize = NSSize(width: 900, height: 600)
         self.center()
 
         let runnerView = TaskTestRunnerView(onClose: { [weak self] in
