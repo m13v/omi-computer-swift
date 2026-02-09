@@ -98,10 +98,13 @@ struct SettingsContentView: View {
     @State private var isLoadingChatMessages = false
 
     // AI User Profile
+    @State private var aiProfileId: Int64?
     @State private var aiProfileText: String?
     @State private var aiProfileGeneratedAt: Date?
     @State private var aiProfileDataSourcesUsed: Int = 0
     @State private var isGeneratingAIProfile = false
+    @State private var isEditingAIProfile = false
+    @State private var aiProfileEditText: String = ""
 
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
@@ -1357,28 +1360,82 @@ struct SettingsContentView: View {
                         .background(OmiColors.backgroundQuaternary)
 
                     if let text = aiProfileText {
-                        ScrollView {
-                            Text(text)
+                        if isEditingAIProfile {
+                            TextEditor(text: $aiProfileEditText)
                                 .font(.system(size: 13, design: .monospaced))
                                 .foregroundColor(OmiColors.textSecondary)
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(maxHeight: 200)
+                                .scrollContentBackground(.hidden)
+                                .frame(maxHeight: 200)
 
-                        HStack {
-                            if let date = aiProfileGeneratedAt {
-                                Text("Last updated: \(date.formatted(.relative(presentation: .named)))")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(OmiColors.textTertiary)
+                            HStack {
+                                Button("Cancel") {
+                                    isEditingAIProfile = false
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button("Save") {
+                                    if let id = aiProfileId {
+                                        Task {
+                                            let success = await AIUserProfileService.shared.updateProfileText(
+                                                id: id, newText: aiProfileEditText
+                                            )
+                                            if success {
+                                                aiProfileText = aiProfileEditText
+                                            }
+                                            isEditingAIProfile = false
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.small)
+
+                                Spacer()
                             }
+                        } else {
+                            ScrollView {
+                                Text(text)
+                                    .font(.system(size: 13, design: .monospaced))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                    .textSelection(.enabled)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .frame(maxHeight: 200)
 
-                            Spacer()
+                            HStack {
+                                if let date = aiProfileGeneratedAt {
+                                    Text("Last updated: \(date.formatted(.relative(presentation: .named)))")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
 
-                            if aiProfileDataSourcesUsed > 0 {
-                                Text("Data sources: \(aiProfileDataSourcesUsed) items")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(OmiColors.textTertiary)
+                                Spacer()
+
+                                if aiProfileDataSourcesUsed > 0 {
+                                    Text("Data sources: \(aiProfileDataSourcesUsed) items")
+                                        .font(.system(size: 12))
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+
+                                Button(action: {
+                                    aiProfileEditText = text
+                                    isEditingAIProfile = true
+                                }) {
+                                    Image(systemName: "pencil")
+                                        .font(.system(size: 11))
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Edit profile")
+
+                                Button(action: {
+                                    deleteCurrentAIProfile()
+                                }) {
+                                    Image(systemName: "trash")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(.red.opacity(0.7))
+                                }
+                                .buttonStyle(.borderless)
+                                .help("Delete this profile")
                             }
                         }
                     } else if !isGeneratingAIProfile {
@@ -2230,6 +2287,7 @@ struct SettingsContentView: View {
         .task {
             // Try loading immediately (covers all restarts after first generation)
             if let profile = await AIUserProfileService.shared.getLatestProfile() {
+                aiProfileId = profile.id
                 aiProfileText = profile.profileText
                 aiProfileGeneratedAt = profile.generatedAt
                 aiProfileDataSourcesUsed = profile.dataSourcesUsed
@@ -2239,6 +2297,7 @@ struct SettingsContentView: View {
             for _ in 0..<6 {
                 try? await Task.sleep(nanoseconds: 5_000_000_000)
                 if let profile = await AIUserProfileService.shared.getLatestProfile() {
+                    aiProfileId = profile.id
                     aiProfileText = profile.profileText
                     aiProfileGeneratedAt = profile.generatedAt
                     aiProfileDataSourcesUsed = profile.dataSourcesUsed
@@ -2697,12 +2756,33 @@ struct SettingsContentView: View {
         }
     }
 
+    private func deleteCurrentAIProfile() {
+        guard let id = aiProfileId else { return }
+        Task {
+            let previous = await AIUserProfileService.shared.deleteProfile(id: id)
+            await MainActor.run {
+                if let previous {
+                    aiProfileId = previous.id
+                    aiProfileText = previous.profileText
+                    aiProfileGeneratedAt = previous.generatedAt
+                    aiProfileDataSourcesUsed = previous.dataSourcesUsed
+                } else {
+                    aiProfileId = nil
+                    aiProfileText = nil
+                    aiProfileGeneratedAt = nil
+                    aiProfileDataSourcesUsed = 0
+                }
+            }
+        }
+    }
+
     private func regenerateAIProfile() {
         isGeneratingAIProfile = true
         Task {
             do {
                 let result = try await AIUserProfileService.shared.generateProfile()
                 await MainActor.run {
+                    aiProfileId = result.id
                     aiProfileText = result.profileText
                     aiProfileGeneratedAt = result.generatedAt
                     aiProfileDataSourcesUsed = result.dataSourcesUsed
