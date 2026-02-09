@@ -132,7 +132,7 @@ struct SettingsContentView: View {
     @State private var isLoadingSettings: Bool = false
 
     private let cooldownOptions = [1, 2, 5, 10, 15, 30, 60]
-    private let analysisDelayOptions = [0, 60, 300] // seconds: instant, 1 min, 5 min
+    private let analysisDelayOptions = [0, 15, 30, 60, 300] // seconds: instant, 15s, 30s, 1 min, 5 min
     private let extractionIntervalOptions: [Double] = [10.0, 600.0, 3600.0] // 10s, 10min, 1hr
     private let hourOptions = Array(0...23)
     private let frequencyOptions = [
@@ -795,6 +795,38 @@ struct SettingsContentView: View {
 
     private var notificationsSection: some View {
         VStack(spacing: 20) {
+            // Analysis Throttle (global — affects all assistants)
+            settingsCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Analysis Throttle")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Wait before analyzing after switching apps")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Text(formatAnalysisDelay(analysisDelay))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .frame(width: 80, alignment: .trailing)
+                    }
+
+                    Slider(value: Binding(
+                        get: { Double(analysisDelaySliderIndex) },
+                        set: { analysisDelay = analysisDelayOptions[Int($0)] }
+                    ), in: 0...Double(analysisDelayOptions.count - 1), step: 1)
+                        .tint(OmiColors.purplePrimary)
+                        .onChange(of: analysisDelay) { _, newValue in
+                            AssistantSettings.shared.analysisDelay = newValue
+                        }
+                }
+            }
+
             // Focus Assistant (simplified)
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -824,36 +856,6 @@ struct SettingsContentView: View {
                     if focusEnabled {
                         Divider()
                             .background(OmiColors.backgroundQuaternary)
-
-                        // Analysis Delay Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Analysis Delay")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("Wait before analyzing after switching apps")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text(formatAnalysisDelay(analysisDelay))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 80, alignment: .trailing)
-                            }
-
-                            Slider(value: Binding(
-                                get: { Double(analysisDelaySliderIndex) },
-                                set: { analysisDelay = analysisDelayOptions[Int($0)] }
-                            ), in: 0...Double(analysisDelayOptions.count - 1), step: 1)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: analysisDelay) { _, newValue in
-                                    AssistantSettings.shared.analysisDelay = newValue
-                                }
-                        }
 
                         settingRow(title: "Visual Glow Effect", subtitle: "Show colored border when focus changes") {
                             Toggle("", isOn: $glowOverlayEnabled)
