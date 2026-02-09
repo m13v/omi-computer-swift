@@ -21,6 +21,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var priority: String?               // high, medium, low
     var category: String?
     var tagsJson: String?               // JSON array: ["work", "code"]
+    var deletedBy: String?              // "user", "ai_dedup"
     var dueAt: Date?
 
     // Desktop extraction fields
@@ -51,6 +52,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         priority: String? = nil,
         category: String? = nil,
         tagsJson: String? = nil,
+        deletedBy: String? = nil,
         dueAt: Date? = nil,
         screenshotId: Int64? = nil,
         confidence: Double? = nil,
@@ -72,6 +74,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.priority = priority
         self.category = category
         self.tagsJson = tagsJson
+        self.deletedBy = deletedBy
         self.dueAt = dueAt
         self.screenshotId = screenshotId
         self.confidence = confidence
@@ -198,6 +201,7 @@ extension ActionItemRecord {
             priority: item.priority,
             category: item.category,
             tagsJson: tagsJson,
+            deletedBy: item.deletedBy,
             dueAt: item.dueAt,
             screenshotId: nil,
             confidence: nil,
@@ -227,6 +231,7 @@ extension ActionItemRecord {
         self.description = item.description
         self.completed = item.completed
         self.deleted = item.deleted ?? false
+        self.deletedBy = item.deletedBy
         self.source = item.source
         self.conversationId = item.conversationId
         self.priority = item.priority
@@ -285,7 +290,7 @@ extension ActionItemRecord {
             metadata: finalMetadata,
             category: category,
             deleted: deleted,
-            deletedBy: nil,  // Not stored locally
+            deletedBy: deletedBy,
             deletedAt: nil,  // Not stored locally
             deletedReason: nil,  // Not stored locally
             keptTaskId: nil  // Not stored locally
