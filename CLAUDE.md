@@ -87,7 +87,7 @@ See `.claude/settings.json` for connection details.
 
 ### After Implementing Changes
 - **DO NOT** run the app after making changes
-- You MAY run the build command (`xcrun swift build -c debug --package-path Desktop`) to verify compilation
+- **DO NOT** run build commands after making changes
 - Let the user run `./run.sh` to test the app manually
 - Wait for user feedback before making additional changes
 
