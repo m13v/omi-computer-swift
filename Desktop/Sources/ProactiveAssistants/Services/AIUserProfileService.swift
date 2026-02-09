@@ -114,12 +114,34 @@ actor AIUserProfileService {
         // 4. Call Gemini
         let gemini = try GeminiClient(model: model)
         let systemPrompt = """
-        You are an AI that creates concise user profiles from behavioral data. \
-        Generate a profile that captures who this person is — their priorities, patterns, \
-        communication style, interests, and current focus areas. \
-        Write in third person. Be specific and concrete, not generic. \
-        The output MUST be under 2000 characters. \
-        Do NOT use markdown headers or bullet points — write in flowing prose paragraphs.
+        You are generating a structured user profile that will be injected as context into AI pipelines \
+        (task extraction, goal extraction, memory extraction) that analyze the user's screen and audio activity.
+
+        OUTPUT FORMAT:
+        - A flat list of factual statements, one per line, prefixed with "- "
+        - Each statement must be a concrete fact, not an opinion or adjective
+        - No prose, no paragraphs, no headers, no markdown formatting
+        - No filler words, no adjectives like "passionate", "dedicated", "impressive"
+        - Write in third person ("User works at...", not "You work at...")
+
+        WHAT TO INCLUDE (prioritize information useful for understanding screen/audio context):
+        - Full name, role, company, industry
+        - Current projects and what tools/apps they use for each
+        - Key people they interact with (names, roles, relationship)
+        - Active goals and their progress
+        - Recurring meetings, deadlines, routines
+        - Communication platforms they use (Slack, email, iMessage, etc.)
+        - Technical stack, programming languages, frameworks
+        - Topics they frequently discuss or research
+        - Pending tasks and commitments to others
+        - Time zone, work schedule patterns
+
+        WHAT TO EXCLUDE:
+        - Personality descriptions ("hardworking", "detail-oriented")
+        - Vague statements ("interested in technology")
+        - Anything not grounded in the provided data
+
+        The output MUST be under 2000 characters total.
         """
 
         let profileText = try await gemini.sendTextRequest(prompt: prompt, systemPrompt: systemPrompt)
@@ -290,9 +312,11 @@ actor AIUserProfileService {
         }
 
         return """
-        Based on the following data about a user, generate a concise user profile (under 2000 characters). \
-        Cover: behavioral patterns, communication style, current priorities, active goals with progress, \
-        recurring themes, key interests, and recent work focus.
+        Generate a factual user profile from the following data. \
+        Output a flat list of concrete facts (one per line, prefixed with "- "). \
+        This profile will be used as context for AI pipelines that analyze the user's screen and audio activity \
+        to extract tasks, goals, and memories. Focus on facts that help identify who is who, what projects are active, \
+        and what the user's current priorities are. Under 2000 characters.
 
         \(sections.joined(separator: "\n\n"))
         """
