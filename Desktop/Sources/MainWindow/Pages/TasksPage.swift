@@ -42,6 +42,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     case todo
     case done
     case removedByAI
+    case removedByMe
 
     // Category (matches TaskClassification)
     case personal
@@ -71,7 +72,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
 
     var group: TaskFilterGroup {
         switch self {
-        case .todo, .done, .removedByAI: return .status
+        case .todo, .done, .removedByAI, .removedByMe: return .status
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
         case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual, .sourceOmiAnalytics: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
@@ -83,6 +84,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .todo: return "To Do"
         case .done: return "Done"
         case .removedByAI: return "Removed by AI"
+        case .removedByMe: return "Removed by me"
         case .personal: return "Personal"
         case .work: return "Work"
         case .feature: return "Feature"
@@ -109,6 +111,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .todo: return "circle"
         case .done: return "checkmark.circle.fill"
         case .removedByAI: return "trash.slash"
+        case .removedByMe: return "trash"
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
         case .feature: return "sparkles"
@@ -135,7 +138,8 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo: return !task.completed
         case .done: return task.completed
-        case .removedByAI: return task.deleted == true
+        case .removedByAI: return task.deleted == true && task.deletedBy != "user"
+        case .removedByMe: return task.deleted == true && task.deletedBy == "user"
         case .personal: return task.tags.contains("personal")
         case .work: return task.tags.contains("work")
         case .feature: return task.tags.contains("feature")
@@ -374,7 +378,7 @@ class TasksViewModel: ObservableObject {
 
 
     // Filter tags (Memories-style dropdown)
-    @Published var selectedTags: Set<TaskFilterTag> = [] {
+    @Published var selectedTags: Set<TaskFilterTag> = [.todo] {
         didSet {
             // Reset display limit when filters change
             displayLimit = 100
@@ -383,7 +387,7 @@ class TasksViewModel: ObservableObject {
             if hasStatusFilter {
                 let wantsDone = selectedTags.contains(.done)
                 let wantsTodo = selectedTags.contains(.todo)
-                let wantsDeleted = selectedTags.contains(.removedByAI)
+                let wantsDeleted = selectedTags.contains(.removedByAI) || selectedTags.contains(.removedByMe)
                 if wantsDeleted {
                     // Load deleted tasks from server
                     Task { await store.loadDeletedTasks() }
@@ -648,8 +652,9 @@ class TasksViewModel: ObservableObject {
     private func getSourceTasks() -> [TaskActionItem] {
         let statusTags = selectedTags.filter { $0.group == .status }
 
-        // If removedByAI is the only status filter, show only deleted tasks
-        if statusTags.contains(.removedByAI) && !statusTags.contains(.todo) && !statusTags.contains(.done) {
+        // If only deleted filters are selected, show only deleted tasks
+        let wantsDeletedOnly = (statusTags.contains(.removedByAI) || statusTags.contains(.removedByMe)) && !statusTags.contains(.todo) && !statusTags.contains(.done)
+        if wantsDeletedOnly {
             return store.deletedTasks
         }
 
@@ -665,8 +670,8 @@ class TasksViewModel: ObservableObject {
             }
         }
 
-        // If removedByAI is also selected alongside other status tags, include deleted
-        if statusTags.contains(.removedByAI) {
+        // If any deleted filter is also selected alongside other status tags, include deleted
+        if statusTags.contains(.removedByAI) || statusTags.contains(.removedByMe) {
             result += store.deletedTasks
         }
 
@@ -825,7 +830,7 @@ class TasksViewModel: ObservableObject {
             completedStates = states.isEmpty ? nil : states
         }
 
-        let includeDeleted = statusTags.contains(.removedByAI)
+        let includeDeleted = statusTags.contains(.removedByAI) || statusTags.contains(.removedByMe)
 
         do {
             let results = try await ActionItemStorage.shared.getFilteredActionItems(
