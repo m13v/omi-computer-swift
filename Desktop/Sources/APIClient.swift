@@ -3710,15 +3710,15 @@ struct CitationSource: Codable, Identifiable {
     }
 }
 
-// MARK: - User Persona API
+// MARK: - AI User Profile API
 
-struct UserPersonaResponse: Codable {
-    let personaText: String
+struct AIUserProfileResponse: Codable {
+    let profileText: String
     let generatedAt: Date
     let dataSourcesUsed: Int
 
     enum CodingKeys: String, CodingKey {
-        case personaText = "persona_text"
+        case profileText = "profile_text"
         case generatedAt = "generated_at"
         case dataSourcesUsed = "data_sources_used"
     }
@@ -3726,15 +3726,15 @@ struct UserPersonaResponse: Codable {
 
 extension APIClient {
 
-    /// Fetch user persona from backend
-    func getUserPersona() async throws -> UserPersonaResponse? {
-        return try await get("v1/users/persona")
+    /// Fetch AI-generated user profile from backend
+    func getAIUserProfile() async throws -> AIUserProfileResponse? {
+        return try await get("v1/users/ai-profile")
     }
 
-    /// Sync user persona to backend
-    func syncUserPersona(personaText: String, generatedAt: Date, dataSourcesUsed: Int) async throws {
+    /// Sync AI-generated user profile to backend
+    func syncAIUserProfile(profileText: String, generatedAt: Date, dataSourcesUsed: Int) async throws {
         struct SyncRequest: Encodable {
-            let persona_text: String
+            let profile_text: String
             let generated_at: String
             let data_sources_used: Int
         }
@@ -3743,11 +3743,11 @@ extension APIClient {
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
 
         let body = SyncRequest(
-            persona_text: personaText,
+            profile_text: profileText,
             generated_at: formatter.string(from: generatedAt),
             data_sources_used: dataSourcesUsed
         )
 
-        let _: UserPersonaResponse = try await patch("v1/users/persona", body: body)
+        let _: AIUserProfileResponse = try await patch("v1/users/ai-profile", body: body)
     }
 }
