@@ -20,14 +20,28 @@ actor TaskAssistant: ProactiveAssistant {
 
     private let geminiClient: GeminiClient
     private var isRunning = false
-    private var lastAnalysisTime: Date = .distantPast
     private var previousTasks: [ExtractedTask] = [] // Last 10 extracted tasks for context
     private let maxPreviousTasks = 10
     private var currentApp: String?
-    private var pendingFrame: CapturedFrame?
     private var processingTask: Task<Void, Never>?
-    private let frameSignal: AsyncStream<Void>
-    private let frameSignalContinuation: AsyncStream<Void>.Continuation
+
+    // MARK: - Event-Driven Trigger System
+    private enum TriggerEvent {
+        case contextSwitch(CapturedFrame)  // departing frame from context being left
+        case timerFallback(CapturedFrame)  // latest frame after extraction interval
+    }
+
+    private let triggerStream: AsyncStream<TriggerEvent>
+    private let triggerContinuation: AsyncStream<TriggerEvent>.Continuation
+
+    /// Always holds the most recent frame for fallback timer use
+    private var latestFrame: CapturedFrame?
+    /// Fallback timer that fires after extractionInterval if no context switch occurs
+    private var fallbackTimerTask: Task<Void, Never>?
+    /// Time of last extraction (for 30s throttle)
+    private var lastExtractionTime: Date = .distantPast
+    /// Minimum interval between extractions to prevent rapid-fire on fast context switches
+    private let minExtractionInterval: TimeInterval = 30
 
     // Cached goals (refreshed every 5 minutes)
     private var cachedGoals: [Goal] = []
@@ -67,9 +81,9 @@ actor TaskAssistant: ProactiveAssistant {
         // Use Gemini 3 Pro for better task extraction quality
         self.geminiClient = try GeminiClient(apiKey: apiKey, model: "gemini-3-pro-preview")
 
-        let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
-        self.frameSignal = stream
-        self.frameSignalContinuation = continuation
+        let (stream, continuation) = AsyncStream.makeStream(of: TriggerEvent.self, bufferingPolicy: .bufferingNewest(1))
+        self.triggerStream = stream
+        self.triggerContinuation = continuation
 
         // Start processing loop + embedding index
         Task {
@@ -99,30 +113,54 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     private func processLoop() async {
-        log("Task assistant started")
+        log("Task assistant started (event-driven)")
 
-        for await _ in frameSignal {
+        for await trigger in triggerStream {
             guard isRunning else { break }
-            guard pendingFrame != nil else { continue }
 
-            // Wait until the extraction interval has passed
-            let interval = await extractionInterval
-            let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime)
-            if timeSinceLastAnalysis < interval {
-                let remaining = interval - timeSinceLastAnalysis
-                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
+            let (frame, triggerType): (CapturedFrame, String) = {
+                switch trigger {
+                case .contextSwitch(let f): return (f, "context_switch")
+                case .timerFallback(let f): return (f, "timer_fallback")
+                }
+            }()
+
+            // 30s throttle: skip if too soon since last extraction
+            let timeSinceLast = Date().timeIntervalSince(lastExtractionTime)
+            if timeSinceLast < minExtractionInterval {
+                log("Task: Throttled \(triggerType) trigger (\(Int(timeSinceLast))s < \(Int(minExtractionInterval))s min)")
+                // Restart fallback timer so we don't lose this window entirely
+                startFallbackTimer()
+                continue
             }
 
-            // Grab the latest frame (may have been updated or cleared during sleep)
-            guard let frame = pendingFrame else { continue }
-            let waited = Date().timeIntervalSince(lastAnalysisTime)
-            log("Task: Starting analysis (interval: \(Int(interval))s, waited: \(Int(waited))s)")
-            pendingFrame = nil
-            lastAnalysisTime = Date()
+            log("Task: Processing \(triggerType) trigger from \(frame.appName) (window: \(frame.windowTitle ?? "nil"))")
+
+            // Cancel fallback timer before processing
+            fallbackTimerTask?.cancel()
+            fallbackTimerTask = nil
+
+            lastExtractionTime = Date()
             await processFrame(frame)
+
+            // Start a new fallback timer after processing
+            startFallbackTimer()
         }
 
         log("Task assistant stopped")
+    }
+
+    /// Start (or restart) the fallback timer that fires after extractionInterval
+    private func startFallbackTimer() {
+        fallbackTimerTask?.cancel()
+        fallbackTimerTask = Task {
+            let interval = await self.extractionInterval
+            try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            guard let frame = await self.latestFrame else { return }
+            log("Task: Fallback timer fired after \(Int(interval))s")
+            self.triggerContinuation.yield(.timerFallback(frame))
+        }
     }
 
     // MARK: - Test Analysis (for test runner)
@@ -144,7 +182,6 @@ actor TaskAssistant: ProactiveAssistant {
         // Only analyze apps on the whitelist
         let allowed = await MainActor.run { TaskAssistantSettings.shared.isAppAllowed(frame.appName) }
         if !allowed {
-            log("Task: Skipping non-whitelisted app '\(frame.appName)'")
             return nil
         }
 
@@ -153,16 +190,17 @@ actor TaskAssistant: ProactiveAssistant {
             TaskAssistantSettings.shared.isWindowAllowed(appName: frame.appName, windowTitle: frame.windowTitle)
         }
         if !windowAllowed {
-            log("Task: Skipping browser window '\(frame.windowTitle ?? "nil")' in \(frame.appName) (no heuristic match)")
             return nil
         }
 
-        let hadPending = pendingFrame != nil
-        pendingFrame = frame
-        if !hadPending {
-            log("Task: Received frame from \(frame.appName), queued for analysis")
+        // Store as latest frame (used by fallback timer and context switch)
+        latestFrame = frame
+
+        // Start fallback timer if not already running
+        if fallbackTimerTask == nil {
+            startFallbackTimer()
         }
-        frameSignalContinuation.yield()
+
         return nil
     }
 
@@ -390,16 +428,51 @@ actor TaskAssistant: ProactiveAssistant {
         }
     }
 
+    func onContextSwitch(departingFrame: CapturedFrame?, newApp: String, newWindowTitle: String?) async {
+        guard let frame = departingFrame else {
+            log("Task: Context switch but no departing frame available")
+            return
+        }
+
+        // Check departing frame's app is on the whitelist
+        let allowed = await MainActor.run { TaskAssistantSettings.shared.isAppAllowed(frame.appName) }
+        if !allowed {
+            log("Task: Context switch from non-whitelisted app '\(frame.appName)', skipping")
+            return
+        }
+
+        // Check window is allowed for browser apps
+        let windowAllowed = await MainActor.run {
+            TaskAssistantSettings.shared.isWindowAllowed(appName: frame.appName, windowTitle: frame.windowTitle)
+        }
+        if !windowAllowed {
+            log("Task: Context switch from filtered browser window, skipping")
+            return
+        }
+
+        log("Task: Context switch from \(frame.appName) (window: \(frame.windowTitle ?? "nil")) -> \(newApp)")
+
+        // Cancel fallback timer — context switch replaces it
+        fallbackTimerTask?.cancel()
+        fallbackTimerTask = nil
+
+        // Yield context switch trigger with the departing frame
+        triggerContinuation.yield(.contextSwitch(frame))
+    }
+
     func clearPendingWork() async {
-        pendingFrame = nil
-        log("Task: Cleared pending frame")
+        fallbackTimerTask?.cancel()
+        fallbackTimerTask = nil
+        log("Task: Cleared fallback timer")
     }
 
     func stop() async {
         isRunning = false
-        frameSignalContinuation.finish()
+        fallbackTimerTask?.cancel()
+        fallbackTimerTask = nil
+        triggerContinuation.finish()
         processingTask?.cancel()
-        pendingFrame = nil
+        latestFrame = nil
     }
 
     // MARK: - Single-Stage Analysis with Tool Calling
