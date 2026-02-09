@@ -118,6 +118,17 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         metadataJson = json
     }
 
+    // MARK: - Source Classification
+
+    /// Parsed source classification from metadata
+    var sourceClassification: TaskSourceClassification? {
+        guard let meta = metadata,
+              let cat = meta["source_category"] as? String,
+              let sub = meta["source_subcategory"] as? String
+        else { return nil }
+        return TaskSourceClassification.from(category: cat, subcategory: sub)
+    }
+
     // MARK: - Tag Helpers
 
     /// Get tags as array (decoded from JSON)
