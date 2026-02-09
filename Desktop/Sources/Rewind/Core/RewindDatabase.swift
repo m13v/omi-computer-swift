@@ -1107,6 +1107,11 @@ actor RewindDatabase {
                           on: "ai_user_profiles", columns: ["generatedAt"])
         }
 
+        // Migration 21: Clear AI user profiles generated with old prompt (contained hallucinations)
+        migrator.registerMigration("clearAIUserProfilesV1") { db in
+            try db.execute(sql: "DELETE FROM ai_user_profiles")
+        }
+
         try migrator.migrate(queue)
     }
 
