@@ -751,11 +751,10 @@ actor TaskAssistant: ProactiveAssistant {
                 // Append model's tool call + function response to contents
                 contents.append(GeminiImageToolRequest.Content(
                     role: "model",
-                    parts: [GeminiImageToolRequest.Part(functionCall: .init(
-                        name: toolCall.name,
-                        args: ["query": query],
+                    parts: [GeminiImageToolRequest.Part(
+                        functionCall: .init(name: toolCall.name, args: ["query": query]),
                         thoughtSignature: toolCall.thoughtSignature
-                    ))]
+                    )]
                 ))
                 contents.append(GeminiImageToolRequest.Content(
                     role: "user",
@@ -784,11 +783,10 @@ actor TaskAssistant: ProactiveAssistant {
                 // Append model's tool call + function response to contents
                 contents.append(GeminiImageToolRequest.Content(
                     role: "model",
-                    parts: [GeminiImageToolRequest.Part(functionCall: .init(
-                        name: toolCall.name,
-                        args: ["query": query],
+                    parts: [GeminiImageToolRequest.Part(
+                        functionCall: .init(name: toolCall.name, args: ["query": query]),
                         thoughtSignature: toolCall.thoughtSignature
-                    ))]
+                    )]
                 ))
                 contents.append(GeminiImageToolRequest.Content(
                     role: "user",
