@@ -1037,6 +1037,13 @@ actor RewindDatabase {
             """)
         }
 
+        // Migration 17: Add deletedBy column to action_items for tracking who deleted
+        migrator.registerMigration("addActionItemDeletedBy") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "deletedBy", .text)  // "user", "ai_dedup"
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
