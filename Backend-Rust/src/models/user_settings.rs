@@ -142,18 +142,18 @@ pub struct UserSettingsStatusResponse {
     pub status: String,
 }
 
-/// User AI persona — AI-generated profile of the user (distinct from PersonaDB which is user-created AI characters)
+/// AI-generated profile of the user (distinct from PersonaDB which is user-created AI characters)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UserAIPersona {
-    pub persona_text: String,
+pub struct AIUserProfile {
+    pub profile_text: String,
     pub generated_at: DateTime<Utc>,
     pub data_sources_used: i32,
 }
 
-/// Request to update user AI persona
+/// Request to update AI-generated user profile
 #[derive(Debug, Clone, Deserialize)]
-pub struct UpdateUserAIPersonaRequest {
-    pub persona_text: String,
+pub struct UpdateAIUserProfileRequest {
+    pub profile_text: String,
     pub generated_at: String,
     pub data_sources_used: i32,
 }
