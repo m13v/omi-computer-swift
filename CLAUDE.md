@@ -77,10 +77,18 @@ See `.claude/settings.json` for connection details.
 
 ## Development Workflow
 
+### Building & Running
+- **No Xcode project** — this is a Swift Package Manager project
+- **Build command**: `xcrun swift build -c debug --package-path Desktop` (the `xcrun` prefix is required to match the SDK version)
+- **Full dev run**: `./run.sh` — builds Swift app, starts Rust backend, starts Cloudflare tunnel, launches app
+- **Build only**: `./build.sh` — release build without running
+- **DO NOT** use bare `swift build` — it will fail with SDK version mismatch
+- **DO NOT** use `xcodebuild` — there is no `.xcodeproj`
+
 ### After Implementing Changes
-- **DO NOT** run build commands (`swift build`, `xcodebuild`, etc.) after making changes
 - **DO NOT** run the app after making changes
-- Let the user build, run, and test the app manually
+- You MAY run the build command (`xcrun swift build -c debug --package-path Desktop`) to verify compilation
+- Let the user run `./run.sh` to test the app manually
 - Wait for user feedback before making additional changes
 
 ## SwiftUI macOS Patterns
