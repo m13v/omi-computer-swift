@@ -70,7 +70,7 @@ struct SettingsContentView: View {
     @State private var taskEnabled: Bool
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
-    @State private var taskExcludedApps: Set<String>
+    @State private var taskAllowedApps: Set<String>
 
     // Advice Assistant states
     @State private var adviceEnabled: Bool
@@ -187,7 +187,7 @@ struct SettingsContentView: View {
         _taskEnabled = State(initialValue: TaskAssistantSettings.shared.isEnabled)
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
-        _taskExcludedApps = State(initialValue: TaskAssistantSettings.shared.excludedApps)
+        _taskAllowedApps = State(initialValue: TaskAssistantSettings.shared.allowedApps)
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
@@ -1789,21 +1789,21 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    // Excluded Apps for Task Extraction
+                    // Allowed Apps for Task Extraction (Whitelist)
                     VStack(alignment: .leading, spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Excluded Apps")
+                            Text("Allowed Apps")
                                 .font(.system(size: 14))
                                 .foregroundColor(OmiColors.textSecondary)
-                            Text("Tasks won't be extracted from these apps (screenshots still captured for other features)")
+                            Text("Tasks will only be extracted from these apps")
                                 .font(.system(size: 12))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
 
-                        // Built-in system exclusions (non-removable)
+                        // Built-in allowed apps (non-removable)
                         DisclosureGroup {
                             LazyVStack(spacing: 4) {
-                                ForEach(Array(TaskAssistantSettings.builtInExcludedApps).sorted(), id: \.self) { appName in
+                                ForEach(Array(TaskAssistantSettings.builtInAllowedApps).sorted(), id: \.self) { appName in
                                     HStack(spacing: 12) {
                                         AppIconView(appName: appName, size: 20)
 
@@ -1818,32 +1818,32 @@ struct SettingsContentView: View {
                                 }
                             }
                         } label: {
-                            Text("System apps always excluded (\(TaskAssistantSettings.builtInExcludedApps.count))")
+                            Text("Default allowed apps (\(TaskAssistantSettings.builtInAllowedApps.count))")
                                 .font(.system(size: 12))
                                 .foregroundColor(OmiColors.textTertiary)
                         }
                         .tint(OmiColors.textTertiary)
 
-                        if !taskExcludedApps.isEmpty {
+                        if !taskAllowedApps.isEmpty {
                             LazyVStack(spacing: 8) {
-                                ForEach(Array(taskExcludedApps).sorted(), id: \.self) { appName in
+                                ForEach(Array(taskAllowedApps).sorted(), id: \.self) { appName in
                                     ExcludedAppRow(
                                         appName: appName,
                                         onRemove: {
-                                            TaskAssistantSettings.shared.includeApp(appName)
-                                            taskExcludedApps = TaskAssistantSettings.shared.excludedApps
+                                            TaskAssistantSettings.shared.disallowApp(appName)
+                                            taskAllowedApps = TaskAssistantSettings.shared.allowedApps
                                         }
                                     )
                                 }
                             }
                         }
 
-                        AddExcludedAppView(
+                        AddAllowedAppView(
                             onAdd: { appName in
-                                TaskAssistantSettings.shared.excludeApp(appName)
-                                taskExcludedApps = TaskAssistantSettings.shared.excludedApps
+                                TaskAssistantSettings.shared.allowApp(appName)
+                                taskAllowedApps = TaskAssistantSettings.shared.allowedApps
                             },
-                            excludedApps: taskExcludedApps
+                            allowedApps: taskAllowedApps
                         )
                     }
                 }
@@ -3072,6 +3072,90 @@ struct AddExcludedAppView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
                         ForEach(runningApps.filter { !excludedApps.contains($0) && !TaskAssistantSettings.builtInExcludedApps.contains($0) }, id: \.self) { appName in
+                            RunningAppChip(appName: appName) {
+                                onAdd(appName)
+                            }
+                        }
+                    }
+                }
+            }
+            .padding(.top, 4)
+        }
+        .onAppear {
+            refreshRunningApps()
+        }
+    }
+
+    private func addApp() {
+        let trimmed = newAppName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        onAdd(trimmed)
+        newAppName = ""
+    }
+
+    private func refreshRunningApps() {
+        let apps = NSWorkspace.shared.runningApplications
+            .compactMap { $0.localizedName }
+            .filter { !$0.isEmpty }
+            .sorted()
+
+        // Remove duplicates while preserving order
+        var seen = Set<String>()
+        runningApps = apps.filter { seen.insert($0).inserted }
+    }
+}
+
+// MARK: - Add Allowed App View (Whitelist)
+
+struct AddAllowedAppView: View {
+    let onAdd: (String) -> Void
+    let allowedApps: Set<String>
+
+    @State private var newAppName: String = ""
+    @State private var runningApps: [String] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Add App to Allowed List")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(OmiColors.textSecondary)
+
+            HStack(spacing: 8) {
+                TextField("App name (e.g., Mail)", text: $newAppName)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit {
+                        addApp()
+                    }
+
+                Button("Add") {
+                    addApp()
+                }
+                .buttonStyle(.bordered)
+                .disabled(newAppName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+
+            // Running apps suggestions
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text("Currently Running Apps")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    Spacer()
+
+                    Button {
+                        refreshRunningApps()
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 11))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(runningApps.filter { !allowedApps.contains($0) && !TaskAssistantSettings.builtInAllowedApps.contains($0) }, id: \.self) { appName in
                             RunningAppChip(appName: appName) {
                                 onAdd(appName)
                             }
