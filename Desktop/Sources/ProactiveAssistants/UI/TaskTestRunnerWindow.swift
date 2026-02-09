@@ -423,19 +423,38 @@ struct TaskTestRunnerView: View {
                 return
             }
 
-            // Pick N evenly-spaced screenshots from what's available
+            // Filter to only allowed apps + browser heuristic matches
+            let filtered = await MainActor.run {
+                allScreenshots.filter { screenshot in
+                    guard TaskAssistantSettings.shared.isAppAllowed(screenshot.appName) else { return false }
+                    return TaskAssistantSettings.shared.isWindowAllowed(
+                        appName: screenshot.appName,
+                        windowTitle: screenshot.windowTitle
+                    )
+                }
+            }
+
+            guard !filtered.isEmpty else {
+                await MainActor.run {
+                    statusMessage = "Found \(allScreenshots.count) screenshots but none passed filters (check allowed apps & browser heuristics)"
+                    isRunning = false
+                }
+                return
+            }
+
+            // Pick N evenly-spaced screenshots from filtered set
             let sampled: [Screenshot]
-            if allScreenshots.count <= screenshotCount {
-                sampled = Array(allScreenshots)
+            if filtered.count <= screenshotCount {
+                sampled = Array(filtered)
             } else {
-                let step = Double(allScreenshots.count - 1) / Double(screenshotCount - 1)
+                let step = Double(filtered.count - 1) / Double(screenshotCount - 1)
                 sampled = (0..<screenshotCount).map { i in
-                    allScreenshots[Int(Double(i) * step)]
+                    filtered[Int(Double(i) * step)]
                 }
             }
 
             await MainActor.run {
-                statusMessage = "Found \(allScreenshots.count) screenshots, sampling \(sampled.count)..."
+                statusMessage = "Found \(allScreenshots.count) screenshots, \(filtered.count) passed filters, sampling \(sampled.count)..."
             }
 
             // Process each sampled screenshot
