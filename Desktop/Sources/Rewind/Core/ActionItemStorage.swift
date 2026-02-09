@@ -438,60 +438,6 @@ actor ActionItemStorage {
         log("ActionItemStorage: Synced \(items.count) task action items from backend")
     }
 
-    /// Remove local items that are no longer present on the backend.
-    /// Call after syncing when the API returned all results for a given filter (hasMore == false).
-    /// Only removes items with a backendId (local-only items are preserved).
-    func removeOrphanedItems(
-        keepBackendIds: Set<String>,
-        completed: Bool,
-        startDate: Date? = nil
-    ) async throws -> Int {
-        let db = try await ensureInitialized()
-
-        return try await db.write { database -> Int in
-            var query = ActionItemRecord
-                .filter(Column("backendId") != nil)
-                .filter(Column("completed") == completed)
-                .filter(Column("deleted") == false)
-
-            if let startDate = startDate {
-                query = query.filter(Column("createdAt") >= startDate)
-            }
-
-            if !keepBackendIds.isEmpty {
-                let ids = Array(keepBackendIds)
-                query = query.filter(!ids.contains(Column("backendId")))
-            }
-
-            let count = try query.deleteAll(database)
-            if count > 0 {
-                log("ActionItemStorage: Removed \(count) orphaned items (completed=\(completed))")
-            }
-            return count
-        }
-    }
-
-    /// Remove orphaned deleted items no longer present on the backend.
-    func removeOrphanedDeletedItems(keepBackendIds: Set<String>) async throws -> Int {
-        let db = try await ensureInitialized()
-
-        return try await db.write { database -> Int in
-            var query = ActionItemRecord
-                .filter(Column("backendId") != nil)
-                .filter(Column("deleted") == true)
-
-            if !keepBackendIds.isEmpty {
-                let ids = Array(keepBackendIds)
-                query = query.filter(!ids.contains(Column("backendId")))
-            }
-
-            let count = try query.deleteAll(database)
-            if count > 0 {
-                log("ActionItemStorage: Removed \(count) orphaned deleted items")
-            }
-            return count
-        }
-    }
 
     /// Permanently delete an action item from local cache by backend ID.
     /// Used when user explicitly deletes a task.
@@ -593,17 +539,24 @@ actor ActionItemStorage {
     }
 
     /// Soft delete an action item by backend ID
-    func deleteActionItemByBackendId(_ backendId: String) async throws {
+    func deleteActionItemByBackendId(_ backendId: String, deletedBy: String? = nil) async throws {
         let db = try await ensureInitialized()
 
         try await db.write { database in
-            try database.execute(
-                sql: "UPDATE action_items SET deleted = 1, updatedAt = ? WHERE backendId = ?",
-                arguments: [Date(), backendId]
-            )
+            if let deletedBy = deletedBy {
+                try database.execute(
+                    sql: "UPDATE action_items SET deleted = 1, deletedBy = ?, updatedAt = ? WHERE backendId = ?",
+                    arguments: [deletedBy, Date(), backendId]
+                )
+            } else {
+                try database.execute(
+                    sql: "UPDATE action_items SET deleted = 1, updatedAt = ? WHERE backendId = ?",
+                    arguments: [Date(), backendId]
+                )
+            }
         }
 
-        log("ActionItemStorage: Soft deleted action item with backendId \(backendId)")
+        log("ActionItemStorage: Soft deleted action item with backendId \(backendId) (by: \(deletedBy ?? "unknown"))")
     }
 
     // MARK: - Stats
