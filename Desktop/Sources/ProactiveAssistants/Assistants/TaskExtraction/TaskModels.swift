@@ -159,6 +159,30 @@ struct TaskExtractionResult: Codable, AssistantResult {
     }
 }
 
+// MARK: - Task Extraction Context (for single-stage pipeline)
+
+/// Context injected into the extraction prompt for deduplication
+struct TaskExtractionContext {
+    let activeTasks: [(id: Int64, description: String, priority: String?)]
+    let completedTasks: [(id: Int64, description: String)]
+    let deletedTasks: [(id: Int64, description: String)]
+    let goals: [Goal]
+}
+
+/// Result from vector/FTS search during tool-calling extraction
+struct TaskSearchResult: Codable {
+    let id: Int64
+    let description: String
+    let status: String          // "active", "completed", "deleted"
+    let similarity: Double?     // cosine similarity (nil for FTS-only matches)
+    let matchType: String       // "vector", "fts", "both"
+
+    enum CodingKeys: String, CodingKey {
+        case id, description, status, similarity
+        case matchType = "match_type"
+    }
+}
+
 // MARK: - Task Event (for Flutter communication)
 
 struct TaskEvent {
