@@ -147,46 +147,6 @@ actor FocusAssistant: ProactiveAssistant {
         return nil
     }
 
-    /// Normalize a window title by stripping cosmetic noise (spinners, timers, terminal dimensions)
-    /// so that rapid updates from apps like Claude Code or Toggl don't trigger re-analysis.
-    private func normalizeWindowTitle(_ title: String?) -> String? {
-        guard var result = title else { return nil }
-
-        // Strip Braille spinner characters (U+2800-U+28FF)
-        result = result.unicodeScalars.filter { !($0.value >= 0x2800 && $0.value <= 0x28FF) }
-            .reduce(into: "") { $0.append(String($1)) }
-
-        // Strip common spinner/progress characters
-        let spinnerChars: Set<Character> = ["✳", "↻", "◐", "◑", "◒", "◓", "⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏",
-                                             "⣾", "⣽", "⣻", "⢿", "⡿", "⣟", "⣯", "⣷",
-                                             "◴", "◷", "◶", "◵", "◰", "◳", "◲", "◱",
-                                             "▖", "▘", "▝", "▗", "⠁", "⠂", "⠄", "⡀", "⢀", "⠠", "⠐", "⠈"]
-        result = String(result.filter { !spinnerChars.contains($0) })
-
-        // Strip timer patterns like "12:34", "1:23:45", "00:05:23"
-        result = result.replacingOccurrences(
-            of: #"\b\d{1,2}:\d{2}(:\d{2})?\b"#,
-            with: "",
-            options: .regularExpression
-        )
-
-        // Strip terminal dimension patterns like "80×24", "60x88"
-        result = result.replacingOccurrences(
-            of: #"\b\d+[×x]\d+\b"#,
-            with: "",
-            options: .regularExpression
-        )
-
-        // Collapse whitespace
-        result = result.replacingOccurrences(
-            of: #"\s+"#,
-            with: " ",
-            options: .regularExpression
-        ).trimmingCharacters(in: .whitespaces)
-
-        return result.isEmpty ? nil : result
-    }
-
     /// Determines if we should skip analysis for this frame
     /// Returns true if:
     /// - User is focused on the same app AND same window title
@@ -212,9 +172,12 @@ actor FocusAssistant: ProactiveAssistant {
 
         // Check if context changed (app or window title different from last analysis)
         // Compare normalized titles so spinner/timer updates don't trigger re-analysis
-        let normalizedFrameTitle = normalizeWindowTitle(frame.windowTitle)
-        let normalizedLastTitle = normalizeWindowTitle(lastAnalyzedWindowTitle)
-        let contextChanged = frame.appName != lastAnalyzedApp || normalizedFrameTitle != normalizedLastTitle
+        let contextChanged = ContextDetection.didContextChange(
+            fromApp: lastAnalyzedApp,
+            fromWindowTitle: lastAnalyzedWindowTitle,
+            toApp: frame.appName,
+            toWindowTitle: frame.windowTitle
+        )
 
         // Check 1: Context switch - ALWAYS analyze (bypass cooldown)
         if contextChanged {
