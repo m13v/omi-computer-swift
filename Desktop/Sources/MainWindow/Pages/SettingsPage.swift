@@ -98,9 +98,9 @@ struct SettingsContentView: View {
     @State private var isLoadingChatMessages = false
 
     // AI User Profile
-    @State private var aiProfileText: String? = AIUserProfileService.shared.getStoredProfileText()
-    @State private var aiProfileGeneratedAt: Date? = AIUserProfileService.shared.getStoredGeneratedAt()
-    @State private var aiProfileDataSourcesUsed: Int = AIUserProfileService.shared.getStoredDataSourcesUsed()
+    @State private var aiProfileText: String?
+    @State private var aiProfileGeneratedAt: Date?
+    @State private var aiProfileDataSourcesUsed: Int = 0
     @State private var isGeneratingAIProfile = false
 
     // Selected section (passed in from parent)
@@ -2212,6 +2212,13 @@ struct SettingsContentView: View {
         .task {
             await loadChatMessageCount()
         }
+        .task {
+            if let profile = await AIUserProfileService.shared.getLatestProfile() {
+                aiProfileText = profile.profileText
+                aiProfileGeneratedAt = profile.generatedAt
+                aiProfileDataSourcesUsed = profile.dataSourcesUsed
+            }
+        }
     }
 
     private func tierPickerRow(tier: Int, label: String, subtitle: String) -> some View {
@@ -2669,7 +2676,7 @@ struct SettingsContentView: View {
             do {
                 let result = try await AIUserProfileService.shared.generateProfile()
                 await MainActor.run {
-                    aiProfileText = result.text
+                    aiProfileText = result.profileText
                     aiProfileGeneratedAt = result.generatedAt
                     aiProfileDataSourcesUsed = result.dataSourcesUsed
                     isGeneratingAIProfile = false
