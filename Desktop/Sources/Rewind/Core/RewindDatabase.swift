@@ -1093,6 +1093,20 @@ actor RewindDatabase {
                 """)
         }
 
+        // Migration 20: Create ai_user_profiles table for daily AI-generated user profile history
+        migrator.registerMigration("createAIUserProfiles") { db in
+            try db.create(table: "ai_user_profiles") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("profileText", .text).notNull()
+                t.column("dataSourcesUsed", .integer).notNull()
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+                t.column("generatedAt", .datetime).notNull()
+            }
+
+            try db.create(index: "idx_ai_user_profiles_generated",
+                          on: "ai_user_profiles", columns: ["generatedAt"])
+        }
+
         try migrator.migrate(queue)
     }
 
