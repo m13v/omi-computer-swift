@@ -807,7 +807,7 @@ extension GeminiClient {
         for part in parts {
             if let functionCall = part.functionCall {
                 let args = functionCall.args?.mapValues { $0.value } ?? [:]
-                toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: functionCall.thoughtSignature))
+                toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: part.thoughtSignature))
             }
             if let text = part.text {
                 textResponse += text
@@ -911,12 +911,14 @@ struct GeminiImageToolRequest: Encodable {
         let inlineData: InlineData?
         let functionCall: FunctionCallPart?
         let functionResponse: FunctionResponsePart?
+        let thoughtSignature: String?
 
         enum CodingKeys: String, CodingKey {
             case text
             case inlineData = "inline_data"
             case functionCall = "functionCall"
             case functionResponse = "functionResponse"
+            case thoughtSignature = "thoughtSignature"
         }
 
         init(text: String) {
@@ -924,6 +926,7 @@ struct GeminiImageToolRequest: Encodable {
             self.inlineData = nil
             self.functionCall = nil
             self.functionResponse = nil
+            self.thoughtSignature = nil
         }
 
         init(mimeType: String, data: String) {
@@ -931,13 +934,15 @@ struct GeminiImageToolRequest: Encodable {
             self.inlineData = InlineData(mimeType: mimeType, data: data)
             self.functionCall = nil
             self.functionResponse = nil
+            self.thoughtSignature = nil
         }
 
-        init(functionCall: FunctionCallPart) {
+        init(functionCall: FunctionCallPart, thoughtSignature: String? = nil) {
             self.text = nil
             self.inlineData = nil
             self.functionCall = functionCall
             self.functionResponse = nil
+            self.thoughtSignature = thoughtSignature
         }
 
         init(functionResponse: FunctionResponsePart) {
@@ -945,6 +950,7 @@ struct GeminiImageToolRequest: Encodable {
             self.inlineData = nil
             self.functionCall = nil
             self.functionResponse = functionResponse
+            self.thoughtSignature = nil
         }
     }
 
@@ -961,18 +967,6 @@ struct GeminiImageToolRequest: Encodable {
     struct FunctionCallPart: Encodable {
         let name: String
         let args: [String: String]
-        let thoughtSignature: String?
-
-        enum CodingKeys: String, CodingKey {
-            case name, args
-            case thoughtSignature = "thought_signature"
-        }
-
-        init(name: String, args: [String: String], thoughtSignature: String? = nil) {
-            self.name = name
-            self.args = args
-            self.thoughtSignature = thoughtSignature
-        }
     }
 
     struct FunctionResponsePart: Encodable {
@@ -1072,7 +1066,7 @@ extension GeminiClient {
                 for part in parts {
                     if let functionCall = part.functionCall {
                         let args = functionCall.args?.mapValues { $0.value } ?? [:]
-                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: functionCall.thoughtSignature))
+                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: part.thoughtSignature))
                     }
                     if let text = part.text {
                         textResponse += text
@@ -1149,7 +1143,7 @@ extension GeminiClient {
                 for part in parts {
                     if let functionCall = part.functionCall {
                         let args = functionCall.args?.mapValues { $0.value } ?? [:]
-                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: functionCall.thoughtSignature))
+                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: part.thoughtSignature))
                     }
                     if let text = part.text {
                         textResponse += text
@@ -1207,10 +1201,13 @@ extension GeminiClient {
                     GeminiImageToolRequest.Content(
                         role: "model",
                         parts: [
-                            GeminiImageToolRequest.Part(functionCall: .init(
-                                name: toolCall.name,
-                                args: toolCall.arguments.compactMapValues { "\($0)" }
-                            ))
+                            GeminiImageToolRequest.Part(
+                                functionCall: .init(
+                                    name: toolCall.name,
+                                    args: toolCall.arguments.compactMapValues { "\($0)" }
+                                ),
+                                thoughtSignature: toolCall.thoughtSignature
+                            )
                         ]
                     ),
                     // User turn: function response
@@ -1282,10 +1279,12 @@ struct GeminiToolResponse: Decodable {
             struct Part: Decodable {
                 let text: String?
                 let functionCall: FunctionCall?
+                let thoughtSignature: String?
 
                 enum CodingKeys: String, CodingKey {
                     case text
                     case functionCall = "functionCall"
+                    case thoughtSignature = "thoughtSignature"
                 }
             }
         }
@@ -1294,12 +1293,6 @@ struct GeminiToolResponse: Decodable {
     struct FunctionCall: Decodable {
         let name: String
         let args: [String: AnyCodable]?
-        let thoughtSignature: String?
-
-        enum CodingKeys: String, CodingKey {
-            case name, args
-            case thoughtSignature = "thought_signature"
-        }
     }
 
     struct GeminiError: Decodable {
