@@ -152,14 +152,15 @@ actor AIUserProfileService {
 
         // 6. Save to database
         let db = try await ensureDB()
-        var record = AIUserProfileRecord(
+        let record = AIUserProfileRecord(
             profileText: truncated,
             dataSourcesUsed: dataSourcesUsed,
             backendSynced: false,
             generatedAt: generatedAt
         )
         try await db.write { database in
-            try record.insert(database)
+            var mutableRecord = record
+            try mutableRecord.insert(database)
         }
 
         // 7. Sync to backend (fire-and-forget)
