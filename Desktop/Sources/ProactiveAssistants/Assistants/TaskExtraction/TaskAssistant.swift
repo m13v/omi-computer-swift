@@ -25,6 +25,8 @@ actor TaskAssistant: ProactiveAssistant {
     private var currentApp: String?
     private var pendingFrame: CapturedFrame?
     private var processingTask: Task<Void, Never>?
+    private let frameSignal: AsyncStream<Void>
+    private let frameSignalContinuation: AsyncStream<Void>.Continuation
 
     // Cache for validation context (refreshed periodically)
     private var cachedExistingTasks: [String] = []
@@ -65,6 +67,10 @@ actor TaskAssistant: ProactiveAssistant {
         // Use Gemini 3 Pro for better task extraction quality
         self.geminiClient = try GeminiClient(apiKey: apiKey, model: "gemini-3-pro-preview")
 
+        let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        self.frameSignal = stream
+        self.frameSignalContinuation = continuation
+
         // Start processing loop
         Task {
             await self.startProcessing()
@@ -83,21 +89,25 @@ actor TaskAssistant: ProactiveAssistant {
     private func processLoop() async {
         log("Task assistant started")
 
-        while isRunning {
-            // Check if we have a pending frame and enough time has passed
-            if let frame = pendingFrame {
-                let interval = await extractionInterval
-                let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime)
+        for await _ in frameSignal {
+            guard isRunning else { break }
+            guard pendingFrame != nil else { continue }
 
-                if timeSinceLastAnalysis >= interval {
-                    log("Task: Starting analysis (interval: \(Int(interval))s, waited: \(Int(timeSinceLastAnalysis))s)")
-                    pendingFrame = nil
-                    lastAnalysisTime = Date()
-                    await processFrame(frame)
-                }
+            // Wait until the extraction interval has passed
+            let interval = await extractionInterval
+            let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime)
+            if timeSinceLastAnalysis < interval {
+                let remaining = interval - timeSinceLastAnalysis
+                try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
             }
 
-            try? await Task.sleep(nanoseconds: 500_000_000) // Check every 0.5 seconds
+            // Grab the latest frame (may have been updated or cleared during sleep)
+            guard let frame = pendingFrame else { continue }
+            let waited = Date().timeIntervalSince(lastAnalysisTime)
+            log("Task: Starting analysis (interval: \(Int(interval))s, waited: \(Int(waited))s)")
+            pendingFrame = nil
+            lastAnalysisTime = Date()
+            await processFrame(frame)
         }
 
         log("Task assistant stopped")
@@ -126,7 +136,8 @@ actor TaskAssistant: ProactiveAssistant {
         if !hadPending {
             log("Task: Received frame from \(frame.appName), queued for analysis")
         }
-        // Note: This overwrites the previous frame, not a queue
+        // Signal the processing loop that a frame is available
+        frameSignalContinuation.yield()
         return nil
     }
 
@@ -333,6 +344,7 @@ actor TaskAssistant: ProactiveAssistant {
 
     func stop() async {
         isRunning = false
+        frameSignalContinuation.finish()
         processingTask?.cancel()
         pendingFrame = nil
     }
