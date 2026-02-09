@@ -527,7 +527,7 @@ actor TaskAssistant: ProactiveAssistant {
         }
     }
 
-    /// Refresh cached validation context (existing tasks and memories)
+    /// Refresh cached validation context (existing tasks and memories) from local SQLite
     private func refreshValidationContext() async {
         let timeSinceLastRefresh = Date().timeIntervalSince(lastContextRefresh)
         guard timeSinceLastRefresh >= contextRefreshInterval else {
@@ -537,33 +537,18 @@ actor TaskAssistant: ProactiveAssistant {
         log("Task: Refreshing validation context...")
         lastContextRefresh = Date()
 
-        // Fetch existing tasks from local SQLite
+        // Fetch existing tasks from local SQLite (action_items table)
         do {
-            let localTasks = try await ProactiveStorage.shared.getExtractions(type: .task, limit: 50, includeDismissed: false)
-            cachedExistingTasks = localTasks.map { $0.content }
+            let localTasks = try await ActionItemStorage.shared.getLocalActionItems(limit: 50, completed: false)
+            cachedExistingTasks = localTasks.map { $0.description }
             log("Task: Loaded \(localTasks.count) local tasks for validation")
         } catch {
             logError("Task: Failed to load local tasks", error: error)
         }
 
-        // Fetch existing tasks from backend
+        // Fetch recent memories from local SQLite
         do {
-            let backendTasks = try await APIClient.shared.getActionItems(limit: 50, completed: false)
-            let backendTaskTitles = backendTasks.items.map { $0.description }
-            // Merge with local, avoiding duplicates
-            for title in backendTaskTitles {
-                if !cachedExistingTasks.contains(where: { $0.lowercased() == title.lowercased() }) {
-                    cachedExistingTasks.append(title)
-                }
-            }
-            log("Task: Loaded \(backendTasks.items.count) backend tasks for validation")
-        } catch {
-            logError("Task: Failed to load backend tasks", error: error)
-        }
-
-        // Fetch recent memories from backend
-        do {
-            let memories = try await APIClient.shared.getMemories(limit: 30)
+            let memories = try await MemoryStorage.shared.getLocalMemories(limit: 30)
             cachedMemories = memories.map { $0.content }
             log("Task: Loaded \(memories.count) memories for validation")
         } catch {
