@@ -164,6 +164,19 @@ class TasksStore: ObservableObject {
             // Sync API results to local cache
             try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
+            // Reconcile: remove local items no longer on backend (only when we have all items)
+            if !response.hasMore {
+                let backendIds = Set(response.items.map { $0.id })
+                let removed = try await ActionItemStorage.shared.removeOrphanedItems(
+                    keepBackendIds: backendIds,
+                    completed: false,
+                    startDate: startDate
+                )
+                if removed > 0 {
+                    log("TasksStore: Reconciled \(removed) orphaned incomplete tasks")
+                }
+            }
+
             // Reload from local cache to get merged data (local + synced)
             let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
                 limit: pageSize,
@@ -192,6 +205,15 @@ class TasksStore: ObservableObject {
                 // Sync to cache
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
+                // Reconcile: remove orphaned completed tasks
+                if !response.hasMore {
+                    let backendIds = Set(response.items.map { $0.id })
+                    try await ActionItemStorage.shared.removeOrphanedItems(
+                        keepBackendIds: backendIds,
+                        completed: true
+                    )
+                }
+
                 // Reload from cache
                 let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
                     limit: pageSize,
@@ -217,6 +239,14 @@ class TasksStore: ObservableObject {
 
                 // Sync to cache
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+
+                // Reconcile: remove orphaned deleted tasks
+                if !response.hasMore {
+                    let backendIds = Set(response.items.map { $0.id })
+                    try await ActionItemStorage.shared.removeOrphanedDeletedItems(
+                        keepBackendIds: backendIds
+                    )
+                }
 
                 // Reload from cache
                 let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
@@ -303,6 +333,16 @@ class TasksStore: ObservableObject {
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
+                // Reconcile: remove orphaned incomplete tasks
+                if !response.hasMore {
+                    let backendIds = Set(response.items.map { $0.id })
+                    try await ActionItemStorage.shared.removeOrphanedItems(
+                        keepBackendIds: backendIds,
+                        completed: false,
+                        startDate: startDate
+                    )
+                }
+
                 let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
                     limit: pageSize,
                     offset: 0,
@@ -372,6 +412,15 @@ class TasksStore: ObservableObject {
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
+                // Reconcile: remove orphaned completed tasks
+                if !response.hasMore {
+                    let backendIds = Set(response.items.map { $0.id })
+                    try await ActionItemStorage.shared.removeOrphanedItems(
+                        keepBackendIds: backendIds,
+                        completed: true
+                    )
+                }
+
                 let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
                     limit: pageSize,
                     offset: 0,
@@ -440,6 +489,14 @@ class TasksStore: ObservableObject {
             // Step 3: Sync and reload from cache
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+
+                // Reconcile: remove orphaned deleted tasks
+                if !response.hasMore {
+                    let backendIds = Set(response.items.map { $0.id })
+                    try await ActionItemStorage.shared.removeOrphanedDeletedItems(
+                        keepBackendIds: backendIds
+                    )
+                }
 
                 let allTasks = try await ActionItemStorage.shared.getLocalActionItems(
                     limit: pageSize,
@@ -718,6 +775,8 @@ class TasksStore: ObservableObject {
             } else {
                 incompleteTasks.removeAll { $0.id == task.id }
             }
+            // Also remove from local SQLite cache
+            try await ActionItemStorage.shared.hardDeleteByBackendId(task.id)
         } catch {
             self.error = error.localizedDescription
             logError("TasksStore: Failed to delete task", error: error)
@@ -767,6 +826,8 @@ class TasksStore: ObservableObject {
                 try await APIClient.shared.deleteActionItem(id: id)
                 incompleteTasks.removeAll { $0.id == id }
                 completedTasks.removeAll { $0.id == id }
+                // Also remove from local SQLite cache
+                try await ActionItemStorage.shared.hardDeleteByBackendId(id)
             } catch {
                 logError("TasksStore: Failed to delete task \(id)", error: error)
             }
