@@ -39,6 +39,9 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var wasMonitoringBeforeLock = false
     private var systemEventObservers: [NSObjectProtocol] = []
 
+    // Daily settings state tracking
+    private var settingsStateTimer: Timer?
+
     // Auto-retry state for transient failures (Exposé, Mission Control, etc.)
     private var isInRecoveryMode = false
     private var recoveryRetryCount = 0
@@ -253,6 +256,8 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         sendEvent(type: "monitoringStarted", data: [:])
         AnalyticsManager.shared.monitoringStarted()
+        trackSettingsState()
+        startSettingsStateTimer()
         NotificationCenter.default.post(
             name: .assistantMonitoringStateDidChange,
             object: nil,
@@ -271,6 +276,8 @@ public class ProactiveAssistantsPlugin: NSObject {
         captureTimer = nil
         analysisDelayTimer?.invalidate()
         analysisDelayTimer = nil
+        settingsStateTimer?.invalidate()
+        settingsStateTimer = nil
         isInDelayPeriod = false
 
         windowMonitor?.stop()
@@ -572,6 +579,27 @@ public class ProactiveAssistantsPlugin: NSObject {
                 self?.analysisDelayTimer = nil
                 FocusStorage.shared.updateDelayEndTime(nil)
                 log("Analysis delay ended, resuming frame processing")
+            }
+        }
+    }
+
+    // MARK: - Settings State Tracking
+
+    /// Track current settings state to analytics
+    private func trackSettingsState() {
+        AnalyticsManager.shared.trackSettingsState(
+            screenshotsEnabled: isMonitoring,
+            memoryExtractionEnabled: MemoryAssistantSettings.shared.isEnabled,
+            memoryNotificationsEnabled: MemoryAssistantSettings.shared.notificationsEnabled
+        )
+    }
+
+    /// Start a daily timer to report settings state
+    private func startSettingsStateTimer() {
+        settingsStateTimer?.invalidate()
+        settingsStateTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                self?.trackSettingsState()
             }
         }
     }
