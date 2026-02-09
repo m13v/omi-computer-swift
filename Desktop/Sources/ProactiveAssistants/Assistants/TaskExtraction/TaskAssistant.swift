@@ -129,7 +129,8 @@ actor TaskAssistant: ProactiveAssistant {
 
     /// Run the extraction pipeline on arbitrary JPEG data without side effects (no saving, no events).
     /// Used by the test runner to replay past screenshots.
-    func testAnalyze(jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
+    /// Returns (result, searchCount) where searchCount is the number of search tool calls made.
+    func testAnalyze(jpegData: Data, appName: String) async throws -> (TaskExtractionResult?, Int) {
         return try await extractTaskSingleStage(from: jpegData, appName: appName)
     }
 
@@ -403,12 +404,13 @@ actor TaskAssistant: ProactiveAssistant {
 
         log("Task: Analyzing frame from \(frame.appName)...")
         do {
-            guard let result = try await extractTaskSingleStage(from: frame.jpegData, appName: frame.appName) else {
+            let (result, searchCount) = try await extractTaskSingleStage(from: frame.jpegData, appName: frame.appName)
+            guard let result = result else {
                 log("Task: Analysis returned no result")
                 return
             }
 
-            log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary)")
+            log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary), searches: \(searchCount)")
 
             await handleResultWithScreenshot(result, screenshotId: frame.screenshotId, appName: frame.appName) { type, data in
                 Task { @MainActor in
@@ -420,8 +422,9 @@ actor TaskAssistant: ProactiveAssistant {
         }
     }
 
-    /// Single-stage extraction: image analysis + tool call for search + structured decision
-    private func extractTaskSingleStage(from jpegData: Data, appName: String) async throws -> TaskExtractionResult? {
+    /// Loop-based extraction: image analysis + iterative tool calling for search + terminal tool for decision
+    /// Returns (result, searchCount) where searchCount is the number of search tool calls made.
+    private func extractTaskSingleStage(from jpegData: Data, appName: String) async throws -> (TaskExtractionResult?, Int) {
         // 1. Gather context
         let context = await refreshContext()
 
@@ -472,20 +475,30 @@ actor TaskAssistant: ProactiveAssistant {
         }
 
         prompt += """
-        If you see a potential request from someone, call search_similar_tasks to check for duplicates.
-        If there is clearly no request on screen (code editor, terminal, settings, media, etc.), call no_task_found immediately.
-        ~90% of screenshots have NO task — only extract when there is a clear, specific request from a person or AI.
+        Analyze this screenshot. If you see a potential request, search for duplicates first.
+        If there is clearly no request on screen (~90% of screenshots), call no_task_found immediately.
         """
 
-        // 3. Define tools: search (when potential task) + early exit (when no task)
+        // 3. Define 5 tools
         let tools = GeminiTool(functionDeclarations: [
             GeminiTool.FunctionDeclaration(
-                name: "search_similar_tasks",
-                description: "Search for existing tasks similar to a potential new task. Call this ONLY when you see a specific request from a person or AI directed at the user.",
+                name: "search_similar",
+                description: "Search for semantically similar existing tasks using vector similarity. Call this when you see a potential request and want to check for duplicates.",
                 parameters: GeminiTool.FunctionDeclaration.Parameters(
                     type: "object",
                     properties: [
                         "query": .init(type: "string", description: "A concise description of the potential task to search for")
+                    ],
+                    required: ["query"]
+                )
+            ),
+            GeminiTool.FunctionDeclaration(
+                name: "search_keywords",
+                description: "Search for existing tasks matching specific keywords. Use this for precise keyword-based matching complementing vector search.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "query": .init(type: "string", description: "Keywords to search for in existing tasks")
                     ],
                     required: ["query"]
                 )
@@ -501,195 +514,216 @@ actor TaskAssistant: ProactiveAssistant {
                     ],
                     required: ["context_summary", "current_activity"]
                 )
+            ),
+            GeminiTool.FunctionDeclaration(
+                name: "extract_task",
+                description: "Extract a new task that is not already tracked. Call ONLY after searching for duplicates. All fields are required.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "title": .init(type: "string", description: "Brief, verb-first task title, ≤15 words. Include WHO and WHAT."),
+                        "description": .init(type: "string", description: "Additional context about the task. Empty string if none."),
+                        "priority": .init(type: "string", description: "Task priority", enumValues: ["high", "medium", "low"]),
+                        "tags": .init(type: "array", description: "1-3 relevant tags", items: .init(type: "string")),
+                        "source_app": .init(type: "string", description: "App where the task was found"),
+                        "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied. Empty string if none."),
+                        "confidence": .init(type: "number", description: "Confidence score 0.0-1.0"),
+                        "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
+                        "current_activity": .init(type: "string", description: "What the user is actively doing"),
+                        "source_category": .init(type: "string", description: "Where the task originated", enumValues: ["direct_request", "self_generated", "calendar_driven", "reactive", "external_system", "other"]),
+                        "source_subcategory": .init(type: "string", description: "Specific origin within category", enumValues: ["message", "meeting", "mention", "idea", "reminder", "goal_subtask", "event_prep", "recurring", "deadline", "error", "notification", "observation", "project_tool", "alert", "documentation", "other"])
+                    ],
+                    required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity", "source_category", "source_subcategory"]
+                )
+            ),
+            GeminiTool.FunctionDeclaration(
+                name: "reject_task",
+                description: "Reject task extraction — the potential task is a duplicate, already completed, or was previously rejected by the user. Call after searching confirms this.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "reason": .init(type: "string", description: "Why this task was rejected (e.g. 'duplicate of existing active task', 'already completed')"),
+                        "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
+                        "current_activity": .init(type: "string", description: "What the user is actively doing")
+                    ],
+                    required: ["reason", "context_summary", "current_activity"]
+                )
             )
         ])
 
         // 4. Get system prompt
         let currentSystemPrompt = await systemPrompt
 
-        // 5. Call Gemini with image + tools (forces one tool call)
-        let toolResult = try await geminiClient.sendImageToolRequest(
-            prompt: prompt,
-            imageData: jpegData,
-            systemPrompt: currentSystemPrompt,
-            tools: [tools],
-            forceToolCall: true
-        )
-
-        guard let toolCall = toolResult.toolCalls.first else {
-            log("Task: No tool call received, skipping")
-            return nil
-        }
-
-        // 6a. Early exit: no task on screen — single API call, no search needed
-        if toolCall.name == "no_task_found" {
-            let contextSummary = toolCall.arguments["context_summary"] as? String ?? "No task on screen"
-            let currentActivity = toolCall.arguments["current_activity"] as? String ?? "Unknown"
-            log("Task: no_task_found — \(contextSummary)")
-            return TaskExtractionResult(
-                hasNewTask: false,
-                task: nil,
-                contextSummary: contextSummary,
-                currentActivity: currentActivity
+        // 5. Build initial contents
+        let base64Data = jpegData.base64EncodedString()
+        var contents: [GeminiImageToolRequest.Content] = [
+            GeminiImageToolRequest.Content(
+                role: "user",
+                parts: [
+                    GeminiImageToolRequest.Part(text: prompt),
+                    GeminiImageToolRequest.Part(mimeType: "image/jpeg", data: base64Data)
+                ]
             )
-        }
+        ]
 
-        // 6b. Potential task found — execute search
-        guard toolCall.name == "search_similar_tasks",
-              let query = toolCall.arguments["query"] as? String else {
-            log("Task: Unexpected tool call: \(toolCall.name), skipping")
-            return nil
-        }
+        // 6. Tool-calling loop (max 5 iterations)
+        var searchCount = 0
 
-        log("Task: search_similar_tasks query: \"\(query)\"")
-        let searchResults = await executeSearchTool(query: query)
-        log("Task: Search returned \(searchResults.count) results")
-
-        // 7. Encode search results for the prompt
-        let searchResultsJson: String
-        if let data = try? JSONEncoder().encode(searchResults),
-           let json = String(data: data, encoding: .utf8) {
-            searchResultsJson = json
-        } else {
-            searchResultsJson = "[]"
-        }
-
-        // 8. Choose path based on whether search found close matches
-        let hasCloseMatches = searchResults.contains { ($0.similarity ?? 0) >= 0.5 }
-
-        if hasCloseMatches {
-            // PATH A: Close matches found — ask model to decide first (decision-only schema)
-            return try await decisionThenExtract(
-                query: query, appName: appName, searchResultsJson: searchResultsJson,
-                systemPrompt: currentSystemPrompt
+        for iteration in 0..<5 {
+            let result = try await geminiClient.sendImageToolLoop(
+                contents: contents,
+                systemPrompt: currentSystemPrompt,
+                tools: [tools],
+                forceToolCall: iteration == 0
             )
-        } else {
-            // PATH B: No close matches — go straight to extraction (extraction-only schema)
-            log("Task: No close matches, extracting directly")
-            return try await extractTask(
-                query: query, appName: appName, searchResultsJson: searchResultsJson,
-                systemPrompt: currentSystemPrompt
-            )
+
+            guard let toolCall = result.toolCalls.first else {
+                log("Task: No tool call received on iteration \(iteration), breaking")
+                break
+            }
+
+            switch toolCall.name {
+            case "no_task_found":
+                let contextSummary = toolCall.arguments["context_summary"] as? String ?? "No task on screen"
+                let currentActivity = toolCall.arguments["current_activity"] as? String ?? "Unknown"
+                log("Task: no_task_found — \(contextSummary)")
+                return (TaskExtractionResult(
+                    hasNewTask: false,
+                    task: nil,
+                    contextSummary: contextSummary,
+                    currentActivity: currentActivity
+                ), searchCount)
+
+            case "extract_task":
+                let title = toolCall.arguments["title"] as? String ?? ""
+                let description = toolCall.arguments["description"] as? String
+                let priorityStr = toolCall.arguments["priority"] as? String ?? "medium"
+                let priority = TaskPriority(rawValue: priorityStr) ?? .medium
+                let tags: [String]
+                if let tagArray = toolCall.arguments["tags"] as? [Any] {
+                    tags = tagArray.compactMap { $0 as? String }
+                } else {
+                    tags = []
+                }
+                let sourceApp = toolCall.arguments["source_app"] as? String ?? appName
+                let inferredDeadline = toolCall.arguments["inferred_deadline"] as? String
+                let confidence: Double
+                if let confValue = toolCall.arguments["confidence"] as? Double {
+                    confidence = confValue
+                } else if let confInt = toolCall.arguments["confidence"] as? Int {
+                    confidence = Double(confInt)
+                } else {
+                    confidence = 0.5
+                }
+                let contextSummary = toolCall.arguments["context_summary"] as? String ?? ""
+                let currentActivity = toolCall.arguments["current_activity"] as? String ?? ""
+                let sourceCategory = toolCall.arguments["source_category"] as? String ?? "other"
+                let sourceSubcategory = toolCall.arguments["source_subcategory"] as? String ?? "other"
+
+                let task = ExtractedTask(
+                    title: title,
+                    description: description?.isEmpty == true ? nil : description,
+                    priority: priority,
+                    sourceApp: sourceApp,
+                    inferredDeadline: inferredDeadline?.isEmpty == true ? nil : inferredDeadline,
+                    confidence: confidence,
+                    tags: tags,
+                    sourceCategory: sourceCategory,
+                    sourceSubcategory: sourceSubcategory
+                )
+
+                log("Task: extract_task — \"\(title)\" (confidence: \(confidence), priority: \(priorityStr))")
+                return (TaskExtractionResult(
+                    hasNewTask: true,
+                    task: task,
+                    contextSummary: contextSummary,
+                    currentActivity: currentActivity
+                ), searchCount)
+
+            case "reject_task":
+                let reason = toolCall.arguments["reason"] as? String ?? "Unknown reason"
+                let contextSummary = toolCall.arguments["context_summary"] as? String ?? ""
+                let currentActivity = toolCall.arguments["current_activity"] as? String ?? ""
+                log("Task: reject_task — \(reason)")
+                return (TaskExtractionResult(
+                    hasNewTask: false,
+                    task: nil,
+                    contextSummary: contextSummary,
+                    currentActivity: currentActivity
+                ), searchCount)
+
+            case "search_similar":
+                let query = toolCall.arguments["query"] as? String ?? ""
+                searchCount += 1
+                log("Task: search_similar query: \"\(query)\"")
+                let searchResults = await executeVectorSearch(query: query)
+                log("Task: Vector search returned \(searchResults.count) results")
+
+                let searchResultsJson: String
+                if let data = try? JSONEncoder().encode(searchResults),
+                   let json = String(data: data, encoding: .utf8) {
+                    searchResultsJson = json
+                } else {
+                    searchResultsJson = "[]"
+                }
+
+                // Append model's tool call + function response to contents
+                contents.append(GeminiImageToolRequest.Content(
+                    role: "model",
+                    parts: [GeminiImageToolRequest.Part(functionCall: .init(
+                        name: toolCall.name,
+                        args: ["query": query]
+                    ))]
+                ))
+                contents.append(GeminiImageToolRequest.Content(
+                    role: "user",
+                    parts: [GeminiImageToolRequest.Part(functionResponse: .init(
+                        name: toolCall.name,
+                        response: .init(result: searchResultsJson)
+                    ))]
+                ))
+                continue
+
+            case "search_keywords":
+                let query = toolCall.arguments["query"] as? String ?? ""
+                searchCount += 1
+                log("Task: search_keywords query: \"\(query)\"")
+                let searchResults = await executeKeywordSearch(query: query)
+                log("Task: Keyword search returned \(searchResults.count) results")
+
+                let searchResultsJson: String
+                if let data = try? JSONEncoder().encode(searchResults),
+                   let json = String(data: data, encoding: .utf8) {
+                    searchResultsJson = json
+                } else {
+                    searchResultsJson = "[]"
+                }
+
+                // Append model's tool call + function response to contents
+                contents.append(GeminiImageToolRequest.Content(
+                    role: "model",
+                    parts: [GeminiImageToolRequest.Part(functionCall: .init(
+                        name: toolCall.name,
+                        args: ["query": query]
+                    ))]
+                ))
+                contents.append(GeminiImageToolRequest.Content(
+                    role: "user",
+                    parts: [GeminiImageToolRequest.Part(functionResponse: .init(
+                        name: toolCall.name,
+                        response: .init(result: searchResultsJson)
+                    ))]
+                ))
+                continue
+
+            default:
+                log("Task: Unknown tool call: \(toolCall.name), breaking")
+                break
+            }
         }
-    }
 
-    // MARK: - Path A: Decision then optional extraction (close matches found)
-
-    /// When search found close matches, first ask the model to decide if this is new or duplicate.
-    /// If new, make a follow-up call to extract full task details.
-    private func decisionThenExtract(
-        query: String, appName: String, searchResultsJson: String, systemPrompt: String
-    ) async throws -> TaskExtractionResult? {
-        let decisionPrompt = """
-        You analyzed a screenshot from \(appName) and identified a potential request: "\(query)"
-
-        SEARCH RESULTS (existing tasks matching this request):
-        \(searchResultsJson)
-
-        Is this a genuinely NEW task, or is it already tracked / completed / rejected?
-
-        Rules:
-        - Similarity > 0.8 + status "active" → duplicate, set is_new_task to false
-        - Status "completed" → already done, set is_new_task to false
-        - Status "deleted" → user rejected this type of task, set is_new_task to false
-        - Low similarity or different scope → genuinely new, set is_new_task to true
-        """
-
-        let decisionSchema = GeminiRequest.GenerationConfig.ResponseSchema(
-            type: "object",
-            properties: [
-                "is_new_task": .init(type: "boolean", description: "True only if this is genuinely new and not covered by any search result"),
-                "reason": .init(type: "string", description: "Why this is or isn't a new task (e.g. 'duplicate of task #42' or 'different scope than existing tasks')"),
-                "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
-                "current_activity": .init(type: "string", description: "What the user is actively doing")
-            ],
-            required: ["is_new_task", "reason", "context_summary", "current_activity"]
-        )
-
-        let decisionText = try await geminiClient.sendRequest(
-            prompt: decisionPrompt,
-            systemPrompt: systemPrompt,
-            responseSchema: decisionSchema
-        )
-
-        let decision = try JSONDecoder().decode(TaskDecisionResult.self, from: Data(decisionText.utf8))
-        log("Task: Decision — is_new_task: \(decision.isNewTask), reason: \(decision.reason)")
-
-        guard decision.isNewTask else {
-            return TaskExtractionResult(
-                hasNewTask: false,
-                task: nil,
-                contextSummary: decision.contextSummary,
-                currentActivity: decision.currentActivity
-            )
-        }
-
-        // Decision says it's new — extract full task details
-        return try await extractTask(
-            query: query, appName: appName, searchResultsJson: searchResultsJson,
-            systemPrompt: systemPrompt
-        )
-    }
-
-    // MARK: - Path B / Follow-up: Extract task details (extraction-only schema)
-
-    /// Extract full task details. All fields required, no ambiguity.
-    private func extractTask(
-        query: String, appName: String, searchResultsJson: String, systemPrompt: String
-    ) async throws -> TaskExtractionResult {
-        let extractionPrompt = """
-        You analyzed a screenshot from \(appName) and identified this request: "\(query)"
-
-        SEARCH RESULTS (for context, all non-duplicates):
-        \(searchResultsJson)
-
-        Extract the task details. Be specific: include WHO is asking and WHAT they want.
-        - title: verb-first, ≤15 words, include the person/source and action
-        - priority: "high" (urgent/today), "medium" (this week), "low" (no deadline)
-        - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
-        - inferred_deadline: deadline if visible, otherwise empty string
-        - description: additional context, otherwise empty string
-        - source_category: where the task originated (direct_request, self_generated, calendar_driven, reactive, external_system, other)
-        - source_subcategory: specific origin within that category
-          direct_request → message, meeting, mention
-          self_generated → idea, reminder, goal_subtask
-          calendar_driven → event_prep, recurring, deadline
-          reactive → error, notification, observation
-          external_system → project_tool, alert, documentation
-          any category → other
-        """
-
-        let extractionSchema = GeminiRequest.GenerationConfig.ResponseSchema(
-            type: "object",
-            properties: [
-                "title": .init(type: "string", description: "Brief, verb-first task title, ≤15 words. Include WHO and WHAT."),
-                "description": .init(type: "string", description: "Additional context about the task. Empty string if none."),
-                "priority": .init(type: "string", enum: ["high", "medium", "low"], description: "Task priority"),
-                "tags": .init(
-                    type: "array",
-                    description: "1-3 relevant tags: feature, bug, code, work, personal, research, communication, finance, health, other",
-                    items: .init(type: "string", properties: nil, required: nil)
-                ),
-                "source_app": .init(type: "string", description: "App where the task was found"),
-                "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied. Empty string if none."),
-                "confidence": .init(type: "number", description: "Confidence score 0.0-1.0"),
-                "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
-                "current_activity": .init(type: "string", description: "What the user is actively doing"),
-                "source_category": .init(type: "string", enum: ["direct_request", "self_generated", "calendar_driven", "reactive", "external_system", "other"], description: "Where the task originated: direct_request (someone asked), self_generated (user's own idea/reminder), calendar_driven (calendar event), reactive (error/notification), external_system (tool/alert), other"),
-                "source_subcategory": .init(type: "string", enum: ["message", "meeting", "mention", "idea", "reminder", "goal_subtask", "event_prep", "recurring", "deadline", "error", "notification", "observation", "project_tool", "alert", "documentation", "other"], description: "Specific origin: direct_request→message/meeting/mention, self_generated→idea/reminder/goal_subtask, calendar_driven→event_prep/recurring/deadline, reactive→error/notification/observation, external_system→project_tool/alert/documentation, any→other")
-            ],
-            required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity", "source_category", "source_subcategory"]
-        )
-
-        let extractionText = try await geminiClient.sendRequest(
-            prompt: extractionPrompt,
-            systemPrompt: systemPrompt,
-            responseSchema: extractionSchema
-        )
-
-        let response = try JSONDecoder().decode(TaskExtractionResponse.self, from: Data(extractionText.utf8))
-        log("Task: Extracted — \"\(response.title)\" (confidence: \(response.confidence), priority: \(response.priority))")
-        return response.toExtractionResult()
+        log("Task: Completed in \(searchCount) searches (loop exhausted without terminal tool)")
+        return (nil, searchCount)
     }
 
     // MARK: - Context & Search
@@ -738,39 +772,42 @@ actor TaskAssistant: ProactiveAssistant {
         )
     }
 
-    /// Execute search tool: combines vector similarity + FTS5 keyword search
-    private func executeSearchTool(query: String) async -> [TaskSearchResult] {
-        var resultMap: [Int64: TaskSearchResult] = [:]
+    /// Execute vector similarity search
+    private func executeVectorSearch(query: String) async -> [TaskSearchResult] {
+        var results: [TaskSearchResult] = []
 
-        // Vector search
         do {
             let queryEmbedding = try await EmbeddingService.shared.embed(text: query)
             let vectorResults = await EmbeddingService.shared.searchSimilar(query: queryEmbedding, topK: 10)
 
-            for result in vectorResults where result.similarity > 0.5 {
-                // Look up the task description and status
+            for result in vectorResults where result.similarity > 0.3 {
                 if let record = try await ActionItemStorage.shared.getActionItem(id: result.id) {
                     let status: String
                     if record.deleted { status = "deleted" }
                     else if record.completed { status = "completed" }
                     else { status = "active" }
 
-                    resultMap[result.id] = TaskSearchResult(
+                    results.append(TaskSearchResult(
                         id: result.id,
                         description: record.description,
                         status: status,
                         similarity: Double(result.similarity),
                         matchType: "vector"
-                    )
+                    ))
                 }
             }
         } catch {
             logError("Task: Vector search failed", error: error)
         }
 
-        // FTS5 keyword search
+        return results.sorted { ($0.similarity ?? 0) > ($1.similarity ?? 0) }
+    }
+
+    /// Execute FTS5 keyword search
+    private func executeKeywordSearch(query: String) async -> [TaskSearchResult] {
+        var results: [TaskSearchResult] = []
+
         do {
-            // Sanitize the query for FTS5 — use individual words with prefix matching
             let words = query.components(separatedBy: .whitespaces).filter { $0.count >= 3 }
             let ftsQuery = words.map { "\($0)*" }.joined(separator: " OR ")
 
@@ -788,34 +825,19 @@ actor TaskAssistant: ProactiveAssistant {
                     else if result.completed { status = "completed" }
                     else { status = "active" }
 
-                    if var existing = resultMap[result.id] {
-                        // Already found via vector — mark as "both"
-                        existing = TaskSearchResult(
-                            id: existing.id,
-                            description: existing.description,
-                            status: existing.status,
-                            similarity: existing.similarity,
-                            matchType: "both"
-                        )
-                        resultMap[result.id] = existing
-                    } else {
-                        resultMap[result.id] = TaskSearchResult(
-                            id: result.id,
-                            description: result.description,
-                            status: status,
-                            similarity: nil,
-                            matchType: "fts"
-                        )
-                    }
+                    results.append(TaskSearchResult(
+                        id: result.id,
+                        description: result.description,
+                        status: status,
+                        similarity: nil,
+                        matchType: "fts"
+                    ))
                 }
             }
         } catch {
             logError("Task: FTS search failed", error: error)
         }
 
-        // Sort: vector matches first (highest similarity), then FTS-only
-        return Array(resultMap.values).sorted { a, b in
-            (a.similarity ?? 0) > (b.similarity ?? 0)
-        }
+        return results
     }
 }
