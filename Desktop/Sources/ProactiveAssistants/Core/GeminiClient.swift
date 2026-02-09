@@ -701,6 +701,7 @@ struct ToolChatResult {
 struct ToolCall {
     let name: String
     let arguments: [String: Any]
+    let thoughtSignature: String?
 }
 
 // MARK: - GeminiClient Tool Extensions
@@ -806,7 +807,7 @@ extension GeminiClient {
         for part in parts {
             if let functionCall = part.functionCall {
                 let args = functionCall.args?.mapValues { $0.value } ?? [:]
-                toolCalls.append(ToolCall(name: functionCall.name, arguments: args))
+                toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: functionCall.thoughtSignature))
             }
             if let text = part.text {
                 textResponse += text
@@ -960,6 +961,18 @@ struct GeminiImageToolRequest: Encodable {
     struct FunctionCallPart: Encodable {
         let name: String
         let args: [String: String]
+        let thoughtSignature: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name, args
+            case thoughtSignature = "thought_signature"
+        }
+
+        init(name: String, args: [String: String], thoughtSignature: String? = nil) {
+            self.name = name
+            self.args = args
+            self.thoughtSignature = thoughtSignature
+        }
     }
 
     struct FunctionResponsePart: Encodable {
@@ -1059,7 +1072,7 @@ extension GeminiClient {
                 for part in parts {
                     if let functionCall = part.functionCall {
                         let args = functionCall.args?.mapValues { $0.value } ?? [:]
-                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args))
+                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: functionCall.thoughtSignature))
                     }
                     if let text = part.text {
                         textResponse += text
@@ -1136,7 +1149,7 @@ extension GeminiClient {
                 for part in parts {
                     if let functionCall = part.functionCall {
                         let args = functionCall.args?.mapValues { $0.value } ?? [:]
-                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args))
+                        toolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: functionCall.thoughtSignature))
                     }
                     if let text = part.text {
                         textResponse += text
@@ -1281,6 +1294,12 @@ struct GeminiToolResponse: Decodable {
     struct FunctionCall: Decodable {
         let name: String
         let args: [String: AnyCodable]?
+        let thoughtSignature: String?
+
+        enum CodingKeys: String, CodingKey {
+            case name, args
+            case thoughtSignature = "thought_signature"
+        }
     }
 
     struct GeminiError: Decodable {
