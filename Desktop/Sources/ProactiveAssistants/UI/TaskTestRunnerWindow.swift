@@ -8,6 +8,7 @@ struct TaskTestResult: Identifiable {
     let index: Int
     let timestamp: Date
     let appName: String
+    let windowTitle: String?
     let result: TaskExtractionResult?
     let error: String?
     let duration: TimeInterval
@@ -54,6 +55,14 @@ struct TaskTestRunnerView: View {
             // Header
             header
                 .padding(20)
+
+            Divider()
+
+            // Column headers
+            columnHeaders
+                .padding(.horizontal, 20)
+                .padding(.vertical, 6)
+                .background(Color(nsColor: .windowBackgroundColor))
 
             Divider()
 
@@ -176,6 +185,33 @@ struct TaskTestRunnerView: View {
         }
     }
 
+    // MARK: - Column Headers
+
+    private var columnHeaders: some View {
+        HStack(spacing: 16) {
+            Text("#")
+                .frame(width: 28, alignment: .trailing)
+            Text("Time")
+                .frame(width: 90, alignment: .leading)
+            Text("App")
+                .frame(width: 100, alignment: .leading)
+            Text("Window")
+                .frame(width: 150, alignment: .leading)
+            Text("Decision")
+                .frame(width: 100, alignment: .leading)
+            Text("Search")
+                .frame(width: 40, alignment: .leading)
+            Text("Details")
+            Spacer()
+            Text("Conf")
+                .frame(width: 40, alignment: .trailing)
+            Text("Time")
+                .frame(width: 50, alignment: .trailing)
+        }
+        .font(.system(size: 11, weight: .medium))
+        .foregroundColor(.secondary.opacity(0.7))
+    }
+
     // MARK: - Result Row
 
     private func resultRow(_ testResult: TaskTestResult) -> some View {
@@ -196,8 +232,16 @@ struct TaskTestRunnerView: View {
             Text(testResult.appName)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .frame(width: 120, alignment: .leading)
+                .frame(width: 100, alignment: .leading)
                 .lineLimit(1)
+
+            // Window title
+            Text(testResult.windowTitle ?? "—")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+                .frame(width: 150, alignment: .leading)
+                .lineLimit(1)
+                .truncationMode(.tail)
 
             // Decision column
             decisionBadge(for: testResult)
@@ -467,6 +511,7 @@ struct TaskTestRunnerView: View {
                             index: i + 1,
                             timestamp: screenshot.timestamp,
                             appName: screenshot.appName,
+                            windowTitle: screenshot.windowTitle,
                             result: result,
                             error: nil,
                             duration: duration,
@@ -480,6 +525,7 @@ struct TaskTestRunnerView: View {
                             index: i + 1,
                             timestamp: screenshot.timestamp,
                             appName: screenshot.appName,
+                            windowTitle: screenshot.windowTitle,
                             result: nil,
                             error: error.localizedDescription,
                             duration: 0,
