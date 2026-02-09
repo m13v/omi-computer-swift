@@ -16,7 +16,8 @@ use crate::models::{
     ActionItem, ActionItemDB, AdviceCategory, AdviceDB, App, AppReview, AppSummary, Category,
     ChatSessionDB, Conversation, DailySummarySettings, DistractionEntry, Folder, FocusSessionDB,
     FocusStats, FocusStatus, GoalDB, GoalHistoryEntry, GoalType, Memory, MemoryCategory, MemoryDB, MessageDB,
-    NotificationSettings, PersonaDB, Structured, TranscriptSegment, TranscriptionPreferences, UserProfile,
+    NotificationSettings, PersonaDB, Structured, TranscriptSegment, TranscriptionPreferences,
+    UserAIPersona, UserProfile,
 };
 
 /// Service account credentials from JSON file
@@ -904,61 +905,85 @@ impl FirestoreService {
             }))
         };
 
-        // Query with ordering by scoring DESC
-        let mut structured_query = json!({
-            "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
-            "orderBy": [
-                {"field": {"fieldPath": "scoring"}, "direction": "DESCENDING"},
-                {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
-            ],
-            "limit": limit,
-            "offset": offset
-        });
+        // Fetch from Firestore in a loop to handle post-query filtering (rejected, dismissed, tags).
+        // These can't be reliably filtered in Firestore (fields may not exist on all docs),
+        // so we filter in Rust. Keep fetching until we have enough or Firestore is exhausted.
+        let order_by = json!([
+            {"field": {"fieldPath": "scoring"}, "direction": "DESCENDING"},
+            {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
+        ]);
+        let mut memories: Vec<MemoryDB> = Vec::new();
+        let mut current_offset = offset;
+        let fetch_batch = limit.max(500);
 
-        if let Some(where_filter) = where_clause {
-            structured_query["where"] = where_filter;
-        }
+        loop {
+            let mut structured_query = json!({
+                "from": [{"collectionId": MEMORIES_SUBCOLLECTION}],
+                "orderBy": order_by.clone(),
+                "limit": fetch_batch,
+                "offset": current_offset
+            });
 
-        let query = json!({
-            "structuredQuery": structured_query
-        });
+            if let Some(ref where_filter) = where_clause {
+                structured_query["where"] = where_filter.clone();
+            }
 
-        let response = self
-            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
-            .await?
-            .json(&query)
-            .send()
-            .await?;
+            let query = json!({
+                "structuredQuery": structured_query
+            });
 
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            tracing::error!("Firestore query error: {}", error_text);
-            return Ok(vec![]);
-        }
+            let response = self
+                .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+                .await?
+                .json(&query)
+                .send()
+                .await?;
 
-        let results: Vec<Value> = response.json().await?;
-        let mut memories: Vec<MemoryDB> = results
-            .into_iter()
-            .filter_map(|doc| {
-                doc.get("document")
-                    .and_then(|d| self.parse_memory(d, uid).ok())
-            })
-            // Filter out rejected memories (matches Python behavior)
-            .filter(|m| m.user_review != Some(false))
-            // Filter out dismissed memories in-memory (not in Firestore query, since existing
-            // memories don't have is_dismissed field - Firestore requires field to exist for filters)
-            .filter(|m| include_dismissed || !m.is_dismissed)
-            // Filter by tags in-memory (Firestore doesn't support multiple array-contains)
-            .filter(|m| {
-                match tags {
-                    Some(filter_tags) if !filter_tags.is_empty() => {
-                        // Memory must contain ALL specified tags
-                        filter_tags.iter().all(|tag| m.tags.contains(tag))
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                tracing::error!("Firestore query error: {}", error_text);
+                break;
+            }
+
+            let results: Vec<Value> = response.json().await?;
+            let fetched_count = results.iter().filter(|doc| doc.get("document").is_some()).count();
+
+            let batch: Vec<MemoryDB> = results
+                .into_iter()
+                .filter_map(|doc| {
+                    doc.get("document")
+                        .and_then(|d| self.parse_memory(d, uid).ok())
+                })
+                // Filter out rejected memories (matches Python behavior)
+                .filter(|m| m.user_review != Some(false))
+                // Filter out dismissed memories in-memory (not in Firestore query, since existing
+                // memories don't have is_dismissed field - Firestore requires field to exist for filters)
+                .filter(|m| include_dismissed || !m.is_dismissed)
+                // Filter by tags in-memory (Firestore doesn't support multiple array-contains)
+                .filter(|m| {
+                    match tags {
+                        Some(filter_tags) if !filter_tags.is_empty() => {
+                            filter_tags.iter().all(|tag| m.tags.contains(tag))
+                        }
+                        _ => true,
                     }
-                    _ => true, // No tag filter, include all
-                }
-            })
-            .collect();
+                })
+                .collect();
+
+            memories.extend(batch);
+            current_offset += fetched_count;
+
+            // Stop if Firestore returned fewer than requested (no more data)
+            if fetched_count < fetch_batch {
+                break;
+            }
+
+            // Stop if we have enough items
+            if memories.len() >= limit {
+                memories.truncate(limit);
+                break;
+            }
+        }
 
         // Enrich memories with source from linked conversations
         self.enrich_memories_with_source(uid, &mut memories).await;
@@ -1803,53 +1828,77 @@ impl FirestoreService {
             ]),
         };
 
-        // Build structured query
-        let mut structured_query = json!({
-            "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
-            "orderBy": order_by,
-            "limit": limit,
-            "offset": offset
-        });
+        // Fetch from Firestore in a loop to handle post-query deleted filtering.
+        // Since `deleted` can't be reliably filtered in Firestore (most docs lack the field),
+        // we filter in Rust. But this means a single Firestore page may yield fewer items
+        // than requested after filtering, so we keep fetching until we have enough or Firestore
+        // is exhausted.
+        let mut action_items: Vec<ActionItemDB> = Vec::new();
+        let mut current_offset = offset;
+        let fetch_batch = limit.max(500); // fetch in large batches to minimize round-trips
 
-        if let Some(where_filter) = where_clause {
-            structured_query["where"] = where_filter;
+        loop {
+            let mut structured_query = json!({
+                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                "orderBy": order_by.clone(),
+                "limit": fetch_batch,
+                "offset": current_offset
+            });
+
+            if let Some(ref where_filter) = where_clause {
+                structured_query["where"] = where_filter.clone();
+            }
+
+            let query = json!({
+                "structuredQuery": structured_query
+            });
+
+            let response = self
+                .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+                .await?
+                .json(&query)
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                tracing::error!("Firestore query error: {}", error_text);
+                break;
+            }
+
+            let results: Vec<Value> = response.json().await?;
+            let fetched_count = results.iter().filter(|doc| doc.get("document").is_some()).count();
+
+            let batch: Vec<ActionItemDB> = results
+                .into_iter()
+                .filter_map(|doc| {
+                    doc.get("document")
+                        .and_then(|d| self.parse_action_item(d).ok())
+                })
+                // Filter based on deleted status
+                .filter(|item| {
+                    if include_deleted == Some(true) {
+                        item.deleted == Some(true)
+                    } else {
+                        item.deleted != Some(true)
+                    }
+                })
+                .collect();
+
+            action_items.extend(batch);
+            current_offset += fetched_count;
+
+            // Stop if Firestore returned fewer than requested (no more data)
+            if fetched_count < fetch_batch {
+                break;
+            }
+
+            // Stop if we have enough items
+            if action_items.len() >= limit {
+                action_items.truncate(limit);
+                break;
+            }
         }
-
-        let query = json!({
-            "structuredQuery": structured_query
-        });
-
-        let response = self
-            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
-            .await?
-            .json(&query)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            tracing::error!("Firestore query error: {}", error_text);
-            return Ok(vec![]);
-        }
-
-        let results: Vec<Value> = response.json().await?;
-        let mut action_items: Vec<ActionItemDB> = results
-            .into_iter()
-            .filter_map(|doc| {
-                doc.get("document")
-                    .and_then(|d| self.parse_action_item(d).ok())
-            })
-            // Filter based on deleted status
-            .filter(|item| {
-                if include_deleted == Some(true) {
-                    // Return ONLY deleted items
-                    item.deleted == Some(true)
-                } else {
-                    // Default: exclude deleted items
-                    item.deleted != Some(true)
-                }
-            })
-            .collect();
 
         // Enrich action items that have conversation_id but no source
         self.enrich_action_items_with_source(uid, &mut action_items).await;
@@ -4021,6 +4070,72 @@ impl FirestoreService {
             time_zone: self.parse_string(fields, "time_zone"),
             created_at: self.parse_timestamp_optional(fields, "created_at")
                 .map(|dt| dt.to_rfc3339()),
+        })
+    }
+
+    // =========================================================================
+    // USER PERSONA
+    // =========================================================================
+
+    /// Get user AI persona from user document
+    pub async fn get_user_ai_persona(
+        &self,
+        uid: &str,
+    ) -> Result<Option<UserAIPersona>, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        let persona_fields = fields
+            .get("user_persona")
+            .and_then(|p| p.get("mapValue"))
+            .and_then(|m| m.get("fields"));
+
+        if let Some(pf) = persona_fields {
+            let persona_text = self.parse_string(pf, "persona_text").unwrap_or_default();
+            let generated_at = self.parse_timestamp(pf, "generated_at")?;
+            let data_sources_used = self.parse_int(pf, "data_sources_used").unwrap_or(0);
+
+            Ok(Some(UserAIPersona {
+                persona_text,
+                generated_at,
+                data_sources_used,
+            }))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Update user AI persona in user document
+    pub async fn update_user_ai_persona(
+        &self,
+        uid: &str,
+        persona_text: &str,
+        generated_at: &str,
+        data_sources_used: i32,
+    ) -> Result<UserAIPersona, Box<dyn std::error::Error + Send + Sync>> {
+        let generated_at_dt = DateTime::parse_from_rfc3339(generated_at)
+            .map(|dt| dt.with_timezone(&Utc))
+            .map_err(|e| format!("Invalid generated_at timestamp: {}", e))?;
+
+        let fields = json!({
+            "user_persona": {
+                "mapValue": {
+                    "fields": {
+                        "persona_text": {"stringValue": persona_text},
+                        "generated_at": {"timestampValue": generated_at},
+                        "data_sources_used": {"integerValue": data_sources_used.to_string()}
+                    }
+                }
+            }
+        });
+
+        self.update_user_fields(uid, fields, &["user_persona"]).await?;
+
+        Ok(UserAIPersona {
+            persona_text: persona_text.to_string(),
+            generated_at: generated_at_dt,
+            data_sources_used,
         })
     }
 
