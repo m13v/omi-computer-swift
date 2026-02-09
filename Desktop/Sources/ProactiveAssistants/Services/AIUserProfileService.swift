@@ -76,6 +76,42 @@ actor AIUserProfileService {
         }
     }
 
+    /// Delete a profile by ID and return the next latest profile
+    func deleteProfile(id: Int64) async -> AIUserProfileRecord? {
+        guard let db = try? await ensureDB() else { return nil }
+        _ = try? await db.write { database in
+            try database.execute(
+                sql: "DELETE FROM ai_user_profiles WHERE id = ?",
+                arguments: [id]
+            )
+        }
+        return await getLatestProfile()
+    }
+
+    /// Update the profile text of an existing record
+    func updateProfileText(id: Int64, newText: String) async -> Bool {
+        guard let db = try? await ensureDB() else { return false }
+        do {
+            try await db.write { database in
+                try database.execute(
+                    sql: "UPDATE ai_user_profiles SET profileText = ? WHERE id = ?",
+                    arguments: [newText, id]
+                )
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// Delete all stored profiles
+    func deleteAllProfiles() async {
+        guard let db = try? await ensureDB() else { return }
+        _ = try? await db.write { database in
+            try database.execute(sql: "DELETE FROM ai_user_profiles")
+        }
+    }
+
     /// Get all stored profiles (newest first)
     func getAllProfiles(limit: Int = 30) async -> [AIUserProfileRecord] {
         guard let db = try? await ensureDB() else { return [] }
