@@ -71,6 +71,7 @@ struct SettingsContentView: View {
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
     @State private var taskAllowedApps: Set<String>
+    @State private var taskDisabledHeuristics: Set<String>
 
     // Advice Assistant states
     @State private var adviceEnabled: Bool
@@ -188,6 +189,7 @@ struct SettingsContentView: View {
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
         _taskAllowedApps = State(initialValue: TaskAssistantSettings.shared.allowedApps)
+        _taskDisabledHeuristics = State(initialValue: TaskAssistantSettings.shared.disabledHeuristicIds)
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
