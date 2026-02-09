@@ -24,7 +24,8 @@ actor FocusAssistant: ProactiveAssistant {
     private let onDistraction: (() -> Void)?
 
     private var isRunning = false
-    private var frameQueue: [CapturedFrame] = []
+    private let frameStream: AsyncStream<CapturedFrame>
+    private let frameContinuation: AsyncStream<CapturedFrame>.Continuation
     private var analysisHistory: [ScreenAnalysis] = []
     private let maxHistorySize = 10
     private var lastStatus: FocusStatus?
@@ -74,6 +75,10 @@ actor FocusAssistant: ProactiveAssistant {
         self.onRefocus = onRefocus
         self.onDistraction = onDistraction
 
+        let (stream, continuation) = AsyncStream.makeStream(of: CapturedFrame.self)
+        self.frameStream = stream
+        self.frameContinuation = continuation
+
         // Start processing loop in a task
         Task {
             await self.startProcessing()
@@ -92,18 +97,13 @@ actor FocusAssistant: ProactiveAssistant {
     private func processFrameLoop() async {
         log("Focus assistant started (parallel mode)")
 
-        while isRunning {
-            if let frame = frameQueue.first {
-                frameQueue.removeFirst()
-                // Fire off analysis in background (don't wait) - like Python version
-                // Use implicitly unwrapped optional to capture task reference for self-cleanup
-                let task = Task {
-                    await self.processFrame(frame)
-                }
-                pendingTasks.insert(task)
-            } else {
-                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1 seconds
+        for await frame in frameStream {
+            guard isRunning else { break }
+            // Fire off analysis in background (don't wait) - like Python version
+            let task = Task {
+                await self.processFrame(frame)
             }
+            pendingTasks.insert(task)
         }
 
         // Wait for pending tasks on shutdown
@@ -139,8 +139,8 @@ actor FocusAssistant: ProactiveAssistant {
         lastAnalyzedApp = frame.appName
         lastAnalyzedWindowTitle = frame.windowTitle
 
-        // Submit frame to internal queue for processing
-        frameQueue.append(frame)
+        // Submit frame to stream for processing
+        frameContinuation.yield(frame)
         log("Focus: Analyzing frame \(frame.frameNumber): App=\(frame.appName), Window=\(frame.windowTitle ?? "unknown")")
 
         // Return nil since we process asynchronously
@@ -274,20 +274,20 @@ actor FocusAssistant: ProactiveAssistant {
     }
 
     func clearPendingWork() async {
-        let count = frameQueue.count
-        frameQueue.removeAll()
         // Cancel pending analysis tasks since those frames are now stale
+        let count = pendingTasks.count
         for task in pendingTasks {
             task.cancel()
         }
         pendingTasks.removeAll()
         if count > 0 {
-            log("Focus: Cleared \(count) pending frames from queue")
+            log("Focus: Cancelled \(count) pending analysis tasks")
         }
     }
 
     func stop() async {
         isRunning = false
+        frameContinuation.finish()
         processingTask?.cancel()
         // Cancel all pending analysis tasks
         for task in pendingTasks {
