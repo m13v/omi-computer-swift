@@ -1539,7 +1539,7 @@ extension APIClient {
     }
 
     /// Soft-deletes an action item (marks as deleted without removing from Firestore)
-    func softDeleteActionItem(id: String, deletedBy: String, reason: String, keptTaskId: String) async throws -> TaskActionItem {
+    func softDeleteActionItem(id: String, deletedBy: String, reason: String = "", keptTaskId: String = "") async throws -> TaskActionItem {
         struct SoftDeleteRequest: Encodable {
             let deletedBy: String
             let reason: String
@@ -3707,5 +3707,47 @@ struct CitationSource: Codable, Identifiable {
         preview = try container.decodeIfPresent(String.self, forKey: .preview) ?? ""
         emoji = try container.decodeIfPresent(String.self, forKey: .emoji)
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
+}
+
+// MARK: - User Persona API
+
+struct UserPersonaResponse: Codable {
+    let personaText: String
+    let generatedAt: Date
+    let dataSourcesUsed: Int
+
+    enum CodingKeys: String, CodingKey {
+        case personaText = "persona_text"
+        case generatedAt = "generated_at"
+        case dataSourcesUsed = "data_sources_used"
+    }
+}
+
+extension APIClient {
+
+    /// Fetch user persona from backend
+    func getUserPersona() async throws -> UserPersonaResponse? {
+        return try await get("v1/users/persona")
+    }
+
+    /// Sync user persona to backend
+    func syncUserPersona(personaText: String, generatedAt: Date, dataSourcesUsed: Int) async throws {
+        struct SyncRequest: Encodable {
+            let persona_text: String
+            let generated_at: String
+            let data_sources_used: Int
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        let body = SyncRequest(
+            persona_text: personaText,
+            generated_at: formatter.string(from: generatedAt),
+            data_sources_used: dataSourcesUsed
+        )
+
+        let _: UserPersonaResponse = try await patch("v1/users/persona", body: body)
     }
 }
