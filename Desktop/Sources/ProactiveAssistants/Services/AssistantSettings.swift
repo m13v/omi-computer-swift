@@ -19,7 +19,7 @@ class AssistantSettings {
     // MARK: - Default Values
 
     private let defaultCooldownInterval = 10 // minutes
-    private let defaultGlowOverlayEnabled = true
+    private let defaultGlowOverlayEnabled = false
     private let defaultAnalysisDelay = 60 // seconds (1 minute)
     private let defaultScreenAnalysisEnabled = true
     private let defaultTranscriptionEnabled = true
