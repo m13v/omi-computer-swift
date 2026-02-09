@@ -866,7 +866,8 @@ class TasksViewModel: ObservableObject {
             // Status counts
             counts[.todo] = filterCounts.todo
             counts[.done] = filterCounts.done
-            counts[.removedByAI] = filterCounts.deleted
+            counts[.removedByAI] = filterCounts.deletedByAI
+            counts[.removedByMe] = filterCounts.deletedByUser
 
             // Category counts
             counts[.personal] = filterCounts.categories["personal"] ?? 0
@@ -933,8 +934,8 @@ class TasksViewModel: ObservableObject {
 
             var counts: [TaskFilterTag: Int] = [:]
             for tag in TaskFilterTag.allCases {
-                if tag == .removedByAI {
-                    counts[tag] = store.deletedTasks.count
+                if tag == .removedByAI || tag == .removedByMe {
+                    counts[tag] = store.deletedTasks.filter { tag.matches($0) }.count
                 } else {
                     counts[tag] = allTasks.filter { tag.matches($0) }.count
                 }
@@ -964,7 +965,7 @@ class TasksViewModel: ObservableObject {
                 query: query,
                 limit: 10000,
                 completed: nil,  // Search all
-                includeDeleted: selectedTags.contains(.removedByAI)
+                includeDeleted: selectedTags.contains(.removedByAI) || selectedTags.contains(.removedByMe)
             )
             searchResults = results
             log("TasksViewModel: Search found \(results.count) tasks for '\(query)'")
@@ -1062,7 +1063,8 @@ class TasksViewModel: ObservableObject {
         guard !statusTags.isEmpty else { return tasks }
 
         return tasks.filter { task in
-            if statusTags.contains(.removedByAI) && task.deleted == true { return true }
+            if statusTags.contains(.removedByAI) && task.deleted == true && task.deletedBy != "user" { return true }
+            if statusTags.contains(.removedByMe) && task.deleted == true && task.deletedBy == "user" { return true }
             if statusTags.contains(.done) && task.completed { return true }
             if statusTags.contains(.todo) && !task.completed && task.deleted != true { return true }
             return false
@@ -1868,7 +1870,7 @@ struct TasksPage: View {
                 // Show tasks grouped by category when sorting by due date
                 // Show category grouping when sorting by due date and not viewing only completed/deleted tasks
                 let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
-                let onlyDeleted = viewModel.selectedTags.contains(.removedByAI) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
+                let onlyDeleted = (viewModel.selectedTags.contains(.removedByAI) || viewModel.selectedTags.contains(.removedByMe)) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
                 if viewModel.sortOption == .dueDate && !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
                     ForEach(TaskCategory.allCases, id: \.self) { category in
                         let tasksInCategory = viewModel.categorizedTasks[category] ?? []
