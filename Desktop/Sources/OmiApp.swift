@@ -184,6 +184,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             Task {
                 await TierManager.shared.checkTierIfNeeded()
             }
+
+            // Generate user persona if >24h since last generation
+            if UserPersonaService.shared.shouldGenerate() {
+                Task {
+                    do {
+                        _ = try await UserPersonaService.shared.generatePersona()
+                    } catch {
+                        log("AppDelegate: Persona generation failed: \(error.localizedDescription)")
+                    }
+                }
+            }
         }
 
         // One-time migration: Enable launch at login for existing users who haven't set it
