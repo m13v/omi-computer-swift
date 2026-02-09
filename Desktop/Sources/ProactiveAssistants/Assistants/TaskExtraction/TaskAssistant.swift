@@ -429,15 +429,26 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     func onContextSwitch(departingFrame: CapturedFrame?, newApp: String, newWindowTitle: String?) async {
-        guard let frame = departingFrame else {
-            log("Task: Context switch but no departing frame available")
+        // Use latestFrame if departing frame is unavailable or stale (from a different app due to delay periods)
+        let frame: CapturedFrame? = {
+            if let departing = departingFrame {
+                return departing
+            }
+            return latestFrame
+        }()
+
+        guard let frame = frame else {
+            log("Task: Context switch but no frame available")
             return
         }
 
-        // Check departing frame's app is on the whitelist
+        // Check frame's app is on the whitelist
         let allowed = await MainActor.run { TaskAssistantSettings.shared.isAppAllowed(frame.appName) }
         if !allowed {
             log("Task: Context switch from non-whitelisted app '\(frame.appName)', skipping")
+            // Still cancel fallback timer on any context switch
+            fallbackTimerTask?.cancel()
+            fallbackTimerTask = nil
             return
         }
 
@@ -447,6 +458,8 @@ actor TaskAssistant: ProactiveAssistant {
         }
         if !windowAllowed {
             log("Task: Context switch from filtered browser window, skipping")
+            fallbackTimerTask?.cancel()
+            fallbackTimerTask = nil
             return
         }
 
@@ -456,7 +469,7 @@ actor TaskAssistant: ProactiveAssistant {
         fallbackTimerTask?.cancel()
         fallbackTimerTask = nil
 
-        // Yield context switch trigger with the departing frame
+        // Yield context switch trigger with the frame
         triggerContinuation.yield(.contextSwitch(frame))
     }
 
