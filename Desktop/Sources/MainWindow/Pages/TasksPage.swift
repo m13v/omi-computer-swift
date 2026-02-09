@@ -525,8 +525,10 @@ class TasksViewModel: ObservableObject {
         loadIndentLevels()
 
         // Forward store changes to trigger view updates and recompute caches
+        // Debounced so surgical single-item updates don't cause a redundant full recompute
         store.objectWillChange
             .receive(on: DispatchQueue.main)
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.recomputeAllCaches()
                 self?.objectWillChange.send()
@@ -585,7 +587,7 @@ class TasksViewModel: ObservableObject {
 
         // Sort tasks by custom order, new items go at the end
         var orderedTasks: [TaskActionItem] = []
-        var taskMap = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+        var taskMap = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
 
         // Add tasks in custom order
         for id in order {
@@ -1162,15 +1164,38 @@ class TasksViewModel: ObservableObject {
 
     func toggleTask(_ task: TaskActionItem) async {
         log("TasksViewModel: toggleTask called for id=\(task.id)")
+        removeFromDisplay(task.id)
         await store.toggleTask(task)
     }
 
     func deleteTask(_ task: TaskActionItem) async {
+        removeFromDisplay(task.id)
         await store.deleteTask(task)
     }
 
+    // MARK: - Surgical Display Updates
 
+    /// Remove a single task from displayTasks without full recompute
+    private func removeFromDisplay(_ taskId: String) {
+        displayTasks.removeAll { $0.id == taskId }
+        for category in TaskCategory.allCases {
+            categorizedTasks[category]?.removeAll { $0.id == taskId }
+        }
+        objectWillChange.send()
+    }
 
+    /// Update a single task in displayTasks without full recompute
+    private func updateInDisplay(_ updated: TaskActionItem) {
+        if let index = displayTasks.firstIndex(where: { $0.id == updated.id }) {
+            displayTasks[index] = updated
+        }
+        for category in TaskCategory.allCases {
+            if let index = categorizedTasks[category]?.firstIndex(where: { $0.id == updated.id }) {
+                categorizedTasks[category]?[index] = updated
+            }
+        }
+        objectWillChange.send()
+    }
 
     // MARK: - Multi-Select
 
@@ -1211,6 +1236,10 @@ class TasksViewModel: ObservableObject {
 
     func updateTaskDetails(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
         await store.updateTask(task, description: description, dueAt: dueAt, priority: priority)
+        // Read the updated task back from the store for surgical update
+        if let updated = store.tasks.first(where: { $0.id == task.id }) {
+            updateInDisplay(updated)
+        }
     }
 }
 
@@ -2032,7 +2061,6 @@ struct TaskRow: View {
     @State private var showAgentDetail = false
 
     // Inline editing state
-    @State private var isEditing = false
     @State private var editText = ""
     @FocusState private var isTextFieldFocused: Bool
 
@@ -2338,39 +2366,32 @@ struct TaskRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            } else if isEditing && !viewModel.isMultiSelectMode {
-                // Inline text field
-                TextField("Task description", text: $editText, axis: .vertical)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 14))
-                    .foregroundColor(OmiColors.textPrimary)
-                    .lineLimit(1...4)
-                    .focused($isTextFieldFocused)
-                    .onSubmit {
-                        commitEdit()
-                    }
-                    .onChange(of: isTextFieldFocused) { _, focused in
-                        if !focused {
-                            commitEdit()
-                        }
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                // Display mode - click to edit
+                // Always-editable task content
                 FlowLayout(spacing: 6) {
-                    // Task text - clickable to enter edit mode
-                    Text(task.description)
+                    // Always-rendered TextField (notes-like editing)
+                    TextField("Task description", text: $editText, axis: .vertical)
+                        .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
-                        .lineLimit(2)
-                        .truncationMode(.tail)
-                        .help(task.description)
-                        .onTapGesture {
-                            if viewModel.isMultiSelectMode {
-                                viewModel.toggleTaskSelection(task)
-                            } else {
-                                startEditing()
+                        .lineLimit(1...4)
+                        .focused($isTextFieldFocused)
+                        .disabled(viewModel.isMultiSelectMode)
+                        .onSubmit {
+                            commitEdit()
+                        }
+                        .onChange(of: isTextFieldFocused) { _, focused in
+                            if !focused {
+                                commitEdit()
+                            }
+                        }
+                        .onAppear {
+                            editText = task.description
+                        }
+                        .onChange(of: task.description) { _, newValue in
+                            if !isTextFieldFocused {
+                                editText = newValue
                             }
                         }
 
@@ -2532,20 +2553,15 @@ struct TaskRow: View {
 
     // MARK: - Inline Editing
 
-    private func startEditing() {
-        editText = task.description
-        isEditing = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            isTextFieldFocused = true
-        }
-    }
-
     private func commitEdit() {
         let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
-        isEditing = false
         isTextFieldFocused = false
 
-        guard !trimmed.isEmpty, trimmed != task.description else { return }
+        guard !trimmed.isEmpty, trimmed != task.description else {
+            // Reset to original if empty or unchanged
+            editText = task.description
+            return
+        }
 
         Task {
             await viewModel.updateTaskDetails(task, description: trimmed)
