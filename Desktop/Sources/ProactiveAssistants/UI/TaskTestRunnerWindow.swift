@@ -174,74 +174,126 @@ struct TaskTestRunnerView: View {
     // MARK: - Result Row
 
     private func resultRow(_ testResult: TaskTestResult) -> some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 16) {
             // Index
             Text("\(testResult.index)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
-                .frame(width: 24, alignment: .trailing)
-
-            // Timestamp
-            Text(testResult.timestamp, format: .dateTime.hour().minute())
                 .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary)
-                .frame(width: 50, alignment: .leading)
+                .frame(width: 28, alignment: .trailing)
+
+            // Timestamp
+            Text(testResult.timestamp, format: .dateTime.hour().minute().second())
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 70, alignment: .leading)
 
             // App name
             Text(testResult.appName)
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .frame(width: 100, alignment: .leading)
+                .frame(width: 120, alignment: .leading)
                 .lineLimit(1)
 
-            // Result
+            // Decision column
+            decisionBadge(for: testResult)
+                .frame(width: 100, alignment: .leading)
+
+            // Task title or context summary
             if let error = testResult.error {
-                HStack(spacing: 4) {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.orange)
-                    Text(error)
-                        .font(.system(size: 12))
-                        .foregroundColor(.orange)
-                        .lineLimit(1)
-                }
+                Text(error)
+                    .font(.system(size: 12))
+                    .foregroundColor(.orange)
+                    .lineLimit(2)
             } else if let result = testResult.result {
                 if result.hasNewTask, let task = result.task {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 10))
-                            .foregroundColor(.green)
+                    VStack(alignment: .leading, spacing: 2) {
                         Text(task.title)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.primary)
-                            .lineLimit(1)
-                        Text("(\(Int(task.confidence * 100))%)")
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
+                            .lineLimit(2)
+                        HStack(spacing: 8) {
+                            Text(task.priority.rawValue)
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(.white)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(priorityColor(task.priority))
+                                .cornerRadius(3)
+                            Text(task.tags.joined(separator: ", "))
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
                     }
                 } else {
-                    HStack(spacing: 4) {
-                        Image(systemName: "minus.circle")
-                            .font(.system(size: 10))
-                            .foregroundColor(.secondary)
-                        Text(result.contextSummary)
-                            .font(.system(size: 12))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
+                    Text(result.contextSummary)
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
                 }
             }
 
             Spacer()
 
+            // Confidence (only for tasks)
+            if let result = testResult.result, result.hasNewTask, let task = result.task {
+                Text("\(Int(task.confidence * 100))%")
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(.green)
+                    .frame(width: 40, alignment: .trailing)
+            } else {
+                Text("")
+                    .frame(width: 40)
+            }
+
             // Duration
             Text(String(format: "%.1fs", testResult.duration))
-                .font(.system(size: 11, design: .monospaced))
+                .font(.system(size: 12, design: .monospaced))
                 .foregroundColor(.secondary.opacity(0.7))
+                .frame(width: 50, alignment: .trailing)
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 20)
+        .padding(.vertical, 8)
         .background(testResult.result?.hasNewTask == true ? Color.green.opacity(0.05) : Color.clear)
+    }
+
+    private func decisionBadge(for testResult: TaskTestResult) -> some View {
+        Group {
+            if testResult.error != nil {
+                HStack(spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 10))
+                    Text("Error")
+                        .font(.system(size: 11, weight: .medium))
+                }
+                .foregroundColor(.orange)
+            } else if let result = testResult.result {
+                if result.hasNewTask {
+                    HStack(spacing: 4) {
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 10))
+                        Text("New Task")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.green)
+                } else {
+                    HStack(spacing: 4) {
+                        Image(systemName: "minus.circle")
+                            .font(.system(size: 10))
+                        Text("No Task")
+                            .font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundColor(.secondary)
+                }
+            }
+        }
+    }
+
+    private func priorityColor(_ priority: TaskPriority) -> Color {
+        switch priority {
+        case .high: return .red
+        case .medium: return .orange
+        case .low: return .blue
+        }
     }
 
     // MARK: - Footer
