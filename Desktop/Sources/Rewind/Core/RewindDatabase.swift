@@ -1107,12 +1107,11 @@ actor RewindDatabase {
                           on: "ai_user_profiles", columns: ["generatedAt"])
         }
 
-        // Migration 21: Clear AI user profiles generated with old prompt (contained hallucinations)
-        migrator.registerMigration("clearAIUserProfilesV1") { db in
-            try db.execute(sql: "DELETE FROM ai_user_profiles")
-        }
+        // Migrations 21-22: One-time data cleanup (already applied, kept for GRDB migration history)
+        migrator.registerMigration("clearAIUserProfilesV1") { _ in }
+        migrator.registerMigration("clearAIUserProfilesV2") { _ in }
 
-        // Migration 22: Create observations table for screen context tracking
+        // Migration 23: Create observations table for screen context tracking
         migrator.registerMigration("createObservations") { db in
             try db.create(table: "observations") { t in
                 t.autoIncrementedPrimaryKey("id")
@@ -1394,6 +1393,73 @@ actor RewindDatabase {
                 .order(Column("timestamp").desc)
                 .limit(limit)
                 .fetchAll(db)
+        }
+    }
+
+    /// Get screenshots filtered by allowed apps and browser window title patterns.
+    /// For non-browser apps in the allowed list, all windows are returned.
+    /// For browser apps, only windows matching at least one pattern are returned.
+    func getScreenshotsFiltered(
+        from startDate: Date,
+        to endDate: Date,
+        allowedApps: Set<String>,
+        browserApps: Set<String>,
+        browserWindowPatterns: [String],
+        limit: Int = 100
+    ) throws -> [Screenshot] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        guard !allowedApps.isEmpty else { return [] }
+
+        let nonBrowserApps = allowedApps.subtracting(browserApps)
+        let allowedBrowserApps = allowedApps.intersection(browserApps)
+
+        // Build SQL with two conditions OR'd:
+        // 1. Non-browser allowed apps (all windows)
+        // 2. Browser allowed apps with window title LIKE any pattern
+        var conditions: [String] = []
+        var arguments: [DatabaseValueConvertible] = []
+
+        // Timestamp range
+        arguments.append(startDate)
+        arguments.append(endDate)
+
+        // Non-browser apps
+        if !nonBrowserApps.isEmpty {
+            let placeholders = nonBrowserApps.map { _ in "?" }.joined(separator: ", ")
+            conditions.append("appName IN (\(placeholders))")
+            for app in nonBrowserApps.sorted() {
+                arguments.append(app)
+            }
+        }
+
+        // Browser apps with window pattern matching
+        if !allowedBrowserApps.isEmpty && !browserWindowPatterns.isEmpty {
+            let appPlaceholders = allowedBrowserApps.map { _ in "?" }.joined(separator: ", ")
+            let patternClauses = browserWindowPatterns.map { _ in "windowTitle LIKE ?" }.joined(separator: " OR ")
+            conditions.append("(appName IN (\(appPlaceholders)) AND windowTitle IS NOT NULL AND (\(patternClauses)))")
+            for app in allowedBrowserApps.sorted() {
+                arguments.append(app)
+            }
+            for pattern in browserWindowPatterns {
+                arguments.append("%\(pattern)%")
+            }
+        }
+
+        guard !conditions.isEmpty else { return [] }
+
+        let sql = """
+            SELECT * FROM screenshots
+            WHERE timestamp >= ? AND timestamp <= ? AND (\(conditions.joined(separator: " OR ")))
+            ORDER BY timestamp DESC
+            LIMIT ?
+        """
+        arguments.append(limit)
+
+        return try dbQueue.read { db in
+            try Screenshot.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
         }
     }
 
