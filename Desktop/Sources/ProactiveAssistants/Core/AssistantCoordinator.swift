@@ -64,6 +64,14 @@ class AssistantCoordinator {
 
     // MARK: - Frame Distribution
 
+    /// Update context tracking state without distributing to assistants.
+    /// Call this even during delay periods so the departing frame is fresh on context switches.
+    func trackFrame(_ frame: CapturedFrame) {
+        lastDistributedApp = frame.appName
+        lastDistributedWindowTitle = frame.windowTitle
+        lastDistributedFrame = frame
+    }
+
     /// Distribute a captured frame to all enabled assistants
     /// - Parameter frame: The captured frame to analyze
     func distributeFrame(_ frame: CapturedFrame) {
