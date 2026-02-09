@@ -31,6 +31,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var contextSummary: String?
     var currentActivity: String?
     var metadataJson: String?           // Additional extraction metadata
+    var embedding: Data?                // 768 Float32s for vector search
 
     // Timestamps
     var createdAt: Date
@@ -60,6 +61,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         contextSummary: String? = nil,
         currentActivity: String? = nil,
         metadataJson: String? = nil,
+        embedding: Data? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -82,6 +84,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.contextSummary = contextSummary
         self.currentActivity = currentActivity
         self.metadataJson = metadataJson
+        self.embedding = embedding
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
