@@ -50,8 +50,8 @@ pub use focus_session::{
 pub use user_settings::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
     TranscriptionPreferences, UpdateDailySummaryRequest, UpdateLanguageRequest,
-    UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest, UserLanguage,
-    UserProfile, UserSettingsStatusResponse,
+    UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest, UpdateUserAIPersonaRequest,
+    UserAIPersona, UserLanguage, UserProfile, UserSettingsStatusResponse,
 };
 pub use chat_session::{
     ChatSessionDB, ChatSessionStatusResponse, CreateChatSessionRequest, GetChatSessionsQuery,
