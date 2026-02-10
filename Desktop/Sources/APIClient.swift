@@ -1982,9 +1982,9 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         return []
     }
 
-    /// Check if this task should trigger an agent (checks any tag)
+    /// Check if this task should trigger an agent (any task can trigger)
     var shouldTriggerAgent: Bool {
-        return tags.contains { Self.agentCategories.contains($0) }
+        return true
     }
 
     /// Parsed source classification from metadata
