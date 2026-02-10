@@ -496,6 +496,33 @@ struct SettingsContentView: View {
                 }
             }
 
+            // Battery Settings
+            settingsCard {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "battery.75percent")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Battery Optimization")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Text("Pause text recognition on battery to save energy. OCR runs automatically when plugged back in.")
+                                .font(.system(size: 13))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $rewindSettings.pauseOCROnBattery)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                    }
+                }
+            }
+
             // Retention Settings
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
