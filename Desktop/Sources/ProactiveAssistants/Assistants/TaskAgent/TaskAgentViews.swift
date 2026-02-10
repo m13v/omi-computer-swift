@@ -2,34 +2,9 @@ import SwiftUI
 
 // MARK: - Task Classification Badge
 
-/// Displays the classification category of a task (feature, bug, code, etc.)
+/// Displays a task tag as-is
 struct TaskClassificationBadge: View {
     let category: String
-
-    private var displayInfo: (label: String, icon: String, color: Color) {
-        switch category.lowercased() {
-        case "personal":
-            return ("Personal", "person.fill", OmiColors.textSecondary)
-        case "work":
-            return ("Work", "briefcase.fill", OmiColors.textSecondary)
-        case "feature":
-            return ("Feature", "sparkles", OmiColors.textSecondary)
-        case "bug":
-            return ("Bug", "ladybug.fill", OmiColors.textSecondary)
-        case "code":
-            return ("Code", "chevron.left.forwardslash.chevron.right", OmiColors.textSecondary)
-        case "research":
-            return ("Research", "magnifyingglass", OmiColors.textSecondary)
-        case "communication":
-            return ("Comms", "message.fill", OmiColors.textSecondary)
-        case "finance":
-            return ("Finance", "dollarsign.circle.fill", OmiColors.textSecondary)
-        case "health":
-            return ("Health", "heart.fill", OmiColors.textSecondary)
-        default:
-            return ("Other", "folder.fill", OmiColors.textSecondary)
-        }
-    }
 
     /// Check if this category triggers agent execution
     var triggersAgent: Bool {
@@ -37,22 +12,16 @@ struct TaskClassificationBadge: View {
     }
 
     var body: some View {
-        let info = displayInfo
-
         HStack(spacing: 3) {
-            Image(systemName: info.icon)
-                .font(.system(size: 8))
-
-            Text(info.label)
+            Text(category.capitalized)
                 .font(.system(size: 10, weight: .medium))
 
-            // Show terminal indicator for code-related categories
             if triggersAgent {
                 Image(systemName: "terminal")
                     .font(.system(size: 7))
             }
         }
-        .foregroundColor(info.color)
+        .foregroundColor(OmiColors.textSecondary)
     }
 }
 
