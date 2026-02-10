@@ -93,10 +93,10 @@ struct TasksWidget: View {
                         Spacer()
                         Text("View all tasks")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(OmiColors.purplePrimary)
+                            .foregroundColor(OmiColors.textSecondary)
                         Image(systemName: "chevron.right")
                             .font(.system(size: 10))
-                            .foregroundColor(OmiColors.purplePrimary)
+                            .foregroundColor(OmiColors.textSecondary)
                         Spacer()
                     }
                 }
@@ -196,7 +196,7 @@ struct TaskRowView: View {
             }) {
                 Image(systemName: task.completed ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 18))
-                    .foregroundColor(task.completed ? .green : OmiColors.textTertiary)
+                    .foregroundColor(task.completed ? OmiColors.textPrimary : OmiColors.textTertiary)
             }
             .buttonStyle(.plain)
             .disabled(isToggling)
