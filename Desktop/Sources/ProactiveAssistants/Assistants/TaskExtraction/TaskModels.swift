@@ -172,16 +172,16 @@ enum TaskClassification: String, Codable, CaseIterable {
     /// Color for the category
     var color: String {
         switch self {
-        case .personal: return "#8B5CF6"  // Purple
-        case .work: return "#3B82F6"      // Blue
-        case .feature: return "#10B981"   // Green
-        case .bug: return "#EF4444"       // Red
-        case .code: return "#F59E0B"      // Amber
-        case .research: return "#6366F1"  // Indigo
-        case .communication: return "#EC4899" // Pink
-        case .finance: return "#14B8A6"   // Teal
-        case .health: return "#F43F5E"    // Rose
-        case .other: return "#6B7280"     // Gray
+        case .personal: return "#9CA3AF"
+        case .work: return "#9CA3AF"
+        case .feature: return "#9CA3AF"
+        case .bug: return "#9CA3AF"
+        case .code: return "#9CA3AF"
+        case .research: return "#9CA3AF"
+        case .communication: return "#9CA3AF"
+        case .finance: return "#9CA3AF"
+        case .health: return "#9CA3AF"
+        case .other: return "#6B7280"
         }
     }
 }
