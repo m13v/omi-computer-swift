@@ -181,6 +181,8 @@ class AuthService {
                     self?.saveAuthState(isSignedIn: true, email: user?.email, userId: user?.uid)
                     // Load name from Firebase Auth displayName if we don't have it locally
                     self?.loadNameFromFirebaseIfNeeded()
+                    // Sync assistant settings from backend (fire-and-forget)
+                    Task { await SettingsSyncManager.shared.syncFromServer() }
                 } else {
                     // Firebase has no user - check if we have a saved session (for dev builds where Keychain doesn't persist)
                     let savedSignedIn = UserDefaults.standard.bool(forKey: self?.kAuthIsSignedIn ?? "")
