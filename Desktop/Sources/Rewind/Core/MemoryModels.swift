@@ -190,6 +190,7 @@ extension MemoryRecord {
             confidence: memory.confidence,
             reasoning: memory.reasoning,
             sourceApp: memory.sourceApp,
+            windowTitle: memory.windowTitle,
             contextSummary: memory.contextSummary,
             currentActivity: memory.currentActivity,
             inputDeviceName: memory.inputDeviceName,
@@ -246,6 +247,9 @@ extension MemoryRecord {
         if let inputDeviceName = memory.inputDeviceName {
             self.inputDeviceName = inputDeviceName
         }
+        if let windowTitle = memory.windowTitle {
+            self.windowTitle = windowTitle
+        }
 
         // Update status
         self.isRead = memory.isRead
@@ -285,7 +289,8 @@ extension MemoryRecord {
             tags: tags,
             reasoning: reasoning,
             currentActivity: currentActivity,
-            inputDeviceName: inputDeviceName
+            inputDeviceName: inputDeviceName,
+            windowTitle: windowTitle
         )
     }
 }
@@ -315,7 +320,8 @@ extension ServerMemory {
         tags: [String],
         reasoning: String?,
         currentActivity: String?,
-        inputDeviceName: String?
+        inputDeviceName: String?,
+        windowTitle: String? = nil
     ) {
         self.id = id
         self.content = content
@@ -338,6 +344,7 @@ extension ServerMemory {
         self.reasoning = reasoning
         self.currentActivity = currentActivity
         self.inputDeviceName = inputDeviceName
+        self.windowTitle = windowTitle
     }
 }
 
