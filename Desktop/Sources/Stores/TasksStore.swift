@@ -258,6 +258,11 @@ class TasksStore: ObservableObject {
                 hasMoreIncompleteTasks = mergedTasks.count >= pageSize
                 incompleteOffset = mergedTasks.count
                 log("TasksStore: Auto-refresh updated \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
+
+                // Re-append allowlisted tasks that may be outside the loaded page
+                if hasCompletedScoring && !visibleAITaskIds.isEmpty {
+                    await ensureAllowlistedTasksLoaded(visibleAITaskIds)
+                }
             }
         } catch {
             // Silently ignore errors during auto-refresh
