@@ -188,7 +188,7 @@ struct TaskTestRunnerView: View {
             Text("App")
                 .frame(width: 100, alignment: .leading)
             Text("Window")
-                .frame(width: 150, alignment: .leading)
+                .frame(width: 250, alignment: .leading)
             Text("Decision")
                 .frame(width: 100, alignment: .leading)
             Text("Search")
@@ -231,9 +231,8 @@ struct TaskTestRunnerView: View {
             Text(testResult.windowTitle ?? "—")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
-                .frame(width: 150, alignment: .leading)
-                .lineLimit(1)
-                .truncationMode(.tail)
+                .frame(width: 250, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
 
             // Decision column
             decisionBadge(for: testResult)
