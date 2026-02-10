@@ -229,7 +229,7 @@ class RewindViewModel: ObservableObject {
                     let ftsIds = Set(fts.compactMap { $0.id })
                     var merged = fts
                     for result in vector where result.similarity > 0.5 && !ftsIds.contains(result.screenshotId) {
-                        if let screenshot = try? RewindDatabase.shared.getScreenshot(id: result.screenshotId) {
+                        if let screenshot = try? await RewindDatabase.shared.getScreenshot(id: result.screenshotId) {
                             merged.append(screenshot)
                         }
                     }
