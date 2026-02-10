@@ -1205,6 +1205,34 @@ actor RewindDatabase {
             }
         }
 
+        // Migration 29: Backfill relevanceScore for all active tasks with unique sequential values.
+        // Already-scored tasks keep their relative order. Unscored tasks go to the bottom.
+        // This ensures every active task has a unique relevanceScore (no NULLs, no duplicates).
+        migrator.registerMigration("backfillRelevanceScoreSequential") { db in
+            // Assign sequential scores 1..N to all active (incomplete, non-deleted) tasks.
+            // Ordering: unscored tasks first (by createdAt), then scored tasks (by score).
+            // ROW_NUMBER 1 = least relevant (bottom), N = most relevant (top).
+            try db.execute(sql: """
+                UPDATE action_items
+                SET relevanceScore = (
+                    SELECT rn FROM (
+                        SELECT id,
+                               ROW_NUMBER() OVER (
+                                   ORDER BY
+                                       CASE WHEN relevanceScore IS NOT NULL THEN 1 ELSE 0 END,
+                                       COALESCE(relevanceScore, 0),
+                                       createdAt
+                               ) as rn
+                        FROM action_items
+                        WHERE completed = 0 AND deleted = 0
+                    ) ranked
+                    WHERE ranked.id = action_items.id
+                ),
+                scoredAt = datetime('now')
+                WHERE completed = 0 AND deleted = 0
+            """)
+        }
+
         try migrator.migrate(queue)
     }
 
