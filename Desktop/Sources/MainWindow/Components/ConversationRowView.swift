@@ -273,6 +273,11 @@ struct ConversationRowView: View {
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
 
+            // New badge
+            if isNewlyCreated {
+                NewBadge()
+            }
+
             // Inline action buttons (show on hover)
             if isHovering && !isMultiSelectMode {
                 inlineActionButtons
@@ -350,6 +355,11 @@ struct ConversationRowView: View {
                         .font(.system(size: 15, weight: .medium))
                         .foregroundColor(OmiColors.textPrimary)
                         .lineLimit(1)
+
+                    // New badge
+                    if isNewlyCreated {
+                        NewBadge()
+                    }
 
                     // Inline action buttons (show on hover)
                     if isHovering && !isMultiSelectMode {
