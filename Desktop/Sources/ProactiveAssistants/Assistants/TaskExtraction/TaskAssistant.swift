@@ -590,6 +590,12 @@ actor TaskAssistant: ProactiveAssistant {
 
         var prompt = "Screenshot from \(appName). Today is \(todayStr). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
 
+        // For messaging apps, add an extra reminder about outgoing vs incoming messages
+        let messagingApps: Set<String> = ["Telegram", "WhatsApp", "\u{200E}WhatsApp", "Messages", "Slack", "Discord"]
+        if messagingApps.contains(appName) {
+            prompt += "REMINDER: In messaging apps, right-side/colored bubbles are the USER's own messages (outgoing). Only left-side/incoming messages from others can be requests. Check the actual conversation bubbles carefully before extracting.\n\n"
+        }
+
         // Inject AI user profile for context
         if let profile = await AIUserProfileService.shared.getLatestProfile() {
             prompt += "USER PROFILE (who this user is — use for context, not as a task source):\n"
