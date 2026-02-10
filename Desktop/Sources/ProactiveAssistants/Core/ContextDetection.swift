@@ -33,6 +33,19 @@ enum ContextDetection {
             options: .regularExpression
         )
 
+        // Strip parenthetical/bracketed counts like "(2)", "(16)", "[3]"
+        // These are almost always unread/notification counts in browser titles
+        result = result.replacingOccurrences(
+            of: #"\(\d+\)"#,
+            with: "",
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: #"\[\d+\]"#,
+            with: "",
+            options: .regularExpression
+        )
+
         // Collapse whitespace
         result = result.replacingOccurrences(
             of: #"\s+"#,
