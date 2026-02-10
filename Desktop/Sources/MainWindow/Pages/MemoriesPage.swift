@@ -734,6 +734,13 @@ class MemoriesViewModel: ObservableObject {
     }
 
     private func performActualDelete(_ memory: ServerMemory) async {
+        // Soft-delete in SQLite immediately so auto-refresh doesn't restore it
+        do {
+            try await MemoryStorage.shared.deleteMemoryByBackendId(memory.id)
+        } catch {
+            logError("Failed to soft-delete memory locally", error: error)
+        }
+
         do {
             try await APIClient.shared.deleteMemory(id: memory.id)
             AnalyticsManager.shared.memoryDeleted(conversationId: memory.id)
@@ -756,6 +763,10 @@ class MemoriesViewModel: ObservableObject {
 
         do {
             try await APIClient.shared.editMemory(id: memory.id, content: editText)
+
+            // Update content in SQLite so auto-refresh doesn't revert the edit
+            try await MemoryStorage.shared.updateContentByBackendId(memory.id, content: editText)
+
             editingMemory = nil
             editText = ""
             await loadMemories()
@@ -769,6 +780,10 @@ class MemoriesViewModel: ObservableObject {
         let newVisibility = memory.isPublic ? "private" : "public"
         do {
             try await APIClient.shared.updateMemoryVisibility(id: memory.id, visibility: newVisibility)
+
+            // Sync to local SQLite cache so auto-refresh doesn't revert the change
+            try await MemoryStorage.shared.updateVisibilityByBackendId(memory.id, visibility: newVisibility)
+
             // Update memory in place
             if let index = memories.firstIndex(where: { $0.id == memory.id }) {
                 memories[index].visibility = newVisibility
@@ -786,8 +801,15 @@ class MemoriesViewModel: ObservableObject {
 
     func markAsRead(_ memory: ServerMemory) async {
         do {
-            _ = try await APIClient.shared.updateMemoryReadStatus(id: memory.id, isRead: true, isDismissed: nil)
-            await loadMemories()
+            let updated = try await APIClient.shared.updateMemoryReadStatus(id: memory.id, isRead: true, isDismissed: nil)
+
+            // Sync to local SQLite cache so auto-refresh doesn't revert the change
+            try await MemoryStorage.shared.syncServerMemories([updated])
+
+            // Update in place instead of reloading everything
+            if let index = memories.firstIndex(where: { $0.id == memory.id }) {
+                memories[index] = updated
+            }
         } catch {
             logError("Failed to mark memory as read", error: error)
         }
@@ -799,6 +821,10 @@ class MemoriesViewModel: ObservableObject {
         isBulkOperationInProgress = true
         do {
             try await APIClient.shared.updateAllMemoriesVisibility(visibility: "private")
+            // Update all in SQLite so auto-refresh doesn't revert
+            for memory in memories {
+                try? await MemoryStorage.shared.updateVisibilityByBackendId(memory.id, visibility: "private")
+            }
             await loadMemories()
         } catch {
             logError("Failed to make all memories private", error: error)
@@ -810,6 +836,10 @@ class MemoriesViewModel: ObservableObject {
         isBulkOperationInProgress = true
         do {
             try await APIClient.shared.updateAllMemoriesVisibility(visibility: "public")
+            // Update all in SQLite so auto-refresh doesn't revert
+            for memory in memories {
+                try? await MemoryStorage.shared.updateVisibilityByBackendId(memory.id, visibility: "public")
+            }
             await loadMemories()
         } catch {
             logError("Failed to make all memories public", error: error)
@@ -823,6 +853,13 @@ class MemoriesViewModel: ObservableObject {
         // Cancel any pending single delete
         deleteTask?.cancel()
         pendingDeleteMemory = nil
+
+        // Soft-delete all in SQLite immediately so auto-refresh doesn't restore them
+        do {
+            try await MemoryStorage.shared.deleteAllMemories()
+        } catch {
+            logError("Failed to soft-delete all memories locally", error: error)
+        }
 
         do {
             try await APIClient.shared.deleteAllMemories()
