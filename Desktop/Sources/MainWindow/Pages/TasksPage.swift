@@ -2022,7 +2022,14 @@ struct TasksPage: View {
                     }
                 } else {
                     // Flat list for other sort options, completed view, or multi-select mode
-                    ForEach(viewModel.displayTasks) { task in
+                    // Apply allowlist filtering (same logic as TaskCategorySection.visibleTasks)
+                    let allTasks = viewModel.displayTasks
+                    let flatVisibleTasks = (store.showAllTasks || !store.hasCompletedScoring || store.visibleAITaskIds.isEmpty)
+                        ? allTasks
+                        : allTasks.filter { $0.source == "manual" || store.visibleAITaskIds.contains($0.id) }
+                    let flatHiddenCount = allTasks.count - flatVisibleTasks.count
+
+                    ForEach(flatVisibleTasks) { task in
                         TaskRow(
                             task: task,
                             indentLevel: viewModel.getIndentLevel(for: task.id),
@@ -2042,6 +2049,44 @@ struct TasksPage: View {
                                     await viewModel.loadMoreIfNeeded(currentTask: task)
                                 }
                             }
+                    }
+
+                    // Show N more / Show less buttons for allowlist (matches TaskCategorySection)
+                    if flatHiddenCount > 0 {
+                        Button {
+                            store.showAllTasks = true
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.down")
+                                Text("Show \(flatHiddenCount) more")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(OmiColors.backgroundTertiary.opacity(0.5))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    if store.showAllTasks && store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
+                        Button {
+                            store.showAllTasks = false
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.up")
+                                Text("Show less")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(OmiColors.backgroundTertiary.opacity(0.5))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
 
