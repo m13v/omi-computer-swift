@@ -47,6 +47,10 @@ protocol ProactiveAssistant: Actor {
     ///   - newWindowTitle: Title of the new window (if available)
     func onContextSwitch(departingFrame: CapturedFrame?, newApp: String, newWindowTitle: String?) async
 
+    /// Whether this assistant needs to receive frames even during the analysis delay period.
+    /// Used for time-sensitive detections like refocus tracking.
+    var needsFrameDuringDelay: Bool { get async }
+
     /// Clear any pending work (e.g., queued frames)
     func clearPendingWork() async
 
@@ -66,6 +70,11 @@ extension ProactiveAssistant {
 
     /// Default: no-op for context switch
     func onContextSwitch(departingFrame: CapturedFrame?, newApp: String, newWindowTitle: String?) async {}
+
+    /// Default: don't need frames during delay
+    var needsFrameDuringDelay: Bool {
+        get async { false }
+    }
 
     /// Default: no-op for clearing pending work
     func clearPendingWork() async {}
