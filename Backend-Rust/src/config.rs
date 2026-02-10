@@ -90,6 +90,9 @@ impl Config {
         if self.redis_host.is_none() {
             tracing::warn!("REDIS_DB_HOST not set - conversation visibility/sharing will not work");
         }
+        if self.encryption_secret.is_none() {
+            tracing::warn!("ENCRYPTION_SECRET not set — encrypted user data will not be decryptable");
+        }
         Ok(())
     }
 
