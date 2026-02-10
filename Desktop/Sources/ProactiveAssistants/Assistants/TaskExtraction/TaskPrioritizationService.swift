@@ -151,17 +151,10 @@ actor TaskPrioritizationService {
         log("TaskPrioritize: [FULL] Starting daily full rescore")
         await notifyStoreStarted()
 
-        // Clear all existing scores
-        do {
-            try await ActionItemStorage.shared.clearAllRelevanceScores()
-        } catch {
-            log("TaskPrioritize: [FULL] Failed to clear scores: \(error)")
-        }
-
-        // Get ALL AI tasks (now all unscored after clearing)
+        // Get ALL AI tasks (don't clear scores — old scores stay valid until overwritten)
         let allTasks: [TaskActionItem]
         do {
-            allTasks = try await ActionItemStorage.shared.getUnscoredAITasks(limit: 10000)
+            allTasks = try await ActionItemStorage.shared.getAllAITasks(limit: 10000)
         } catch {
             log("TaskPrioritize: [FULL] Failed to fetch tasks: \(error)")
             await notifyStoreUpdated()
