@@ -12,7 +12,7 @@ actor TaskPrioritizationService {
     private var geminiClient: GeminiClient?
     private var timer: Task<Void, Never>?
     private var isRunning = false
-    private var isScoringInProgress = false
+    private(set) var isScoringInProgress = false
 
     // Persisted to UserDefaults so they survive app restarts
     private static let fullRunKey = "TaskPrioritize.lastFullRunTime"
@@ -496,6 +496,10 @@ actor TaskPrioritizationService {
         // Sort anchors by position
         anchors.sort { $0.position < $1.position }
 
+        // Cap for stitched batches: don't exceed the highest anchor score.
+        // Only batch 1 (which uses assignLinearScores, not stitching) assigns maxScore.
+        let topAnchorScore = anchors.max(by: { $0.score < $1.score })?.score ?? maxScore
+
         // For each task, interpolate between the nearest anchors
         var scores: [String: Int] = [:]
         let lastPosition = rankedIds.count - 1
@@ -504,18 +508,18 @@ actor TaskPrioritizationService {
             let score: Int
 
             if position <= anchors.first!.position {
-                // Before first anchor: extrapolate upward
+                // Before first anchor: extrapolate upward, capped at top anchor score
                 if anchors.count >= 2 {
                     let a = anchors[0], b = anchors[1]
                     let slope = Double(a.score - b.score) / Double(b.position - a.position)
-                    score = min(maxScore, Int(round(Double(a.score) + slope * Double(a.position - position))))
+                    score = min(topAnchorScore, Int(round(Double(a.score) + slope * Double(a.position - position))))
                 } else {
                     let anchor = anchors[0]
                     if anchor.position == 0 {
                         score = anchor.score
                     } else {
                         let fraction = Double(position) / Double(anchor.position)
-                        score = min(maxScore, Int(round(Double(anchor.score) + (Double(maxScore) - Double(anchor.score)) * (1.0 - fraction))))
+                        score = min(topAnchorScore, Int(round(Double(anchor.score) + (Double(topAnchorScore) - Double(anchor.score)) * (1.0 - fraction))))
                     }
                 }
             } else if position >= anchors.last!.position {
