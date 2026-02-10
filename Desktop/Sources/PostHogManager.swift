@@ -668,6 +668,11 @@ extension PostHogManager {
         ])
     }
 
+    /// Comprehensive all-settings snapshot (fired on app launch, at most once per day)
+    func allSettingsStateTracked(properties: [String: Any]) {
+        track("All Settings State", properties: properties)
+    }
+
     // MARK: - Display Info
 
     func displayInfoTracked(info: [String: Any]) {
