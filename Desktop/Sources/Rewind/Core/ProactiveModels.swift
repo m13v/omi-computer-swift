@@ -94,6 +94,7 @@ struct FocusSessionRecord: Codable, FetchableRecord, PersistableRecord, Identifi
     var screenshotId: Int64?
     var status: String // "focused" or "distracted"
     var appOrSite: String
+    var windowTitle: String?
     var description: String
     var message: String?
     var durationSeconds: Int?
@@ -110,6 +111,7 @@ struct FocusSessionRecord: Codable, FetchableRecord, PersistableRecord, Identifi
         screenshotId: Int64? = nil,
         status: String,
         appOrSite: String,
+        windowTitle: String? = nil,
         description: String,
         message: String? = nil,
         durationSeconds: Int? = nil,
@@ -121,6 +123,7 @@ struct FocusSessionRecord: Codable, FetchableRecord, PersistableRecord, Identifi
         self.screenshotId = screenshotId
         self.status = status
         self.appOrSite = appOrSite
+        self.windowTitle = windowTitle
         self.description = description
         self.message = message
         self.durationSeconds = durationSeconds
