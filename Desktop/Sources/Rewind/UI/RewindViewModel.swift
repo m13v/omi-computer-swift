@@ -204,16 +204,36 @@ class RewindViewModel: ObservableObject {
 
         searchTask = Task {
             do {
-                let results = try await RewindDatabase.shared.search(
+                // Run FTS and vector search in parallel
+                async let ftsResults = RewindDatabase.shared.search(
                     query: trimmedQuery,
                     appFilter: selectedApp,
                     startDate: startDate,
                     endDate: endDate,
                     limit: 100
                 )
+                async let vectorResults = OCREmbeddingService.shared.searchSimilar(
+                    query: trimmedQuery,
+                    startDate: startDate,
+                    endDate: endDate,
+                    appFilter: selectedApp,
+                    topK: 50
+                )
+
+                let fts = try await ftsResults
+                // Vector search failures are non-fatal — FTS results still show
+                let vector = (try? await vectorResults) ?? []
 
                 if !Task.isCancelled {
-                    screenshots = results
+                    // Merge: FTS first, then add vector-only results above threshold
+                    let ftsIds = Set(fts.compactMap { $0.id })
+                    var merged = fts
+                    for result in vector where result.similarity > 0.5 && !ftsIds.contains(result.screenshotId) {
+                        if let screenshot = try? RewindDatabase.shared.getScreenshot(id: result.screenshotId) {
+                            merged.append(screenshot)
+                        }
+                    }
+                    screenshots = merged
                 }
             } catch {
                 if !Task.isCancelled {
