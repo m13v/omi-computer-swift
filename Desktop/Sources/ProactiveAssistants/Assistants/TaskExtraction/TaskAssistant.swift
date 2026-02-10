@@ -48,34 +48,34 @@ actor TaskAssistant: ProactiveAssistant {
 
     /// Parse an inferred deadline string into a Date, or default to end of today.
     /// Tries ISO8601, then common natural language patterns.
-    private func parseDueDate(from inferredDeadline: String?) -> Date {
-        if let deadline = inferredDeadline, !deadline.isEmpty {
-            // Try ISO8601 first (e.g. "2025-10-04T14:00:00Z")
-            let iso = ISO8601DateFormatter()
-            if let date = iso.date(from: deadline) {
+    private func parseDueDate(from inferredDeadline: String?) -> Date? {
+        guard let deadline = inferredDeadline, !deadline.isEmpty else {
+            return nil
+        }
+        // Try ISO8601 first (e.g. "2025-10-04T14:00:00Z")
+        let iso = ISO8601DateFormatter()
+        if let date = iso.date(from: deadline) {
+            return date
+        }
+        // Try common date formats
+        let formats = [
+            "yyyy-MM-dd'T'HH:mm:ssZ",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd",
+            "MM/dd/yyyy",
+            "MMMM d, yyyy"
+        ]
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        for format in formats {
+            formatter.dateFormat = format
+            if let date = formatter.date(from: deadline) {
                 return date
             }
-            // Try common date formats
-            let formats = [
-                "yyyy-MM-dd'T'HH:mm:ssZ",
-                "yyyy-MM-dd'T'HH:mm:ss",
-                "yyyy-MM-dd HH:mm:ss",
-                "yyyy-MM-dd",
-                "MM/dd/yyyy",
-                "MMMM d, yyyy"
-            ]
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "en_US_POSIX")
-            for format in formats {
-                formatter.dateFormat = format
-                if let date = formatter.date(from: deadline) {
-                    return date
-                }
-            }
-            log("Task: Could not parse inferred_deadline '\(deadline)', defaulting to end of today")
         }
-        // Default: end of today (11:59 PM local time)
-        return Self.endOfToday()
+        log("Task: Could not parse inferred_deadline '\(deadline)', skipping deadline")
+        return nil
     }
 
     /// Returns 11:59 PM today in the user's local timezone
@@ -676,7 +676,7 @@ actor TaskAssistant: ProactiveAssistant {
                         "priority": .init(type: "string", description: "Task priority", enumValues: ["high", "medium", "low"]),
                         "tags": .init(type: "array", description: "1-3 relevant tags", items: .init(type: "string")),
                         "source_app": .init(type: "string", description: "App where the task was found"),
-                        "inferred_deadline": .init(type: "string", description: "Deadline if visible or implied. Empty string if none."),
+                        "inferred_deadline": .init(type: "string", description: "Deadline in yyyy-MM-dd format (e.g. '2025-10-04'). Resolve relative references like 'Thursday' or 'next week' to an actual date. Empty string if no deadline."),
                         "confidence": .init(type: "number", description: "Confidence score 0.0-1.0"),
                         "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
                         "current_activity": .init(type: "string", description: "What the user is actively doing"),
