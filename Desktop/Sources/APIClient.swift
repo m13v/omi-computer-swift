@@ -1844,6 +1844,23 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
     var agentStartedAt: Date?      // When agent was launched
     var agentCompletedAt: Date?    // When agent finished
 
+    /// Custom Equatable: compares only display-relevant fields.
+    /// Skips `metadata` (JSON key ordering is non-deterministic after SQLite round-trip),
+    /// `updatedAt` (set to Date() when nil on sync), and fields lost through SQLite.
+    static func == (lhs: TaskActionItem, rhs: TaskActionItem) -> Bool {
+        lhs.id == rhs.id &&
+        lhs.description == rhs.description &&
+        lhs.completed == rhs.completed &&
+        lhs.createdAt == rhs.createdAt &&
+        lhs.dueAt == rhs.dueAt &&
+        lhs.source == rhs.source &&
+        lhs.priority == rhs.priority &&
+        lhs.category == rhs.category &&
+        lhs.deleted == rhs.deleted &&
+        lhs.deletedBy == rhs.deletedBy &&
+        lhs.goalId == rhs.goalId
+    }
+
     enum CodingKeys: String, CodingKey {
         case id, description, completed, source, priority, metadata, category, deleted
         case createdAt = "created_at"
