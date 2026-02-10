@@ -44,6 +44,9 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
     /// JSON-encoded advice object
     var adviceJson: String?
 
+    /// Whether OCR was skipped because the Mac was on battery (needs backfill when AC reconnects)
+    var skippedForBattery: Bool
+
     static let databaseTableName = "screenshots"
 
     // MARK: - Storage Type
@@ -68,7 +71,8 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
         isIndexed: Bool = false,
         focusStatus: String? = nil,
         extractedTasksJson: String? = nil,
-        adviceJson: String? = nil
+        adviceJson: String? = nil,
+        skippedForBattery: Bool = false
     ) {
         self.id = id
         self.timestamp = timestamp
@@ -83,6 +87,7 @@ struct Screenshot: Codable, FetchableRecord, PersistableRecord, Identifiable, Eq
         self.focusStatus = focusStatus
         self.extractedTasksJson = extractedTasksJson
         self.adviceJson = adviceJson
+        self.skippedForBattery = skippedForBattery
     }
 
     // MARK: - Persistence Callbacks
