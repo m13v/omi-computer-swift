@@ -2028,7 +2028,6 @@ struct TasksPage: View {
                             indentLevel: viewModel.getIndentLevel(for: task.id),
                             isMultiSelectMode: viewModel.isMultiSelectMode,
                             isSelected: viewModel.selectedTaskIds.contains(task.id),
-                            showRelevanceScore: viewModel.sortOption == .relevance,
                             onToggle: { await viewModel.toggleTask($0) },
                             onDelete: { await viewModel.deleteTask($0) },
                             onToggleSelection: { viewModel.toggleTaskSelection($0) },
@@ -2296,7 +2295,6 @@ struct TaskRow: View {
     var indentLevel: Int = 0
     var isMultiSelectMode: Bool = false
     var isSelected: Bool = false
-    var showRelevanceScore: Bool = false
 
     // Action closures
     var onToggle: ((TaskActionItem) async -> Void)?
@@ -2645,10 +2643,7 @@ struct TaskRow: View {
                         NewBadge()
                     }
 
-                    // Relevance score badge (when sorting by relevance)
-                    if showRelevanceScore, let score = task.relevanceScore {
-                        RelevanceScoreBadge(score: score)
-                    }
+
 
                     // Tag badges (show up to 3)
                     ForEach(task.tags.prefix(3), id: \.self) { tag in
@@ -3078,39 +3073,6 @@ struct NewBadge: View {
             .padding(.vertical, 2)
             .background(OmiColors.purplePrimary.opacity(0.15))
             .cornerRadius(4)
-    }
-}
-
-struct RelevanceScoreBadge: View {
-    let score: Int
-
-    /// Lower score = more relevant (1 = most important)
-    private var label: String {
-        "#\(score)"
-    }
-
-    private var color: Color {
-        if score <= 3 {
-            return .orange
-        } else if score <= 7 {
-            return OmiColors.textSecondary
-        } else {
-            return OmiColors.textTertiary
-        }
-    }
-
-    var body: some View {
-        HStack(spacing: 3) {
-            Image(systemName: "sparkles")
-                .font(.system(size: 8))
-            Text(label)
-                .font(.system(size: 10, weight: .semibold, design: .rounded))
-        }
-        .foregroundColor(color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(color.opacity(0.12))
-        .cornerRadius(4)
     }
 }
 
