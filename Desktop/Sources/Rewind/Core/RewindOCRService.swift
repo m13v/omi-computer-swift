@@ -1,6 +1,7 @@
 import Foundation
 import Vision
 import AppKit
+import CryptoKit
 import Sentry
 
 /// Represents a text block with its bounding box (in normalized coordinates 0-1)
@@ -79,13 +80,15 @@ actor RewindOCRService {
 
     // MARK: - Frame Deduplication
 
-    private var lastFrameFingerprint: Int?
+    private var lastFrameFingerprint: SHA256Digest?
 
     /// Track last-logged OCR mode to only log on change
     private var lastLoggedOCRMode: String?
 
-    /// Compute a fast fingerprint of a CGImage by scaling to 1024x1024 grayscale and hashing pixel data
-    static func fingerprint(of cgImage: CGImage) -> Int? {
+    /// Compute a SHA256 fingerprint of a CGImage by scaling to 1024x1024 grayscale and hashing pixel data.
+    /// Using SHA256 instead of Data.hashValue because Swift's hashValue only samples a subset of bytes,
+    /// causing false collisions on large (1MB) buffers where most pixels are similar.
+    static func fingerprint(of cgImage: CGImage) -> SHA256Digest? {
         let size = 1024
         let bytesPerRow = size
         let totalBytes = size * size
@@ -105,13 +108,13 @@ actor RewindOCRService {
 
         guard let data = context.data else { return nil }
         let buffer = UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: totalBytes)
-        return Data(buffer).hashValue
+        return SHA256.hash(data: buffer)
     }
 
     /// Check if a frame should skip OCR because it's identical to the previous frame
     func shouldSkipOCR(for cgImage: CGImage) async -> Bool {
         guard let fingerprint = Self.fingerprint(of: cgImage) else { return false }
-        let isDuplicate = (fingerprint == lastFrameFingerprint)
+        let isDuplicate = (lastFrameFingerprint != nil && fingerprint == lastFrameFingerprint!)
         lastFrameFingerprint = fingerprint
         return isDuplicate
     }
