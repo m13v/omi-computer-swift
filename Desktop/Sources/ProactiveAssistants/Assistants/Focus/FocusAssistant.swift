@@ -366,7 +366,7 @@ actor FocusAssistant: ProactiveAssistant {
                 }
 
                 // Save to SQLite and sync to backend
-                await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId)
+                await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId, windowTitle: frame.windowTitle)
 
                 // Also save to old storage for UI compatibility (dual-write during transition)
                 Task { @MainActor in
@@ -414,7 +414,7 @@ actor FocusAssistant: ProactiveAssistant {
                 lastNotifiedState = .focused
 
                 // Save to SQLite and sync to backend
-                await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId)
+                await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId, windowTitle: frame.windowTitle)
 
                 // Also save to old storage for UI compatibility (dual-write during transition)
                 Task { @MainActor in
@@ -490,12 +490,13 @@ actor FocusAssistant: ProactiveAssistant {
     // MARK: - Storage
 
     /// Save focus session to SQLite (both tables) and sync to backend
-    private func saveFocusSessionToSQLite(analysis: ScreenAnalysis, screenshotId: Int64?) async {
+    private func saveFocusSessionToSQLite(analysis: ScreenAnalysis, screenshotId: Int64?, windowTitle: String? = nil) async {
         // Save to focus_sessions table (for detailed tracking)
         let focusRecord = FocusSessionRecord(
             screenshotId: screenshotId,
             status: analysis.status.rawValue,
             appOrSite: analysis.appOrSite,
+            windowTitle: windowTitle,
             description: analysis.description,
             message: analysis.message
         )
@@ -510,10 +511,10 @@ actor FocusAssistant: ProactiveAssistant {
         }
 
         // Save to unified memories table (for search/filter)
-        let memoryId = await saveFocusToMemoriesTable(analysis: analysis, screenshotId: screenshotId)
+        let memoryId = await saveFocusToMemoriesTable(analysis: analysis, screenshotId: screenshotId, windowTitle: windowTitle)
 
         // Sync to backend once and update both tables with backendId
-        if let backendId = await syncFocusSessionToBackend(analysis: analysis) {
+        if let backendId = await syncFocusSessionToBackend(analysis: analysis, windowTitle: windowTitle) {
             // Update focus_sessions table
             if let recordId = focusSessionId {
                 do {
@@ -540,7 +541,7 @@ actor FocusAssistant: ProactiveAssistant {
 
     /// Save focus event to unified memories table for search/filter
     /// Returns the inserted memory ID if successful
-    private func saveFocusToMemoriesTable(analysis: ScreenAnalysis, screenshotId: Int64?) async -> Int64? {
+    private func saveFocusToMemoriesTable(analysis: ScreenAnalysis, screenshotId: Int64?, windowTitle: String? = nil) async -> Int64? {
         // Build content for the memory
         let statusText = analysis.status == .focused ? "Focused" : "Distracted"
         let content = "\(statusText) on \(analysis.appOrSite): \(analysis.description)"
@@ -572,6 +573,7 @@ actor FocusAssistant: ProactiveAssistant {
             source: "desktop",
             screenshotId: screenshotId,
             sourceApp: analysis.appOrSite,
+            windowTitle: windowTitle,
             contextSummary: analysis.description
         )
 
@@ -586,7 +588,7 @@ actor FocusAssistant: ProactiveAssistant {
     }
 
     /// Sync focus session to backend as a memory with focus tags, returns backend ID if successful
-    private func syncFocusSessionToBackend(analysis: ScreenAnalysis) async -> String? {
+    private func syncFocusSessionToBackend(analysis: ScreenAnalysis, windowTitle: String? = nil) async -> String? {
         do {
             // Build content for the memory
             let statusText = analysis.status == .focused ? "Focused" : "Distracted"
@@ -607,7 +609,8 @@ actor FocusAssistant: ProactiveAssistant {
                 visibility: "private",
                 category: .system,
                 tags: tags,
-                source: "desktop"
+                source: "desktop",
+                windowTitle: windowTitle
             )
 
             log("Focus: Synced as memory to backend (id: \(response.id))")
