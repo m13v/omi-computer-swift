@@ -1625,6 +1625,21 @@ actor RewindDatabase {
         }
     }
 
+    /// Get screenshots pending OCR processing captured after a given date
+    func getPendingOCRScreenshots(since: Date, limit: Int = 10) throws -> [Screenshot] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            try Screenshot
+                .filter(Column("isIndexed") == false && Column("timestamp") >= since)
+                .order(Column("timestamp").asc)
+                .limit(limit)
+                .fetchAll(db)
+        }
+    }
+
     /// Get screenshot by ID
     func getScreenshot(id: Int64) throws -> Screenshot? {
         guard let dbQueue = dbQueue else {
