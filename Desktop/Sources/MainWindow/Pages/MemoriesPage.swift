@@ -1820,8 +1820,21 @@ private struct MemoryCardView: View {
                     }
                 }
 
-                // Source device
-                if let sourceName = memory.sourceName {
+                // Source app or device
+                if let sourceApp = memory.sourceApp {
+                    HStack(spacing: 4) {
+                        Image(systemName: memory.sourceIcon)
+                            .font(.system(size: 10))
+                        Text(sourceApp)
+                            .font(.system(size: 11))
+                    }
+                    .foregroundColor(OmiColors.textSecondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(4)
+                    .help(memory.windowTitle ?? sourceApp)
+                } else if let sourceName = memory.sourceName {
                     HStack(spacing: 4) {
                         Image(systemName: memory.sourceIcon)
                             .font(.system(size: 10))
