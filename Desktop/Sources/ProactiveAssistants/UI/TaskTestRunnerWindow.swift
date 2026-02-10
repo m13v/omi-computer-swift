@@ -30,14 +30,6 @@ struct TaskTestRunnerView: View {
 
     private let screenshotOptions = [5, 10, 20, 50]
 
-    private var extractionInterval: TimeInterval {
-        TaskAssistantSettings.shared.extractionInterval
-    }
-
-    private var periodMinutes: Int {
-        Int(Double(screenshotCount) * extractionInterval / 60)
-    }
-
     private var tasksFound: Int {
         results.filter { $0.result?.hasNewTask == true }.count
     }
@@ -106,7 +98,7 @@ struct TaskTestRunnerView: View {
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.primary)
 
-                    Text("Replay past screenshots through the extraction pipeline")
+                    Text("Replay departing frames from context switches through the extraction pipeline")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -122,9 +114,9 @@ struct TaskTestRunnerView: View {
             }
 
             HStack(spacing: 16) {
-                // Screenshot count picker
+                // Context switch count picker
                 HStack(spacing: 8) {
-                    Text("Screenshots:")
+                    Text("Context switches:")
                         .font(.system(size: 13))
                         .foregroundColor(.secondary)
 
@@ -137,7 +129,7 @@ struct TaskTestRunnerView: View {
                     .frame(width: 200)
                     .disabled(isRunning)
 
-                    Text("(\(periodMinutes) min)")
+                    Text("(last 24h)")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary.opacity(0.7))
                 }
@@ -373,7 +365,7 @@ struct TaskTestRunnerView: View {
         HStack {
             if !results.isEmpty {
                 HStack(spacing: 16) {
-                    Label("\(results.count)/\(screenshotCount)", systemImage: "photo.stack")
+                    Label("\(results.count)/\(screenshotCount)", systemImage: "arrow.triangle.swap")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
 
@@ -398,7 +390,7 @@ struct TaskTestRunnerView: View {
                     }
                 }
             } else {
-                Text("Select screenshot count and click Run Test")
+                Text("Select context switch count and click Run Test")
                     .font(.system(size: 12))
                     .foregroundColor(.secondary.opacity(0.7))
             }
@@ -422,13 +414,12 @@ struct TaskTestRunnerView: View {
         progress = 0
         elapsedTime = 0
         cancellationRequested = false
-        statusMessage = "Loading screenshots..."
+        statusMessage = "Finding context switches..."
 
         Task {
             let startTime = Date()
-            let interval = extractionInterval
             let now = Date()
-            let periodStart = now.addingTimeInterval(-Double(screenshotCount) * interval)
+            let periodStart = now.addingTimeInterval(-24 * 60 * 60) // last 24 hours
 
             // Get TaskAssistant from coordinator
             guard let assistant = await MainActor.run(body: {
@@ -447,16 +438,16 @@ struct TaskTestRunnerView: View {
                 return (settings.allowedApps, TaskAssistantSettings.browserApps, settings.browserKeywords)
             }
 
-            // Fetch screenshots filtered at the SQL level by allowed apps + browser window patterns
-            let filtered: [Screenshot]
+            // Fetch all filtered screenshots chronologically from last 24h
+            let allScreenshots: [Screenshot]
             do {
-                filtered = try await RewindDatabase.shared.getScreenshotsFiltered(
+                allScreenshots = try await RewindDatabase.shared.getScreenshotsFiltered(
                     from: periodStart,
                     to: now,
                     allowedApps: allowedApps,
                     browserApps: browserApps,
                     browserWindowPatterns: browserPatterns,
-                    limit: screenshotCount * 600
+                    limit: 100_000
                 ).reversed()  // getScreenshotsFiltered returns desc, we want chronological
             } catch {
                 await MainActor.run {
@@ -466,30 +457,46 @@ struct TaskTestRunnerView: View {
                 return
             }
 
-            guard !filtered.isEmpty else {
+            guard allScreenshots.count >= 2 else {
                 await MainActor.run {
-                    statusMessage = "No screenshots matched allowed apps & browser filters in the last \(periodMinutes) minutes"
+                    statusMessage = "Not enough screenshots in last 24h to detect context switches"
                     isRunning = false
                 }
                 return
             }
 
-            // Pick N evenly-spaced screenshots from filtered set
-            let sampled: [Screenshot]
-            if filtered.count <= screenshotCount {
-                sampled = Array(filtered)
-            } else {
-                let step = Double(filtered.count - 1) / Double(screenshotCount - 1)
-                sampled = (0..<screenshotCount).map { i in
-                    filtered[Int(Double(i) * step)]
+            // Walk through chronologically and find departing frames at context switches
+            var departingFrames: [Screenshot] = []
+            for i in 0..<(allScreenshots.count - 1) {
+                let current = allScreenshots[i]
+                let next = allScreenshots[i + 1]
+
+                if ContextDetection.didContextChange(
+                    fromApp: current.appName,
+                    fromWindowTitle: current.windowTitle,
+                    toApp: next.appName,
+                    toWindowTitle: next.windowTitle
+                ) {
+                    departingFrames.append(current)
                 }
             }
 
-            await MainActor.run {
-                statusMessage = "Found \(filtered.count) matching screenshots, sampling \(sampled.count)..."
+            guard !departingFrames.isEmpty else {
+                await MainActor.run {
+                    statusMessage = "No context switches found in \(allScreenshots.count) screenshots from last 24h"
+                    isRunning = false
+                }
+                return
             }
 
-            // Process each sampled screenshot
+            // Take the most recent N departing frames
+            let sampled = Array(departingFrames.suffix(screenshotCount))
+
+            await MainActor.run {
+                statusMessage = "Found \(departingFrames.count) context switches, testing \(sampled.count) most recent..."
+            }
+
+            // Process each departing frame
             for (i, screenshot) in sampled.enumerated() {
                 if cancellationRequested { break }
 
