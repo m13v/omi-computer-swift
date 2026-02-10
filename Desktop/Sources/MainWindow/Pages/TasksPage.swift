@@ -423,7 +423,7 @@ class TasksViewModel: ObservableObject {
             recomputeDisplayCaches()
         }
     }
-    @Published var sortOption: TaskSortOption = .dueDate {
+    @Published var sortOption: TaskSortOption = .relevance {
         didSet { recomputeDisplayCaches() }
     }
 
