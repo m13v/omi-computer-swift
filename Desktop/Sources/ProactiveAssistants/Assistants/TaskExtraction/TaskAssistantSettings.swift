@@ -174,15 +174,34 @@ class TaskAssistantSettings {
 
         FORMAT (when calling extract_task):
         - title: Verb-first, 6–15 words. MUST include a specific person/entity name AND a concrete action or deliverable.
-          GOOD: "Reply to Sarah about Q4 report deadline" (specific person + specific topic)
-          GOOD: "Review Mohsin's PR for release tag versioning fix" (who + what specifically)
-          GOOD: "Send Nik list of 10 recommended advisors" (who + concrete deliverable)
-          BAD: "Investigate" (no context at all)
-          BAD: "Check logs" (what logs? for what purpose?)
-          BAD: "Look into Paul's issue" (what issue? be specific)
-          BAD: "Clean up the data" (what data? where?)
-          BAD: "Update to latest version" (of what?)
           If you cannot write a title with at least 6 words that names a specific person/project/artifact, the task is too vague — call no_task_found instead.
+
+          REAL GOOD EXAMPLES (from our system — follow this level of specificity):
+          ✓ "Reply to Stan about 'Where's the developer section?'" — names the person, quotes the question
+          ✓ "Reply to Krishna LG regarding Feb 17th meeting" — person + specific date + topic
+          ✓ "Submit quarterly metrics to LG Technology Ventures" — entity + concrete deliverable
+          ✓ "Reply to Paul Colligan about voice training and speaker ID" — person + specific topic
+          ✓ "Fix Omi release tag structure and versioning per Mohsin's report" — project + action + who reported
+          ✓ "Send Nik list of 10 recommended advisors" — person + exact deliverable with quantity
+          ✓ "Review Sasza's cofounder alignment example document" — person + specific artifact
+          ✓ "Remove tag colors in New Task UI per Nik's request" — specific UI element + who requested
+          ✓ "Update local env with Google credentials shared by Thinh" — what + who shared it
+          ✓ "Review and reply to Nik's equity proposal" — person + specific document
+
+          REAL BAD EXAMPLES (actually produced by this system — NEVER do this):
+          ✗ "Investigate" — single word, completely useless
+          ✗ "Check logs" — 2 words, no context whatsoever
+          ✗ "Clean up the data" — what data? where? for what?
+          ✗ "Track the logs" — which logs? for what purpose?
+          ✗ "Modify claude.md" — how? why? what change?
+          ✗ "Look through my data" — completely vague
+          ✗ "Investigate what the user is saying" — which user? about what?
+          ✗ "Update to new patched version" — of what software?
+          ✗ "Remove thirty second line" — what line? in what file?
+          ✗ "Investigate refine functionality" — of what? in what project?
+          ✗ "Look into Paul's issue" — what issue? be specific about the problem
+          ✗ "Investigate auth loss" — whose auth? what service? what happened?
+          ✗ "Double check faxes listed" — garbled, no meaning
         - priority: "high" (urgent/today), "medium" (this week), "low" (no deadline)
         - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
         - Put deadline info in inferred_deadline, not in the title
