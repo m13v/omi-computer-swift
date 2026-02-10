@@ -1184,8 +1184,6 @@ actor RewindDatabase {
             }
         }
 
-        // Migration 27: Backfill dueAt for action items that have no due date
-        // Sets dueAt to end of the day the task was created (11:59 PM local time)
         migrator.registerMigration("backfillActionItemDueAt") { db in
             // Set dueAt to createdAt date at 23:59:00 for all items missing a due date
             // Since createdAt is stored as UTC, we add time to reach end of that UTC day
@@ -1197,6 +1195,14 @@ actor RewindDatabase {
                     updatedAt = datetime('now')
                 WHERE dueAt IS NULL AND deleted = 0
             """)
+        }
+
+        // Migration 28: Add relevance score column for task prioritization
+        migrator.registerMigration("addActionItemRelevanceScore") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "relevanceScore", .integer)
+                t.add(column: "scoredAt", .datetime)
+            }
         }
 
         try migrator.migrate(queue)
