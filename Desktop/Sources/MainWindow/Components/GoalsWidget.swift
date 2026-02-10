@@ -125,6 +125,7 @@ struct GoalsWidget: View {
             }
         }
         .padding(16)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(OmiColors.backgroundTertiary.opacity(0.3))
