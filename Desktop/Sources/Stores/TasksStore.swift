@@ -192,33 +192,31 @@ class TasksStore: ObservableObject {
             hasCompletedScoring = completed
             log("TasksStore: Updated from prioritization — \(visible.count) AI tasks visible, scoring completed: \(completed)")
 
-            // Ensure allowlisted tasks are loaded (they may be older than the 7-day window)
-            await ensureAllowlistedTasksLoaded(visible)
+            // Merge any allowlisted tasks that may be outside the loaded page
+            incompleteTasks = await mergeAllowlistedTasks(incompleteTasks)
         }
         isPrioritizing = stillScoring
     }
 
-    /// Fetch any allowlisted tasks missing from incompleteTasks (e.g. older than 7 days)
-    private func ensureAllowlistedTasksLoaded(_ allowlist: Set<String>) async {
-        let loadedIds = Set(incompleteTasks.map { $0.id })
-        let missingIds = allowlist.subtracting(loadedIds)
-        guard !missingIds.isEmpty else { return }
+    /// Return tasks with any missing allowlisted tasks merged in (e.g. older than 7 days).
+    /// Pure function — returns a new array instead of mutating incompleteTasks directly,
+    /// so callers can do a single assignment and avoid an extra render.
+    private func mergeAllowlistedTasks(_ tasks: [TaskActionItem]) async -> [TaskActionItem] {
+        guard hasCompletedScoring, !visibleAITaskIds.isEmpty else { return tasks }
+        let loadedIds = Set(tasks.map { $0.id })
+        let missingIds = visibleAITaskIds.subtracting(loadedIds)
+        guard !missingIds.isEmpty else { return tasks }
 
-        do {
-            // Fetch missing tasks from SQLite by their IDs
-            var fetched: [TaskActionItem] = []
-            for id in missingIds {
-                if let task = try await ActionItemStorage.shared.getLocalActionItem(byBackendId: id) {
-                    fetched.append(task)
-                }
+        var result = tasks
+        for id in missingIds {
+            if let task = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: id) {
+                result.append(task)
             }
-            if !fetched.isEmpty {
-                incompleteTasks.append(contentsOf: fetched)
-                log("TasksStore: Loaded \(fetched.count) allowlisted tasks outside 7-day window")
-            }
-        } catch {
-            log("TasksStore: Failed to load missing allowlisted tasks: \(error)")
         }
+        if result.count > tasks.count {
+            log("TasksStore: Merged \(result.count - tasks.count) allowlisted tasks outside 7-day window")
+        }
+        return result
     }
 
     /// Refresh tasks if already loaded (for auto-refresh)
@@ -253,16 +251,12 @@ class TasksStore: ObservableObject {
                 completed: false,
                 startDate: startDate
             )
-            if mergedTasks != incompleteTasks {
-                incompleteTasks = mergedTasks
+            let merged = await mergeAllowlistedTasks(mergedTasks)
+            if merged != incompleteTasks {
+                incompleteTasks = merged
                 hasMoreIncompleteTasks = mergedTasks.count >= pageSize
                 incompleteOffset = mergedTasks.count
                 log("TasksStore: Auto-refresh updated \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
-
-                // Re-append allowlisted tasks that may be outside the loaded page
-                if hasCompletedScoring && !visibleAITaskIds.isEmpty {
-                    await ensureAllowlistedTasksLoaded(visibleAITaskIds)
-                }
             }
         } catch {
             // Silently ignore errors during auto-refresh
@@ -356,6 +350,13 @@ class TasksStore: ObservableObject {
     func loadIncompleteTasks(showAll: Bool) async {
         guard !isLoadingIncomplete else { return }
 
+        // Load allowlist BEFORE any tasks are shown so the filter is active from the first render
+        if !hasCompletedScoring {
+            await TaskPrioritizationService.shared.ensureAllowlistLoaded()
+            visibleAITaskIds = await TaskPrioritizationService.shared.visibleAITaskIds
+            hasCompletedScoring = await TaskPrioritizationService.shared.hasCompletedScoring
+        }
+
         isLoadingIncomplete = true
         error = nil
         incompleteOffset = 0
@@ -372,7 +373,7 @@ class TasksStore: ObservableObject {
                 startDate: startDate
             )
             if !cachedTasks.isEmpty {
-                incompleteTasks = cachedTasks
+                incompleteTasks = await mergeAllowlistedTasks(cachedTasks)
                 incompleteOffset = cachedTasks.count
                 hasMoreIncompleteTasks = cachedTasks.count >= pageSize
                 isLoadingIncomplete = false  // Show cached data immediately
@@ -403,14 +404,14 @@ class TasksStore: ObservableObject {
                     completed: false,
                     startDate: startDate
                 )
-                incompleteTasks = mergedTasks
+                incompleteTasks = await mergeAllowlistedTasks(mergedTasks)
                 incompleteOffset = mergedTasks.count
                 hasMoreIncompleteTasks = mergedTasks.count >= pageSize
                 log("TasksStore: Showing \(mergedTasks.count) incomplete tasks from merged local cache")
             } catch {
                 logError("TasksStore: Failed to sync/reload incomplete tasks from local cache", error: error)
                 // Fall back to API data
-                incompleteTasks = response.items
+                incompleteTasks = await mergeAllowlistedTasks(response.items)
                 incompleteOffset = response.items.count
                 hasMoreIncompleteTasks = response.hasMore
             }
