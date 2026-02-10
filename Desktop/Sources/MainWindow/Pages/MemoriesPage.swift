@@ -1546,10 +1546,6 @@ struct MemoriesPage: View {
                 .font(.system(size: 11, weight: .medium))
         }
         .foregroundColor(OmiColors.textSecondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(OmiColors.backgroundTertiary)
-        .cornerRadius(4)
     }
 
     private func categoryIcon(_ category: MemoryCategory) -> String {
@@ -1760,10 +1756,6 @@ private struct MemoryCardView: View {
                             .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(OmiColors.backgroundSecondary)
-                    .cornerRadius(4)
 
                     if let tipCat = memory.tipCategory {
                         HStack(spacing: 4) {
@@ -1773,10 +1765,6 @@ private struct MemoryCardView: View {
                                 .font(.system(size: 11, weight: .medium))
                         }
                         .foregroundColor(OmiColors.textSecondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(OmiColors.backgroundSecondary)
-                        .cornerRadius(4)
                     }
                 } else {
                     HStack(spacing: 4) {
@@ -1786,10 +1774,6 @@ private struct MemoryCardView: View {
                             .font(.system(size: 11, weight: .medium))
                     }
                     .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(OmiColors.backgroundSecondary)
-                    .cornerRadius(4)
                 }
 
                 // Tags (filter out redundant ones already shown as category/tip badges)
@@ -1806,10 +1790,6 @@ private struct MemoryCardView: View {
                         Text(tag)
                             .font(.system(size: 11, weight: .medium))
                             .foregroundColor(tagColorFor(tag))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(tagColorFor(tag).opacity(0.15))
-                            .cornerRadius(4)
                     }
                     if displayTags.count > 3 {
                         Text("+\(displayTags.count - 3)")
@@ -1829,10 +1809,6 @@ private struct MemoryCardView: View {
                             .font(.system(size: 11))
                     }
                     .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(OmiColors.backgroundSecondary)
-                    .cornerRadius(4)
                     .help(memory.windowTitle ?? sourceApp)
                 } else if let sourceName = memory.sourceName {
                     HStack(spacing: 4) {
@@ -1842,10 +1818,6 @@ private struct MemoryCardView: View {
                             .font(.system(size: 11))
                     }
                     .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(OmiColors.backgroundSecondary)
-                    .cornerRadius(4)
                 }
 
                 Spacer()
@@ -1854,10 +1826,6 @@ private struct MemoryCardView: View {
                 Text(formatDate(memory.createdAt))
                     .font(.system(size: 11))
                     .foregroundColor(OmiColors.textSecondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(OmiColors.backgroundSecondary)
-                    .cornerRadius(4)
 
                 // Click hint on hover
                 if isHovered {
@@ -2138,10 +2106,6 @@ struct MemoryDetailSheet: View {
                                     Text(tag)
                                         .font(.system(size: 11, weight: .medium))
                                         .foregroundColor(tagColorFor(tag))
-                                        .padding(.horizontal, 6)
-                                        .padding(.vertical, 2)
-                                        .background(tagColorFor(tag).opacity(0.15))
-                                        .cornerRadius(4)
                                 }
                             }
                         }
@@ -2207,10 +2171,6 @@ struct MemoryDetailSheet: View {
                 .font(.system(size: 11, weight: .medium))
         }
         .foregroundColor(OmiColors.textSecondary)
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .background(OmiColors.backgroundTertiary)
-        .cornerRadius(4)
     }
 }
 
