@@ -145,6 +145,7 @@ actor MemoryAssistant: ProactiveAssistant {
     private func handleResultWithScreenshot(
         _ memoryResult: MemoryExtractionResult,
         screenshotId: Int64?,
+        windowTitle: String? = nil,
         sendEvent: @escaping (String, [String: Any]) -> Void
     ) async {
         // Check if AI found new memories
@@ -178,11 +179,12 @@ actor MemoryAssistant: ProactiveAssistant {
         let extractionRecord = await saveMemoryToSQLite(
             memory: memory,
             screenshotId: screenshotId,
-            contextSummary: memoryResult.contextSummary
+            contextSummary: memoryResult.contextSummary,
+            windowTitle: windowTitle
         )
 
         // Sync to backend with full extraction data
-        if let backendId = await syncMemoryToBackend(memory: memory, contextSummary: memoryResult.contextSummary) {
+        if let backendId = await syncMemoryToBackend(memory: memory, contextSummary: memoryResult.contextSummary, windowTitle: windowTitle) {
             // Update SQLite record with backend ID
             if let recordId = extractionRecord?.id {
                 do {
@@ -218,7 +220,8 @@ actor MemoryAssistant: ProactiveAssistant {
     private func saveMemoryToSQLite(
         memory: ExtractedMemory,
         screenshotId: Int64?,
-        contextSummary: String
+        contextSummary: String,
+        windowTitle: String? = nil
     ) async -> MemoryRecord? {
         // Convert ExtractedMemory category to MemoryCategory string
         let category = memory.category == .interesting ? "interesting" : "system"
@@ -231,6 +234,7 @@ actor MemoryAssistant: ProactiveAssistant {
             screenshotId: screenshotId,
             confidence: memory.confidence,
             sourceApp: memory.sourceApp,
+            windowTitle: windowTitle,
             contextSummary: contextSummary
         )
 
@@ -245,7 +249,7 @@ actor MemoryAssistant: ProactiveAssistant {
     }
 
     /// Sync memory to backend API, returns backend ID if successful
-    private func syncMemoryToBackend(memory: ExtractedMemory, contextSummary: String? = nil) async -> String? {
+    private func syncMemoryToBackend(memory: ExtractedMemory, contextSummary: String? = nil, windowTitle: String? = nil) async -> String? {
         do {
             // Convert ExtractedMemory category to MemoryCategory
             let category: MemoryCategory = memory.category == .interesting ? .interesting : .system
@@ -256,7 +260,8 @@ actor MemoryAssistant: ProactiveAssistant {
                 category: category,
                 confidence: memory.confidence,
                 sourceApp: memory.sourceApp,
-                contextSummary: contextSummary
+                contextSummary: contextSummary,
+                windowTitle: windowTitle
             )
 
             log("Memory: Synced to backend (id: \(response.id))")
@@ -324,7 +329,7 @@ actor MemoryAssistant: ProactiveAssistant {
             log("Memory: Analysis complete - hasNewMemory: \(result.hasNewMemory), count: \(result.memories.count), context: \(result.contextSummary)")
 
             // Handle the result with screenshot ID for SQLite storage
-            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId, windowTitle: frame.windowTitle) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }
