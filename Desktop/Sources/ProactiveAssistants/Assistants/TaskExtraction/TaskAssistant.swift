@@ -390,12 +390,19 @@ actor TaskAssistant: ProactiveAssistant {
             sourceApp: task.sourceApp,
             windowTitle: windowTitle,
             contextSummary: contextSummary,
-            metadataJson: metadataJson
+            metadataJson: metadataJson,
+            relevanceScore: task.relevanceScore
         )
 
         do {
-            let inserted = try await ActionItemStorage.shared.insertLocalActionItem(record)
-            log("Task: Saved to SQLite (id: \(inserted.id ?? -1))")
+            let inserted: ActionItemRecord
+            if task.relevanceScore != nil {
+                // Use shift-and-insert to maintain unique scores
+                inserted = try await ActionItemStorage.shared.insertWithScoreShift(record)
+            } else {
+                inserted = try await ActionItemStorage.shared.insertLocalActionItem(record)
+            }
+            log("Task: Saved to SQLite (id: \(inserted.id ?? -1), score: \(task.relevanceScore.map { String($0) } ?? "nil"))")
             return inserted
         } catch {
             logError("Task: Failed to save to SQLite", error: error)
@@ -575,10 +582,16 @@ actor TaskAssistant: ProactiveAssistant {
         }
 
         if !context.activeTasks.isEmpty {
-            prompt += "ACTIVE TASKS (user is already tracking these):\n"
+            // Get score range for context
+            let scoreRange = try? await ActionItemStorage.shared.getRelevanceScoreRange()
+            let rangeStr = scoreRange.map { "Score range: \($0.min)–\($0.max). " } ?? ""
+
+            prompt += "ACTIVE TASKS (user is already tracking these — each has a relevance_score where higher = more important):\n"
+            prompt += "\(rangeStr)Use these scores to place any new task appropriately.\n"
             for (i, task) in context.activeTasks.enumerated() {
                 let pri = task.priority.map { " [\($0)]" } ?? ""
-                prompt += "\(i + 1). \(task.description)\(pri)\n"
+                let score = task.relevanceScore.map { " [score:\($0)]" } ?? ""
+                prompt += "\(i + 1).\(score) \(task.description)\(pri)\n"
             }
             prompt += "\n"
         }
@@ -668,9 +681,10 @@ actor TaskAssistant: ProactiveAssistant {
                         "context_summary": .init(type: "string", description: "Brief summary of what user is looking at"),
                         "current_activity": .init(type: "string", description: "What the user is actively doing"),
                         "source_category": .init(type: "string", description: "Where the task originated", enumValues: ["direct_request", "self_generated", "calendar_driven", "reactive", "external_system", "other"]),
-                        "source_subcategory": .init(type: "string", description: "Specific origin within category", enumValues: ["message", "meeting", "mention", "idea", "reminder", "goal_subtask", "event_prep", "recurring", "deadline", "error", "notification", "observation", "project_tool", "alert", "documentation", "other"])
+                        "source_subcategory": .init(type: "string", description: "Specific origin within category", enumValues: ["message", "meeting", "mention", "idea", "reminder", "goal_subtask", "event_prep", "recurring", "deadline", "error", "notification", "observation", "project_tool", "alert", "documentation", "other"]),
+                        "relevance_score": .init(type: "integer", description: "Where this task ranks relative to existing tasks. Look at the relevance_score values of existing active tasks and assign a score that places this task appropriately. Higher = more important/urgent. Must be an integer.")
                     ],
-                    required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity", "source_category", "source_subcategory"]
+                    required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity", "source_category", "source_subcategory", "relevance_score"]
                 )
             ),
             GeminiTool.FunctionDeclaration(
@@ -786,6 +800,14 @@ actor TaskAssistant: ProactiveAssistant {
                 }
                 let sourceCategory = toolCall.arguments["source_category"] as? String ?? "other"
                 let sourceSubcategory = toolCall.arguments["source_subcategory"] as? String ?? "other"
+                let relevanceScore: Int?
+                if let scoreValue = toolCall.arguments["relevance_score"] as? Int {
+                    relevanceScore = scoreValue
+                } else if let scoreDouble = toolCall.arguments["relevance_score"] as? Double {
+                    relevanceScore = Int(scoreDouble)
+                } else {
+                    relevanceScore = nil
+                }
 
                 let task = ExtractedTask(
                     title: title,
@@ -796,10 +818,11 @@ actor TaskAssistant: ProactiveAssistant {
                     confidence: confidence,
                     tags: tags,
                     sourceCategory: sourceCategory,
-                    sourceSubcategory: sourceSubcategory
+                    sourceSubcategory: sourceSubcategory,
+                    relevanceScore: relevanceScore
                 )
 
-                log("Task: extract_task — \"\(title)\" (confidence: \(confidence), priority: \(priorityStr))")
+                log("Task: extract_task — \"\(title)\" (confidence: \(confidence), priority: \(priorityStr), score: \(relevanceScore.map { String($0) } ?? "nil"))")
                 return (TaskExtractionResult(
                     hasNewTask: true,
                     task: task,
@@ -1003,7 +1026,8 @@ actor TaskAssistant: ProactiveAssistant {
                         description: record.description,
                         status: status,
                         similarity: Double(result.similarity),
-                        matchType: "vector"
+                        matchType: "vector",
+                        relevanceScore: record.relevanceScore
                     ))
                 }
             }
@@ -1041,7 +1065,8 @@ actor TaskAssistant: ProactiveAssistant {
                         description: result.description,
                         status: status,
                         similarity: nil,
-                        matchType: "fts"
+                        matchType: "fts",
+                        relevanceScore: result.relevanceScore
                     ))
                 }
             }
