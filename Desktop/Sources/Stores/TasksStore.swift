@@ -68,6 +68,32 @@ class TasksStore: ObservableObject {
         Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
     }
 
+    /// Source weight for priority sorting within the same day.
+    /// Lower weight = higher priority. Manual tasks always appear above AI-generated.
+    private static func sourceWeight(for source: String?) -> Int {
+        switch source {
+        case "manual": return 0
+        case let s where s?.hasPrefix("transcription") == true: return 1
+        case "screenshot": return 2
+        default: return 1  // unknown sources treated as mid-priority
+        }
+    }
+
+    /// Standard sort: due date ascending, then manual > AI-generated, then newest first
+    private static func sortByDueDateThenSource(_ a: TaskActionItem, _ b: TaskActionItem) -> Bool {
+        let aDue = a.dueAt ?? .distantFuture
+        let bDue = b.dueAt ?? .distantFuture
+        if aDue != bDue {
+            return aDue < bDue
+        }
+        let aWeight = sourceWeight(for: a.source)
+        let bWeight = sourceWeight(for: b.source)
+        if aWeight != bWeight {
+            return aWeight < bWeight
+        }
+        return a.createdAt > b.createdAt
+    }
+
     /// Overdue tasks (due date in the past but within 7 days)
     var overdueTasks: [TaskActionItem] {
         let startOfToday = Calendar.current.startOfDay(for: Date())
@@ -77,13 +103,7 @@ class TasksStore: ObservableObject {
                 // Must be overdue (before today) but within 7 days (not too old)
                 return dueAt < startOfToday && dueAt >= sevenDaysAgo
             }
-            .sorted { a, b in
-                // Sort by due date ascending, tie-breaker: created_at descending (matches backend)
-                if a.dueAt == b.dueAt {
-                    return a.createdAt > b.createdAt
-                }
-                return (a.dueAt ?? .distantPast) < (b.dueAt ?? .distantPast)
-            }
+            .sorted(by: Self.sortByDueDateThenSource)
     }
 
     /// Today's tasks (due today)
@@ -96,13 +116,7 @@ class TasksStore: ObservableObject {
                 guard let dueAt = task.dueAt else { return false }
                 return dueAt >= startOfToday && dueAt < endOfToday
             }
-            .sorted { a, b in
-                // Sort by due date ascending, tie-breaker: created_at descending (matches backend)
-                if a.dueAt == b.dueAt {
-                    return a.createdAt > b.createdAt
-                }
-                return (a.dueAt ?? .distantPast) < (b.dueAt ?? .distantPast)
-            }
+            .sorted(by: Self.sortByDueDateThenSource)
     }
 
     /// Tasks without due date (created within last 7 days)
@@ -112,7 +126,7 @@ class TasksStore: ObservableObject {
                 // No due date, but created within 7 days
                 task.dueAt == nil && task.createdAt >= sevenDaysAgo
             }
-            .sorted { $0.createdAt > $1.createdAt }
+            .sorted(by: Self.sortByDueDateThenSource)
     }
 
     var todoCount: Int {
@@ -536,8 +550,51 @@ class TasksStore: ObservableObject {
 
             UserDefaults.standard.set(true, forKey: syncKey)
             log("TasksStore: Full sync completed - \(totalSynced) tasks synced total")
+
+            // Backfill due dates on backend for tasks that have none
+            await backfillDueDatesOnBackendIfNeeded(userId: userId)
         } catch {
             logError("TasksStore: Full sync failed (will retry next launch)", error: error)
+        }
+    }
+
+    /// One-time backfill: patch backend tasks that have no dueAt.
+    /// Sets dueAt to end of the day the task was created.
+    private func backfillDueDatesOnBackendIfNeeded(userId: String) async {
+        let backfillKey = "tasksDueDateBackfill_v1_\(userId)"
+        guard !UserDefaults.standard.bool(forKey: backfillKey) else { return }
+
+        log("TasksStore: Starting due date backfill for backend tasks")
+        var patchedCount = 0
+
+        do {
+            // Fetch all incomplete tasks from local cache that have no dueAt
+            let tasksWithoutDueDate = try await ActionItemStorage.shared.getLocalActionItems(
+                limit: 500,
+                completed: false
+            ).filter { $0.dueAt == nil }
+
+            for task in tasksWithoutDueDate {
+                // Set dueAt to end of the day the task was created (11:59 PM local)
+                let calendar = Calendar.current
+                let endOfCreatedDay = calendar.date(bySettingHour: 23, minute: 59, second: 0, of: task.createdAt)
+                    ?? task.createdAt
+
+                do {
+                    _ = try await APIClient.shared.updateActionItem(
+                        id: task.id,
+                        dueAt: endOfCreatedDay
+                    )
+                    patchedCount += 1
+                } catch {
+                    logError("TasksStore: Failed to backfill dueAt for task \(task.id)", error: error)
+                }
+            }
+
+            UserDefaults.standard.set(true, forKey: backfillKey)
+            log("TasksStore: Due date backfill complete - patched \(patchedCount) tasks")
+        } catch {
+            logError("TasksStore: Due date backfill failed", error: error)
         }
     }
 
