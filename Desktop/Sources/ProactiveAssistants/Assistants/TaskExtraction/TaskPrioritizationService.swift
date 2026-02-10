@@ -98,6 +98,13 @@ actor TaskPrioritizationService {
         await runFullRescore()
     }
 
+    /// Load the allowlist from SQLite without triggering a full rescore.
+    /// Called early in task loading so the filter is active before the first render.
+    func ensureAllowlistLoaded() async {
+        guard !hasCompletedScoring else { return }
+        await loadAllowlistFromSQLite()
+    }
+
     /// Called when user opens Tasks tab — load allowlist immediately, trigger run if needed
     func runIfNeeded() async {
         // Always load allowlist from SQLite for instant display
