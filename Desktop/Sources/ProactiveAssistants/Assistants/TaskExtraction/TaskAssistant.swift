@@ -64,7 +64,10 @@ actor TaskAssistant: ProactiveAssistant {
             "yyyy-MM-dd HH:mm:ss",
             "yyyy-MM-dd",
             "MM/dd/yyyy",
-            "MMMM d, yyyy"
+            "MMMM d, yyyy",
+            "MMM d, yyyy",
+            "MMMM d",
+            "MMM d"
         ]
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -74,6 +77,14 @@ actor TaskAssistant: ProactiveAssistant {
                 return date
             }
         }
+
+        // Fallback: try macOS natural language date parsing (handles "Thursday", "next week", etc.)
+        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
+        if let match = detector?.firstMatch(in: deadline, range: NSRange(deadline.startIndex..., in: deadline)),
+           let date = match.date {
+            return date
+        }
+
         log("Task: Could not parse inferred_deadline '\(deadline)', skipping deadline")
         return nil
     }
@@ -573,7 +584,11 @@ actor TaskAssistant: ProactiveAssistant {
         let context = await refreshContext()
 
         // 2. Build prompt with injected context
-        var prompt = "Screenshot from \(appName). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd (EEEE)"
+        let todayStr = dateFormatter.string(from: Date())
+
+        var prompt = "Screenshot from \(appName). Today is \(todayStr). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
 
         // Inject AI user profile for context
         if let profile = await AIUserProfileService.shared.getLatestProfile() {
