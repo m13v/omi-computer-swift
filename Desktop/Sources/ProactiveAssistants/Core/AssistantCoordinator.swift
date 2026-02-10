@@ -12,9 +12,9 @@ class AssistantCoordinator {
     private var eventCallback: ((String, [String: Any]) -> Void)?
 
     // MARK: - Context Tracking (for context switch detection)
-    private var lastDistributedApp: String?
-    private var lastDistributedWindowTitle: String?
-    private var lastDistributedFrame: CapturedFrame?
+    private var lastTrackedApp: String?
+    private var lastTrackedWindowTitle: String?
+    private var lastTrackedFrame: CapturedFrame?
 
     private init() {}
 
@@ -62,46 +62,59 @@ class AssistantCoordinator {
         eventCallback?(type, data)
     }
 
-    // MARK: - Frame Distribution
+    // MARK: - Context Switch Detection
 
-    /// Update context tracking state without distributing to assistants.
-    /// Call this even during delay periods so the departing frame is fresh on context switches.
+    /// Check if the user's context changed (app or normalized window title) and fire
+    /// `onContextSwitch` on all assistants if so. Called by the plugin for both app switches
+    /// and window title changes — one unified path with one delay mechanism.
+    /// - Returns: `true` if a context switch was detected and fired.
+    @discardableResult
+    func checkContextSwitch(newApp: String, newWindowTitle: String?) -> Bool {
+        guard lastTrackedApp != nil else {
+            lastTrackedApp = newApp
+            lastTrackedWindowTitle = newWindowTitle
+            return false
+        }
+
+        let changed = ContextDetection.didContextChange(
+            fromApp: lastTrackedApp,
+            fromWindowTitle: lastTrackedWindowTitle,
+            toApp: newApp,
+            toWindowTitle: newWindowTitle
+        )
+        guard changed else { return false }
+
+        let departingFrame = lastTrackedFrame
+        log("Context switch detected: \(lastTrackedApp ?? "nil") (\(ContextDetection.normalizeWindowTitle(lastTrackedWindowTitle) ?? "nil")) -> \(newApp) (\(ContextDetection.normalizeWindowTitle(newWindowTitle) ?? "nil"))")
+
+        // Update tracking state
+        lastTrackedApp = newApp
+        lastTrackedWindowTitle = newWindowTitle
+
+        // Fire on all assistants
+        for (_, assistant) in assistants {
+            Task {
+                await assistant.onContextSwitch(
+                    departingFrame: departingFrame,
+                    newApp: newApp,
+                    newWindowTitle: newWindowTitle
+                )
+            }
+        }
+
+        return true
+    }
+
+    // MARK: - Frame Tracking & Distribution
+
+    /// Keep the latest frame reference fresh (call on every capture, even during delay).
     func trackFrame(_ frame: CapturedFrame) {
-        lastDistributedApp = frame.appName
-        lastDistributedWindowTitle = frame.windowTitle
-        lastDistributedFrame = frame
+        lastTrackedFrame = frame
     }
 
     /// Distribute a captured frame to all enabled assistants
     /// - Parameter frame: The captured frame to analyze
     func distributeFrame(_ frame: CapturedFrame) {
-        // Detect window title changes (browser tab switches, etc.) that don't trigger notifyAppSwitch
-        if let previousApp = lastDistributedApp,
-           previousApp == frame.appName,
-           ContextDetection.didContextChange(
-               fromApp: previousApp,
-               fromWindowTitle: lastDistributedWindowTitle,
-               toApp: frame.appName,
-               toWindowTitle: frame.windowTitle
-           ) {
-            let departingFrame = lastDistributedFrame
-            log("Context switch detected (window): \(lastDistributedWindowTitle ?? "nil") -> \(frame.windowTitle ?? "nil") in \(frame.appName)")
-            for (_, assistant) in assistants {
-                Task {
-                    await assistant.onContextSwitch(
-                        departingFrame: departingFrame,
-                        newApp: frame.appName,
-                        newWindowTitle: frame.windowTitle
-                    )
-                }
-            }
-        }
-
-        // Update tracking state
-        lastDistributedApp = frame.appName
-        lastDistributedWindowTitle = frame.windowTitle
-        lastDistributedFrame = frame
-
         for (identifier, assistant) in assistants {
             let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime[identifier] ?? .distantPast)
 
@@ -133,29 +146,9 @@ class AssistantCoordinator {
 
     // MARK: - App Switch Handling
 
-    /// Notify all assistants of an app switch
-    /// - Parameter newApp: Name of the newly active application
+    /// Notify all assistants of an app switch (legacy onAppSwitch callback).
+    /// Context switch detection is handled separately via `checkContextSwitch`.
     func notifyAppSwitch(newApp: String) {
-        // Fire context switch if app actually changed
-        if let previousApp = lastDistributedApp, previousApp != newApp {
-            let departingFrame = lastDistributedFrame
-            log("Context switch detected (app): \(previousApp) -> \(newApp)")
-            for (_, assistant) in assistants {
-                Task {
-                    await assistant.onContextSwitch(
-                        departingFrame: departingFrame,
-                        newApp: newApp,
-                        newWindowTitle: nil
-                    )
-                }
-            }
-            // Update app tracking immediately (window title updated on next frame)
-            lastDistributedApp = newApp
-            lastDistributedWindowTitle = nil
-        } else if lastDistributedApp == nil {
-            lastDistributedApp = newApp
-        }
-
         for (_, assistant) in assistants {
             Task {
                 await assistant.onAppSwitch(newApp: newApp)
