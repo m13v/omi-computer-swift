@@ -205,10 +205,17 @@ actor TaskPrioritizationService {
 
     /// Re-rank the 200 most recent AI tasks with anchor calibration against the global scale
     private func runPartialRescore() async {
+        guard !isScoringInProgress else {
+            log("TaskPrioritize: [PARTIAL] Skipping — scoring already in progress")
+            return
+        }
         guard let client = geminiClient else {
             log("TaskPrioritize: Skipping partial rescore — Gemini client not initialized")
             return
         }
+
+        isScoringInProgress = true
+        defer { isScoringInProgress = false }
 
         log("TaskPrioritize: [PARTIAL] Starting 2-hour partial rescore")
         await notifyStoreStarted()
