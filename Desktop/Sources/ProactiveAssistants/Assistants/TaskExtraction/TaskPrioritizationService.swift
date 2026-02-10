@@ -477,7 +477,7 @@ actor TaskPrioritizationService {
                 "ranked_task_ids": .init(
                     type: "array",
                     description: "Task IDs ordered from most relevant to least relevant",
-                    items: .init(type: "string")
+                    items: .init(type: "string", properties: nil, required: nil)
                 )
             ],
             required: ["ranked_task_ids"]
