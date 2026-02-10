@@ -144,6 +144,34 @@ class AssistantCoordinator {
         }
     }
 
+    /// Distribute a frame only to assistants that opted into receiving frames during the delay period.
+    /// Used for time-sensitive detections like refocus tracking.
+    func distributeFrameDuringDelay(_ frame: CapturedFrame) {
+        for (identifier, assistant) in assistants {
+            let timeSinceLastAnalysis = Date().timeIntervalSince(lastAnalysisTime[identifier] ?? .distantPast)
+
+            Task {
+                guard await assistant.isEnabled else { return }
+                guard await assistant.needsFrameDuringDelay else { return }
+                guard await assistant.shouldAnalyze(frameNumber: frame.frameNumber, timeSinceLastAnalysis: timeSinceLastAnalysis) else {
+                    return
+                }
+
+                await MainActor.run {
+                    lastAnalysisTime[identifier] = Date()
+                }
+
+                if let result = await assistant.analyze(frame: frame) {
+                    await assistant.handleResult(result) { [weak self] type, data in
+                        Task { @MainActor in
+                            self?.sendEvent(type: type, data: data)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - App Switch Handling
 
     /// Notify all assistants of an app switch (legacy onAppSwitch callback).
