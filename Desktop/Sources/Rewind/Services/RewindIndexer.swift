@@ -140,34 +140,37 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
-            // OCR gating: skip on battery, throttle frequency, deduplicate
+            // OCR gating: throttle frequency, deduplicate, then check battery
             var ocrText: String?
             var ocrDataJson: String?
             var isIndexed = false
+            var skippedForBattery = false
 
-            if shouldPauseOCRForBattery() {
+            framesSinceLastOCR += 1
+            if framesSinceLastOCR < ocrEveryNthFrame {
+                recordOCROutcome(.skippedFrequency)
+                isIndexed = true
+            } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
+                recordOCROutcome(.skippedDedup)
+                isIndexed = true
+            } else if shouldPauseOCRForBattery() {
+                framesSinceLastOCR = 0
                 recordOCROutcome(.skippedBattery)
+                skippedForBattery = true
             } else {
-                framesSinceLastOCR += 1
-                if framesSinceLastOCR < ocrEveryNthFrame {
-                    recordOCROutcome(.skippedFrequency)
-                } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
-                    recordOCROutcome(.skippedDedup)
-                } else {
-                    framesSinceLastOCR = 0
-                    recordOCROutcome(.ran)
-                    do {
-                        let ocrResult = try await Task(priority: .utility) {
-                            try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
-                        }.value
-                        ocrText = ocrResult.fullText
-                        if let data = try? JSONEncoder().encode(ocrResult) {
-                            ocrDataJson = String(data: data, encoding: .utf8)
-                        }
-                        isIndexed = true
-                    } catch {
-                        logError("RewindIndexer: OCR failed for frame: \(error)")
+                framesSinceLastOCR = 0
+                recordOCROutcome(.ran)
+                do {
+                    let ocrResult = try await Task(priority: .utility) {
+                        try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
+                    }.value
+                    ocrText = ocrResult.fullText
+                    if let data = try? JSONEncoder().encode(ocrResult) {
+                        ocrDataJson = String(data: data, encoding: .utf8)
                     }
+                    isIndexed = true
+                } catch {
+                    logError("RewindIndexer: OCR failed for frame: \(error)")
                 }
             }
 
@@ -181,7 +184,8 @@ actor RewindIndexer {
                 frameOffset: encodedFrame?.frameOffset,
                 ocrText: ocrText,
                 ocrDataJson: ocrDataJson,
-                isIndexed: isIndexed
+                isIndexed: isIndexed,
+                skippedForBattery: skippedForBattery
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
@@ -207,34 +211,37 @@ actor RewindIndexer {
                 timestamp: captureTime
             )
 
-            // OCR gating: skip on battery, throttle frequency, deduplicate
+            // OCR gating: throttle frequency, deduplicate, then check battery
             var ocrText: String?
             var ocrDataJson: String?
             var isIndexed = false
+            var skippedForBattery = false
 
-            if shouldPauseOCRForBattery() {
+            framesSinceLastOCR += 1
+            if framesSinceLastOCR < ocrEveryNthFrame {
+                recordOCROutcome(.skippedFrequency)
+                isIndexed = true
+            } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
+                recordOCROutcome(.skippedDedup)
+                isIndexed = true
+            } else if shouldPauseOCRForBattery() {
+                framesSinceLastOCR = 0
                 recordOCROutcome(.skippedBattery)
+                skippedForBattery = true
             } else {
-                framesSinceLastOCR += 1
-                if framesSinceLastOCR < ocrEveryNthFrame {
-                    recordOCROutcome(.skippedFrequency)
-                } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
-                    recordOCROutcome(.skippedDedup)
-                } else {
-                    framesSinceLastOCR = 0
-                    recordOCROutcome(.ran)
-                    do {
-                        let ocrResult = try await Task(priority: .utility) {
-                            try await RewindOCRService.shared.extractTextWithBounds(from: cgImage)
-                        }.value
-                        ocrText = ocrResult.fullText
-                        if let data = try? JSONEncoder().encode(ocrResult) {
-                            ocrDataJson = String(data: data, encoding: .utf8)
-                        }
-                        isIndexed = true
-                    } catch {
-                        logError("RewindIndexer: OCR failed for CGImage frame: \(error)")
+                framesSinceLastOCR = 0
+                recordOCROutcome(.ran)
+                do {
+                    let ocrResult = try await Task(priority: .utility) {
+                        try await RewindOCRService.shared.extractTextWithBounds(from: cgImage)
+                    }.value
+                    ocrText = ocrResult.fullText
+                    if let data = try? JSONEncoder().encode(ocrResult) {
+                        ocrDataJson = String(data: data, encoding: .utf8)
                     }
+                    isIndexed = true
+                } catch {
+                    logError("RewindIndexer: OCR failed for CGImage frame: \(error)")
                 }
             }
 
@@ -247,7 +254,8 @@ actor RewindIndexer {
                 frameOffset: encodedFrame?.frameOffset,
                 ocrText: ocrText,
                 ocrDataJson: ocrDataJson,
-                isIndexed: isIndexed
+                isIndexed: isIndexed,
+                skippedForBattery: skippedForBattery
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
@@ -280,34 +288,37 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
-            // OCR gating: skip on battery, throttle frequency, deduplicate
+            // OCR gating: throttle frequency, deduplicate, then check battery
             var ocrText: String?
             var ocrDataJson: String?
             var isIndexed = false
+            var skippedForBattery = false
 
-            if shouldPauseOCRForBattery() {
+            framesSinceLastOCR += 1
+            if framesSinceLastOCR < ocrEveryNthFrame {
+                recordOCROutcome(.skippedFrequency)
+                isIndexed = true
+            } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
+                recordOCROutcome(.skippedDedup)
+                isIndexed = true
+            } else if shouldPauseOCRForBattery() {
+                framesSinceLastOCR = 0
                 recordOCROutcome(.skippedBattery)
+                skippedForBattery = true
             } else {
-                framesSinceLastOCR += 1
-                if framesSinceLastOCR < ocrEveryNthFrame {
-                    recordOCROutcome(.skippedFrequency)
-                } else if await RewindOCRService.shared.shouldSkipOCR(for: cgImage) {
-                    recordOCROutcome(.skippedDedup)
-                } else {
-                    framesSinceLastOCR = 0
-                    recordOCROutcome(.ran)
-                    do {
-                        let ocrResult = try await Task(priority: .utility) {
-                            try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
-                        }.value
-                        ocrText = ocrResult.fullText
-                        if let data = try? JSONEncoder().encode(ocrResult) {
-                            ocrDataJson = String(data: data, encoding: .utf8)
-                        }
-                        isIndexed = true
-                    } catch {
-                        logError("RewindIndexer: OCR failed for frame with metadata: \(error)")
+                framesSinceLastOCR = 0
+                recordOCROutcome(.ran)
+                do {
+                    let ocrResult = try await Task(priority: .utility) {
+                        try await RewindOCRService.shared.extractTextWithBounds(from: frame.jpegData)
+                    }.value
+                    ocrText = ocrResult.fullText
+                    if let data = try? JSONEncoder().encode(ocrResult) {
+                        ocrDataJson = String(data: data, encoding: .utf8)
                     }
+                    isIndexed = true
+                } catch {
+                    logError("RewindIndexer: OCR failed for frame with metadata: \(error)")
                 }
             }
 
@@ -332,7 +343,8 @@ actor RewindIndexer {
                 isIndexed: isIndexed,
                 focusStatus: focusStatus,
                 extractedTasksJson: tasksJson,
-                adviceJson: adviceJson
+                adviceJson: adviceJson,
+                skippedForBattery: skippedForBattery
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
@@ -399,7 +411,7 @@ actor RewindIndexer {
 
     private var isBackfilling = false
 
-    /// Run OCR on screenshots that were captured without OCR (e.g. while on battery)
+    /// Run OCR on screenshots that were skipped due to battery
     func backfillUnindexedScreenshots() async {
         guard !isBackfilling else {
             log("RewindIndexer: Backfill already in progress, skipping")
@@ -407,18 +419,10 @@ actor RewindIndexer {
         }
         guard await ensureInitialized() else { return }
 
-        // Read battery start time from PowerMonitor (must access on MainActor)
-        let batteryStart = await MainActor.run { PowerMonitor.shared.lastBatteryStartTime }
-
-        guard let since = batteryStart else {
-            log("RewindIndexer: Backfill skipped — no battery start time recorded")
-            return
-        }
-
         isBackfilling = true
         defer { isBackfilling = false }
 
-        log("RewindIndexer: Starting OCR backfill for screenshots since \(since)...")
+        log("RewindIndexer: Starting OCR backfill for battery-skipped screenshots...")
         var totalProcessed = 0
         let batchSize = 10
 
@@ -430,7 +434,7 @@ actor RewindIndexer {
                     return
                 }
 
-                let pending = try await RewindDatabase.shared.getPendingOCRScreenshots(since: since, limit: batchSize)
+                let pending = try await RewindDatabase.shared.getBatterySkippedScreenshots(limit: batchSize)
                 if pending.isEmpty { break }
 
                 for screenshot in pending {
@@ -467,9 +471,6 @@ actor RewindIndexer {
         } catch {
             logError("RewindIndexer: OCR backfill failed: \(error)")
         }
-
-        // Clear the battery start time now that backfill is done
-        await MainActor.run { PowerMonitor.shared.clearBatteryStartTime() }
     }
 
     /// Set up PowerMonitor callback for OCR backfill on AC reconnect
