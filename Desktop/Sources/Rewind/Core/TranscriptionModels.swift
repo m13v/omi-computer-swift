@@ -351,10 +351,11 @@ extension TranscriptionSessionRecord {
     mutating func updateFrom(_ conversation: ServerConversation) {
         let encoder = JSONEncoder()
 
-        // Update timestamps
+        // Update timestamps — use server's latest timestamp so local mutations
+        // (which set updatedAt = Date()) aren't overwritten by stale sync data
         self.startedAt = conversation.startedAt ?? conversation.createdAt
         self.finishedAt = conversation.finishedAt
-        self.updatedAt = Date()
+        self.updatedAt = conversation.finishedAt ?? conversation.startedAt ?? conversation.createdAt
 
         // Update metadata
         self.source = conversation.source?.rawValue ?? self.source
