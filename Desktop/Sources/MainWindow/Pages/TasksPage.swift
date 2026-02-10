@@ -1328,6 +1328,21 @@ struct TasksPage: View {
             // Header with filter toggle and sort
             headerView
 
+            // Prioritization indicator
+            if store.isPrioritizing {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.mini)
+                    Text("Organizing tasks...")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity)
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: store.isPrioritizing)
+            }
+
             // Content
             if viewModel.isLoading && viewModel.tasks.isEmpty {
                 loadingView
@@ -2874,16 +2889,6 @@ struct DueDateBadgeInteractive: View {
                 }
             }
             .foregroundColor(isHovering ? OmiColors.textPrimary : OmiColors.textSecondary)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 2)
-            .background(
-                Capsule()
-                    .fill(isHovering ? OmiColors.backgroundTertiary.opacity(0.8) : OmiColors.backgroundTertiary)
-            )
-            .overlay(
-                Capsule()
-                    .stroke(isHovering ? OmiColors.textTertiary.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
         }
         .buttonStyle(.plain)
         .onHover { hovering in
@@ -2936,16 +2941,6 @@ struct PriorityBadgeInteractive: View {
                     }
                 }
                 .foregroundColor(badgeHovering ? badgeColor : (priority != nil ? OmiColors.textSecondary : OmiColors.textTertiary))
-                .padding(.horizontal, 5)
-                .padding(.vertical, 2)
-                .background(
-                    Capsule()
-                        .fill(badgeHovering ? badgeColor.opacity(0.15) : OmiColors.backgroundTertiary)
-                )
-                .overlay(
-                    Capsule()
-                        .stroke(badgeHovering ? badgeColor.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
             }
             .buttonStyle(.plain)
             .onHover { hovering in
@@ -3006,12 +3001,6 @@ struct SourceBadgeCompact: View {
                 .font(.system(size: 10, weight: .medium))
         }
         .foregroundColor(OmiColors.textSecondary)
-        .padding(.horizontal, 5)
-        .padding(.vertical, 2)
-        .background(
-            Capsule()
-                .fill(OmiColors.backgroundTertiary)
-        )
         .help(windowTitle ?? sourceLabel)
     }
 }
