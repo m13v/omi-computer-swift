@@ -640,6 +640,114 @@ class AnalyticsManager {
         PostHogManager.shared.settingsStateTracked(screenshotsEnabled: screenshotsEnabled, memoryExtractionEnabled: memoryExtractionEnabled, memoryNotificationsEnabled: memoryNotificationsEnabled)
     }
 
+    // MARK: - All Settings State (Comprehensive daily report)
+
+    private let lastAllSettingsReportKey = "lastAllSettingsReportDate"
+
+    /// Report comprehensive settings state on app launch, throttled to once per calendar day.
+    /// Sends all ~45 user settings as a single analytics event for unified visibility.
+    func reportAllSettingsIfNeeded() {
+        guard !Self.isDevBuild else { return }
+
+        let defaults = UserDefaults.standard
+        let lastReport = defaults.object(forKey: lastAllSettingsReportKey) as? Date ?? .distantPast
+        guard !Calendar.current.isDateInToday(lastReport) else {
+            log("Analytics: All settings already reported today, skipping")
+            return
+        }
+
+        defaults.set(Date(), forKey: lastAllSettingsReportKey)
+
+        let properties = collectAllSettings()
+
+        MixpanelManager.shared.allSettingsStateTracked(properties: properties)
+        PostHogManager.shared.allSettingsStateTracked(properties: properties)
+
+        log("Analytics: All settings state reported (\(properties.count) properties)")
+    }
+
+    /// Collect all user settings into a flat dictionary for analytics reporting.
+    /// For string settings (custom prompts), reports has_custom + length instead of full text.
+    /// For array settings (excluded apps, keywords), reports count instead of contents.
+    private func collectAllSettings() -> [String: Any] {
+        var props: [String: Any] = [:]
+
+        // -- General / Shared Assistant Settings --
+        let shared = AssistantSettings.shared
+        props["screen_analysis_enabled"] = shared.screenAnalysisEnabled
+        props["transcription_enabled"] = shared.transcriptionEnabled
+        props["transcription_language"] = shared.transcriptionLanguage
+        props["transcription_auto_detect"] = shared.transcriptionAutoDetect
+        props["transcription_vocabulary_count"] = shared.transcriptionVocabulary.count
+        props["analysis_delay"] = shared.analysisDelay
+        props["cooldown_interval"] = shared.cooldownInterval
+        props["glow_overlay_enabled"] = shared.glowOverlayEnabled
+
+        // -- Focus Assistant --
+        let focus = FocusAssistantSettings.shared
+        props["focus_enabled"] = focus.isEnabled
+        props["focus_cooldown_interval"] = focus.cooldownInterval
+        props["focus_has_custom_prompt"] = focus.analysisPrompt != FocusAssistantSettings.defaultAnalysisPrompt
+        props["focus_prompt_length"] = focus.analysisPrompt.count
+        props["focus_excluded_apps_count"] = focus.excludedApps.count
+
+        // -- Task Extraction Assistant --
+        let task = TaskAssistantSettings.shared
+        props["task_enabled"] = task.isEnabled
+        props["task_extraction_interval"] = task.extractionInterval
+        props["task_min_confidence"] = task.minConfidence
+        props["task_has_custom_prompt"] = task.analysisPrompt != TaskAssistantSettings.defaultAnalysisPrompt
+        props["task_prompt_length"] = task.analysisPrompt.count
+        props["task_allowed_apps_count"] = task.allowedApps.count
+        props["task_browser_keywords_count"] = task.browserKeywords.count
+
+        // -- Memory Assistant --
+        let memory = MemoryAssistantSettings.shared
+        props["memory_enabled"] = memory.isEnabled
+        props["memory_extraction_interval"] = memory.extractionInterval
+        props["memory_min_confidence"] = memory.minConfidence
+        props["memory_notifications_enabled"] = memory.notificationsEnabled
+        props["memory_has_custom_prompt"] = memory.analysisPrompt != MemoryAssistantSettings.defaultAnalysisPrompt
+        props["memory_prompt_length"] = memory.analysisPrompt.count
+        props["memory_excluded_apps_count"] = memory.excludedApps.count
+
+        // -- Advice Assistant --
+        let advice = AdviceAssistantSettings.shared
+        props["advice_enabled"] = advice.isEnabled
+        props["advice_extraction_interval"] = advice.extractionInterval
+        props["advice_min_confidence"] = advice.minConfidence
+        props["advice_has_custom_prompt"] = advice.analysisPrompt != AdviceAssistantSettings.defaultAnalysisPrompt
+        props["advice_prompt_length"] = advice.analysisPrompt.count
+        props["advice_excluded_apps_count"] = advice.excludedApps.count
+
+        // -- Task Agent --
+        let agent = TaskAgentSettings.shared
+        props["task_agent_enabled"] = agent.isEnabled
+        props["task_agent_auto_launch"] = agent.autoLaunch
+        props["task_agent_skip_permissions"] = agent.skipPermissions
+        props["task_agent_has_custom_prompt"] = !agent.customPromptPrefix.isEmpty
+
+        // -- Rewind (read from UserDefaults since these are @AppStorage in views) --
+        let ud = UserDefaults.standard
+        props["rewind_retention_days"] = ud.object(forKey: "rewindRetentionDays") as? Double ?? 7.0
+        props["rewind_capture_interval"] = ud.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
+
+        // -- UI Preferences --
+        props["multi_chat_enabled"] = ud.bool(forKey: "multiChatEnabled")
+        props["conversations_compact_view"] = ud.object(forKey: "conversationsCompactView") as? Bool ?? true
+        props["tier_level"] = ud.integer(forKey: "currentTierLevel")
+
+        // -- Device --
+        let deviceId = ud.string(forKey: "pairedDeviceId") ?? ""
+        props["has_paired_device"] = !deviceId.isEmpty
+        props["paired_device_type"] = ud.string(forKey: "pairedDeviceType") ?? ""
+
+        // -- Launch at Login --
+        props["launch_at_login_enabled"] = LaunchAtLoginManager.shared.isEnabled
+
+        return props
+    }
+
     // MARK: - Display Info
 
     /// Track display characteristics (notch, screen size, etc.)
