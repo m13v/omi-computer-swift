@@ -204,6 +204,7 @@ actor RewindStorage {
             "-vframes", "1",
             "-f", "image2",
             "-c:v", "mjpeg",
+            "-pix_fmt", "yuvj420p", // Full-range YUV required by MJPEG
             "-q:v", "2", // High quality JPEG
             "-y", // Overwrite
             outputPath.path
