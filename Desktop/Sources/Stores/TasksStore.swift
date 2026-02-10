@@ -186,6 +186,7 @@ class TasksStore: ObservableObject {
     private func refreshPrioritizationScores() async {
         let visible = await TaskPrioritizationService.shared.visibleAITaskIds
         let completed = await TaskPrioritizationService.shared.hasCompletedScoring
+        let stillScoring = await TaskPrioritizationService.shared.isScoringInProgress
         if visible != visibleAITaskIds || completed != hasCompletedScoring {
             visibleAITaskIds = visible
             hasCompletedScoring = completed
@@ -194,7 +195,7 @@ class TasksStore: ObservableObject {
             // Ensure allowlisted tasks are loaded (they may be older than the 7-day window)
             await ensureAllowlistedTasksLoaded(visible)
         }
-        isPrioritizing = false
+        isPrioritizing = stillScoring
     }
 
     /// Fetch any allowlisted tasks missing from incompleteTasks (e.g. older than 7 days)
