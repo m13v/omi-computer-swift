@@ -243,8 +243,7 @@ actor AIUserProfileService {
             generatedAt: generatedAt
         )
         try await db.write { database in
-            var mutableRecord = record
-            try mutableRecord.insert(database)
+            try record.insert(database)
         }
 
         // 7. Sync to backend (fire-and-forget)
