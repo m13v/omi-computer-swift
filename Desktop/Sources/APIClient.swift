@@ -2941,6 +2941,18 @@ extension APIClient {
         return try await get("v1/users/profile")
     }
 
+    // MARK: - Assistant Settings API
+
+    /// Fetches assistant settings from the backend
+    func getAssistantSettings() async throws -> AssistantSettingsResponse {
+        return try await get("v1/users/assistant-settings")
+    }
+
+    /// Updates assistant settings on the backend (partial update — only non-nil fields are changed)
+    func updateAssistantSettings(_ settings: AssistantSettingsResponse) async throws -> AssistantSettingsResponse {
+        return try await patch("v1/users/assistant-settings", body: settings)
+    }
+
     // MARK: - Knowledge Graph API
 
     /// Get the full knowledge graph (nodes and edges)
@@ -3130,6 +3142,96 @@ struct UserProfileResponse: Codable {
         timeZone = try container.decodeIfPresent(String.self, forKey: .timeZone)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
     }
+}
+
+// MARK: - Assistant Settings Models
+
+struct SharedAssistantSettingsResponse: Codable {
+    var cooldownInterval: Int?
+    var glowOverlayEnabled: Bool?
+    var analysisDelay: Int?
+    var screenAnalysisEnabled: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case cooldownInterval = "cooldown_interval"
+        case glowOverlayEnabled = "glow_overlay_enabled"
+        case analysisDelay = "analysis_delay"
+        case screenAnalysisEnabled = "screen_analysis_enabled"
+    }
+}
+
+struct FocusSettingsResponse: Codable {
+    var enabled: Bool?
+    var analysisPrompt: String?
+    var cooldownInterval: Int?
+    var excludedApps: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case analysisPrompt = "analysis_prompt"
+        case cooldownInterval = "cooldown_interval"
+        case excludedApps = "excluded_apps"
+    }
+}
+
+struct TaskSettingsResponse: Codable {
+    var enabled: Bool?
+    var analysisPrompt: String?
+    var extractionInterval: Double?
+    var minConfidence: Double?
+    var allowedApps: [String]?
+    var browserKeywords: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case analysisPrompt = "analysis_prompt"
+        case extractionInterval = "extraction_interval"
+        case minConfidence = "min_confidence"
+        case allowedApps = "allowed_apps"
+        case browserKeywords = "browser_keywords"
+    }
+}
+
+struct AdviceSettingsResponse: Codable {
+    var enabled: Bool?
+    var analysisPrompt: String?
+    var extractionInterval: Double?
+    var minConfidence: Double?
+    var excludedApps: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case analysisPrompt = "analysis_prompt"
+        case extractionInterval = "extraction_interval"
+        case minConfidence = "min_confidence"
+        case excludedApps = "excluded_apps"
+    }
+}
+
+struct MemorySettingsResponse: Codable {
+    var enabled: Bool?
+    var analysisPrompt: String?
+    var extractionInterval: Double?
+    var minConfidence: Double?
+    var notificationsEnabled: Bool?
+    var excludedApps: [String]?
+
+    enum CodingKeys: String, CodingKey {
+        case enabled
+        case analysisPrompt = "analysis_prompt"
+        case extractionInterval = "extraction_interval"
+        case minConfidence = "min_confidence"
+        case notificationsEnabled = "notifications_enabled"
+        case excludedApps = "excluded_apps"
+    }
+}
+
+struct AssistantSettingsResponse: Codable {
+    var shared: SharedAssistantSettingsResponse?
+    var focus: FocusSettingsResponse?
+    var task: TaskSettingsResponse?
+    var advice: AdviceSettingsResponse?
+    var memory: MemorySettingsResponse?
 }
 
 // MARK: - Focus Sessions API
