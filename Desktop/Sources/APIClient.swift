@@ -1258,7 +1258,8 @@ extension APIClient {
         tags: [String] = [],
         reasoning: String? = nil,
         currentActivity: String? = nil,
-        source: String? = nil
+        source: String? = nil,
+        windowTitle: String? = nil
     ) async throws -> CreateMemoryResponse {
         struct CreateRequest: Encodable {
             let content: String
@@ -1271,12 +1272,14 @@ extension APIClient {
             let reasoning: String?
             let currentActivity: String?
             let source: String?
+            let windowTitle: String?
 
             enum CodingKeys: String, CodingKey {
                 case content, visibility, category, confidence, tags, reasoning, source
                 case sourceApp = "source_app"
                 case contextSummary = "context_summary"
                 case currentActivity = "current_activity"
+                case windowTitle = "window_title"
             }
         }
         let body = CreateRequest(
@@ -1289,7 +1292,8 @@ extension APIClient {
             tags: tags,
             reasoning: reasoning,
             currentActivity: currentActivity,
-            source: source
+            source: source,
+            windowTitle: windowTitle
         )
         return try await post("v3/memories", body: body)
     }
