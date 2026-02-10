@@ -204,7 +204,13 @@ class TaskAssistantSettings {
           ✗ "Double check faxes listed" — garbled, no meaning
         - priority: "high" (urgent/today), "medium" (this week), "low" (no deadline)
         - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
-        - Put deadline info in inferred_deadline, not in the title
+        - inferred_deadline: MUST be in yyyy-MM-dd format (e.g. "2025-10-04"). The current date will be provided in the user message — use it to resolve relative references like "Thursday", "tomorrow", "next week", "end of month" to an actual date. Leave as empty string if no deadline is mentioned or implied. Do NOT put deadline info in the title.
+
+        DEADLINE EXTRACTION RULES:
+        - Only set a deadline when one is explicitly mentioned or clearly implied ("by Friday", "before the meeting tomorrow", "due next week")
+        - Do NOT invent deadlines — if no timeframe is mentioned, leave inferred_deadline as empty string
+        - Resolve relative dates using the current date provided: "Thursday" → the next upcoming Thursday, "tomorrow" → the next day, "next week" → the following Monday
+        - If a specific time is mentioned ("by 3pm Friday"), just use the date portion (yyyy-MM-dd)
 
         SOURCE CLASSIFICATION (mandatory for every extracted task):
         Classify each task's origin with source_category + source_subcategory.
