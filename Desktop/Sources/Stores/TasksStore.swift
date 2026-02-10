@@ -35,6 +35,9 @@ class TasksStore: ObservableObject {
     /// Updated by TaskPrioritizationService.
     @Published var hiddenTaskIds: Set<String> = []
 
+    /// Whether the prioritization service is currently scoring tasks
+    @Published var isPrioritizing = false
+
     // Legacy compatibility - combines both lists
     var tasks: [TaskActionItem] {
         incompleteTasks + completedTasks
@@ -159,7 +162,14 @@ class TasksStore: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Listen for prioritization score updates
+        // Listen for prioritization lifecycle
+        NotificationCenter.default.publisher(for: .taskPrioritizationDidStart)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.isPrioritizing = true
+            }
+            .store(in: &cancellables)
+
         NotificationCenter.default.publisher(for: .taskPrioritizationDidUpdate)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -171,8 +181,11 @@ class TasksStore: ObservableObject {
     /// Pull latest hidden task IDs from the prioritization service
     private func refreshPrioritizationScores() async {
         let hidden = await TaskPrioritizationService.shared.hiddenTaskIds
-        hiddenTaskIds = hidden
-        log("TasksStore: Updated hidden tasks from prioritization (\(hidden.count) hidden)")
+        if hidden != hiddenTaskIds {
+            hiddenTaskIds = hidden
+            log("TasksStore: Updated hidden tasks from prioritization (\(hidden.count) hidden)")
+        }
+        isPrioritizing = false
     }
 
     /// Refresh tasks if already loaded (for auto-refresh)
