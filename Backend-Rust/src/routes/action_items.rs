@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::AuthUser;
-use crate::models::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, CreateActionItemRequest, UpdateActionItemRequest};
+use crate::models::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, BatchUpdateScoresRequest, CreateActionItemRequest, UpdateActionItemRequest};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -76,6 +76,7 @@ async fn create_action_item(
             request.priority.as_deref(),
             request.metadata.as_deref(),
             request.category.as_deref(),
+            request.relevance_score,
         )
         .await
     {
@@ -179,6 +180,7 @@ async fn update_action_item(
             request.priority.as_deref(),
             request.category.as_deref(),
             request.goal_id.as_deref(),
+            request.relevance_score,
         )
         .await
     {
@@ -215,6 +217,7 @@ async fn batch_create_action_items(
                 item_request.priority.as_deref(),
                 item_request.metadata.as_deref(),
                 item_request.category.as_deref(),
+                item_request.relevance_score,
             )
             .await
         {
@@ -285,10 +288,40 @@ async fn soft_delete_action_item(
     }
 }
 
+/// PATCH /v1/action-items/batch-scores - Batch update relevance scores
+async fn batch_update_scores(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<BatchUpdateScoresRequest>,
+) -> Result<Json<ActionItemStatusResponse>, StatusCode> {
+    tracing::info!(
+        "Batch updating {} relevance scores for user {}",
+        request.scores.len(),
+        user.uid
+    );
+
+    let scores: Vec<(String, i32)> = request
+        .scores
+        .into_iter()
+        .map(|s| (s.id, s.relevance_score))
+        .collect();
+
+    match state.firestore.batch_update_scores(&user.uid, &scores).await {
+        Ok(()) => Ok(Json(ActionItemStatusResponse {
+            status: "ok".to_string(),
+        })),
+        Err(e) => {
+            tracing::error!("Failed to batch update scores: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
 pub fn action_items_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/action-items", get(get_action_items).post(create_action_item))
         .route("/v1/action-items/batch", axum::routing::post(batch_create_action_items))
+        .route("/v1/action-items/batch-scores", axum::routing::patch(batch_update_scores))
         .route(
             "/v1/action-items/:id",
             get(get_action_item_by_id).patch(update_action_item).delete(delete_action_item),
