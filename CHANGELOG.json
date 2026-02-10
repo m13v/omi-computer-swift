@@ -1,6 +1,24 @@
 {
   "releases": [
     {
+      "version": "0.5.0",
+      "date": "2026-02-10",
+      "changes": [
+        "Task prioritization: AI ranks tasks by relevance to your profile and goals",
+        "Context-aware task extraction: detects app and window switches for smarter triggers",
+        "AI User Profile: auto-generated profile powers personalized task scoring",
+        "Window title tracking across memories, focus sessions, and tasks",
+        "Settings sync: assistant settings now sync bidirectionally with the backend",
+        "Browser keyword filtering for task extraction in browser windows",
+        "New app icon and updated Omi branding",
+        "Improved notification sounds for focus sessions",
+        "Dashboard widgets now fill available space properly",
+        "Task extraction uses tool-calling loop with search for better accuracy",
+        "Faster startup by skipping database integrity check after clean shutdown",
+        "Fixed duplicate OCR insert errors"
+      ]
+    },
+    {
       "version": "0.4.1",
       "date": "2026-02-08",
       "changes": [
