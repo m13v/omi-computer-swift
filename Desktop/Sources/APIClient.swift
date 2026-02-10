@@ -1978,6 +1978,16 @@ struct TaskActionItem: Codable, Identifiable {
         return json["source_app"] as? String
     }
 
+    /// Parse metadata JSON to extract window title
+    var windowTitle: String? {
+        guard let metadata = metadata,
+              let data = metadata.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json["window_title"] as? String
+    }
+
     /// Parse metadata JSON to extract confidence score
     var confidence: Double? {
         guard let metadata = metadata,
@@ -1999,6 +2009,14 @@ struct TaskActionItem: Codable, Identifiable {
         case "manual": return "Manual"
         default: return "Task"
         }
+    }
+
+    /// Display label: app name for screenshot tasks, generic label otherwise
+    var sourceAppLabel: String {
+        if source == "screenshot", let app = sourceApp {
+            return app
+        }
+        return sourceLabel
     }
 
     /// System icon name for source
