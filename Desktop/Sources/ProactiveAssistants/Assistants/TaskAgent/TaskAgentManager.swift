@@ -103,6 +103,7 @@ class TaskAgentManager: ObservableObject {
         await MainActor.run {
             activeSessions[task.id] = session
         }
+        persistSession(session)
 
         // Launch tmux session with Claude
         do {
@@ -111,6 +112,7 @@ class TaskAgentManager: ObservableObject {
             await MainActor.run {
                 activeSessions[task.id]?.status = .processing
             }
+            if let s = activeSessions[task.id] { persistSession(s) }
 
             // Start polling for completion
             startPolling(taskId: task.id, sessionName: sessionName)
@@ -119,6 +121,7 @@ class TaskAgentManager: ObservableObject {
             await MainActor.run {
                 activeSessions[task.id]?.status = .failed
             }
+            if let s = activeSessions[task.id] { persistSession(s) }
             throw error
         }
     }
@@ -155,13 +158,16 @@ class TaskAgentManager: ObservableObject {
             activeSessions[taskId]?.output = nil
             activeSessions[taskId]?.plan = nil
             activeSessions[taskId]?.completedAt = nil
+            activeSessions[taskId]?.editedFiles = []
         }
+        if let s = activeSessions[taskId] { persistSession(s) }
 
         try await launchTmuxSession(sessionName: sessionName, prompt: newPrompt, workingDir: context.workingDirectory)
 
         await MainActor.run {
             activeSessions[taskId]?.status = .processing
         }
+        if let s = activeSessions[taskId] { persistSession(s) }
 
         startPolling(taskId: taskId, sessionName: sessionName)
     }
@@ -181,6 +187,11 @@ class TaskAgentManager: ObservableObject {
 
         // Remove from active sessions
         activeSessions.removeValue(forKey: taskId)
+
+        // Clear persisted agent state
+        Task {
+            try? await ActionItemStorage.shared.clearAgentState(taskId: taskId)
+        }
     }
 
     /// Remove completed session (cleanup)
@@ -188,6 +199,11 @@ class TaskAgentManager: ObservableObject {
         pollingTasks[taskId]?.cancel()
         pollingTasks[taskId] = nil
         activeSessions.removeValue(forKey: taskId)
+
+        // Clear persisted agent state
+        Task {
+            try? await ActionItemStorage.shared.clearAgentState(taskId: taskId)
+        }
     }
 
     // MARK: - Private Implementation
@@ -305,6 +321,10 @@ class TaskAgentManager: ObservableObject {
         pollingTasks[taskId]?.cancel()
 
         let task = Task { [weak self] in
+            // Track last persisted state to avoid redundant writes
+            var lastPersistedStatus: AgentStatus?
+            var lastPersistedFileCount = 0
+
             while !Task.isCancelled {
                 guard let self = self else { break }
                 let currentStatus = self.activeSessions[taskId]?.status
@@ -331,6 +351,7 @@ class TaskAgentManager: ObservableObject {
                         self.activeSessions[taskId]?.plan = self.extractPlan(from: output)
                         self.activeSessions[taskId]?.completedAt = Date()
                     }
+                    if let s = self.activeSessions[taskId] { self.persistSession(s) }
                     logMessage("TaskAgentManager: Session completed for task \(taskId) (\(editedFiles.count) files edited)")
                     break
                 }
@@ -341,6 +362,15 @@ class TaskAgentManager: ObservableObject {
                         if self.activeSessions[taskId]?.status == .processing {
                             self.activeSessions[taskId]?.status = .editing
                         }
+                    }
+                }
+
+                // Throttled persistence: only persist when status or file count changes
+                if let session = self.activeSessions[taskId] {
+                    if session.status != lastPersistedStatus || editedFiles.count != lastPersistedFileCount {
+                        self.persistSession(session)
+                        lastPersistedStatus = session.status
+                        lastPersistedFileCount = editedFiles.count
                     }
                 }
 
@@ -358,6 +388,7 @@ class TaskAgentManager: ObservableObject {
                             }
                         }
                     }
+                    if let s = self.activeSessions[taskId] { self.persistSession(s) }
                     logMessage("TaskAgentManager: Session ended for task \(taskId) (\(editedFiles.count) files edited)")
                     break
                 }
@@ -503,6 +534,105 @@ class TaskAgentManager: ObservableObject {
 
     private func logMessage(_ message: String) {
         log(message)
+    }
+
+    // MARK: - Persistence
+
+    /// Persist current session state to SQLite (fire-and-forget)
+    private func persistSession(_ session: AgentSession) {
+        let editedFilesJson: String?
+        if !session.editedFiles.isEmpty,
+           let data = try? JSONEncoder().encode(session.editedFiles),
+           let json = String(data: data, encoding: .utf8) {
+            editedFilesJson = json
+        } else {
+            editedFilesJson = nil
+        }
+
+        let taskId = session.taskId
+        let status = session.status.rawValue
+        let sessionName = session.sessionName
+        let prompt = session.prompt
+        let plan = session.plan
+        let startedAt = session.startedAt
+        let completedAt = session.completedAt
+
+        Task {
+            do {
+                try await ActionItemStorage.shared.updateAgentState(
+                    taskId: taskId,
+                    status: status,
+                    sessionName: sessionName,
+                    prompt: prompt,
+                    plan: plan,
+                    startedAt: startedAt,
+                    completedAt: completedAt,
+                    editedFilesJson: editedFilesJson
+                )
+            } catch {
+                log("TaskAgentManager: Failed to persist session for \(taskId): \(error)")
+            }
+        }
+    }
+
+    /// Restore agent sessions from database on app launch
+    func restoreSessionsFromDatabase() async {
+        logMessage("TaskAgentManager: Restoring agent sessions from database...")
+
+        do {
+            let records = try await ActionItemStorage.shared.getActiveAgentSessions()
+
+            guard !records.isEmpty else {
+                logMessage("TaskAgentManager: No active agent sessions to restore")
+                return
+            }
+
+            logMessage("TaskAgentManager: Found \(records.count) active agent session(s) to restore")
+
+            for record in records {
+                guard let sessionName = record.agentSessionName,
+                      let statusStr = record.agentStatus,
+                      let status = AgentStatus(rawValue: statusStr) else {
+                    continue
+                }
+
+                let taskId = record.backendId ?? "local_\(record.id ?? 0)"
+
+                let session = AgentSession(
+                    taskId: taskId,
+                    sessionName: sessionName,
+                    prompt: record.agentPrompt ?? "",
+                    startedAt: record.agentStartedAt ?? record.createdAt,
+                    status: status,
+                    output: nil,
+                    plan: record.agentPlan,
+                    completedAt: record.agentCompletedAt,
+                    editedFiles: record.agentEditedFiles
+                )
+
+                if isSessionAlive(sessionName: sessionName) {
+                    await MainActor.run {
+                        activeSessions[taskId] = session
+                    }
+                    startPolling(taskId: taskId, sessionName: sessionName)
+                    logMessage("TaskAgentManager: Restored live session for task \(taskId)")
+                } else {
+                    // Session is dead — mark final state
+                    let finalStatus: AgentStatus = session.editedFiles.isEmpty ? .failed : .completed
+                    var finalSession = session
+                    finalSession.status = finalStatus
+                    finalSession.completedAt = finalSession.completedAt ?? Date()
+
+                    await MainActor.run {
+                        activeSessions[taskId] = finalSession
+                    }
+                    persistSession(finalSession)
+                    logMessage("TaskAgentManager: Session dead for task \(taskId), marked as \(finalStatus.rawValue)")
+                }
+            }
+        } catch {
+            logMessage("TaskAgentManager: Failed to restore sessions - \(error)")
+        }
     }
 
     // MARK: - Errors
