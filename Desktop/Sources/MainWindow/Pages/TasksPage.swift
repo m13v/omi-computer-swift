@@ -3196,7 +3196,7 @@ struct TaskCreateSheet: View {
         } label: {
             Text(label)
                 .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
-                .foregroundColor(isSelected ? .white : color)
+                .foregroundColor(isSelected ? OmiColors.backgroundPrimary : color)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
                 .background(
