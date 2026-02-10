@@ -139,6 +139,7 @@ actor AdviceAssistant: ProactiveAssistant {
     private func handleResultWithScreenshot(
         _ adviceResult: AdviceExtractionResult,
         screenshotId: Int64?,
+        windowTitle: String? = nil,
         sendEvent: @escaping (String, [String: Any]) -> Void
     ) async {
         // Check if AI has new advice (should almost always be true now - only false for duplicates)
@@ -170,11 +171,12 @@ actor AdviceAssistant: ProactiveAssistant {
             advice: advice,
             screenshotId: screenshotId,
             contextSummary: adviceResult.contextSummary,
-            currentActivity: adviceResult.currentActivity
+            currentActivity: adviceResult.currentActivity,
+            windowTitle: windowTitle
         )
 
         // Sync to backend and update local record with backendId
-        if let backendId = await syncAdviceToBackend(advice: advice, adviceResult: adviceResult) {
+        if let backendId = await syncAdviceToBackend(advice: advice, adviceResult: adviceResult, windowTitle: windowTitle) {
             if let recordId = extractionRecord?.id {
                 do {
                     try await MemoryStorage.shared.markSynced(id: recordId, backendId: backendId)
@@ -210,7 +212,8 @@ actor AdviceAssistant: ProactiveAssistant {
         advice: ExtractedAdvice,
         screenshotId: Int64?,
         contextSummary: String,
-        currentActivity: String
+        currentActivity: String,
+        windowTitle: String? = nil
     ) async -> MemoryRecord? {
         // Build tags: ["tips", "<category>"]
         let categoryTag = advice.category.rawValue.lowercased()
@@ -235,6 +238,7 @@ actor AdviceAssistant: ProactiveAssistant {
             confidence: advice.confidence,
             reasoning: advice.reasoning,
             sourceApp: advice.sourceApp,
+            windowTitle: windowTitle,
             contextSummary: contextSummary,
             currentActivity: currentActivity
         )
@@ -250,7 +254,7 @@ actor AdviceAssistant: ProactiveAssistant {
     }
 
     /// Sync advice to backend API, returns backend ID if successful
-    private func syncAdviceToBackend(advice: ExtractedAdvice, adviceResult: AdviceExtractionResult) async -> String? {
+    private func syncAdviceToBackend(advice: ExtractedAdvice, adviceResult: AdviceExtractionResult, windowTitle: String? = nil) async -> String? {
         do {
             // Build tags: ["tips", "<category>"]
             let categoryTag = advice.category.rawValue.lowercased()
@@ -266,7 +270,8 @@ actor AdviceAssistant: ProactiveAssistant {
                 tags: tags,
                 reasoning: advice.reasoning,
                 currentActivity: adviceResult.currentActivity,
-                source: "screenshot"
+                source: "screenshot",
+                windowTitle: windowTitle
             )
 
             log("Advice: Synced to backend (id: \(response.id))")
@@ -324,7 +329,7 @@ actor AdviceAssistant: ProactiveAssistant {
             }
 
             // Handle the result with screenshot ID for SQLite storage
-            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId) { type, data in
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId, windowTitle: frame.windowTitle) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }
