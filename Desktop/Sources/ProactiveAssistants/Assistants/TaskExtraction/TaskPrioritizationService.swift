@@ -1,8 +1,9 @@
 import Foundation
 
-/// Service that scores AI-generated tasks by relevance to the user's profile,
-/// goals, and task engagement history. Uses overlapping batches with Gemini 3 Pro
-/// where each batch includes previously-scored anchor tasks for calibration.
+/// Service that ranks AI-generated tasks by relevance to the user's profile,
+/// goals, and task engagement history. Uses listwise ranking with Gemini 3 Pro
+/// in overlapping batches — the model returns tasks in ranked order (not scores),
+/// and overlap tasks stitch batches into a coherent global ranking.
 /// Scores are persisted to SQLite. Manual tasks are always shown.
 /// From AI tasks, only the top 5 by score are visible.
 actor TaskPrioritizationService {
@@ -77,7 +78,6 @@ actor TaskPrioritizationService {
 
     /// Force a full re-scoring (e.g. from settings button). Clears all existing scores first.
     func forceFullRescore() async {
-        // Clear existing scores so all tasks get re-scored
         do {
             try await ActionItemStorage.shared.clearAllRelevanceScores()
         } catch {
@@ -114,7 +114,7 @@ actor TaskPrioritizationService {
         log("TaskPrioritize: Starting prioritization run")
         await notifyStoreStarted()
 
-        // 1. Load already-scored AI tasks from SQLite (these are our anchors)
+        // 1. Load already-scored and unscored AI tasks from SQLite
         let scoredTasks: [TaskActionItem]
         let unscoredTasks: [TaskActionItem]
         do {
@@ -145,34 +145,30 @@ actor TaskPrioritizationService {
             goals = []
         }
 
-        // 3. Build reference context (completed/deleted tasks the user engaged with)
+        // 3. Build reference context (completed tasks the user engaged with)
         let referenceTasks: [TaskActionItem]
         do {
-            let completedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+            referenceTasks = try await ActionItemStorage.shared.getLocalActionItems(
                 limit: 100,
                 completed: true
             )
-            referenceTasks = completedTasks
         } catch {
             log("TaskPrioritize: Failed to fetch reference tasks: \(error)")
             referenceTasks = []
         }
         let referenceContext = buildReferenceContext(referenceTasks)
 
-        // 4. Build anchor context from already-scored tasks (top + bottom for range calibration)
-        let anchorContext = buildAnchorContext(scoredTasks)
-
-        // 5. Score unscored tasks in overlapping batches, with anchors for calibration
-        await scoreInBatches(
+        // 4. Rank unscored tasks in overlapping batches with overlap stitching
+        await rankInBatches(
             unscoredTasks: unscoredTasks,
-            anchorContext: anchorContext,
+            scoredTasks: scoredTasks,
             referenceContext: referenceContext,
             profile: userProfile?.profileText,
             goals: goals,
             client: client
         )
 
-        // 6. Reload allowlist from SQLite (now includes newly scored tasks)
+        // 5. Reload allowlist from SQLite
         await loadAllowlistFromSQLite()
 
         let totalAI = scoredTasks.count + unscoredTasks.count
@@ -182,7 +178,6 @@ actor TaskPrioritizationService {
 
     // MARK: - Allowlist from SQLite
 
-    /// Load the top N scored AI tasks from SQLite and set them as the visible allowlist
     private func loadAllowlistFromSQLite() async {
         do {
             let topTasks = try await ActionItemStorage.shared.getScoredAITasks(
@@ -196,19 +191,20 @@ actor TaskPrioritizationService {
         }
     }
 
-    // MARK: - Batch Scoring
+    // MARK: - Listwise Ranking in Batches
 
-    /// Score unscored tasks in overlapping batches. Each batch includes anchor tasks
-    /// (previously-scored) so the model can calibrate scores across the full range.
-    private func scoreInBatches(
+    /// Rank unscored tasks in overlapping batches. Each batch asks the model to return
+    /// task IDs in ranked order (most → least relevant). Overlap tasks between batches
+    /// are used to stitch rankings into a coherent global score.
+    private func rankInBatches(
         unscoredTasks: [TaskActionItem],
-        anchorContext: String,
+        scoredTasks: [TaskActionItem],
         referenceContext: String,
         profile: String?,
         goals: [Goal],
         client: GeminiClient
     ) async {
-        // Build overlapping batches
+        // Build overlapping batches of unscored tasks
         var batches: [[TaskActionItem]] = []
         var startIndex = 0
 
@@ -220,51 +216,195 @@ actor TaskPrioritizationService {
             if endIndex == unscoredTasks.count { break }
         }
 
-        log("TaskPrioritize: Scoring \(unscoredTasks.count) unscored tasks in \(batches.count) batches")
+        log("TaskPrioritize: Ranking \(unscoredTasks.count) unscored tasks in \(batches.count) batches")
+
+        // Track scores assigned so far (for overlap stitching)
+        var globalScores: [String: Int] = [:]
+
+        // Seed with existing scored tasks
+        for task in scoredTasks {
+            if let score = task.relevanceScore {
+                globalScores[task.id] = score
+            }
+        }
 
         for (i, batch) in batches.enumerated() {
-            log("TaskPrioritize: Scoring batch \(i + 1)/\(batches.count) (\(batch.count) tasks)")
+            log("TaskPrioritize: Ranking batch \(i + 1)/\(batches.count) (\(batch.count) tasks)")
 
-            let batchScores = await scoreBatchWithGemini(
+            // Find overlap tasks in this batch that already have global scores
+            let overlapTasks = batch.filter { globalScores[$0.id] != nil }
+
+            let rankedIds = await rankBatchWithGemini(
                 batch: batch,
-                anchorContext: anchorContext,
                 referenceContext: referenceContext,
                 profile: profile,
                 goals: goals,
                 client: client
             )
 
-            guard let scores = batchScores else {
+            guard let rankedIds = rankedIds, !rankedIds.isEmpty else {
                 log("TaskPrioritize: Batch \(i + 1) failed, skipping")
                 continue
             }
 
-            // Persist scores to SQLite immediately after each batch
+            // Convert ranking to scores
+            let batchScores: [String: Int]
+
+            if overlapTasks.isEmpty {
+                // First batch or no overlap: assign linear scores from position
+                batchScores = assignLinearScores(rankedIds: rankedIds)
+                log("TaskPrioritize: Batch \(i + 1) — linear scoring (\(rankedIds.count) ranked)")
+            } else {
+                // Stitch using overlap tasks as calibration anchors
+                batchScores = stitchScores(
+                    rankedIds: rankedIds,
+                    globalScores: globalScores
+                )
+                log("TaskPrioritize: Batch \(i + 1) — stitched with \(overlapTasks.count) overlap anchors (\(rankedIds.count) ranked)")
+            }
+
+            // Update global scores
+            for (id, score) in batchScores {
+                globalScores[id] = score
+            }
+
+            // Persist to SQLite after each batch
             do {
-                try await ActionItemStorage.shared.updateRelevanceScores(scores)
-                log("TaskPrioritize: Batch \(i + 1) persisted \(scores.count) scores")
+                try await ActionItemStorage.shared.updateRelevanceScores(batchScores)
+                log("TaskPrioritize: Batch \(i + 1) persisted \(batchScores.count) scores")
             } catch {
                 log("TaskPrioritize: Failed to persist batch \(i + 1) scores: \(error)")
             }
 
-            // Update UI progressively after each batch
+            // Update UI progressively
             await loadAllowlistFromSQLite()
             await notifyStoreUpdated()
         }
     }
 
-    // MARK: - Single Batch Scoring
+    // MARK: - Score Assignment
 
-    private func scoreBatchWithGemini(
+    /// Assign linear scores based on position in the ranked list.
+    /// Position 0 (most relevant) → 100, last position → 0.
+    private func assignLinearScores(rankedIds: [String]) -> [String: Int] {
+        guard rankedIds.count > 1 else {
+            if let id = rankedIds.first { return [id: 50] }
+            return [:]
+        }
+
+        var scores: [String: Int] = [:]
+        let count = Double(rankedIds.count - 1)
+
+        for (position, id) in rankedIds.enumerated() {
+            let score = Int(round(100.0 * (1.0 - Double(position) / count)))
+            scores[id] = score
+        }
+
+        return scores
+    }
+
+    /// Stitch batch ranking into global scores using overlap tasks as anchors.
+    /// Overlap tasks have known global scores — their positions in this batch's ranking
+    /// define a mapping from local position → global score via linear interpolation.
+    private func stitchScores(
+        rankedIds: [String],
+        globalScores: [String: Int]
+    ) -> [String: Int] {
+        // Find anchor points: (position in rankedIds, known global score)
+        var anchors: [(position: Int, score: Int)] = []
+        for (position, id) in rankedIds.enumerated() {
+            if let knownScore = globalScores[id] {
+                anchors.append((position: position, score: knownScore))
+            }
+        }
+
+        // If no anchors found, fall back to linear
+        guard !anchors.isEmpty else {
+            return assignLinearScores(rankedIds: rankedIds)
+        }
+
+        // Sort anchors by position
+        anchors.sort { $0.position < $1.position }
+
+        // For each task, interpolate between the nearest anchors
+        var scores: [String: Int] = [:]
+        let lastPosition = rankedIds.count - 1
+
+        for (position, id) in rankedIds.enumerated() {
+            // If this task already has a known score, use interpolated score
+            // to keep the stitching consistent
+            let score: Int
+
+            if position <= anchors.first!.position {
+                // Before first anchor: extrapolate upward
+                if anchors.count >= 2 {
+                    let a = anchors[0], b = anchors[1]
+                    let slope = Double(a.score - b.score) / Double(b.position - a.position)
+                    score = min(100, Int(round(Double(a.score) + slope * Double(a.position - position))))
+                } else {
+                    // Single anchor — scale linearly from 100 at position 0
+                    let anchor = anchors[0]
+                    if anchor.position == 0 {
+                        score = anchor.score
+                    } else {
+                        let fraction = Double(position) / Double(anchor.position)
+                        score = min(100, Int(round(Double(anchor.score) + (100.0 - Double(anchor.score)) * (1.0 - fraction))))
+                    }
+                }
+            } else if position >= anchors.last!.position {
+                // After last anchor: extrapolate downward
+                if anchors.count >= 2 {
+                    let a = anchors[anchors.count - 2], b = anchors[anchors.count - 1]
+                    let slope = Double(a.score - b.score) / Double(b.position - a.position)
+                    score = max(0, Int(round(Double(b.score) - slope * Double(position - b.position))))
+                } else {
+                    // Single anchor — scale linearly to 0 at last position
+                    let anchor = anchors[0]
+                    if position == lastPosition && anchor.position == lastPosition {
+                        score = anchor.score
+                    } else {
+                        let remaining = lastPosition - anchor.position
+                        let fraction = remaining > 0 ? Double(position - anchor.position) / Double(remaining) : 0
+                        score = max(0, Int(round(Double(anchor.score) * (1.0 - fraction))))
+                    }
+                }
+            } else {
+                // Between two anchors: linear interpolation
+                var lower = anchors[0]
+                var upper = anchors[anchors.count - 1]
+
+                for j in 0..<(anchors.count - 1) {
+                    if anchors[j].position <= position && anchors[j + 1].position >= position {
+                        lower = anchors[j]
+                        upper = anchors[j + 1]
+                        break
+                    }
+                }
+
+                let range = upper.position - lower.position
+                let fraction = range > 0 ? Double(position - lower.position) / Double(range) : 0
+                score = Int(round(Double(lower.score) + fraction * Double(upper.score - lower.score)))
+            }
+
+            scores[id] = max(0, min(100, score))
+        }
+
+        return scores
+    }
+
+    // MARK: - Single Batch Ranking via Gemini
+
+    /// Ask Gemini to rank tasks by relevance. Returns an ordered array of task IDs
+    /// from most relevant to least relevant.
+    private func rankBatchWithGemini(
         batch: [TaskActionItem],
-        anchorContext: String,
         referenceContext: String,
         profile: String?,
         goals: [Goal],
         client: GeminiClient
-    ) async -> [String: Int]? {
+    ) async -> [String]? {
 
-        // Build task descriptions for this batch
+        // Build task descriptions
         let taskDescriptions = batch.map { task -> String in
             var parts = ["ID: \(task.id)", "Description: \(task.description)"]
             if let due = task.dueAt {
@@ -303,60 +443,44 @@ actor TaskPrioritizationService {
             contextParts.append(referenceContext)
         }
 
-        if !anchorContext.isEmpty {
-            contextParts.append(anchorContext)
-        }
-
         let contextSection = contextParts.isEmpty ? "" : contextParts.joined(separator: "\n\n") + "\n\n"
 
         let prompt = """
-        Score each task by relevance to this user. Consider:
+        Rank these tasks from MOST relevant to LEAST relevant for this user.
+
+        Consider:
         1. Alignment with the user's goals and current priorities
         2. Time urgency (due date proximity)
         3. Whether the task is actionable and specific vs. vague
         4. Real-world importance (financial, health, commitments to others)
-        5. Similarity to tasks the user has completed or engaged with (see reference)
+        5. Similarity to tasks the user has completed (see reference)
 
-        Use the ANCHOR TASKS (already scored) to calibrate your scoring — place new tasks \
-        relative to those anchors on the same 0-100 scale.
+        Most AI-extracted tasks are noise — rank clearly actionable, goal-aligned tasks \
+        at the top, and vague or irrelevant tasks at the bottom.
 
-        \(contextSection)TASKS TO SCORE:
+        \(contextSection)TASKS TO RANK:
         \(taskDescriptions)
 
-        For each task, assign a relevance score from 0 to 100:
-        - 90-100: Critical — directly tied to active goals, due soon, clearly actionable
-        - 70-89: Important — relevant to user's work/life, actionable
-        - 40-69: Moderate — somewhat relevant but not urgent
-        - 0-39: Low — vague, not aligned with goals, or likely noise
-
-        Be aggressive about scoring lower if tasks seem like noise or are not clearly actionable.
+        Return ALL task IDs in order from most relevant (first) to least relevant (last). \
+        Every task ID must appear exactly once.
         """
 
         let systemPrompt = """
-        You are a task prioritization assistant. You score tasks by relevance to the user's \
-        profile, goals, and priorities. Be decisive — most AI-extracted tasks are noise and \
-        should score below 50. Only tasks that are clearly important to this specific user \
-        should score above 70. Use the anchor tasks to maintain consistent scoring across batches.
+        You are a task prioritization assistant. You rank tasks by relevance to the user. \
+        Be decisive — put clearly important tasks first and noise last. Every task must \
+        appear in your ranking exactly once. Return only the ordered list of task IDs.
         """
 
         let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
             type: "object",
             properties: [
-                "scores": .init(
+                "ranked_task_ids": .init(
                     type: "array",
-                    description: "Relevance score for each task",
-                    items: .init(
-                        type: "object",
-                        properties: [
-                            "task_id": .init(type: "string", description: "The task ID"),
-                            "score": .init(type: "integer", description: "Relevance score 0-100"),
-                            "reason": .init(type: "string", description: "Brief reason for the score")
-                        ],
-                        required: ["task_id", "score", "reason"]
-                    )
+                    description: "Task IDs ordered from most relevant to least relevant",
+                    items: .init(type: "string")
                 )
             ],
-            required: ["scores"]
+            required: ["ranked_task_ids"]
         )
 
         let responseText: String
@@ -376,74 +500,31 @@ actor TaskPrioritizationService {
             return nil
         }
 
-        let result: PrioritizationResponse
+        let result: RankingResponse
         do {
-            result = try JSONDecoder().decode(PrioritizationResponse.self, from: data)
+            result = try JSONDecoder().decode(RankingResponse.self, from: data)
         } catch {
-            log("TaskPrioritize: Failed to parse response: \(error)")
+            log("TaskPrioritize: Failed to parse ranking response: \(error)")
             return nil
         }
 
-        // Build scores map, validate IDs
+        // Validate: only keep IDs that are in this batch
         let validIds = Set(batch.map { $0.id })
-        var scoresMap: [String: Int] = [:]
+        let validRanked = result.rankedTaskIds.filter { validIds.contains($0) }
 
-        for score in result.scores {
-            guard validIds.contains(score.taskId) else { continue }
-            scoresMap[score.taskId] = max(0, min(100, score.score))
+        // Add any missing IDs at the end (in case model missed some)
+        let returnedIds = Set(validRanked)
+        let missing = batch.map { $0.id }.filter { !returnedIds.contains($0) }
+        if !missing.isEmpty {
+            log("TaskPrioritize: \(missing.count) tasks missing from ranking, appending at end")
         }
 
-        return scoresMap
+        return validRanked + missing
     }
 
     // MARK: - Context Builders
 
-    /// Build anchor context from already-scored tasks for calibration.
-    /// Includes a sample of high, medium, and low scored tasks so the model
-    /// understands the full range.
-    private func buildAnchorContext(_ scoredTasks: [TaskActionItem]) -> String {
-        guard !scoredTasks.isEmpty else { return "" }
-
-        // scoredTasks are already sorted by score descending (from getScoredAITasks)
-        // Pick anchors from top, middle, and bottom of the range
-        var anchors: [(TaskActionItem, Int)] = []
-
-        // Top 5
-        for task in scoredTasks.prefix(5) {
-            if let score = task.relevanceScore {
-                anchors.append((task, score))
-            }
-        }
-
-        // Middle 5
-        if scoredTasks.count > 15 {
-            let midStart = scoredTasks.count / 2 - 2
-            for task in scoredTasks[midStart..<min(midStart + 5, scoredTasks.count)] {
-                if let score = task.relevanceScore {
-                    anchors.append((task, score))
-                }
-            }
-        }
-
-        // Bottom 5
-        if scoredTasks.count > 10 {
-            for task in scoredTasks.suffix(5) {
-                if let score = task.relevanceScore {
-                    anchors.append((task, score))
-                }
-            }
-        }
-
-        guard !anchors.isEmpty else { return "" }
-
-        let lines = anchors.map { (task, score) in
-            "- [Score: \(score)] \(task.description)"
-        }.joined(separator: "\n")
-
-        return "ANCHOR TASKS (already scored — use these to calibrate your scoring scale):\n\(lines)"
-    }
-
-    /// Build a context string from completed/deleted tasks showing what the user engages with
+    /// Build a context string from completed tasks showing what the user engages with
     private func buildReferenceContext(_ tasks: [TaskActionItem]) -> String {
         guard !tasks.isEmpty else { return "" }
 
@@ -451,23 +532,20 @@ actor TaskPrioritizationService {
         guard !completed.isEmpty else { return "" }
 
         let lines = completed.map { task -> String in
-            let status = task.completed ? "completed" : "deleted"
-            return "- [\(status)] \(task.description)"
+            "- [completed] \(task.description)"
         }.joined(separator: "\n")
 
-        return "TASKS THE USER HAS ENGAGED WITH (for reference — do NOT score these):\n\(lines)"
+        return "TASKS THE USER HAS COMPLETED (for reference — do NOT rank these):\n\(lines)"
     }
 
     // MARK: - Notifications
 
-    /// Notify TasksStore that prioritization has started
     private func notifyStoreStarted() async {
         await MainActor.run {
             NotificationCenter.default.post(name: .taskPrioritizationDidStart, object: nil)
         }
     }
 
-    /// Notify TasksStore that prioritization scores have been updated (or finished)
     private func notifyStoreUpdated() async {
         await MainActor.run {
             NotificationCenter.default.post(name: .taskPrioritizationDidUpdate, object: nil)
@@ -484,18 +562,10 @@ extension Notification.Name {
 
 // MARK: - Response Models
 
-private struct PrioritizationResponse: Codable {
-    let scores: [TaskScore]
+private struct RankingResponse: Codable {
+    let rankedTaskIds: [String]
 
-    struct TaskScore: Codable {
-        let taskId: String
-        let score: Int
-        let reason: String
-
-        enum CodingKeys: String, CodingKey {
-            case taskId = "task_id"
-            case score
-            case reason
-        }
+    enum CodingKeys: String, CodingKey {
+        case rankedTaskIds = "ranked_task_ids"
     }
 }
