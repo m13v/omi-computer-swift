@@ -3205,12 +3205,19 @@ impl FirestoreService {
         let data_protection_level = self.parse_string(fields, "data_protection_level");
         if data_protection_level.as_deref() == Some("enhanced") {
             if let Some(ref secret) = self.encryption_secret {
-                content = encryption::decrypt(&content, uid, secret);
+                match encryption::decrypt(&content, uid, secret) {
+                    Ok(decrypted) => content = decrypted,
+                    Err(e) => {
+                        tracing::warn!("Failed to decrypt memory {}: {}", id, e);
+                        content = "[Encrypted content — decryption failed]".to_string();
+                    }
+                }
             } else {
-                tracing::debug!(
+                tracing::warn!(
                     "Memory {} has enhanced protection but no encryption secret configured",
                     id
                 );
+                content = "[Encrypted content — decryption failed]".to_string();
             }
         }
 
@@ -3355,7 +3362,16 @@ impl FirestoreService {
             let data_protection_level = self.parse_string(map_fields, "data_protection_level");
             if data_protection_level.as_deref() == Some("enhanced") {
                 if let Some(ref secret) = self.encryption_secret {
-                    base64 = encryption::decrypt(&base64, uid, secret);
+                    match encryption::decrypt(&base64, uid, secret) {
+                        Ok(decrypted) => base64 = decrypted,
+                        Err(e) => {
+                            tracing::warn!("Failed to decrypt photo {:?}: {} — skipping", id, e);
+                            return None;
+                        }
+                    }
+                } else {
+                    tracing::warn!("Photo {:?} has enhanced protection but no encryption secret — skipping", id);
+                    return None;
                 }
             }
 
@@ -3386,7 +3402,13 @@ impl FirestoreService {
             if data_protection_level.as_deref() == Some("enhanced") {
                 if let Some(ref secret) = self.encryption_secret {
                     // Decrypt the encrypted string
-                    let decrypted_payload = encryption::decrypt(string_val, uid, secret);
+                    let decrypted_payload = match encryption::decrypt(string_val, uid, secret) {
+                        Ok(decrypted) => decrypted,
+                        Err(e) => {
+                            tracing::warn!("Failed to decrypt transcript segments: {}", e);
+                            return Ok(vec![]);
+                        }
+                    };
 
                     // Check if compression is used (should always be true for enhanced)
                     let is_compressed = self.parse_bool(fields, "transcript_segments_compressed").unwrap_or(false);
@@ -5936,12 +5958,19 @@ impl FirestoreService {
         let data_protection_level = self.parse_string(fields, "data_protection_level");
         if data_protection_level.as_deref() == Some("enhanced") {
             if let Some(ref secret) = self.encryption_secret {
-                text = encryption::decrypt(&text, uid, secret);
+                match encryption::decrypt(&text, uid, secret) {
+                    Ok(decrypted) => text = decrypted,
+                    Err(e) => {
+                        tracing::warn!("Failed to decrypt message {}: {}", id, e);
+                        text = "[Encrypted message — decryption failed]".to_string();
+                    }
+                }
             } else {
-                tracing::debug!(
+                tracing::warn!(
                     "Message {} has enhanced protection but no encryption secret configured",
                     id
                 );
+                text = "[Encrypted message — decryption failed]".to_string();
             }
         }
 
