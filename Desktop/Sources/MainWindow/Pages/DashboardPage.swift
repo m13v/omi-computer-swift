@@ -223,21 +223,19 @@ struct DashboardPage: View {
                     .padding(.top, 24)
 
                 // 4 Widgets in 2x2 grid
-                VStack(spacing: 16) {
+                Grid(horizontalSpacing: 16, verticalSpacing: 16) {
                     // Top row: Score + Focus
-                    HStack(spacing: 16) {
+                    GridRow {
                         ScoreWidget(scoreResponse: viewModel.scoreResponse)
-                            .frame(maxWidth: .infinity)
 
                         FocusSummaryWidget(
                             todayStats: FocusStorage.shared.todayStats,
                             totalStats: FocusStorage.shared.allTimeStats
                         )
-                        .frame(maxWidth: .infinity)
                     }
 
                     // Bottom row: Tasks + Goals
-                    HStack(spacing: 16) {
+                    GridRow {
                         TasksWidget(
                             overdueTasks: viewModel.overdueTasks,
                             todaysTasks: viewModel.todaysTasks,
@@ -248,7 +246,6 @@ struct DashboardPage: View {
                                 }
                             }
                         )
-                        .frame(maxWidth: .infinity)
 
                         GoalsWidget(
                             goals: viewModel.goals,
@@ -273,7 +270,6 @@ struct DashboardPage: View {
                                 }
                             }
                         )
-                        .frame(maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, 24)
