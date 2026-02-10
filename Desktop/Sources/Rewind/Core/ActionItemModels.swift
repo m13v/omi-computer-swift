@@ -28,6 +28,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var screenshotId: Int64?
     var confidence: Double?
     var sourceApp: String?
+    var windowTitle: String?
     var contextSummary: String?
     var currentActivity: String?
     var metadataJson: String?           // Additional extraction metadata
@@ -58,6 +59,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         screenshotId: Int64? = nil,
         confidence: Double? = nil,
         sourceApp: String? = nil,
+        windowTitle: String? = nil,
         contextSummary: String? = nil,
         currentActivity: String? = nil,
         metadataJson: String? = nil,
@@ -81,6 +83,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.screenshotId = screenshotId
         self.confidence = confidence
         self.sourceApp = sourceApp
+        self.windowTitle = windowTitle
         self.contextSummary = contextSummary
         self.currentActivity = currentActivity
         self.metadataJson = metadataJson
@@ -219,7 +222,8 @@ extension ActionItemRecord {
             dueAt: item.dueAt,
             screenshotId: nil,
             confidence: nil,
-            sourceApp: nil,
+            sourceApp: item.sourceApp,
+            windowTitle: item.windowTitle,
             contextSummary: nil,
             currentActivity: nil,
             metadataJson: item.metadata,
@@ -278,12 +282,20 @@ extension ActionItemRecord {
         // Use backendId if available, otherwise use local ID prefixed with "local_"
         let taskId = backendId ?? "local_\(id ?? 0)"
 
-        // Ensure metadata contains tags from tagsJson for the TaskActionItem.tags computed property
+        // Ensure metadata contains tags and window_title for TaskActionItem computed properties
         var finalMetadata = metadataJson
         let recordTags = tags
-        if !recordTags.isEmpty {
+        let needsTagsUpdate = !recordTags.isEmpty
+        let needsWindowTitleUpdate = windowTitle != nil
+
+        if needsTagsUpdate || needsWindowTitleUpdate {
             var metaDict = metadata ?? [:]
-            metaDict["tags"] = recordTags
+            if needsTagsUpdate {
+                metaDict["tags"] = recordTags
+            }
+            if let wt = windowTitle {
+                metaDict["window_title"] = wt
+            }
             if let data = try? JSONSerialization.data(withJSONObject: metaDict),
                let json = String(data: data, encoding: .utf8) {
                 finalMetadata = json
