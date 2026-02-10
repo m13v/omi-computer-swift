@@ -75,6 +75,18 @@ actor TaskPrioritizationService {
         log("TaskPrioritize: Service stopped")
     }
 
+    /// Force a full re-scoring (e.g. from settings button). Clears all existing scores first.
+    func forceFullRescore() async {
+        // Clear existing scores so all tasks get re-scored
+        do {
+            try await ActionItemStorage.shared.clearAllRelevanceScores()
+        } catch {
+            log("TaskPrioritize: Failed to clear scores: \(error)")
+        }
+        lastRunTime = nil
+        await runPrioritization()
+    }
+
     /// Force a re-prioritization (e.g. when user opens Tasks tab)
     func runIfNeeded() async {
         // If we have persisted scores, load the allowlist immediately
@@ -234,6 +246,10 @@ actor TaskPrioritizationService {
             } catch {
                 log("TaskPrioritize: Failed to persist batch \(i + 1) scores: \(error)")
             }
+
+            // Update UI progressively after each batch
+            await loadAllowlistFromSQLite()
+            await notifyStoreUpdated()
         }
     }
 
