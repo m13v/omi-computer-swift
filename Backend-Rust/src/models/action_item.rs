@@ -55,6 +55,9 @@ pub struct ActionItemDB {
     /// ID of the goal this task is linked to
     #[serde(default)]
     pub goal_id: Option<String>,
+    /// Relevance score for prioritization (lower = more relevant)
+    #[serde(default)]
+    pub relevance_score: Option<i32>,
 }
 
 /// Request body for updating an action item
@@ -72,6 +75,8 @@ pub struct UpdateActionItemRequest {
     pub category: Option<String>,
     /// Link to a goal
     pub goal_id: Option<String>,
+    /// Relevance score for prioritization
+    pub relevance_score: Option<i32>,
 }
 
 /// Response for action item status operations
@@ -108,4 +113,19 @@ pub struct CreateActionItemRequest {
     pub metadata: Option<String>,
     /// Category: "work", "personal", "health", "finance", etc.
     pub category: Option<String>,
+    /// Relevance score for prioritization
+    pub relevance_score: Option<i32>,
+}
+
+/// Request body for batch updating relevance scores
+#[derive(Debug, Clone, Deserialize)]
+pub struct BatchUpdateScoresRequest {
+    pub scores: Vec<ScoreUpdate>,
+}
+
+/// Individual score update within a batch
+#[derive(Debug, Clone, Deserialize)]
+pub struct ScoreUpdate {
+    pub id: String,
+    pub relevance_score: i32,
 }
