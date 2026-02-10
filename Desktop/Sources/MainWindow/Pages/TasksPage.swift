@@ -1076,8 +1076,23 @@ class TasksViewModel: ObservableObject {
             filteredTasks = applyTagFilters(sourceTasks)
         }
 
+        // Apply 7-day age filter when sorting by due date (matches iOS behavior)
+        let ageFiltered: [TaskActionItem]
+        if sortOption == .dueDate {
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            ageFiltered = filteredTasks.filter { task in
+                if let dueAt = task.dueAt {
+                    return dueAt >= sevenDaysAgo
+                } else {
+                    return task.createdAt >= sevenDaysAgo
+                }
+            }
+        } else {
+            ageFiltered = filteredTasks
+        }
+
         // Sort
-        let sorted = sortTasks(filteredTasks)
+        let sorted = sortTasks(ageFiltered)
 
         // Apply display cap for filtered/search mode
         if isInFilteredMode {
@@ -1474,12 +1489,21 @@ struct TasksPage: View {
 
     // MARK: - Filter Dropdown
 
+    /// Whether any filters are visually active (including implicit age filter from Due Date sort)
+    private var hasEffectiveFilters: Bool {
+        viewModel.hasActiveFilters || viewModel.sortOption == .dueDate
+    }
+
     private var filterLabel: String {
-        let totalCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
+        let userCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
+        let implicitCount = viewModel.sortOption == .dueDate ? 1 : 0
+        let totalCount = userCount + implicitCount
         if totalCount == 0 {
             return "All"
         } else if totalCount == 1 {
-            if let tag = viewModel.selectedTags.first {
+            if implicitCount == 1 {
+                return "Last 7 days"
+            } else if let tag = viewModel.selectedTags.first {
                 return tag.displayName
             } else if let dynamicTag = viewModel.selectedDynamicTags.first {
                 return dynamicTag.displayName
@@ -1523,18 +1547,18 @@ struct TasksPage: View {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 12))
                 Text(filterLabel)
-                    .font(.system(size: 13, weight: viewModel.hasActiveFilters ? .medium : .regular))
+                    .font(.system(size: 13, weight: hasEffectiveFilters ? .medium : .regular))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10))
             }
-            .foregroundColor(viewModel.hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
+            .foregroundColor(hasEffectiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(viewModel.hasActiveFilters ? OmiColors.border : Color.clear, lineWidth: 1)
+                    .stroke(hasEffectiveFilters ? OmiColors.border : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1614,6 +1638,38 @@ struct TasksPage: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
+
+                    // Implicit age filter when sorting by Due Date
+                    if viewModel.sortOption == .dueDate {
+                        Divider()
+                            .padding(.vertical, 4)
+
+                        HStack {
+                            Image(systemName: "clock.arrow.circlepath")
+                                .font(.system(size: 12))
+                                .frame(width: 20)
+                            Text("Last 7 days")
+                                .font(.system(size: 13))
+                            Spacer()
+                            Text("auto")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(OmiColors.backgroundTertiary)
+                                .cornerRadius(4)
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.white)
+                        }
+                        .foregroundColor(OmiColors.textPrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(OmiColors.backgroundTertiary.opacity(0.5))
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
+                        .help("Applied automatically when sorting by Due Date")
+                    }
 
                     // Groups
                     ForEach(TaskFilterGroup.allCases, id: \.self) { group in
