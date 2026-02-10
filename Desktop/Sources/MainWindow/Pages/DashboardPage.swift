@@ -222,21 +222,6 @@ struct DashboardPage: View {
                     .padding(.horizontal, 24)
                     .padding(.top, 24)
 
-                // Recent Conversations (full width)
-                RecentConversationsWidget(
-                    conversations: Array(appState.conversations.prefix(5)),
-                    folders: appState.folders,
-                    onViewAll: {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            selectedIndex = SidebarNavItem.conversations.rawValue
-                        }
-                    },
-                    onMoveToFolder: { id, folderId in
-                        await appState.moveConversationToFolder(id, folderId: folderId)
-                    }
-                )
-                .padding(.horizontal, 24)
-
                 // 4 Widgets in 2x2 grid
                 VStack(spacing: 16) {
                     // Top row: Score + Focus
@@ -252,7 +237,7 @@ struct DashboardPage: View {
                     }
 
                     // Bottom row: Tasks + Goals
-                    HStack(alignment: .top, spacing: 16) {
+                    HStack(spacing: 16) {
                         TasksWidget(
                             overdueTasks: viewModel.overdueTasks,
                             todaysTasks: viewModel.todaysTasks,
@@ -291,6 +276,21 @@ struct DashboardPage: View {
                         .frame(maxWidth: .infinity)
                     }
                 }
+                .padding(.horizontal, 24)
+
+                // Recent Conversations (full width, at bottom)
+                RecentConversationsWidget(
+                    conversations: Array(appState.conversations.prefix(5)),
+                    folders: appState.folders,
+                    onViewAll: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedIndex = SidebarNavItem.conversations.rawValue
+                        }
+                    },
+                    onMoveToFolder: { id, folderId in
+                        await appState.moveConversationToFolder(id, folderId: folderId)
+                    }
+                )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
             }
