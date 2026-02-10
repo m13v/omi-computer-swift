@@ -2595,6 +2595,11 @@ struct TaskRow: View {
                             }
                         }
 
+                    // New badge
+                    if isNewlyCreated {
+                        NewBadge()
+                    }
+
                     // Tag badges (show up to 3)
                     ForEach(task.tags.prefix(3), id: \.self) { tag in
                         TaskClassificationBadge(category: tag)
@@ -2725,7 +2730,7 @@ struct TaskRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.textPrimary.opacity(0.15) : OmiColors.backgroundPrimary))
+                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundPrimary))
         )
         .opacity(rowOpacity)
         .offset(x: rowOffset)
@@ -3011,6 +3016,20 @@ struct SourceBadgeCompact: View {
     }
 }
 
+
+// MARK: - New Badge
+
+struct NewBadge: View {
+    var body: some View {
+        Text("New")
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundColor(OmiColors.purplePrimary)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(OmiColors.purplePrimary.opacity(0.15))
+            .cornerRadius(4)
+    }
+}
 
 // MARK: - Task Create Sheet
 
