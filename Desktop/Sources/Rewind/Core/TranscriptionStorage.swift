@@ -177,6 +177,56 @@ actor TranscriptionStorage {
         log("TranscriptionStorage: Updated session \(id) status to \(status.rawValue)")
     }
 
+    // MARK: - Conversation Field Updates (by backendId)
+
+    /// Update starred status by backend conversation ID
+    func updateStarredByBackendId(_ backendId: String, starred: Bool) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE transcription_sessions SET starred = ?, updatedAt = ? WHERE backendId = ?",
+                arguments: [starred, Date(), backendId]
+            )
+        }
+    }
+
+    /// Update title by backend conversation ID
+    func updateTitleByBackendId(_ backendId: String, title: String) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE transcription_sessions SET title = ?, updatedAt = ? WHERE backendId = ?",
+                arguments: [title, Date(), backendId]
+            )
+        }
+    }
+
+    /// Soft-delete by backend conversation ID
+    func deleteByBackendId(_ backendId: String) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE transcription_sessions SET deleted = 1, updatedAt = ? WHERE backendId = ?",
+                arguments: [Date(), backendId]
+            )
+        }
+    }
+
+    /// Update folder by backend conversation ID
+    func updateFolderByBackendId(_ backendId: String, folderId: String?) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE transcription_sessions SET folderId = ?, updatedAt = ? WHERE backendId = ?",
+                arguments: [folderId, Date(), backendId]
+            )
+        }
+    }
+
     // MARK: - Segment Operations
 
     /// Append a new segment to a session
@@ -385,6 +435,16 @@ actor TranscriptionStorage {
             if var existingSession = try TranscriptionSessionRecord
                 .filter(Column("backendId") == conversation.id)
                 .fetchOne(database) {
+                // Skip if local record is newer than the conversation's latest timestamp.
+                // This prevents sync from overwriting recent local mutations (star, delete, title edit, etc.)
+                let serverTimestamp = conversation.finishedAt ?? conversation.startedAt ?? conversation.createdAt
+                if existingSession.updatedAt > serverTimestamp {
+                    guard let sessionId = existingSession.id else {
+                        throw TranscriptionStorageError.invalidState("Session ID is nil")
+                    }
+                    return sessionId
+                }
+
                 // Update existing session
                 existingSession.updateFrom(conversation)
                 try existingSession.update(database)
