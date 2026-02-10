@@ -44,6 +44,47 @@ actor TaskAssistant: ProactiveAssistant {
     private var lastGoalsRefresh: Date = .distantPast
     private let goalsRefreshInterval: TimeInterval = 300
 
+    // MARK: - Due Date Helpers
+
+    /// Parse an inferred deadline string into a Date, or default to end of today.
+    /// Tries ISO8601, then common natural language patterns.
+    private func parseDueDate(from inferredDeadline: String?) -> Date {
+        if let deadline = inferredDeadline, !deadline.isEmpty {
+            // Try ISO8601 first (e.g. "2025-10-04T14:00:00Z")
+            let iso = ISO8601DateFormatter()
+            if let date = iso.date(from: deadline) {
+                return date
+            }
+            // Try common date formats
+            let formats = [
+                "yyyy-MM-dd'T'HH:mm:ssZ",
+                "yyyy-MM-dd'T'HH:mm:ss",
+                "yyyy-MM-dd HH:mm:ss",
+                "yyyy-MM-dd",
+                "MM/dd/yyyy",
+                "MMMM d, yyyy"
+            ]
+            let formatter = DateFormatter()
+            formatter.locale = Locale(identifier: "en_US_POSIX")
+            for format in formats {
+                formatter.dateFormat = format
+                if let date = formatter.date(from: deadline) {
+                    return date
+                }
+            }
+            log("Task: Could not parse inferred_deadline '\(deadline)', defaulting to end of today")
+        }
+        // Default: end of today (11:59 PM local time)
+        return Self.endOfToday()
+    }
+
+    /// Returns 11:59 PM today in the user's local timezone
+    private static func endOfToday() -> Date {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        return calendar.date(bySettingHour: 23, minute: 59, second: 0, of: startOfDay) ?? startOfDay
+    }
+
     /// Get the current system prompt from settings (accessed on MainActor for thread safety)
     private var systemPrompt: String {
         get async {
@@ -334,6 +375,8 @@ actor TaskAssistant: ProactiveAssistant {
             tagsJson = nil
         }
 
+        let dueAt = parseDueDate(from: task.inferredDeadline)
+
         let record = ActionItemRecord(
             backendSynced: false,
             description: task.title,
@@ -341,6 +384,7 @@ actor TaskAssistant: ProactiveAssistant {
             priority: task.priority.rawValue,
             category: task.primaryTag,
             tagsJson: tagsJson,
+            dueAt: dueAt,
             screenshotId: screenshotId,
             confidence: task.confidence,
             sourceApp: task.sourceApp,
@@ -384,9 +428,11 @@ actor TaskAssistant: ProactiveAssistant {
                 metadata["window_title"] = windowTitle
             }
 
+            let dueAt = parseDueDate(from: task.inferredDeadline)
+
             let response = try await APIClient.shared.createActionItem(
                 description: task.title,
-                dueAt: nil,
+                dueAt: dueAt,
                 source: "screenshot",
                 priority: task.priority.rawValue,
                 category: task.primaryTag,
