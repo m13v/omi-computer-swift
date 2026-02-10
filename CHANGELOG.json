@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "0.5.1",
+      "date": "2026-02-10",
+      "changes": [
+        "OCR text embeddings for semantic Rewind search",
+        "Agent session persistence: task agents resume across app restarts",
+        "Smooth conversation deletion animations",
+        "Improved task relevance scoring and allowlist management",
+        "Local cache updates for conversations, memories, and tasks prevent stale UI",
+        "Fixed resource bundle paths for notification sounds and images"
+      ]
+    },
+    {
       "version": "0.5.0",
       "date": "2026-02-10",
       "changes": [
