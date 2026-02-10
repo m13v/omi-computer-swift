@@ -55,21 +55,8 @@ actor TaskPrioritizationService {
 
             while !Task.isCancelled {
                 guard let self = self else { break }
-
-                let now = Date()
-                let timeSinceFull = self.lastFullRunTime.map { now.timeIntervalSince($0) } ?? .infinity
-                let timeSincePartial = self.lastPartialRunTime.map { now.timeIntervalSince($0) } ?? .infinity
-
-                if timeSinceFull >= self.fullRescoreInterval {
-                    // Daily: full re-rank of ALL tasks
-                    await self.runFullRescore()
-                } else if timeSincePartial >= self.partialRescoreInterval {
-                    // Every 2 hours: re-rank 200 most recent tasks
-                    await self.runPartialRescore()
-                }
-
-                // Check again in 5 minutes
-                try? await Task.sleep(nanoseconds: UInt64(self.checkIntervalSeconds * 1_000_000_000))
+                await self.checkAndRescore()
+                try? await Task.sleep(nanoseconds: UInt64(300 * 1_000_000_000))
             }
         }
     }
@@ -80,6 +67,18 @@ actor TaskPrioritizationService {
         timer = nil
         isRunning = false
         log("TaskPrioritize: Service stopped")
+    }
+
+    private func checkAndRescore() async {
+        let now = Date()
+        let timeSinceFull = lastFullRunTime.map { now.timeIntervalSince($0) } ?? .infinity
+        let timeSincePartial = lastPartialRunTime.map { now.timeIntervalSince($0) } ?? .infinity
+
+        if timeSinceFull >= fullRescoreInterval {
+            await runFullRescore()
+        } else if timeSincePartial >= partialRescoreInterval {
+            await runPartialRescore()
+        }
     }
 
     /// Force a full re-scoring (e.g. from settings button). Clears all existing scores first.
