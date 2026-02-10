@@ -1111,7 +1111,14 @@ actor RewindDatabase {
         migrator.registerMigration("clearAIUserProfilesV1") { _ in }
         migrator.registerMigration("clearAIUserProfilesV2") { _ in }
 
-        // Migration 23: Create observations table for screen context tracking
+        // Migration 23: Add window title to action items
+        migrator.registerMigration("addActionItemWindowTitle") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "windowTitle", .text)
+            }
+        }
+
+        // Migration 24: Create observations table for screen context tracking
         migrator.registerMigration("createObservations") { db in
             try db.create(table: "observations") { t in
                 t.autoIncrementedPrimaryKey("id")
@@ -1214,7 +1221,7 @@ actor RewindDatabase {
 
                         // Insert occurrence (link text to screenshot with bounding box)
                         try db.execute(sql: """
-                            INSERT INTO ocr_occurrences
+                            INSERT OR IGNORE INTO ocr_occurrences
                             (ocrTextId, screenshotId, x, y, width, height, confidence, blockOrder)
                             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                         """, arguments: [
