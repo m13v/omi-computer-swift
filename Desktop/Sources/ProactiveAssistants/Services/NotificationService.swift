@@ -120,8 +120,13 @@ class NotificationService: NSObject, UNUserNotificationCenterDelegate {
         Task { @MainActor in
             AnalyticsManager.shared.notificationWillPresent(notificationId: notificationId, title: title)
         }
-        // Show banner, play sound, and update badge even when app is frontmost
-        completionHandler([.banner, .sound, .badge])
+        // Show banner and badge; only include .sound if the notification has a sound attached
+        // (custom focus sounds are played via NSSound, so their content.sound is nil)
+        var options: UNNotificationPresentationOptions = [.banner, .badge]
+        if notification.request.content.sound != nil {
+            options.insert(.sound)
+        }
+        completionHandler(options)
     }
 
     // Handle notification interactions (click or dismiss)
