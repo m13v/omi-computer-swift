@@ -95,6 +95,20 @@ actor ActionItemStorage {
         }
     }
 
+    /// Get a single action item by its backend ID
+    func getLocalActionItem(byBackendId backendId: String) async throws -> TaskActionItem? {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            guard let record = try ActionItemRecord
+                .filter(Column("backendId") == backendId)
+                .fetchOne(database) else {
+                return nil
+            }
+            return record.toTaskActionItem()
+        }
+    }
+
     /// Get count of local action items
     func getLocalActionItemsCount(
         completed: Bool? = nil,
