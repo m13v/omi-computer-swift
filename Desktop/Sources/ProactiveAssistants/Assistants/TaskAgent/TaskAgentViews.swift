@@ -28,8 +28,10 @@ struct TaskClassificationBadge: View {
 // MARK: - Agent Status Indicator
 
 /// Shows the status of a Claude agent working on a task
+/// Main click opens the detail modal; terminal icon opens Terminal directly
 struct AgentStatusIndicator: View {
     let taskId: String
+    @Binding var showAgentDetail: Bool
     @ObservedObject private var manager = TaskAgentManager.shared
 
     private var session: TaskAgentManager.AgentSession? {
@@ -55,19 +57,34 @@ struct AgentStatusIndicator: View {
 
     var body: some View {
         if let session = session {
-            Button {
-                manager.openInTerminal(taskId: taskId)
-            } label: {
-                HStack(spacing: 4) {
-                    statusIcon(for: session.status)
+            HStack(spacing: 2) {
+                // Status text — opens detail modal
+                Button {
+                    showAgentDetail = true
+                } label: {
+                    HStack(spacing: 4) {
+                        statusIcon(for: session.status)
 
-                    Text(statusText)
-                        .font(.system(size: 10, weight: .medium))
+                        Text(statusText)
+                            .font(.system(size: 10, weight: .medium))
+                    }
+                    .foregroundColor(statusColor(for: session.status))
                 }
-                .foregroundColor(statusColor(for: session.status))
+                .buttonStyle(.plain)
+                .help("View Agent Details")
+
+                // Terminal icon — opens terminal directly
+                Button {
+                    manager.openInTerminal(taskId: taskId)
+                } label: {
+                    Image(systemName: "terminal")
+                        .font(.system(size: 10))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help("Open in Terminal")
             }
-            .buttonStyle(.plain)
-            .help("Click to open in Terminal")
         }
     }
 
@@ -631,7 +648,7 @@ struct TaskAgentDetailView: View {
 
 #Preview("Agent Status") {
     VStack(spacing: 16) {
-        AgentStatusIndicator(taskId: "test-1")
+        AgentStatusIndicator(taskId: "test-1", showAgentDetail: .constant(false))
     }
     .padding()
 }
