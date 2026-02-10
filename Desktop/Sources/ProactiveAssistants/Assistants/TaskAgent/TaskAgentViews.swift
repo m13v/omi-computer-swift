@@ -53,12 +53,6 @@ struct TaskClassificationBadge: View {
             }
         }
         .foregroundColor(info.color)
-        .padding(.horizontal, 6)
-        .padding(.vertical, 2)
-        .background(
-            Capsule()
-                .fill(info.color.opacity(0.15))
-        )
     }
 }
 
@@ -102,12 +96,6 @@ struct AgentStatusIndicator: View {
                         .font(.system(size: 10, weight: .medium))
                 }
                 .foregroundColor(statusColor(for: session.status))
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(
-                    Capsule()
-                        .fill(statusColor(for: session.status).opacity(0.15))
-                )
             }
             .buttonStyle(.plain)
             .help("Click to open in Terminal")
