@@ -236,7 +236,18 @@ actor TaskDeduplicationService {
                     log("TaskDedup: Failed to log deletion record: \(error)")
                 }
 
-                // Soft-delete from backend (mark as deleted, not removed)
+                // Look up local record for relevance score (backend doesn't store scores)
+                let localTask = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: deleteId)
+
+                // Soft-delete locally first so task disappears from to-do list immediately
+                try? await ActionItemStorage.shared.deleteActionItemByBackendId(deleteId, deletedBy: "ai_dedup")
+
+                // Compact relevance scores to fill the gap
+                if let score = localTask?.relevanceScore {
+                    try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+                }
+
+                // Soft-delete from backend
                 do {
                     _ = try await APIClient.shared.softDeleteActionItem(
                         id: deleteId,
@@ -246,13 +257,8 @@ actor TaskDeduplicationService {
                     )
                     deletedCount += 1
                     log("TaskDedup: Soft-deleted '\(deletedTask?.description ?? deleteId)' (kept: '\(keptTask?.description ?? group.keepId)') - \(group.reason)")
-
-                    // Compact relevance scores to fill the gap
-                    if let score = deletedTask?.relevanceScore {
-                        try await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
-                    }
                 } catch {
-                    log("TaskDedup: Failed to soft-delete task \(deleteId): \(error)")
+                    log("TaskDedup: Failed to soft-delete task \(deleteId) on backend: \(error)")
                 }
             }
         }
