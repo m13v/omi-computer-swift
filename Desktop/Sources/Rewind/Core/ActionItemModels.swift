@@ -34,6 +34,10 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var metadataJson: String?           // Additional extraction metadata
     var embedding: Data?                // 768 Float32s for vector search
 
+    // Prioritization
+    var relevanceScore: Int?             // 0-100 score from TaskPrioritizationService
+    var scoredAt: Date?                  // When the score was last computed
+
     // Timestamps
     var createdAt: Date
     var updatedAt: Date
@@ -64,6 +68,8 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         currentActivity: String? = nil,
         metadataJson: String? = nil,
         embedding: Data? = nil,
+        relevanceScore: Int? = nil,
+        scoredAt: Date? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -88,6 +94,8 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.currentActivity = currentActivity
         self.metadataJson = metadataJson
         self.embedding = embedding
+        self.relevanceScore = relevanceScore
+        self.scoredAt = scoredAt
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -319,7 +327,8 @@ extension ActionItemRecord {
             deletedBy: deletedBy,
             deletedAt: nil,  // Not stored locally
             deletedReason: nil,  // Not stored locally
-            keptTaskId: nil  // Not stored locally
+            keptTaskId: nil,  // Not stored locally
+            relevanceScore: relevanceScore
         )
     }
 }
