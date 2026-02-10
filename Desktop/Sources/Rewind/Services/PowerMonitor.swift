@@ -9,6 +9,9 @@ class PowerMonitor: ObservableObject {
 
     @Published private(set) var isOnBattery: Bool = false
 
+    /// Timestamp when the Mac last switched to battery power (nil when on AC)
+    private(set) var lastBatteryStartTime: Date?
+
     /// Callback fired when switching from battery → AC power
     var onACReconnected: (() -> Void)?
 
@@ -16,6 +19,9 @@ class PowerMonitor: ObservableObject {
 
     private init() {
         isOnBattery = Self.checkBatteryState()
+        if isOnBattery {
+            lastBatteryStartTime = Date()
+        }
         startMonitoring()
     }
 
@@ -64,8 +70,11 @@ class PowerMonitor: ObservableObject {
         if wasOnBattery != isOnBattery {
             log("PowerMonitor: Power source changed — \(isOnBattery ? "battery" : "AC power")")
 
-            if wasOnBattery && !isOnBattery {
-                // Switched from battery → AC: trigger OCR backfill
+            if !wasOnBattery && isOnBattery {
+                // Switched from AC → battery: record start time
+                lastBatteryStartTime = Date()
+            } else if wasOnBattery && !isOnBattery {
+                // Switched from battery → AC: trigger OCR backfill (keep lastBatteryStartTime for backfill to use)
                 onACReconnected?()
             }
         }
