@@ -196,6 +196,7 @@ struct ExtractedTask: Codable {
     let tags: [String]
     let sourceCategory: String
     let sourceSubcategory: String
+    let relevanceScore: Int?
 
     enum CodingKeys: String, CodingKey {
         case title
@@ -207,6 +208,7 @@ struct ExtractedTask: Codable {
         case tags
         case sourceCategory = "source_category"
         case sourceSubcategory = "source_subcategory"
+        case relevanceScore = "relevance_score"
     }
 
     /// Primary tag (first tag) for backward compatibility
@@ -280,7 +282,7 @@ struct TaskExtractionResult: Codable, AssistantResult {
 
 /// Context injected into the extraction prompt for deduplication
 struct TaskExtractionContext {
-    let activeTasks: [(id: Int64, description: String, priority: String?)]
+    let activeTasks: [(id: Int64, description: String, priority: String?, relevanceScore: Int?)]
     let completedTasks: [(id: Int64, description: String)]
     let deletedTasks: [(id: Int64, description: String)]
     let goals: [Goal]
