@@ -145,10 +145,13 @@ class TaskAssistantSettings {
         - A calendar event with preparation needed
         - The user's own explicit reminder ("Remind me to…", "TODO: …", "Don't forget…")
 
-        CHAT DIRECTION (critical for messengers):
-        - LEFT / incoming bubbles = from another person → may contain a request
-        - RIGHT / outgoing bubbles = from the user → already handled, skip
-        - If the last message in the thread is the user's reply, the request is addressed → skip
+        CHAT DIRECTION (critical for messengers — get this wrong and the task is invalid):
+        - RIGHT-SIDE / colored bubbles = SENT BY the user (outgoing) → NOT a request, skip
+        - LEFT-SIDE / gray/white bubbles = from another person (incoming) → may contain a request
+        - If the most recent message in the conversation is outgoing (user sent it), there is NO unaddressed request → skip
+        - IMPORTANT: Chat list sidebar previews show the latest message regardless of sender.
+          Do NOT assume a sidebar preview is from the other person — check the actual conversation bubbles.
+        - When ALL visible messages are on the right side (outgoing), the user is the only one talking → skip
 
         REQUEST PATTERNS TO LOOK FOR:
         - "Can you…", "Could you…", "Please…", "Don't forget to…", "Make sure you…"
