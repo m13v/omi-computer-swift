@@ -21,21 +21,13 @@ extension Foundation.Bundle {
             .appendingPathComponent("\(bundleName).bundle")
             .path
 
-        // Fallback: build directory (for running directly from swift build)
-        let buildPath = "/Users/matthewdi/omi-desktop/Desktop/.build/arm64-apple-macosx/release/\(bundleName).bundle"
-        let debugBuildPath = "/Users/matthewdi/omi-desktop/Desktop/.build/arm64-apple-macosx/debug/\(bundleName).bundle"
-
         if let bundle = Bundle(path: resourcesPath) {
             return bundle
         } else if let bundle = Bundle(path: mainPath) {
             return bundle
-        } else if let bundle = Bundle(path: buildPath) {
-            return bundle
-        } else if let bundle = Bundle(path: debugBuildPath) {
-            return bundle
         }
 
         // If none found, crash with helpful message
-        Swift.fatalError("could not load resource bundle: tried \(resourcesPath), \(mainPath), \(buildPath), \(debugBuildPath)")
+        Swift.fatalError("could not load resource bundle: tried \(resourcesPath), \(mainPath)")
     }()
 }
