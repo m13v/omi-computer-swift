@@ -2514,7 +2514,7 @@ struct TaskRow: View {
 
                     // Source badge (read-only)
                     if let source = task.source {
-                        SourceBadgeCompact(source: source, sourceLabel: task.sourceAppLabel, sourceIcon: task.sourceIcon)
+                        SourceBadgeCompact(source: source, sourceLabel: task.sourceAppLabel, sourceIcon: task.sourceIcon, windowTitle: task.windowTitle)
                     }
 
                     // Priority badge - clickable
@@ -2885,6 +2885,7 @@ struct SourceBadgeCompact: View {
     let source: String
     let sourceLabel: String
     let sourceIcon: String
+    var windowTitle: String? = nil
 
     var body: some View {
         HStack(spacing: 2) {
@@ -2900,6 +2901,7 @@ struct SourceBadgeCompact: View {
             Capsule()
                 .fill(OmiColors.backgroundTertiary)
         )
+        .help(windowTitle ?? sourceLabel)
     }
 }
 
