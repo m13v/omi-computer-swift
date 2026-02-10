@@ -473,11 +473,20 @@ actor ActionItemStorage {
     func syncTaskActionItems(_ items: [TaskActionItem]) async throws {
         let db = try await ensureInitialized()
 
+        var skipped = 0
         try await db.write { database in
             for item in items {
                 if var existingRecord = try ActionItemRecord
                     .filter(Column("backendId") == item.id)
                     .fetchOne(database) {
+                    // Skip if local record is newer than incoming API data
+                    // This prevents auto-refresh from overwriting recent local changes
+                    // (e.g. toggling a task) with stale backend data
+                    if let incomingUpdatedAt = item.updatedAt,
+                       existingRecord.updatedAt > incomingUpdatedAt {
+                        skipped += 1
+                        continue
+                    }
                     existingRecord.updateFrom(item)
                     try existingRecord.update(database)
                 } else {
@@ -487,7 +496,11 @@ actor ActionItemStorage {
             }
         }
 
-        log("ActionItemStorage: Synced \(items.count) task action items from backend")
+        if skipped > 0 {
+            log("ActionItemStorage: Synced \(items.count - skipped) task action items from backend (skipped \(skipped) with newer local data)")
+        } else {
+            log("ActionItemStorage: Synced \(items.count) task action items from backend")
+        }
     }
 
 
@@ -674,8 +687,8 @@ actor ActionItemStorage {
         return try await db.read { database in
             try Row.fetchAll(database, sql: """
                 SELECT id, description, priority, relevanceScore FROM action_items
-                WHERE completed = 0 AND deleted = 0
-                ORDER BY createdAt DESC LIMIT ?
+                WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NOT NULL
+                ORDER BY relevanceScore ASC LIMIT ?
             """, arguments: [limit]).map { row in
                 (
                     id: row["id"] as Int64,
