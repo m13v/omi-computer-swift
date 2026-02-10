@@ -89,6 +89,7 @@ struct FocusSummaryWidget: View {
             }
         }
         .padding(20)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(OmiColors.backgroundTertiary.opacity(0.5))
