@@ -1267,6 +1267,35 @@ actor RewindDatabase {
             try db.execute(sql: "DROP TABLE _score_map")
         }
 
+        // Migration 31: Re-assign clean sequential scores with correct ordering.
+        // Score 1 = most important (top), N = least important (bottom).
+        // Fixes duplicates at 0 and 100 introduced by old shift logic and prioritization service.
+        migrator.registerMigration("reassignRelevanceScoresDescending") { db in
+            try db.execute(sql: """
+                CREATE TEMP TABLE _score_map2 AS
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY
+                               COALESCE(relevanceScore, 999999) ASC,
+                               createdAt ASC
+                       ) as new_score
+                FROM action_items
+                WHERE completed = 0 AND deleted = 0
+            """)
+
+            try db.execute(sql: """
+                UPDATE action_items
+                SET relevanceScore = (
+                    SELECT new_score FROM _score_map2
+                    WHERE _score_map2.id = action_items.id
+                ),
+                scoredAt = datetime('now')
+                WHERE id IN (SELECT id FROM _score_map2)
+            """)
+
+            try db.execute(sql: "DROP TABLE _score_map2")
+        }
+
         try migrator.migrate(queue)
     }
 
