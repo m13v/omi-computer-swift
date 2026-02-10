@@ -198,6 +198,17 @@ class TasksStore: ObservableObject {
         isPrioritizing = stillScoring
     }
 
+    /// Reload the allowlist from SQLite after a task is completed or deleted,
+    /// so a new task can fill the vacated slot.
+    private func refreshAllowlist() async {
+        await TaskPrioritizationService.shared.reloadAllowlist()
+        let visible = await TaskPrioritizationService.shared.visibleAITaskIds
+        if visible != visibleAITaskIds {
+            visibleAITaskIds = visible
+            incompleteTasks = await mergeAllowlistedTasks(incompleteTasks)
+        }
+    }
+
     /// Return tasks with any missing allowlisted tasks merged in (e.g. older than 7 days).
     /// Pure function — returns a new array instead of mutating incompleteTasks directly,
     /// so callers can do a single assignment and avoid an extra render.
@@ -871,6 +882,9 @@ class TasksStore: ObservableObject {
                 if let score = task.relevanceScore {
                     try await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
                 }
+
+                // Refresh allowlist so a new task fills the slot
+                await refreshAllowlist()
             } else {
                 // Was completed, now incomplete - move to incomplete list
                 completedTasks.removeAll { $0.id == task.id }
@@ -928,6 +942,9 @@ class TasksStore: ObservableObject {
         if let score = task.relevanceScore {
             try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
         }
+
+        // Refresh allowlist so a new task fills the slot
+        await refreshAllowlist()
 
         // Soft-delete on backend in background
         do {
