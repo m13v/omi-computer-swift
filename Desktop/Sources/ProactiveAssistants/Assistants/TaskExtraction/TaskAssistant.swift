@@ -454,7 +454,8 @@ actor TaskAssistant: ProactiveAssistant {
                 source: "screenshot",
                 priority: task.priority.rawValue,
                 category: task.primaryTag,
-                metadata: metadata
+                metadata: metadata,
+                relevanceScore: task.relevanceScore
             )
 
             log("Task: Synced to backend (id: \(response.id))")
