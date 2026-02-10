@@ -502,6 +502,9 @@ public class ProactiveAssistantsPlugin: NSObject {
 
                     if !isInDelayPeriod {
                         AssistantCoordinator.shared.distributeFrame(frame)
+                    } else {
+                        // During delay, still distribute to assistants that need it (e.g. refocus detection)
+                        AssistantCoordinator.shared.distributeFrameDuringDelay(frame)
                     }
                 }
 
@@ -552,6 +555,9 @@ public class ProactiveAssistantsPlugin: NSObject {
 
             if !isInDelayPeriod {
                 AssistantCoordinator.shared.distributeFrame(frame)
+            } else {
+                // During delay, still distribute to assistants that need it (e.g. refocus detection)
+                AssistantCoordinator.shared.distributeFrameDuringDelay(frame)
             }
 
             if !isRewindExcluded {
