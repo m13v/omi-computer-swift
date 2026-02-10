@@ -137,10 +137,10 @@ struct AdvicePage: View {
                     if viewModel.unreadCount > 0 {
                         Text("\(viewModel.unreadCount) new")
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(OmiColors.purplePrimary)
+                            .foregroundColor(OmiColors.textPrimary)
                             .padding(.horizontal, 8)
                             .padding(.vertical, 2)
-                            .background(OmiColors.purplePrimary.opacity(0.15))
+                            .background(OmiColors.textPrimary.opacity(0.15))
                             .cornerRadius(4)
                     }
                 }
@@ -259,10 +259,10 @@ struct AdvicePage: View {
                         )
                 }
             }
-            .foregroundColor(isSelected ? OmiColors.purplePrimary : OmiColors.textSecondary)
+            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(isSelected ? OmiColors.purplePrimary.opacity(0.15) : Color.clear)
+            .background(isSelected ? OmiColors.textPrimary.opacity(0.15) : Color.clear)
             .cornerRadius(6)
         }
         .buttonStyle(.plain)
@@ -479,13 +479,7 @@ struct AdvicePage: View {
     // MARK: - Helpers
 
     private func categoryColor(_ category: AdviceCategory) -> Color {
-        switch category {
-        case .productivity: return OmiColors.info
-        case .health: return Color.green
-        case .communication: return OmiColors.purplePrimary
-        case .learning: return OmiColors.warning
-        case .other: return OmiColors.textSecondary
-        }
+        return OmiColors.textSecondary
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -507,13 +501,7 @@ struct AdviceCard: View {
     @State private var showDeleteConfirmation = false
 
     private var categoryColor: Color {
-        switch advice.advice.category {
-        case .productivity: return OmiColors.info
-        case .health: return Color.green
-        case .communication: return OmiColors.purplePrimary
-        case .learning: return OmiColors.warning
-        case .other: return OmiColors.textSecondary
-        }
+        return OmiColors.textSecondary
     }
 
     var body: some View {
@@ -536,7 +524,7 @@ struct AdviceCard: View {
                         // Unread indicator
                         if !advice.isRead {
                             Circle()
-                                .fill(OmiColors.purplePrimary)
+                                .fill(OmiColors.textPrimary)
                                 .frame(width: 8, height: 8)
                         }
 
