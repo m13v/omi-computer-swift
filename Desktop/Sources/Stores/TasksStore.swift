@@ -209,7 +209,8 @@ class TasksStore: ObservableObject {
 
         var result = tasks
         for id in missingIds {
-            if let task = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: id) {
+            if let task = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: id),
+               !task.completed, task.deleted != true {
                 result.append(task)
             }
         }
