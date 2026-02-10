@@ -47,6 +47,11 @@ actor RewindIndexer {
         isInitialized = true
         initFailureCount = 0
         log("RewindIndexer: Initialized successfully")
+
+        // Kick off OCR embedding backfill in background
+        Task(priority: .background) {
+            await OCREmbeddingService.shared.backfillIfNeeded()
+        }
     }
 
     /// Try to initialize with exponential backoff. Returns true if initialized.
@@ -162,6 +167,14 @@ actor RewindIndexer {
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
 
+            // Embed OCR text for semantic search (non-blocking)
+            if let ocrText = ocrText, !ocrText.isEmpty,
+               let id = try? await RewindDatabase.shared.getLastInsertedScreenshotId() {
+                Task(priority: .utility) {
+                    await OCREmbeddingService.shared.embedScreenshot(id: id, ocrText: ocrText)
+                }
+            }
+
             // Notify that a new frame was captured (for live UI updates)
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .rewindFrameCaptured, object: nil)
@@ -223,6 +236,14 @@ actor RewindIndexer {
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            // Embed OCR text for semantic search (non-blocking)
+            if let ocrText = ocrText, !ocrText.isEmpty,
+               let id = try? await RewindDatabase.shared.getLastInsertedScreenshotId() {
+                Task(priority: .utility) {
+                    await OCREmbeddingService.shared.embedScreenshot(id: id, ocrText: ocrText)
+                }
+            }
 
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .rewindFrameCaptured, object: nil)
@@ -304,6 +325,14 @@ actor RewindIndexer {
             )
 
             try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            // Embed OCR text for semantic search (non-blocking)
+            if let ocrText = ocrText, !ocrText.isEmpty,
+               let id = try? await RewindDatabase.shared.getLastInsertedScreenshotId() {
+                Task(priority: .utility) {
+                    await OCREmbeddingService.shared.embedScreenshot(id: id, ocrText: ocrText)
+                }
+            }
 
             // Notify that a new frame was captured (for live UI updates)
             DispatchQueue.main.async {
