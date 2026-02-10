@@ -1236,14 +1236,16 @@ actor RewindDatabase {
         // Migration 30: Fix duplicate relevanceScores from migration 29.
         // Migration 29 had a self-referencing UPDATE bug where SQLite reads modified data
         // during the UPDATE loop. Fix: snapshot into a temp table first, then update from it.
+        // Score 1 = most important (top), N = least important (bottom).
         migrator.registerMigration("fixRelevanceScoreDuplicates") { db in
             // 1. Snapshot the correct sequential mapping into a temp table
+            // ORDER BY DESC so ROW_NUMBER 1 = highest original score = most important
             try db.execute(sql: """
                 CREATE TEMP TABLE _score_map AS
                 SELECT id,
                        ROW_NUMBER() OVER (
                            ORDER BY
-                               COALESCE(relevanceScore, 0) ASC,
+                               COALESCE(relevanceScore, 0) DESC,
                                createdAt ASC
                        ) as new_score
                 FROM action_items
