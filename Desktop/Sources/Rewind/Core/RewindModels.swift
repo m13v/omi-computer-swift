@@ -374,6 +374,15 @@ class RewindSettings: ObservableObject {
         }
     }
 
+    /// When true, OCR is paused while on battery power to save energy.
+    /// Screenshots are still captured but stored without OCR text (isIndexed=false).
+    /// OCR backfill runs automatically when AC power is reconnected.
+    @Published var pauseOCROnBattery: Bool {
+        didSet {
+            defaults.set(pauseOCROnBattery, forKey: "rewindPauseOCROnBattery")
+        }
+    }
+
     @Published var excludedApps: Set<String> {
         didSet {
             let array = Array(excludedApps)
@@ -394,6 +403,7 @@ class RewindSettings: ObservableObject {
         self.retentionDays = defaults.object(forKey: "rewindRetentionDays") as? Int ?? 7
         self.captureInterval = defaults.object(forKey: "rewindCaptureInterval") as? Double ?? 1.0
         self.ocrRecognitionFast = defaults.object(forKey: "rewindOCRFast") as? Bool ?? true
+        self.pauseOCROnBattery = defaults.object(forKey: "rewindPauseOCROnBattery") as? Bool ?? true
         self.removedDefaults = Set(defaults.array(forKey: "rewindRemovedDefaultApps") as? [String] ?? [])
 
         // Load excluded apps, merging in any new defaults
