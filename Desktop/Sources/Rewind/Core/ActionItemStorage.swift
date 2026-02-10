@@ -474,6 +474,7 @@ actor ActionItemStorage {
         let db = try await ensureInitialized()
 
         var skipped = 0
+        var adopted = 0
         try await db.write { database in
             for item in items {
                 if var existingRecord = try ActionItemRecord
@@ -489,6 +490,20 @@ actor ActionItemStorage {
                     }
                     existingRecord.updateFrom(item)
                     try existingRecord.update(database)
+                } else if var orphan = try ActionItemRecord
+                    .filter(Column("backendSynced") == false)
+                    .filter(Column("backendId") == nil || Column("backendId") == "")
+                    .filter(Column("description") == item.description)
+                    .filter(Column("source") == (item.source ?? ""))
+                    .fetchOne(database) {
+                    // Adopt orphaned local record: link it to the backend ID.
+                    // This heals records where saveTaskToSQLite succeeded but
+                    // markSynced failed (e.g. app crash between backend sync and local update).
+                    orphan.backendId = item.id
+                    orphan.backendSynced = true
+                    orphan.updateFrom(item)
+                    try orphan.update(database)
+                    adopted += 1
                 } else {
                     let newRecord = ActionItemRecord.from(item)
                     try newRecord.insert(database)
@@ -496,8 +511,8 @@ actor ActionItemStorage {
             }
         }
 
-        if skipped > 0 {
-            log("ActionItemStorage: Synced \(items.count - skipped) task action items from backend (skipped \(skipped) with newer local data)")
+        if skipped > 0 || adopted > 0 {
+            log("ActionItemStorage: Synced \(items.count) task action items from backend (skipped \(skipped) newer local, adopted \(adopted) orphans)")
         } else {
             log("ActionItemStorage: Synced \(items.count) task action items from backend")
         }
@@ -680,8 +695,8 @@ actor ActionItemStorage {
         }
     }
 
-    /// Get recent active (incomplete, not deleted) tasks
-    func getRecentActiveTasks(limit: Int = 30) async throws -> [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] {
+    /// Get active tasks with the highest relevance (lowest score = most important)
+    func getTopRelevanceTasks(limit: Int = 30) async throws -> [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] {
         let db = try await ensureInitialized()
 
         return try await db.read { database in
@@ -689,6 +704,26 @@ actor ActionItemStorage {
                 SELECT id, description, priority, relevanceScore FROM action_items
                 WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NOT NULL
                 ORDER BY relevanceScore ASC LIMIT ?
+            """, arguments: [limit]).map { row in
+                (
+                    id: row["id"] as Int64,
+                    description: row["description"] as String,
+                    priority: row["priority"] as String?,
+                    relevanceScore: row["relevanceScore"] as Int?
+                )
+            }
+        }
+    }
+
+    /// Get most recently created active tasks
+    func getRecentActiveTasks(limit: Int = 30) async throws -> [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try Row.fetchAll(database, sql: """
+                SELECT id, description, priority, relevanceScore FROM action_items
+                WHERE completed = 0 AND deleted = 0
+                ORDER BY createdAt DESC LIMIT ?
             """, arguments: [limit]).map { row in
                 (
                     id: row["id"] as Int64,
