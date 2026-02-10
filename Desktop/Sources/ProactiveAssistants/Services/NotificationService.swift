@@ -34,7 +34,7 @@ enum NotificationSound {
             return
         }
 
-        guard let url = Bundle.module.url(forResource: filename, withExtension: "aiff") else {
+        guard let url = Bundle.resourceBundle.url(forResource: filename, withExtension: "aiff") else {
             log("NotificationSound: Could not find \(filename).aiff in bundle")
             return
         }
