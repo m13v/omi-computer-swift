@@ -32,6 +32,8 @@ pub struct CreateMemoryRequest {
     pub current_activity: Option<String>,
     /// Source type (e.g., "screenshot", "desktop", "omi")
     pub source: Option<String>,
+    /// Window title when memory was extracted
+    pub window_title: Option<String>,
 }
 
 /// Request to edit a memory's content
@@ -160,6 +162,8 @@ pub struct MemoryDB {
     pub reasoning: Option<String>,
     /// Description of user's activity when memory was generated
     pub current_activity: Option<String>,
+    /// Window title when memory was extracted
+    pub window_title: Option<String>,
 }
 
 fn default_visibility() -> String {
