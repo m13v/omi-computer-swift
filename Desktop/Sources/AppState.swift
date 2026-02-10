@@ -1276,6 +1276,10 @@ class AppState: ObservableObject {
     func moveConversationToFolder(_ conversationId: String, folderId: String?) async {
         do {
             try await APIClient.shared.moveConversationToFolder(conversationId: conversationId, folderId: folderId)
+
+            // Sync to local SQLite cache so reload doesn't revert the change
+            try await TranscriptionStorage.shared.updateFolderByBackendId(conversationId, folderId: folderId)
+
             // Update local state
             if conversations.contains(where: { $0.id == conversationId }) {
                 // Reload to get updated conversation
