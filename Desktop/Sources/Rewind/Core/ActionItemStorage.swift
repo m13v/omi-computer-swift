@@ -482,9 +482,10 @@ actor ActionItemStorage {
                     .fetchOne(database) {
                     // Skip if local record is newer than incoming API data
                     // This prevents auto-refresh from overwriting recent local changes
-                    // (e.g. toggling a task) with stale backend data
-                    if let incomingUpdatedAt = item.updatedAt,
-                       existingRecord.updatedAt > incomingUpdatedAt {
+                    // (e.g. toggling a task) with stale backend data.
+                    // Fall back to createdAt when updatedAt is nil (legacy tasks without updated_at)
+                    let incomingTimestamp = item.updatedAt ?? item.createdAt
+                    if existingRecord.updatedAt > incomingTimestamp {
                         skipped += 1
                         continue
                     }
