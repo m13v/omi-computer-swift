@@ -376,12 +376,14 @@ enum TaskSortOption: String, CaseIterable {
     case dueDate = "Due Date"
     case createdDate = "Created Date"
     case priority = "Priority"
+    case relevance = "Relevance"
 
     var icon: String {
         switch self {
         case .dueDate: return "calendar"
         case .createdDate: return "clock"
         case .priority: return "flag"
+        case .relevance: return "sparkles"
         }
     }
 }
@@ -1203,6 +1205,24 @@ class TasksViewModel: ObservableObject {
                     return aPriority < bPriority
                 }
                 return a.createdAt > b.createdAt
+            }
+        case .relevance:
+            return tasks.sorted { a, b in
+                // Lower relevance score = higher priority (1 is most important)
+                // Tasks without scores go to the bottom
+                switch (a.relevanceScore, b.relevanceScore) {
+                case (nil, nil):
+                    return a.createdAt > b.createdAt
+                case (nil, _):
+                    return false
+                case (_, nil):
+                    return true
+                case (let aScore?, let bScore?):
+                    if aScore == bScore {
+                        return a.createdAt > b.createdAt
+                    }
+                    return aScore < bScore
+                }
             }
         }
     }
