@@ -9,25 +9,25 @@ struct TaskClassificationBadge: View {
     private var displayInfo: (label: String, icon: String, color: Color) {
         switch category.lowercased() {
         case "personal":
-            return ("Personal", "person.fill", Color(hex: 0x8B5CF6))
+            return ("Personal", "person.fill", OmiColors.textSecondary)
         case "work":
-            return ("Work", "briefcase.fill", Color(hex: 0x3B82F6))
+            return ("Work", "briefcase.fill", OmiColors.textSecondary)
         case "feature":
-            return ("Feature", "sparkles", Color(hex: 0x10B981))
+            return ("Feature", "sparkles", OmiColors.textSecondary)
         case "bug":
-            return ("Bug", "ladybug.fill", Color(hex: 0xEF4444))
+            return ("Bug", "ladybug.fill", OmiColors.textSecondary)
         case "code":
-            return ("Code", "chevron.left.forwardslash.chevron.right", Color(hex: 0xF59E0B))
+            return ("Code", "chevron.left.forwardslash.chevron.right", OmiColors.textSecondary)
         case "research":
-            return ("Research", "magnifyingglass", Color(hex: 0x6366F1))
+            return ("Research", "magnifyingglass", OmiColors.textSecondary)
         case "communication":
-            return ("Comms", "message.fill", Color(hex: 0xEC4899))
+            return ("Comms", "message.fill", OmiColors.textSecondary)
         case "finance":
-            return ("Finance", "dollarsign.circle.fill", Color(hex: 0x14B8A6))
+            return ("Finance", "dollarsign.circle.fill", OmiColors.textSecondary)
         case "health":
-            return ("Health", "heart.fill", Color(hex: 0xF43F5E))
+            return ("Health", "heart.fill", OmiColors.textSecondary)
         default:
-            return ("Other", "folder.fill", Color(hex: 0x6B7280))
+            return ("Other", "folder.fill", OmiColors.textSecondary)
         }
     }
 
@@ -120,11 +120,11 @@ struct AgentStatusIndicator: View {
 
     private func statusColor(for status: TaskAgentManager.AgentStatus) -> Color {
         switch status {
-        case .pending: return .orange
-        case .processing: return .blue
-        case .editing: return .purple
-        case .completed: return .green
-        case .failed: return .red
+        case .pending: return OmiColors.textTertiary
+        case .processing: return OmiColors.textSecondary
+        case .editing: return OmiColors.textSecondary
+        case .completed: return OmiColors.textPrimary
+        case .failed: return OmiColors.textTertiary
         }
     }
 }
@@ -162,12 +162,12 @@ struct AgentLaunchButton: View {
                     Text(isLaunching ? "Launching..." : "Run Agent")
                         .font(.system(size: 10, weight: .medium))
                 }
-                .foregroundColor(.blue)
+                .foregroundColor(OmiColors.textSecondary)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
                 .background(
                     Capsule()
-                        .fill(Color.blue.opacity(0.15))
+                        .fill(OmiColors.textSecondary.opacity(0.15))
                 )
             }
             .buttonStyle(.plain)
@@ -336,12 +336,12 @@ struct TaskAgentDetailView: View {
                             if !session.editedFiles.isEmpty {
                                 Text("\(session.editedFiles.count) files edited")
                                     .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.purple)
+                                    .foregroundColor(OmiColors.textSecondary)
                                     .padding(.horizontal, 6)
                                     .padding(.vertical, 2)
                                     .background(
                                         Capsule()
-                                            .fill(Color.purple.opacity(0.15))
+                                            .fill(OmiColors.textSecondary.opacity(0.15))
                                     )
                             }
                         }
@@ -365,12 +365,12 @@ struct TaskAgentDetailView: View {
                             Text("Open Terminal")
                                 .font(.system(size: 12, weight: .medium))
                         }
-                        .foregroundColor(.blue)
+                        .foregroundColor(OmiColors.textSecondary)
                         .padding(.horizontal, 10)
                         .padding(.vertical, 6)
                         .background(
                             RoundedRectangle(cornerRadius: 6)
-                                .fill(Color.blue.opacity(0.1))
+                                .fill(OmiColors.textSecondary.opacity(0.1))
                         )
                     }
                     .buttonStyle(.plain)
@@ -385,12 +385,12 @@ struct TaskAgentDetailView: View {
                                 Text("Stop")
                                     .font(.system(size: 12, weight: .medium))
                             }
-                            .foregroundColor(.red)
+                            .foregroundColor(OmiColors.textSecondary)
                             .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(
                                 RoundedRectangle(cornerRadius: 6)
-                                    .fill(Color.red.opacity(0.1))
+                                    .fill(OmiColors.textSecondary.opacity(0.1))
                             )
                         }
                         .buttonStyle(.plain)
@@ -465,7 +465,7 @@ struct TaskAgentDetailView: View {
                 } label: {
                     Text("Open Settings")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.blue)
+                        .foregroundColor(OmiColors.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -498,7 +498,7 @@ struct TaskAgentDetailView: View {
                             Text("Edit")
                                 .font(.system(size: 11, weight: .medium))
                         }
-                        .foregroundColor(.blue)
+                        .foregroundColor(OmiColors.textSecondary)
                     }
                     .buttonStyle(.plain)
                 }
@@ -577,7 +577,7 @@ struct TaskAgentDetailView: View {
                         Text("Copy")
                             .font(.system(size: 11, weight: .medium))
                     }
-                    .foregroundColor(.blue)
+                    .foregroundColor(OmiColors.textSecondary)
                 }
                 .buttonStyle(.plain)
             }
@@ -604,7 +604,7 @@ struct TaskAgentDetailView: View {
                     manager.removeSession(taskId: task.id)
                 }
                 .buttonStyle(.bordered)
-                .foregroundColor(.red)
+                .foregroundColor(OmiColors.textSecondary)
             }
 
             Spacer()
@@ -621,11 +621,11 @@ struct TaskAgentDetailView: View {
 
     private func statusColor(for status: TaskAgentManager.AgentStatus) -> Color {
         switch status {
-        case .pending: return .orange
-        case .processing: return .blue
-        case .editing: return .purple
-        case .completed: return .green
-        case .failed: return .red
+        case .pending: return OmiColors.textTertiary
+        case .processing: return OmiColors.textSecondary
+        case .editing: return OmiColors.textSecondary
+        case .completed: return OmiColors.textPrimary
+        case .failed: return OmiColors.textTertiary
         }
     }
 
