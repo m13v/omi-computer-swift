@@ -1,8 +1,8 @@
 import Foundation
 
-/// Service that periodically scores incomplete tasks by relevance to the user's
-/// AI-generated profile and active goals. Tasks with low relevance are hidden
-/// from the default view (top 5). Uses Gemini 3 Pro for scoring.
+/// Service that scores AI-generated tasks once a day by relevance to the user's
+/// profile and goals. Manual tasks are always shown. From AI tasks, only the
+/// top 5 by relevance score are visible; the rest are hidden behind "Show more".
 actor TaskPrioritizationService {
     static let shared = TaskPrioritizationService()
 
@@ -12,11 +12,11 @@ actor TaskPrioritizationService {
     private var lastRunTime: Date?
 
     // Configuration
-    private let intervalSeconds: TimeInterval = 7200    // 2 hours
+    private let intervalSeconds: TimeInterval = 86400   // 24 hours (once a day)
     private let startupDelaySeconds: TimeInterval = 90  // 90s delay at app launch
-    private let cooldownSeconds: TimeInterval = 3600    // 1-hour cooldown
+    private let cooldownSeconds: TimeInterval = 43200   // 12-hour cooldown
     private let minimumTaskCount = 2
-    private let defaultVisibleCount = 5
+    private let defaultVisibleAICount = 5
 
     /// In-memory cache of task relevance scores (task ID → score 0-100)
     private(set) var relevanceScores: [String: Int] = [:]
@@ -91,6 +91,7 @@ actor TaskPrioritizationService {
 
         lastRunTime = Date()
         log("TaskPrioritize: Starting prioritization run")
+        await notifyStoreStarted()
 
         // 1. Fetch incomplete tasks
         let tasks: [TaskActionItem]
@@ -99,12 +100,15 @@ actor TaskPrioritizationService {
             tasks = response.items
         } catch {
             log("TaskPrioritize: Failed to fetch tasks: \(error)")
+            await notifyStoreUpdated()
             return
         }
 
-        guard tasks.count >= minimumTaskCount else {
-            log("TaskPrioritize: Only \(tasks.count) tasks, skipping (minimum: \(minimumTaskCount))")
-            // With very few tasks, show them all
+        // Only AI-generated tasks need scoring — manual tasks are always shown
+        let aiTasks = tasks.filter { $0.source != "manual" }
+
+        guard aiTasks.count >= minimumTaskCount else {
+            log("TaskPrioritize: Only \(aiTasks.count) AI tasks, skipping (minimum: \(minimumTaskCount))")
             relevanceScores = [:]
             hiddenTaskIds = []
             await notifyStoreUpdated()
@@ -121,9 +125,9 @@ actor TaskPrioritizationService {
             goals = []
         }
 
-        // 3. Build context and score tasks
+        // 3. Score only AI tasks with Gemini
         let scores = await scoreTasksWithGemini(
-            tasks: tasks,
+            tasks: aiTasks,
             profile: userProfile?.profileText,
             goals: goals,
             client: client
@@ -131,43 +135,26 @@ actor TaskPrioritizationService {
 
         guard let scores = scores else {
             log("TaskPrioritize: Scoring failed, keeping all tasks visible")
+            await notifyStoreUpdated()
             return
         }
 
         // 4. Update scores and determine which tasks to hide
         relevanceScores = scores
 
-        // Determine hidden tasks: everything below top N by score,
-        // but NEVER hide manual tasks or overdue tasks
-        let now = Date()
-        let sortedByScore = tasks.sorted { scoreA, scoreB in
-            (scores[scoreA.id] ?? 50) > (scores[scoreB.id] ?? 50)
+        // Manual tasks are never hidden — only AI-generated tasks get filtered.
+        // From AI tasks, show the top N by score; hide the rest.
+        let manualCount = tasks.count - aiTasks.count
+
+        let sortedAI = aiTasks.sorted { a, b in
+            (scores[a.id] ?? 50) > (scores[b.id] ?? 50)
         }
 
-        var visible = Set<String>()
-        var hidden = Set<String>()
+        let hiddenAI = sortedAI.dropFirst(defaultVisibleAICount)
+        hiddenTaskIds = Set(hiddenAI.map { $0.id })
 
-        for task in sortedByScore {
-            let isManual = task.source == "manual"
-            let isOverdue = task.dueAt.map { $0 < now } ?? false
-            let isDueToday: Bool = {
-                guard let due = task.dueAt else { return false }
-                return Calendar.current.isDateInToday(due)
-            }()
-
-            // Always show manual, overdue, and due-today tasks
-            if isManual || isOverdue || isDueToday {
-                visible.insert(task.id)
-            } else if visible.count < defaultVisibleCount {
-                visible.insert(task.id)
-            } else {
-                hidden.insert(task.id)
-            }
-        }
-
-        hiddenTaskIds = hidden
-
-        log("TaskPrioritize: Scored \(tasks.count) tasks. Visible: \(visible.count), Hidden: \(hidden.count)")
+        let visibleCount = manualCount + min(aiTasks.count, defaultVisibleAICount)
+        log("TaskPrioritize: Scored \(tasks.count) tasks (\(manualCount) manual, \(aiTasks.count) AI). Visible: \(visibleCount), Hidden: \(hiddenAI.count)")
         await notifyStoreUpdated()
     }
 
@@ -303,7 +290,14 @@ actor TaskPrioritizationService {
         return scoresMap
     }
 
-    /// Notify TasksStore that prioritization scores have been updated
+    /// Notify TasksStore that prioritization has started
+    private func notifyStoreStarted() async {
+        await MainActor.run {
+            NotificationCenter.default.post(name: .taskPrioritizationDidStart, object: nil)
+        }
+    }
+
+    /// Notify TasksStore that prioritization scores have been updated (or finished)
     private func notifyStoreUpdated() async {
         await MainActor.run {
             NotificationCenter.default.post(name: .taskPrioritizationDidUpdate, object: nil)
@@ -314,6 +308,7 @@ actor TaskPrioritizationService {
 // MARK: - Notification Name
 
 extension Notification.Name {
+    static let taskPrioritizationDidStart = Notification.Name("taskPrioritizationDidStart")
     static let taskPrioritizationDidUpdate = Notification.Name("taskPrioritizationDidUpdate")
 }
 
