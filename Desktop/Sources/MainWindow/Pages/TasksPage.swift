@@ -2695,20 +2695,9 @@ struct TaskRow: View {
                         TaskClassificationBadge(category: tag)
                     }
 
-                    // Agent status indicator and detail button
+                    // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                     if task.shouldTriggerAgent {
-                        AgentStatusIndicator(taskId: task.id)
-
-                        Button {
-                            showAgentDetail = true
-                        } label: {
-                            Image(systemName: "terminal")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                                .frame(width: 24, height: 24)
-                        }
-                        .buttonStyle(.plain)
-                        .help("View Agent Details")
+                        AgentStatusIndicator(taskId: task.id, showAgentDetail: $showAgentDetail)
                     }
 
                     // Due date badge - clickable
