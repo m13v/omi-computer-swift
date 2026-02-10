@@ -28,6 +28,13 @@ class TasksStore: ObservableObject {
     @Published var hasMoreDeletedTasks = true
     @Published var error: String?
 
+    /// When true, show all tasks. When false, hide low-relevance AI tasks (show top 5 per category).
+    @Published var showAllTasks = false
+
+    /// Set of task IDs that should be hidden in the default (collapsed) view.
+    /// Updated by TaskPrioritizationService.
+    @Published var hiddenTaskIds: Set<String> = []
+
     // Legacy compatibility - combines both lists
     var tasks: [TaskActionItem] {
         incompleteTasks + completedTasks
@@ -151,6 +158,21 @@ class TasksStore: ObservableObject {
                 Task { await self?.refreshTasksIfNeeded() }
             }
             .store(in: &cancellables)
+
+        // Listen for prioritization score updates
+        NotificationCenter.default.publisher(for: .taskPrioritizationDidUpdate)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                Task { await self?.refreshPrioritizationScores() }
+            }
+            .store(in: &cancellables)
+    }
+
+    /// Pull latest hidden task IDs from the prioritization service
+    private func refreshPrioritizationScores() async {
+        let hidden = await TaskPrioritizationService.shared.hiddenTaskIds
+        hiddenTaskIds = hidden
+        log("TasksStore: Updated hidden tasks from prioritization (\(hidden.count) hidden)")
     }
 
     /// Refresh tasks if already loaded (for auto-refresh)
@@ -185,10 +207,12 @@ class TasksStore: ObservableObject {
                 completed: false,
                 startDate: startDate
             )
-            incompleteTasks = mergedTasks
-            hasMoreIncompleteTasks = mergedTasks.count >= pageSize
-            incompleteOffset = mergedTasks.count
-            log("TasksStore: Auto-refresh showing \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
+            if mergedTasks != incompleteTasks {
+                incompleteTasks = mergedTasks
+                hasMoreIncompleteTasks = mergedTasks.count >= pageSize
+                incompleteOffset = mergedTasks.count
+                log("TasksStore: Auto-refresh updated \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
+            }
         } catch {
             // Silently ignore errors during auto-refresh
             logError("TasksStore: Auto-refresh failed", error: error)
@@ -212,9 +236,11 @@ class TasksStore: ObservableObject {
                     offset: 0,
                     completed: true
                 )
-                completedTasks = mergedTasks
-                hasMoreCompletedTasks = mergedTasks.count >= pageSize
-                completedOffset = mergedTasks.count
+                if mergedTasks != completedTasks {
+                    completedTasks = mergedTasks
+                    hasMoreCompletedTasks = mergedTasks.count >= pageSize
+                    completedOffset = mergedTasks.count
+                }
             } catch {
                 logError("TasksStore: Auto-refresh completed tasks failed", error: error)
             }
@@ -239,9 +265,12 @@ class TasksStore: ObservableObject {
                     includeDeleted: true
                 )
                 // Filter to only deleted
-                deletedTasks = mergedTasks.filter { $0.deleted == true }
-                hasMoreDeletedTasks = response.hasMore
-                deletedOffset = deletedTasks.count
+                let newDeleted = mergedTasks.filter { $0.deleted == true }
+                if newDeleted != deletedTasks {
+                    deletedTasks = newDeleted
+                    hasMoreDeletedTasks = response.hasMore
+                    deletedOffset = newDeleted.count
+                }
             } catch {
                 logError("TasksStore: Auto-refresh deleted tasks failed", error: error)
             }
