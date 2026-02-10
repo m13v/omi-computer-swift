@@ -1249,6 +1249,7 @@ impl FirestoreService {
         reasoning: Option<&str>,
         current_activity: Option<&str>,
         source: Option<&str>,
+        window_title: Option<&str>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let memory_id = document_id_from_seed(content);
         let now = Utc::now();
@@ -1328,6 +1329,9 @@ impl FirestoreService {
         if let Some(src) = source {
             fields["source"] = json!({"stringValue": src});
         }
+        if let Some(wt) = window_title {
+            fields["window_title"] = json!({"stringValue": wt});
+        }
 
         let doc = json!({ "fields": fields });
 
@@ -1354,7 +1358,7 @@ impl FirestoreService {
         content: &str,
         visibility: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        self.create_memory(uid, content, visibility, None, None, None, None, &[], None, None, None).await
+        self.create_memory(uid, content, visibility, None, None, None, None, &[], None, None, None, None).await
     }
 
     /// Update memory read/dismissed status
@@ -3231,6 +3235,7 @@ impl FirestoreService {
             tags: self.parse_string_array(fields, "tags"),
             reasoning: self.parse_string(fields, "reasoning"),
             current_activity: self.parse_string(fields, "current_activity"),
+            window_title: self.parse_string(fields, "window_title"),
         })
     }
 
