@@ -2514,7 +2514,7 @@ struct TaskRow: View {
 
                     // Source badge (read-only)
                     if let source = task.source {
-                        SourceBadgeCompact(source: source, sourceLabel: task.sourceLabel, sourceIcon: task.sourceIcon)
+                        SourceBadgeCompact(source: source, sourceLabel: task.sourceAppLabel, sourceIcon: task.sourceIcon)
                     }
 
                     // Priority badge - clickable
