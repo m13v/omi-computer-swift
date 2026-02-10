@@ -1501,7 +1501,8 @@ extension APIClient {
         dueAt: Date? = nil,
         priority: String? = nil,
         metadata: [String: Any]? = nil,
-        goalId: String? = nil
+        goalId: String? = nil,
+        relevanceScore: Int? = nil
     ) async throws -> TaskActionItem {
         struct UpdateRequest: Encodable {
             let completed: Bool?
@@ -1510,11 +1511,13 @@ extension APIClient {
             let priority: String?
             let metadata: String?
             let goalId: String?
+            let relevanceScore: Int?
 
             enum CodingKeys: String, CodingKey {
                 case completed, description, priority, metadata
                 case dueAt = "due_at"
                 case goalId = "goal_id"
+                case relevanceScore = "relevance_score"
             }
         }
 
@@ -1535,7 +1538,8 @@ extension APIClient {
             dueAt: dueAt.map { formatter.string(from: $0) },
             priority: priority,
             metadata: metadataString,
-            goalId: goalId
+            goalId: goalId,
+            relevanceScore: relevanceScore
         )
 
         return try await patch("v1/action-items/\(id)", body: request)
@@ -1571,7 +1575,8 @@ extension APIClient {
         source: String? = nil,
         priority: String? = nil,
         category: String? = nil,
-        metadata: [String: Any]? = nil
+        metadata: [String: Any]? = nil,
+        relevanceScore: Int? = nil
     ) async throws -> TaskActionItem {
         struct CreateRequest: Encodable {
             let description: String
@@ -1580,11 +1585,13 @@ extension APIClient {
             let priority: String?
             let category: String?
             let metadata: String?
+            let relevanceScore: Int?
 
             enum CodingKeys: String, CodingKey {
                 case description
                 case dueAt = "due_at"
                 case source, priority, category, metadata
+                case relevanceScore = "relevance_score"
             }
         }
 
@@ -1605,7 +1612,8 @@ extension APIClient {
             source: source,
             priority: priority,
             category: category,
-            metadata: metadataString
+            metadata: metadataString,
+            relevanceScore: relevanceScore
         )
 
         return try await post("v1/action-items", body: request)
@@ -1619,6 +1627,22 @@ extension APIClient {
 
         let request = BatchRequest(items: items)
         return try await post("v1/action-items/batch", body: request)
+    }
+
+    /// Batch update relevance scores for multiple action items
+    func batchUpdateScores(_ scores: [(id: String, score: Int)]) async throws {
+        struct ScoreUpdate: Encodable {
+            let id: String
+            let relevance_score: Int
+        }
+        struct BatchRequest: Encodable {
+            let scores: [ScoreUpdate]
+        }
+        struct StatusResponse: Decodable {
+            let status: String
+        }
+        let request = BatchRequest(scores: scores.map { ScoreUpdate(id: $0.id, relevance_score: $0.score) })
+        let _: StatusResponse = try await patch("v1/action-items/batch-scores", body: request)
     }
 }
 
@@ -1876,6 +1900,7 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         case deletedReason = "deleted_reason"
         case keptTaskId = "kept_task_id"
         case goalId = "goal_id"
+        case relevanceScore = "relevance_score"
     }
 
     /// Memberwise initializer for creating instances programmatically
@@ -1953,6 +1978,7 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         deletedReason = try container.decodeIfPresent(String.self, forKey: .deletedReason)
         keptTaskId = try container.decodeIfPresent(String.self, forKey: .keptTaskId)
         goalId = try container.decodeIfPresent(String.self, forKey: .goalId)
+        relevanceScore = try container.decodeIfPresent(Int.self, forKey: .relevanceScore)
 
         // Agent fields are local-only, not decoded from API
         agentStatus = nil
