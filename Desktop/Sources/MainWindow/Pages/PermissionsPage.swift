@@ -322,7 +322,7 @@ struct MicrophonePermissionSection: View {
                             .foregroundColor(OmiColors.textSecondary)
 
                         // Screenshot showing the toggle
-                        if let image = NSImage(contentsOfFile: Bundle.module.path(forResource: "microphone-settings", ofType: "png") ?? "") {
+                        if let image = NSImage(contentsOfFile: Bundle.resourceBundle.path(forResource: "microphone-settings", ofType: "png") ?? "") {
                             Image(nsImage: image)
                                 .resizable()
                                 .scaledToFit()
