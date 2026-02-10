@@ -80,9 +80,9 @@ struct ScoreWidget: View {
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Header with tabs
-            HStack(spacing: 0) {
+        HStack(spacing: 16) {
+            // Tabs on the left sidebar
+            VStack(spacing: 4) {
                 ForEach(ScoreTab.allCases, id: \.self) { tab in
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -92,7 +92,8 @@ struct ScoreWidget: View {
                         Text(tab.rawValue)
                             .font(.system(size: 12, weight: selectedTab == tab ? .semibold : .regular))
                             .foregroundColor(selectedTab == tab ? OmiColors.textPrimary : OmiColors.textTertiary)
-                            .padding(.horizontal, 12)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 10)
                             .padding(.vertical, 6)
                             .background(
                                 selectedTab == tab
@@ -105,52 +106,56 @@ struct ScoreWidget: View {
                 }
                 Spacer()
             }
+            .frame(width: 72)
 
-            // Semicircle gauge
-            ZStack {
-                // Background arc
-                SemicircleShape()
-                    .stroke(OmiColors.backgroundQuaternary, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                    .frame(width: 140, height: 70)
+            // Gauge + info on the right
+            VStack(spacing: 12) {
+                // Semicircle gauge
+                ZStack {
+                    // Background arc
+                    SemicircleShape()
+                        .stroke(OmiColors.backgroundQuaternary, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                        .frame(width: 140, height: 70)
 
-                // Progress arc
-                SemicircleShape()
-                    .trim(from: 0, to: min(currentScore.score / 100, 1.0))
-                    .stroke(scoreColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
-                    .frame(width: 140, height: 70)
-                    .animation(.easeInOut(duration: 0.3), value: currentScore.score)
+                    // Progress arc
+                    SemicircleShape()
+                        .trim(from: 0, to: min(currentScore.score / 100, 1.0))
+                        .stroke(scoreColor, style: StrokeStyle(lineWidth: 12, lineCap: .round))
+                        .frame(width: 140, height: 70)
+                        .animation(.easeInOut(duration: 0.3), value: currentScore.score)
 
-                // Score text
-                VStack(spacing: 2) {
-                    Text("\(Int(currentScore.score))%")
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .contentTransition(.numericText())
-                }
-                .offset(y: 10)
-            }
-
-            // Task count and subtitle
-            VStack(spacing: 4) {
-                if currentScore.hasTasks {
-                    HStack(spacing: 4) {
-                        Image(systemName: "checkmark.circle.fill")
-                            .font(.system(size: 12))
-                            .foregroundColor(scoreColor)
-                        Text("\(currentScore.completedTasks) of \(currentScore.totalTasks) tasks completed")
-                            .font(.system(size: 12).monospacedDigit())
-                            .foregroundColor(OmiColors.textTertiary)
+                    // Score text
+                    VStack(spacing: 2) {
+                        Text("\(Int(currentScore.score))%")
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(OmiColors.textPrimary)
                             .contentTransition(.numericText())
                     }
-                } else {
-                    Text(noTasksText)
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
+                    .offset(y: 10)
                 }
 
-                Text(subtitleText)
-                    .font(.system(size: 10))
-                    .foregroundColor(OmiColors.textQuaternary)
+                // Task count and subtitle
+                VStack(spacing: 4) {
+                    if currentScore.hasTasks {
+                        HStack(spacing: 4) {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(scoreColor)
+                            Text("\(currentScore.completedTasks) of \(currentScore.totalTasks) tasks completed")
+                                .font(.system(size: 12).monospacedDigit())
+                                .foregroundColor(OmiColors.textTertiary)
+                                .contentTransition(.numericText())
+                        }
+                    } else {
+                        Text(noTasksText)
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Text(subtitleText)
+                        .font(.system(size: 10))
+                        .foregroundColor(OmiColors.textQuaternary)
+                }
             }
         }
         .padding(20)
