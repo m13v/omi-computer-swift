@@ -246,6 +246,11 @@ actor TaskDeduplicationService {
                     )
                     deletedCount += 1
                     log("TaskDedup: Soft-deleted '\(deletedTask?.description ?? deleteId)' (kept: '\(keptTask?.description ?? group.keepId)') - \(group.reason)")
+
+                    // Compact relevance scores to fill the gap
+                    if let score = deletedTask?.relevanceScore {
+                        try await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+                    }
                 } catch {
                     log("TaskDedup: Failed to soft-delete task \(deleteId): \(error)")
                 }
