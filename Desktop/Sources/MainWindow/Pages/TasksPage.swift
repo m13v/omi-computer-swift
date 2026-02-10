@@ -1315,6 +1315,7 @@ class TasksViewModel: ObservableObject {
 
 struct TasksPage: View {
     @ObservedObject var viewModel: TasksViewModel
+    @ObservedObject private var store = TasksStore.shared
 
     // Filter popover state
     @State private var showFilterPopover = false
@@ -1934,19 +1935,46 @@ struct TasksPage: View {
                 let onlyDeleted = (viewModel.selectedTags.contains(.removedByAI) || viewModel.selectedTags.contains(.removedByMe)) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
                 if viewModel.sortOption == .dueDate && !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
                     ForEach(TaskCategory.allCases, id: \.self) { category in
-                        let tasksInCategory = viewModel.categorizedTasks[category] ?? []
-                        if !tasksInCategory.isEmpty {
+                        let orderedTasks = viewModel.getOrderedTasks(for: category)
+                        if !orderedTasks.isEmpty {
                             TaskCategorySection(
                                 category: category,
-                                tasks: tasksInCategory,
-                                viewModel: viewModel
+                                orderedTasks: orderedTasks,
+                                isMultiSelectMode: viewModel.isMultiSelectMode,
+                                showAllTasks: store.showAllTasks,
+                                hiddenTaskIds: store.hiddenTaskIds,
+                                onShowAll: { store.showAllTasks = true },
+                                indentLevelFor: { viewModel.getIndentLevel(for: $0) },
+                                isSelectedFor: { viewModel.selectedTaskIds.contains($0) },
+                                onToggle: { await viewModel.toggleTask($0) },
+                                onDelete: { await viewModel.deleteTask($0) },
+                                onToggleSelection: { viewModel.toggleTaskSelection($0) },
+                                onUpdateDetails: { task, desc, date, priority in
+                                    await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
+                                },
+                                onIncrementIndent: { viewModel.incrementIndent(for: $0) },
+                                onDecrementIndent: { viewModel.decrementIndent(for: $0) },
+                                onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) }
                             )
                         }
                     }
                 } else {
                     // Flat list for other sort options, completed view, or multi-select mode
                     ForEach(viewModel.displayTasks) { task in
-                        TaskRow(task: task, viewModel: viewModel)
+                        TaskRow(
+                            task: task,
+                            indentLevel: viewModel.getIndentLevel(for: task.id),
+                            isMultiSelectMode: viewModel.isMultiSelectMode,
+                            isSelected: viewModel.selectedTaskIds.contains(task.id),
+                            onToggle: { await viewModel.toggleTask($0) },
+                            onDelete: { await viewModel.deleteTask($0) },
+                            onToggleSelection: { viewModel.toggleTaskSelection($0) },
+                            onUpdateDetails: { task, desc, date, priority in
+                                await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
+                            },
+                            onIncrementIndent: { viewModel.incrementIndent(for: $0) },
+                            onDecrementIndent: { viewModel.decrementIndent(for: $0) }
+                        )
                             .onAppear {
                                 Task {
                                     await viewModel.loadMoreIfNeeded(currentTask: task)
@@ -2020,12 +2048,36 @@ struct TasksPage: View {
 
 struct TaskCategorySection: View {
     let category: TaskCategory
-    let tasks: [TaskActionItem]
-    @ObservedObject var viewModel: TasksViewModel
+    let orderedTasks: [TaskActionItem]
+    var isMultiSelectMode: Bool = false
 
-    /// Get ordered tasks respecting custom drag order
-    private var orderedTasks: [TaskActionItem] {
-        viewModel.getOrderedTasks(for: category)
+    // Prioritization: controls which tasks are visible in collapsed mode
+    var showAllTasks: Bool = true
+    var hiddenTaskIds: Set<String> = []
+    var onShowAll: (() -> Void)?
+
+    // Callbacks for row data and actions (passed through to TaskRow)
+    var indentLevelFor: ((String) -> Int)?
+    var isSelectedFor: ((String) -> Bool)?
+    var onToggle: ((TaskActionItem) async -> Void)?
+    var onDelete: ((TaskActionItem) async -> Void)?
+    var onToggleSelection: ((TaskActionItem) -> Void)?
+    var onUpdateDetails: ((TaskActionItem, String?, Date?, String?) async -> Void)?
+    var onIncrementIndent: ((String) -> Void)?
+    var onDecrementIndent: ((String) -> Void)?
+    var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
+
+    /// Tasks visible in current view (filtered by prioritization when collapsed)
+    private var visibleTasks: [TaskActionItem] {
+        if showAllTasks || hiddenTaskIds.isEmpty {
+            return orderedTasks
+        }
+        return orderedTasks.filter { !hiddenTaskIds.contains($0.id) }
+    }
+
+    /// Number of tasks hidden by prioritization in this category
+    private var hiddenCount: Int {
+        orderedTasks.count - visibleTasks.count
     }
 
     var body: some View {
@@ -2040,7 +2092,7 @@ struct TaskCategorySection: View {
                     .font(.system(size: 15, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
-                Text("\(tasks.count)")
+                Text("\(orderedTasks.count)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(OmiColors.textTertiary)
                     .padding(.horizontal, 8)
@@ -2055,10 +2107,22 @@ struct TaskCategorySection: View {
             .padding(.horizontal, 4)
 
             // Tasks in category with drag-and-drop reordering
-            if !viewModel.isMultiSelectMode {
+            if !isMultiSelectMode {
                 VStack(spacing: 8) {
-                    ForEach(orderedTasks) { task in
-                        TaskRow(task: task, viewModel: viewModel, category: category)
+                    ForEach(visibleTasks) { task in
+                        TaskRow(
+                            task: task,
+                            category: category,
+                            indentLevel: indentLevelFor?(task.id) ?? 0,
+                            isMultiSelectMode: isMultiSelectMode,
+                            isSelected: isSelectedFor?(task.id) ?? false,
+                            onToggle: onToggle,
+                            onDelete: onDelete,
+                            onToggleSelection: onToggleSelection,
+                            onUpdateDetails: onUpdateDetails,
+                            onIncrementIndent: onIncrementIndent,
+                            onDecrementIndent: onDecrementIndent
+                        )
                             .draggable(task.id) {
                                 // Drag preview
                                 TaskDragPreview(task: task)
@@ -2071,7 +2135,7 @@ struct TaskCategorySection: View {
                                 }
                                 // Move the task
                                 if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
-                                    viewModel.moveTask(droppedTask, toIndex: targetIndex, inCategory: category)
+                                    onMoveTask?(droppedTask, targetIndex, category)
                                 }
                                 return true
                             }
@@ -2079,6 +2143,26 @@ struct TaskCategorySection: View {
                                 insertion: .opacity.combined(with: .move(edge: .top)),
                                 removal: .opacity.combined(with: .move(edge: .trailing))
                             ))
+                    }
+
+                    // "Show N more" button when tasks are hidden by prioritization
+                    if hiddenCount > 0 {
+                        Button {
+                            onShowAll?()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.down")
+                                Text("Show \(hiddenCount) more")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(OmiColors.backgroundTertiary.opacity(0.5))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
                     }
                 }
             }
@@ -2117,8 +2201,20 @@ struct TaskDragPreview: View {
 
 struct TaskRow: View {
     let task: TaskActionItem
-    @ObservedObject var viewModel: TasksViewModel
     var category: TaskCategory? = nil  // Optional for flat list views
+
+    // Data from ViewModel (passed as values, not via @ObservedObject)
+    var indentLevel: Int = 0
+    var isMultiSelectMode: Bool = false
+    var isSelected: Bool = false
+
+    // Action closures
+    var onToggle: ((TaskActionItem) async -> Void)?
+    var onDelete: ((TaskActionItem) async -> Void)?
+    var onToggleSelection: ((TaskActionItem) -> Void)?
+    var onUpdateDetails: ((TaskActionItem, String?, Date?, String?) async -> Void)?
+    var onIncrementIndent: ((String) -> Void)?
+    var onDecrementIndent: ((String) -> Void)?
 
     @State private var isHovering = false
     @State private var showDeleteConfirmation = false
@@ -2148,18 +2244,9 @@ struct TaskRow: View {
     /// Threshold for triggering indent change (25% of row width)
     private let indentThreshold: CGFloat = 80
 
-    private var isSelected: Bool {
-        viewModel.selectedTaskIds.contains(task.id)
-    }
-
     /// Check if task was created less than 1 minute ago (newly added)
     private var isNewlyCreated: Bool {
         Date().timeIntervalSince(task.createdAt) < 60
-    }
-
-    /// Indent level for this task (0-3)
-    private var indentLevel: Int {
-        viewModel.getIndentLevel(for: task.id)
     }
 
     /// Indent amount in points (28pt per level, like Flutter)
@@ -2176,7 +2263,7 @@ struct TaskRow: View {
             ) {
                 Button("Delete", role: .destructive) {
                     Task {
-                        await viewModel.deleteTask(task)
+                        await onDelete?(task)
                     }
                 }
                 Button("Cancel", role: .cancel) {}
@@ -2217,7 +2304,7 @@ struct TaskRow: View {
                 .gesture(
                     DragGesture(minimumDistance: 10, coordinateSpace: .local)
                         .onChanged { value in
-                            guard !viewModel.isMultiSelectMode, !isDeletedTask else { return }
+                            guard !isMultiSelectMode, !isDeletedTask else { return }
                             isDragging = true
 
                             // Apply resistance at the edges
@@ -2311,7 +2398,7 @@ struct TaskRow: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     swipeOffset = 0
                 }
-                viewModel.decrementIndent(for: task.id)
+                onDecrementIndent?(task.id)
             } else {
                 // Delete - animate off screen
                 withAnimation(.easeOut(duration: 0.2)) {
@@ -2320,7 +2407,7 @@ struct TaskRow: View {
                 }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                     Task {
-                        await viewModel.deleteTask(task)
+                        await onDelete?(task)
                     }
                 }
             }
@@ -2329,7 +2416,7 @@ struct TaskRow: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                 swipeOffset = 0
             }
-            viewModel.incrementIndent(for: task.id)
+            onIncrementIndent?(task.id)
         } else {
             // Snap back to original position
             withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
@@ -2364,10 +2451,10 @@ struct TaskRow: View {
                     .font(.system(size: 14))
                     .foregroundColor(OmiColors.textTertiary)
                     .frame(width: 24, height: 24)
-            } else if viewModel.isMultiSelectMode {
+            } else if isMultiSelectMode {
                 // Multi-select checkbox
                 Button {
-                    viewModel.toggleTaskSelection(task)
+                    onToggleSelection?(task)
                 } label: {
                     ZStack {
                         RoundedRectangle(cornerRadius: 4)
@@ -2445,7 +2532,7 @@ struct TaskRow: View {
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
                         .lineLimit(1...4)
                         .focused($isTextFieldFocused)
-                        .disabled(viewModel.isMultiSelectMode)
+                        .disabled(isMultiSelectMode)
                         .onSubmit {
                             commitEdit()
                         }
@@ -2525,7 +2612,7 @@ struct TaskRow: View {
                         showPriorityPicker: $showPriorityPicker,
                         onPriorityChange: { newPriority in
                             Task {
-                                await viewModel.updateTaskDetails(task, priority: newPriority)
+                                await onUpdateDetails?(task, nil, nil, newPriority)
                             }
                         }
                     )
@@ -2540,13 +2627,13 @@ struct TaskRow: View {
             Spacer(minLength: 0)
 
             // Hover actions: indent controls and delete (not for deleted tasks)
-            if isHovering && !viewModel.isMultiSelectMode && !isDeletedTask {
+            if isHovering && !isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
                     // Outdent button (decrease indent)
                     if indentLevel > 0 {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                viewModel.decrementIndent(for: task.id)
+                                onDecrementIndent?(task.id)
                             }
                         } label: {
                             Image(systemName: "arrow.left.to.line")
@@ -2562,7 +2649,7 @@ struct TaskRow: View {
                     if indentLevel < 3 {
                         Button {
                             withAnimation(.easeInOut(duration: 0.2)) {
-                                viewModel.incrementIndent(for: task.id)
+                                onIncrementIndent?(task.id)
                             }
                         } label: {
                             Image(systemName: "arrow.right.to.line")
@@ -2632,7 +2719,7 @@ struct TaskRow: View {
         }
 
         Task {
-            await viewModel.updateTaskDetails(task, description: trimmed)
+            await onUpdateDetails?(task, trimmed, nil, nil)
         }
     }
 
@@ -2657,7 +2744,7 @@ struct TaskRow: View {
                 Button("Save") {
                     showDatePicker = false
                     Task {
-                        await viewModel.updateTaskDetails(task, dueAt: editDueDate)
+                        await onUpdateDetails?(task, nil, editDueDate, nil)
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -2674,7 +2761,7 @@ struct TaskRow: View {
         if task.completed {
             log("Task: Already completed, toggling back")
             Task {
-                await viewModel.toggleTask(task)
+                await onToggle?(task)
             }
             return
         }
@@ -2702,7 +2789,7 @@ struct TaskRow: View {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.7) {
             log("Task: Animation complete, calling toggleTask")
             Task {
-                await self.viewModel.toggleTask(self.task)
+                await self.onToggle?(self.task)
             }
         }
     }
