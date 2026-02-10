@@ -184,7 +184,7 @@ actor TaskAssistant: ProactiveAssistant {
             let interval = await self.extractionInterval
             try? await Task.sleep(nanoseconds: UInt64(interval * 1_000_000_000))
             guard !Task.isCancelled else { return }
-            guard let frame = await self.latestFrame else { return }
+            guard let frame = self.latestFrame else { return }
             log("Task: Fallback timer fired after \(Int(interval))s")
             self.triggerContinuation.yield(.timerFallback(frame))
         }
