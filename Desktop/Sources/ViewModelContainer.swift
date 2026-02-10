@@ -71,6 +71,11 @@ class ViewModelContainer: ObservableObject {
         // Wait for all to complete
         _ = await (tasks, dashboard, apps, memories, chat)
 
+        // Restore agent sessions from database (reconnect to live tmux sessions)
+        if dbAvailable {
+            await TaskAgentManager.shared.restoreSessionsFromDatabase()
+        }
+
         isInitialLoadComplete = true
         isLoading = false
 
