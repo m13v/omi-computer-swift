@@ -808,7 +808,35 @@ actor ActionItemStorage {
     }
 
     /// Get AI tasks that have been scored, ordered by score descending
-    func getScoredAITasks(limit: Int = 10000) async throws -> [TaskActionItem] {
+    /// - Parameter minDate: If set, only return tasks created or due after this date
+    func getScoredAITasks(limit: Int = 10000, minDate: Date? = nil) async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            var request = ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == false)
+                .filter(Column("source") != "manual")
+                .filter(Column("relevanceScore") != nil)
+
+            if let minDate = minDate {
+                // Task must be visible in UI: created or due within the date window
+                request = request.filter(
+                    Column("createdAt") >= minDate || Column("dueAt") >= minDate
+                )
+            }
+
+            let records = try request
+                .order(Column("relevanceScore").desc)
+                .limit(limit)
+                .fetchAll(database)
+
+            return records.map { $0.toTaskActionItem() }
+        }
+    }
+
+    /// Get the most recent AI tasks (by createdAt), regardless of score status
+    func getRecentAITasks(limit: Int = 200) async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
 
         return try await db.read { database in
@@ -816,12 +844,25 @@ actor ActionItemStorage {
                 .filter(Column("deleted") == false)
                 .filter(Column("completed") == false)
                 .filter(Column("source") != "manual")
-                .filter(Column("relevanceScore") != nil)
-                .order(Column("relevanceScore").desc)
+                .order(Column("createdAt").desc)
                 .limit(limit)
                 .fetchAll(database)
 
             return records.map { $0.toTaskActionItem() }
+        }
+    }
+
+    /// Clear relevance scores for specific tasks (by backendId)
+    func clearRelevanceScores(forIds ids: [String]) async throws {
+        guard !ids.isEmpty else { return }
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            let placeholders = ids.map { _ in "?" }.joined(separator: ",")
+            try database.execute(
+                sql: "UPDATE action_items SET relevanceScore = NULL, scoredAt = NULL WHERE backendId IN (\(placeholders))",
+                arguments: StatementArguments(ids)
+            )
         }
     }
 
