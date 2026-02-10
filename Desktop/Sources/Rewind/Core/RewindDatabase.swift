@@ -1296,6 +1296,40 @@ actor RewindDatabase {
             try db.execute(sql: "DROP TABLE _score_map2")
         }
 
+        // Migration 32: Delete orphaned unsynced action items that have synced duplicates.
+        // These were created when saveTaskToSQLite succeeded but markSynced failed,
+        // and a later full sync pulled the same task from the backend as a new record.
+        // The orphan has no backendId; the duplicate has the proper backendId.
+        migrator.registerMigration("deleteOrphanedUnsyncedActionItems") { db in
+            let deleted = try Int.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM action_items
+                WHERE (backendId IS NULL OR backendId = '')
+                  AND backendSynced = 0
+                  AND EXISTS (
+                    SELECT 1 FROM action_items dup
+                    WHERE dup.description = action_items.description
+                      AND dup.source = action_items.source
+                      AND dup.backendId IS NOT NULL AND dup.backendId <> ''
+                      AND dup.id <> action_items.id
+                  )
+            """) ?? 0
+
+            try db.execute(sql: """
+                DELETE FROM action_items
+                WHERE (backendId IS NULL OR backendId = '')
+                  AND backendSynced = 0
+                  AND EXISTS (
+                    SELECT 1 FROM action_items dup
+                    WHERE dup.description = action_items.description
+                      AND dup.source = action_items.source
+                      AND dup.backendId IS NOT NULL AND dup.backendId <> ''
+                      AND dup.id <> action_items.id
+                  )
+            """)
+
+            print("[RewindDatabase] Migration 32: Deleted \(deleted) orphaned unsynced action items with synced duplicates")
+        }
+
         try migrator.migrate(queue)
     }
 
