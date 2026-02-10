@@ -227,13 +227,13 @@ struct DashboardPage: View {
                     // Top row: Score + Focus
                     GridRow {
                         ScoreWidget(scoreResponse: viewModel.scoreResponse)
-                            .frame(maxWidth: .infinity)
+                            .frame(minWidth: 0, maxWidth: .infinity)
 
                         FocusSummaryWidget(
                             todayStats: FocusStorage.shared.todayStats,
                             totalStats: FocusStorage.shared.allTimeStats
                         )
-                        .frame(maxWidth: .infinity)
+                        .frame(minWidth: 0, maxWidth: .infinity)
                     }
 
                     // Bottom row: Tasks + Goals
@@ -248,7 +248,7 @@ struct DashboardPage: View {
                                 }
                             }
                         )
-                        .frame(maxWidth: .infinity)
+                        .frame(minWidth: 0, maxWidth: .infinity)
 
                         GoalsWidget(
                             goals: viewModel.goals,
@@ -273,7 +273,7 @@ struct DashboardPage: View {
                                 }
                             }
                         )
-                        .frame(maxWidth: .infinity)
+                        .frame(minWidth: 0, maxWidth: .infinity)
                     }
                 }
                 .padding(.horizontal, 24)
