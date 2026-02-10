@@ -1021,6 +1021,8 @@ struct ServerMemory: Codable, Identifiable {
     let currentActivity: String?
     // Input device name (microphone) for desktop transcriptions
     let inputDeviceName: String?
+    // Window title when memory was extracted
+    let windowTitle: String?
 
     enum CodingKeys: String, CodingKey {
         case id, content, category, reviewed, visibility, scoring, source, confidence, tags, reasoning
@@ -1035,6 +1037,7 @@ struct ServerMemory: Codable, Identifiable {
         case isDismissed = "is_dismissed"
         case currentActivity = "current_activity"
         case inputDeviceName = "input_device_name"
+        case windowTitle = "window_title"
     }
 
     init(from decoder: Decoder) throws {
@@ -1060,6 +1063,7 @@ struct ServerMemory: Codable, Identifiable {
         reasoning = try container.decodeIfPresent(String.self, forKey: .reasoning)
         currentActivity = try container.decodeIfPresent(String.self, forKey: .currentActivity)
         inputDeviceName = try container.decodeIfPresent(String.self, forKey: .inputDeviceName)
+        windowTitle = try container.decodeIfPresent(String.self, forKey: .windowTitle)
     }
 
     var isPublic: Bool {
