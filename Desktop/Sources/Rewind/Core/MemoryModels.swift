@@ -29,6 +29,7 @@ struct MemoryRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
     var confidence: Double?
     var reasoning: String?
     var sourceApp: String?
+    var windowTitle: String?
     var contextSummary: String?
     var currentActivity: String?
     var inputDeviceName: String?
@@ -64,6 +65,7 @@ struct MemoryRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
         confidence: Double? = nil,
         reasoning: String? = nil,
         sourceApp: String? = nil,
+        windowTitle: String? = nil,
         contextSummary: String? = nil,
         currentActivity: String? = nil,
         inputDeviceName: String? = nil,
@@ -90,6 +92,7 @@ struct MemoryRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
         self.confidence = confidence
         self.reasoning = reasoning
         self.sourceApp = sourceApp
+        self.windowTitle = windowTitle
         self.contextSummary = contextSummary
         self.currentActivity = currentActivity
         self.inputDeviceName = inputDeviceName
