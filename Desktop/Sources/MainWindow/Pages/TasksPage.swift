@@ -2360,6 +2360,7 @@ struct TaskRow: View {
     // Inline editing state
     @State private var editText = ""
     @FocusState private var isTextFieldFocused: Bool
+    @State private var debounceTask: Task<Void, Never>?
 
     // Inline due date popover
     @State private var showDatePicker = false
@@ -2667,10 +2668,21 @@ struct TaskRow: View {
                         .focused($isTextFieldFocused)
                         .disabled(isMultiSelectMode)
                         .onSubmit {
+                            debounceTask?.cancel()
                             commitEdit()
                         }
                         .onChange(of: isTextFieldFocused) { _, focused in
                             if !focused {
+                                debounceTask?.cancel()
+                                commitEdit()
+                            }
+                        }
+                        .onChange(of: editText) { _, _ in
+                            // Debounced auto-save: save after 1s of no typing
+                            debounceTask?.cancel()
+                            debounceTask = Task {
+                                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                                guard !Task.isCancelled else { return }
                                 commitEdit()
                             }
                         }
