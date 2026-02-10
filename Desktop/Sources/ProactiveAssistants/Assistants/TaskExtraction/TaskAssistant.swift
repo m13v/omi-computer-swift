@@ -586,7 +586,7 @@ actor TaskAssistant: ProactiveAssistant {
             let scoreRange = try? await ActionItemStorage.shared.getRelevanceScoreRange()
             let rangeStr = scoreRange.map { "Score range: \($0.min)–\($0.max). " } ?? ""
 
-            prompt += "ACTIVE TASKS (user is already tracking these — each has a relevance_score where higher = more important):\n"
+            prompt += "ACTIVE TASKS (user is already tracking these — each has a relevance_score where 1 = most important, higher numbers = less important):\n"
             prompt += "\(rangeStr)Use these scores to place any new task appropriately.\n"
             for (i, task) in context.activeTasks.enumerated() {
                 let pri = task.priority.map { " [\($0)]" } ?? ""
@@ -682,7 +682,7 @@ actor TaskAssistant: ProactiveAssistant {
                         "current_activity": .init(type: "string", description: "What the user is actively doing"),
                         "source_category": .init(type: "string", description: "Where the task originated", enumValues: ["direct_request", "self_generated", "calendar_driven", "reactive", "external_system", "other"]),
                         "source_subcategory": .init(type: "string", description: "Specific origin within category", enumValues: ["message", "meeting", "mention", "idea", "reminder", "goal_subtask", "event_prep", "recurring", "deadline", "error", "notification", "observation", "project_tool", "alert", "documentation", "other"]),
-                        "relevance_score": .init(type: "integer", description: "Where this task ranks relative to existing tasks. Look at the relevance_score values of existing active tasks and assign a score that places this task appropriately. Higher = more important/urgent. Must be an integer.")
+                        "relevance_score": .init(type: "integer", description: "Where this task ranks relative to existing tasks. Look at the relevance_score values of existing active tasks and assign a score that places this task appropriately. 1 = most important/urgent, higher numbers = less important. Must be a positive integer.")
                     ],
                     required: ["title", "description", "priority", "tags", "source_app", "inferred_deadline", "confidence", "context_summary", "current_activity", "source_category", "source_subcategory", "relevance_score"]
                 )
