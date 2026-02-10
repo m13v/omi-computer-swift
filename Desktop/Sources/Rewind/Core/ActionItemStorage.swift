@@ -1004,6 +1004,87 @@ actor ActionItemStorage {
         }
     }
 
+    // MARK: - Agent Session Persistence
+
+    /// Update agent state for an action item (keyed by backendId or local_ prefix)
+    func updateAgentState(
+        taskId: String,
+        status: String?,
+        sessionName: String?,
+        prompt: String?,
+        plan: String?,
+        startedAt: Date?,
+        completedAt: Date?,
+        editedFilesJson: String?
+    ) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            // Find by backendId, or by local ID (local_<rowid>)
+            var record: ActionItemRecord?
+            if taskId.hasPrefix("local_"), let localId = Int64(taskId.dropFirst(6)) {
+                record = try ActionItemRecord.fetchOne(database, key: localId)
+            } else {
+                record = try ActionItemRecord
+                    .filter(Column("backendId") == taskId)
+                    .fetchOne(database)
+            }
+
+            guard var rec = record else {
+                log("ActionItemStorage: updateAgentState - record not found for taskId \(taskId)")
+                return
+            }
+
+            rec.agentStatus = status
+            rec.agentSessionName = sessionName
+            rec.agentPrompt = prompt
+            rec.agentPlan = plan
+            rec.agentStartedAt = startedAt
+            rec.agentCompletedAt = completedAt
+            rec.agentEditedFilesJson = editedFilesJson
+            try rec.update(database)
+        }
+    }
+
+    /// Get action items with active (non-terminal) agent sessions for restore on startup
+    func getActiveAgentSessions() async throws -> [ActionItemRecord] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            try ActionItemRecord
+                .filter(Column("agentStatus") != nil)
+                .filter(!(["completed", "failed"].contains(Column("agentStatus"))))
+                .fetchAll(database)
+        }
+    }
+
+    /// Clear all agent fields for a task (when user stops/removes session)
+    func clearAgentState(taskId: String) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            var record: ActionItemRecord?
+            if taskId.hasPrefix("local_"), let localId = Int64(taskId.dropFirst(6)) {
+                record = try ActionItemRecord.fetchOne(database, key: localId)
+            } else {
+                record = try ActionItemRecord
+                    .filter(Column("backendId") == taskId)
+                    .fetchOne(database)
+            }
+
+            guard var rec = record else { return }
+
+            rec.agentStatus = nil
+            rec.agentSessionName = nil
+            rec.agentPrompt = nil
+            rec.agentPlan = nil
+            rec.agentStartedAt = nil
+            rec.agentCompletedAt = nil
+            rec.agentEditedFilesJson = nil
+            try rec.update(database)
+        }
+    }
+
     // MARK: - Stats
 
     /// Get action item storage statistics
