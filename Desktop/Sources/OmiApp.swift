@@ -185,6 +185,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 await TierManager.shared.checkTierIfNeeded()
             }
 
+            // Report comprehensive settings state (at most once per day)
+            AnalyticsManager.shared.reportAllSettingsIfNeeded()
         }
 
         // One-time migration: Enable launch at login for existing users who haven't set it
