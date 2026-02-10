@@ -842,6 +842,10 @@ class TasksStore: ObservableObject {
                 category: tags?.first,
                 metadata: metadata
             )
+
+            // Sync to local SQLite cache
+            try await ActionItemStorage.shared.syncTaskActionItems([created])
+
             // New tasks are incomplete, add to incomplete list
             incompleteTasks.insert(created, at: 0)
         } catch {
@@ -892,6 +896,10 @@ class TasksStore: ObservableObject {
                 priority: priority,
                 metadata: metadata
             )
+
+            // Sync to local SQLite cache so auto-refresh doesn't revert the change
+            try await ActionItemStorage.shared.syncTaskActionItems([updated])
+
             // Update in appropriate list
             if task.completed {
                 if let index = completedTasks.firstIndex(where: { $0.id == task.id }) {
