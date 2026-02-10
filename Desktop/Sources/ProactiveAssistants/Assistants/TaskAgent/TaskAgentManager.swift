@@ -63,8 +63,7 @@ class TaskAgentManager: ObservableObject {
 
     /// Check if a task should trigger an agent
     func shouldTriggerAgent(for task: TaskActionItem) -> Bool {
-        guard TaskAgentSettings.shared.isEnabled else { return false }
-        return task.tags.contains { Self.agentCategories.contains($0) }
+        return TaskAgentSettings.shared.isEnabled
     }
 
     /// Check if a task has an active or completed agent session
