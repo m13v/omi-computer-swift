@@ -162,8 +162,14 @@ struct AgentLaunchButton: View {
 
         Task {
             do {
+                // Re-fetch the latest task from the store in case the user edited it
+                let store = TasksStore.shared
+                let latestTask = store.incompleteTasks.first(where: { $0.id == task.id })
+                    ?? store.completedTasks.first(where: { $0.id == task.id })
+                    ?? task
+
                 let context = TaskAgentContext()
-                try await manager.launchAgent(for: task, context: context)
+                try await manager.launchAgent(for: latestTask, context: context)
             } catch {
                 errorMessage = error.localizedDescription
                 showError = true
