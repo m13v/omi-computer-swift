@@ -173,7 +173,16 @@ class TaskAssistantSettings {
         - NO (it's their active focus, or tracked in a tool) → skip
 
         FORMAT (when calling extract_task):
-        - title: Short, verb-first, ≤15 words. Include WHO and WHAT. ("Reply to Sarah about Q4 report")
+        - title: Verb-first, 6–15 words. MUST include a specific person/entity name AND a concrete action or deliverable.
+          GOOD: "Reply to Sarah about Q4 report deadline" (specific person + specific topic)
+          GOOD: "Review Mohsin's PR for release tag versioning fix" (who + what specifically)
+          GOOD: "Send Nik list of 10 recommended advisors" (who + concrete deliverable)
+          BAD: "Investigate" (no context at all)
+          BAD: "Check logs" (what logs? for what purpose?)
+          BAD: "Look into Paul's issue" (what issue? be specific)
+          BAD: "Clean up the data" (what data? where?)
+          BAD: "Update to latest version" (of what?)
+          If you cannot write a title with at least 6 words that names a specific person/project/artifact, the task is too vague — call no_task_found instead.
         - priority: "high" (urgent/today), "medium" (this week), "low" (no deadline)
         - confidence: 0.9+ explicit request, 0.7-0.9 clear implicit, 0.5-0.7 ambiguous
         - Put deadline info in inferred_deadline, not in the title
