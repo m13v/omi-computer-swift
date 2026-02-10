@@ -25,6 +25,11 @@ class PowerMonitor: ObservableObject {
         startMonitoring()
     }
 
+    /// Clear the battery start time (called after backfill completes)
+    func clearBatteryStartTime() {
+        lastBatteryStartTime = nil
+    }
+
     // MARK: - Power Source Detection
 
     /// Returns true if the Mac is currently running on battery power
