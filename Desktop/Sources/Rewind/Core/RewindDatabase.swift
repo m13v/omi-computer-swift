@@ -1369,6 +1369,24 @@ actor RewindDatabase {
             print("[RewindDatabase] Migration 34: Added embedding column to ocr_texts")
         }
 
+        migrator.registerMigration("addAgentSessionFields") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "agentStatus", .text)
+                t.add(column: "agentSessionName", .text)
+                t.add(column: "agentPrompt", .text)
+                t.add(column: "agentPlan", .text)
+                t.add(column: "agentStartedAt", .datetime)
+                t.add(column: "agentCompletedAt", .datetime)
+                t.add(column: "agentEditedFilesJson", .text)
+            }
+            try db.execute(sql: """
+                CREATE INDEX idx_action_items_active_agent
+                ON action_items(agentStatus)
+                WHERE agentStatus IS NOT NULL AND agentStatus NOT IN ('completed', 'failed')
+            """)
+            print("[RewindDatabase] Migration 35: Added agent session fields to action_items")
+        }
+
         try migrator.migrate(queue)
     }
 
