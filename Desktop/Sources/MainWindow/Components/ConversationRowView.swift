@@ -92,6 +92,10 @@ struct ConversationRowView: View {
 
         do {
             try await APIClient.shared.setConversationStarred(id: conversation.id, starred: newStarred)
+
+            // Sync to local SQLite cache so reload doesn't revert the change
+            try await TranscriptionStorage.shared.updateStarredByBackendId(conversation.id, starred: newStarred)
+
             await MainActor.run {
                 appState.setConversationStarred(conversation.id, starred: newStarred)
             }
@@ -142,6 +146,13 @@ struct ConversationRowView: View {
         guard !isDeleting else { return }
         isDeleting = true
 
+        // Soft-delete in SQLite immediately so reload doesn't restore it
+        do {
+            try await TranscriptionStorage.shared.deleteByBackendId(conversation.id)
+        } catch {
+            log("Failed to soft-delete conversation locally: \(error)")
+        }
+
         do {
             try await APIClient.shared.deleteConversation(id: conversation.id)
             await MainActor.run {
@@ -161,6 +172,10 @@ struct ConversationRowView: View {
 
         do {
             try await APIClient.shared.updateConversationTitle(id: conversation.id, title: editedTitle)
+
+            // Sync to local SQLite cache so reload doesn't revert the change
+            try await TranscriptionStorage.shared.updateTitleByBackendId(conversation.id, title: editedTitle)
+
             await MainActor.run {
                 appState.updateConversationTitle(conversation.id, title: editedTitle)
             }
