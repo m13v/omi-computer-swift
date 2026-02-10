@@ -38,6 +38,15 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var relevanceScore: Int?             // 0-100 score from TaskPrioritizationService
     var scoredAt: Date?                  // When the score was last computed
 
+    // Agent session persistence (local-only, not synced to backend)
+    var agentStatus: String?             // "pending", "processing", "editing", "completed", "failed"
+    var agentSessionName: String?        // tmux session name
+    var agentPrompt: String?             // Prompt sent to Claude
+    var agentPlan: String?               // Claude's response/plan
+    var agentStartedAt: Date?            // When agent was launched
+    var agentCompletedAt: Date?          // When agent finished
+    var agentEditedFilesJson: String?    // JSON array of edited file paths
+
     // Timestamps
     var createdAt: Date
     var updatedAt: Date
@@ -70,6 +79,13 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         embedding: Data? = nil,
         relevanceScore: Int? = nil,
         scoredAt: Date? = nil,
+        agentStatus: String? = nil,
+        agentSessionName: String? = nil,
+        agentPrompt: String? = nil,
+        agentPlan: String? = nil,
+        agentStartedAt: Date? = nil,
+        agentCompletedAt: Date? = nil,
+        agentEditedFilesJson: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -96,6 +112,13 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.embedding = embedding
         self.relevanceScore = relevanceScore
         self.scoredAt = scoredAt
+        self.agentStatus = agentStatus
+        self.agentSessionName = agentSessionName
+        self.agentPrompt = agentPrompt
+        self.agentPlan = agentPlan
+        self.agentStartedAt = agentStartedAt
+        self.agentCompletedAt = agentCompletedAt
+        self.agentEditedFilesJson = agentEditedFilesJson
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -164,6 +187,27 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     /// Check if record has a specific tag
     func hasTag(_ tag: String) -> Bool {
         tags.contains(tag)
+    }
+
+    // MARK: - Agent Edited Files Helpers
+
+    /// Get edited files as array (decoded from JSON)
+    var agentEditedFiles: [String] {
+        guard let json = agentEditedFilesJson,
+              let data = json.data(using: .utf8),
+              let array = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return array
+    }
+
+    /// Set edited files from array
+    mutating func setAgentEditedFiles(_ files: [String]) {
+        if files.isEmpty {
+            agentEditedFilesJson = nil
+        } else if let data = try? JSONEncoder().encode(files),
+                  let json = String(data: data, encoding: .utf8) {
+            agentEditedFilesJson = json
+        }
     }
 
     // MARK: - Relationships
@@ -251,6 +295,8 @@ extension ActionItemRecord {
     }
 
     /// Update this record from a TaskActionItem (preserving local id and screenshotId)
+    /// Note: Agent fields (agentStatus, agentSessionName, etc.) are NOT overwritten here.
+    /// They are local-only state managed by TaskAgentManager and persisted separately.
     mutating func updateFrom(_ item: TaskActionItem) {
         self.backendId = item.id
         self.backendSynced = true
@@ -328,7 +374,13 @@ extension ActionItemRecord {
             deletedAt: nil,  // Not stored locally
             deletedReason: nil,  // Not stored locally
             keptTaskId: nil,  // Not stored locally
-            relevanceScore: relevanceScore
+            relevanceScore: relevanceScore,
+            agentStatus: agentStatus,
+            agentPrompt: agentPrompt,
+            agentPlan: agentPlan,
+            agentSessionId: agentSessionName,
+            agentStartedAt: agentStartedAt,
+            agentCompletedAt: agentCompletedAt
         )
     }
 }
