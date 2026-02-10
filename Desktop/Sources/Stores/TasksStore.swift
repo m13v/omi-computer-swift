@@ -28,12 +28,16 @@ class TasksStore: ObservableObject {
     @Published var hasMoreDeletedTasks = true
     @Published var error: String?
 
-    /// When true, show all tasks. When false, hide low-relevance AI tasks (show top 5 per category).
+    /// When true, show all tasks. When false, only show manual + top 5 AI tasks.
     @Published var showAllTasks = false
 
-    /// Set of task IDs that should be hidden in the default (collapsed) view.
+    /// Allowlist of AI task IDs that should be visible (top N by score).
+    /// All manual tasks are always visible. AI tasks NOT in this set are hidden.
     /// Updated by TaskPrioritizationService.
-    @Published var hiddenTaskIds: Set<String> = []
+    @Published var visibleAITaskIds: Set<String> = []
+
+    /// Whether prioritization has completed at least once (used to avoid hiding before scoring)
+    @Published var hasCompletedScoring = false
 
     /// Whether the prioritization service is currently scoring tasks
     @Published var isPrioritizing = false
@@ -178,12 +182,14 @@ class TasksStore: ObservableObject {
             .store(in: &cancellables)
     }
 
-    /// Pull latest hidden task IDs from the prioritization service
+    /// Pull latest visible AI task IDs from the prioritization service
     private func refreshPrioritizationScores() async {
-        let hidden = await TaskPrioritizationService.shared.hiddenTaskIds
-        if hidden != hiddenTaskIds {
-            hiddenTaskIds = hidden
-            log("TasksStore: Updated hidden tasks from prioritization (\(hidden.count) hidden)")
+        let visible = await TaskPrioritizationService.shared.visibleAITaskIds
+        let completed = await TaskPrioritizationService.shared.hasCompletedScoring
+        if visible != visibleAITaskIds || completed != hasCompletedScoring {
+            visibleAITaskIds = visible
+            hasCompletedScoring = completed
+            log("TasksStore: Updated from prioritization — \(visible.count) AI tasks visible, scoring completed: \(completed)")
         }
         isPrioritizing = false
     }
