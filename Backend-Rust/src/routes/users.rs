@@ -15,6 +15,7 @@ use crate::models::{
     TranscriptionPreferences, UpdateDailySummaryRequest, UpdateLanguageRequest,
     AIUserProfile, UpdateAIUserProfileRequest, UpdateNotificationSettingsRequest,
     UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsStatusResponse,
+    AssistantSettingsData,
 };
 use crate::AppState;
 
@@ -403,6 +404,101 @@ async fn update_ai_profile(
 }
 
 // ============================================================================
+// Assistant Settings
+// ============================================================================
+
+/// GET /v1/users/assistant-settings
+async fn get_assistant_settings(
+    State(state): State<AppState>,
+    user: AuthUser,
+) -> Result<Json<AssistantSettingsData>, StatusCode> {
+    tracing::info!("Getting assistant settings for user {}", user.uid);
+
+    match state.firestore.get_assistant_settings(&user.uid).await {
+        Ok(settings) => Ok(Json(settings)),
+        Err(e) => {
+            tracing::error!("Failed to get assistant settings: {}", e);
+            Ok(Json(AssistantSettingsData::default()))
+        }
+    }
+}
+
+/// PATCH /v1/users/assistant-settings
+async fn update_assistant_settings(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<AssistantSettingsData>,
+) -> Result<Json<AssistantSettingsData>, StatusCode> {
+    tracing::info!("Updating assistant settings for user {}", user.uid);
+
+    // Validate prompts length
+    let check_prompt = |p: &Option<String>, name: &str| -> Result<(), StatusCode> {
+        if let Some(ref s) = p {
+            if s.len() > 10000 {
+                tracing::warn!("{} prompt too long: {} chars (max 10000)", name, s.len());
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+        Ok(())
+    };
+
+    if let Some(ref focus) = request.focus {
+        check_prompt(&focus.analysis_prompt, "Focus")?;
+    }
+    if let Some(ref task) = request.task {
+        check_prompt(&task.analysis_prompt, "Task")?;
+        if let Some(ref apps) = task.allowed_apps {
+            if apps.len() > 500 {
+                tracing::warn!("Task allowed_apps too long: {} (max 500)", apps.len());
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+        if let Some(ref kw) = task.browser_keywords {
+            if kw.len() > 500 {
+                tracing::warn!("Task browser_keywords too long: {} (max 500)", kw.len());
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+        if let Some(c) = task.min_confidence {
+            if !(0.0..=1.0).contains(&c) {
+                tracing::warn!("Task min_confidence out of range: {}", c);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+    }
+    if let Some(ref advice) = request.advice {
+        check_prompt(&advice.analysis_prompt, "Advice")?;
+        if let Some(c) = advice.min_confidence {
+            if !(0.0..=1.0).contains(&c) {
+                tracing::warn!("Advice min_confidence out of range: {}", c);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+    }
+    if let Some(ref memory) = request.memory {
+        check_prompt(&memory.analysis_prompt, "Memory")?;
+        if let Some(c) = memory.min_confidence {
+            if !(0.0..=1.0).contains(&c) {
+                tracing::warn!("Memory min_confidence out of range: {}", c);
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+    }
+
+    match state
+        .firestore
+        .update_assistant_settings(&user.uid, &request)
+        .await
+    {
+        Ok(settings) => Ok(Json(settings)),
+        Err(e) => {
+            tracing::error!("Failed to update assistant settings: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        }
+    }
+}
+
+// ============================================================================
 // Router
 // ============================================================================
 
@@ -444,5 +540,10 @@ pub fn users_routes() -> Router<AppState> {
         .route(
             "/v1/users/ai-profile",
             get(get_ai_profile).patch(update_ai_profile),
+        )
+        // Assistant settings (proactive assistants)
+        .route(
+            "/v1/users/assistant-settings",
+            get(get_assistant_settings).patch(update_assistant_settings),
         )
 }
