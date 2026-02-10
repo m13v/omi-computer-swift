@@ -18,6 +18,8 @@ use crate::models::{
     FocusStats, FocusStatus, GoalDB, GoalHistoryEntry, GoalType, Memory, MemoryCategory, MemoryDB, MessageDB,
     NotificationSettings, PersonaDB, Structured, TranscriptSegment, TranscriptionPreferences,
     AIUserProfile, UserProfile,
+    AssistantSettingsData, SharedAssistantSettingsData, FocusSettingsData, TaskSettingsData,
+    AdviceSettingsData, MemorySettingsData,
 };
 
 /// Service account credentials from JSON file
@@ -3939,6 +3941,219 @@ impl FirestoreService {
             single_language_mode: new_single_language_mode,
             vocabulary: new_vocabulary,
         })
+    }
+
+    // MARK: - Assistant Settings
+
+    /// Helper: parse a sub-map from Firestore fields
+    fn parse_sub_map<'a>(&self, fields: &'a Value, key: &str) -> Option<&'a Value> {
+        fields.get(key)?.get("mapValue")?.get("fields")
+    }
+
+    /// Helper: build a Firestore string array value
+    fn build_string_array_value(&self, items: &[String]) -> Value {
+        let values: Vec<Value> = items.iter().map(|v| json!({"stringValue": v})).collect();
+        json!({"arrayValue": {"values": values}})
+    }
+
+    /// Helper: build a sub-map Firestore value from a serde_json::Map of fields
+    fn build_sub_map_value(&self, map_fields: serde_json::Map<String, Value>) -> Value {
+        json!({"mapValue": {"fields": map_fields}})
+    }
+
+    /// Get assistant settings from user document
+    pub async fn get_assistant_settings(
+        &self,
+        uid: &str,
+    ) -> Result<AssistantSettingsData, Box<dyn std::error::Error + Send + Sync>> {
+        let doc = self.get_user_document(uid).await?;
+        let empty = json!({});
+        let fields = doc.get("fields").unwrap_or(&empty);
+
+        let settings_fields = self.parse_sub_map(fields, "assistant_settings");
+
+        let Some(sf) = settings_fields else {
+            return Ok(AssistantSettingsData::default());
+        };
+
+        // Parse shared settings
+        let shared = self.parse_sub_map(sf, "shared").map(|f| SharedAssistantSettingsData {
+            cooldown_interval: self.parse_int(f, "cooldown_interval"),
+            glow_overlay_enabled: self.parse_bool(f, "glow_overlay_enabled").ok(),
+            analysis_delay: self.parse_int(f, "analysis_delay"),
+            screen_analysis_enabled: self.parse_bool(f, "screen_analysis_enabled").ok(),
+        });
+
+        // Parse focus settings
+        let focus = self.parse_sub_map(sf, "focus").map(|f| FocusSettingsData {
+            enabled: self.parse_bool(f, "enabled").ok(),
+            analysis_prompt: self.parse_string(f, "analysis_prompt"),
+            cooldown_interval: self.parse_int(f, "cooldown_interval"),
+            excluded_apps: Some(self.parse_string_array(f, "excluded_apps")),
+        });
+
+        // Parse task settings
+        let task = self.parse_sub_map(sf, "task").map(|f| TaskSettingsData {
+            enabled: self.parse_bool(f, "enabled").ok(),
+            analysis_prompt: self.parse_string(f, "analysis_prompt"),
+            extraction_interval: self.parse_float(f, "extraction_interval"),
+            min_confidence: self.parse_float(f, "min_confidence"),
+            allowed_apps: Some(self.parse_string_array(f, "allowed_apps")),
+            browser_keywords: Some(self.parse_string_array(f, "browser_keywords")),
+        });
+
+        // Parse advice settings
+        let advice = self.parse_sub_map(sf, "advice").map(|f| AdviceSettingsData {
+            enabled: self.parse_bool(f, "enabled").ok(),
+            analysis_prompt: self.parse_string(f, "analysis_prompt"),
+            extraction_interval: self.parse_float(f, "extraction_interval"),
+            min_confidence: self.parse_float(f, "min_confidence"),
+            excluded_apps: Some(self.parse_string_array(f, "excluded_apps")),
+        });
+
+        // Parse memory settings
+        let memory = self.parse_sub_map(sf, "memory").map(|f| MemorySettingsData {
+            enabled: self.parse_bool(f, "enabled").ok(),
+            analysis_prompt: self.parse_string(f, "analysis_prompt"),
+            extraction_interval: self.parse_float(f, "extraction_interval"),
+            min_confidence: self.parse_float(f, "min_confidence"),
+            notifications_enabled: self.parse_bool(f, "notifications_enabled").ok(),
+            excluded_apps: Some(self.parse_string_array(f, "excluded_apps")),
+        });
+
+        Ok(AssistantSettingsData {
+            shared,
+            focus,
+            task,
+            advice,
+            memory,
+        })
+    }
+
+    /// Update assistant settings (merge with existing)
+    pub async fn update_assistant_settings(
+        &self,
+        uid: &str,
+        data: &AssistantSettingsData,
+    ) -> Result<AssistantSettingsData, Box<dyn std::error::Error + Send + Sync>> {
+        let current = self.get_assistant_settings(uid).await?;
+
+        let mut top_fields = serde_json::Map::new();
+
+        // Build shared sub-map
+        if data.shared.is_some() || current.shared.is_some() {
+            let cur = current.shared.unwrap_or_default();
+            let new = data.shared.clone().unwrap_or_default();
+            let mut m = serde_json::Map::new();
+            let ci = new.cooldown_interval.or(cur.cooldown_interval);
+            if let Some(v) = ci { m.insert("cooldown_interval".into(), json!({"integerValue": v.to_string()})); }
+            let go = new.glow_overlay_enabled.or(cur.glow_overlay_enabled);
+            if let Some(v) = go { m.insert("glow_overlay_enabled".into(), json!({"booleanValue": v})); }
+            let ad = new.analysis_delay.or(cur.analysis_delay);
+            if let Some(v) = ad { m.insert("analysis_delay".into(), json!({"integerValue": v.to_string()})); }
+            let sa = new.screen_analysis_enabled.or(cur.screen_analysis_enabled);
+            if let Some(v) = sa { m.insert("screen_analysis_enabled".into(), json!({"booleanValue": v})); }
+            if !m.is_empty() {
+                top_fields.insert("shared".into(), self.build_sub_map_value(m));
+            }
+        }
+
+        // Build focus sub-map
+        if data.focus.is_some() || current.focus.is_some() {
+            let cur = current.focus.unwrap_or_default();
+            let new = data.focus.clone().unwrap_or_default();
+            let mut m = serde_json::Map::new();
+            let en = new.enabled.or(cur.enabled);
+            if let Some(v) = en { m.insert("enabled".into(), json!({"booleanValue": v})); }
+            let ap = new.analysis_prompt.or(cur.analysis_prompt);
+            if let Some(v) = ap { m.insert("analysis_prompt".into(), json!({"stringValue": v})); }
+            let ci = new.cooldown_interval.or(cur.cooldown_interval);
+            if let Some(v) = ci { m.insert("cooldown_interval".into(), json!({"integerValue": v.to_string()})); }
+            let ea = new.excluded_apps.or(cur.excluded_apps);
+            if let Some(v) = ea { m.insert("excluded_apps".into(), self.build_string_array_value(&v)); }
+            if !m.is_empty() {
+                top_fields.insert("focus".into(), self.build_sub_map_value(m));
+            }
+        }
+
+        // Build task sub-map
+        if data.task.is_some() || current.task.is_some() {
+            let cur = current.task.unwrap_or_default();
+            let new = data.task.clone().unwrap_or_default();
+            let mut m = serde_json::Map::new();
+            let en = new.enabled.or(cur.enabled);
+            if let Some(v) = en { m.insert("enabled".into(), json!({"booleanValue": v})); }
+            let ap = new.analysis_prompt.or(cur.analysis_prompt);
+            if let Some(v) = ap { m.insert("analysis_prompt".into(), json!({"stringValue": v})); }
+            let ei = new.extraction_interval.or(cur.extraction_interval);
+            if let Some(v) = ei { m.insert("extraction_interval".into(), json!({"doubleValue": v})); }
+            let mc = new.min_confidence.or(cur.min_confidence);
+            if let Some(v) = mc { m.insert("min_confidence".into(), json!({"doubleValue": v})); }
+            let aa = new.allowed_apps.or(cur.allowed_apps);
+            if let Some(v) = aa { m.insert("allowed_apps".into(), self.build_string_array_value(&v)); }
+            let bk = new.browser_keywords.or(cur.browser_keywords);
+            if let Some(v) = bk { m.insert("browser_keywords".into(), self.build_string_array_value(&v)); }
+            if !m.is_empty() {
+                top_fields.insert("task".into(), self.build_sub_map_value(m));
+            }
+        }
+
+        // Build advice sub-map
+        if data.advice.is_some() || current.advice.is_some() {
+            let cur = current.advice.unwrap_or_default();
+            let new = data.advice.clone().unwrap_or_default();
+            let mut m = serde_json::Map::new();
+            let en = new.enabled.or(cur.enabled);
+            if let Some(v) = en { m.insert("enabled".into(), json!({"booleanValue": v})); }
+            let ap = new.analysis_prompt.or(cur.analysis_prompt);
+            if let Some(v) = ap { m.insert("analysis_prompt".into(), json!({"stringValue": v})); }
+            let ei = new.extraction_interval.or(cur.extraction_interval);
+            if let Some(v) = ei { m.insert("extraction_interval".into(), json!({"doubleValue": v})); }
+            let mc = new.min_confidence.or(cur.min_confidence);
+            if let Some(v) = mc { m.insert("min_confidence".into(), json!({"doubleValue": v})); }
+            let ea = new.excluded_apps.or(cur.excluded_apps);
+            if let Some(v) = ea { m.insert("excluded_apps".into(), self.build_string_array_value(&v)); }
+            if !m.is_empty() {
+                top_fields.insert("advice".into(), self.build_sub_map_value(m));
+            }
+        }
+
+        // Build memory sub-map
+        if data.memory.is_some() || current.memory.is_some() {
+            let cur = current.memory.unwrap_or_default();
+            let new = data.memory.clone().unwrap_or_default();
+            let mut m = serde_json::Map::new();
+            let en = new.enabled.or(cur.enabled);
+            if let Some(v) = en { m.insert("enabled".into(), json!({"booleanValue": v})); }
+            let ap = new.analysis_prompt.or(cur.analysis_prompt);
+            if let Some(v) = ap { m.insert("analysis_prompt".into(), json!({"stringValue": v})); }
+            let ei = new.extraction_interval.or(cur.extraction_interval);
+            if let Some(v) = ei { m.insert("extraction_interval".into(), json!({"doubleValue": v})); }
+            let mc = new.min_confidence.or(cur.min_confidence);
+            if let Some(v) = mc { m.insert("min_confidence".into(), json!({"doubleValue": v})); }
+            let ne = new.notifications_enabled.or(cur.notifications_enabled);
+            if let Some(v) = ne { m.insert("notifications_enabled".into(), json!({"booleanValue": v})); }
+            let ea = new.excluded_apps.or(cur.excluded_apps);
+            if let Some(v) = ea { m.insert("excluded_apps".into(), self.build_string_array_value(&v)); }
+            if !m.is_empty() {
+                top_fields.insert("memory".into(), self.build_sub_map_value(m));
+            }
+        }
+
+        if !top_fields.is_empty() {
+            let fields = json!({
+                "assistant_settings": {
+                    "mapValue": {
+                        "fields": Value::Object(top_fields)
+                    }
+                }
+            });
+
+            self.update_user_fields(uid, fields, &["assistant_settings"]).await?;
+        }
+
+        // Return merged state
+        self.get_assistant_settings(uid).await
     }
 
     /// Get user language preference
