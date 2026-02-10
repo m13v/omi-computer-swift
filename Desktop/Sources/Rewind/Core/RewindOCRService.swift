@@ -84,9 +84,9 @@ actor RewindOCRService {
     /// Track last-logged OCR mode to only log on change
     private var lastLoggedOCRMode: String?
 
-    /// Compute a fast fingerprint of a CGImage by scaling to 128x128 grayscale and hashing pixel data
+    /// Compute a fast fingerprint of a CGImage by scaling to 1024x1024 grayscale and hashing pixel data
     static func fingerprint(of cgImage: CGImage) -> Int? {
-        let size = 128
+        let size = 1024
         let bytesPerRow = size
         let totalBytes = size * size
 
