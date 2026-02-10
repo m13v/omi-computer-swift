@@ -432,23 +432,41 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Check if the current app is excluded from Rewind capture
         let isRewindExcluded = realAppName.map { RewindSettings.shared.isAppExcluded($0) } ?? false
 
-        // Track window ID changes
-        if let windowID = windowID, windowID != currentWindowID {
-            let previousWindowID = currentWindowID
+        // Unified context switch detection (covers app changes, window ID changes, and title changes)
+        // Called BEFORE trackFrame so the coordinator's departing frame is from the previous context
+        if let appForCheck = realAppName ?? currentApp {
+            let switched = AssistantCoordinator.shared.checkContextSwitch(
+                newApp: appForCheck,
+                newWindowTitle: windowTitle
+            )
+            if switched && !isInDelayPeriod {
+                let delaySeconds = AssistantSettings.shared.analysisDelay
+                if delaySeconds > 0 {
+                    isInDelayPeriod = true
+                    AssistantCoordinator.shared.clearAllPendingWork()
+                    log("Context switch detected, starting \(delaySeconds)s analysis delay")
+
+                    analysisDelayTimer?.invalidate()
+                    let delayEndTime = Date().addingTimeInterval(TimeInterval(delaySeconds))
+                    FocusStorage.shared.updateDelayEndTime(delayEndTime)
+
+                    analysisDelayTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(delaySeconds), repeats: false) { [weak self] _ in
+                        Task { @MainActor in
+                            self?.isInDelayPeriod = false
+                            self?.analysisDelayTimer = nil
+                            FocusStorage.shared.updateDelayEndTime(nil)
+                            log("Analysis delay ended, resuming frame processing")
+                        }
+                    }
+                }
+            }
+        }
+
+        // Update local window tracking
+        if let windowID = windowID {
             currentWindowID = windowID
-
-            if previousWindowID != nil {
-                onWindowSwitch(windowID: windowID)
-            }
         }
-
-        // Track window title changes (e.g., browser tab switches)
-        if windowTitle != currentWindowTitle {
-            if let title = windowTitle, let oldTitle = currentWindowTitle {
-                log("Window title changed: '\(oldTitle)' → '\(title)'")
-            }
-            currentWindowTitle = windowTitle
-        }
+        currentWindowTitle = windowTitle
 
         // Use real app name from window info, fall back to cached if unavailable
         let appName = realAppName ?? currentApp
@@ -556,38 +574,6 @@ public class ProactiveAssistantsPlugin: NSObject {
         }
     }
 
-    private func onWindowSwitch(windowID: CGWindowID) {
-        let delaySeconds = AssistantSettings.shared.analysisDelay
-
-        guard delaySeconds > 0 else { return }
-
-        // Don't reset the delay if we're already in a delay period
-        // This prevents the timer from constantly resetting on rapid window changes
-        if isInDelayPeriod {
-            log("Window switch detected (ID: \(windowID)), but already in delay period - ignoring")
-            return
-        }
-
-        analysisDelayTimer?.invalidate()
-        analysisDelayTimer = nil
-
-        isInDelayPeriod = true
-        AssistantCoordinator.shared.clearAllPendingWork()
-        log("Window switch detected (ID: \(windowID)), starting \(delaySeconds)s analysis delay")
-
-        // Update FocusStorage with delay end time
-        let delayEndTime = Date().addingTimeInterval(TimeInterval(delaySeconds))
-        FocusStorage.shared.updateDelayEndTime(delayEndTime)
-
-        analysisDelayTimer = Timer.scheduledTimer(withTimeInterval: TimeInterval(delaySeconds), repeats: false) { [weak self] _ in
-            Task { @MainActor in
-                self?.isInDelayPeriod = false
-                self?.analysisDelayTimer = nil
-                FocusStorage.shared.updateDelayEndTime(nil)
-                log("Analysis delay ended, resuming frame processing")
-            }
-        }
-    }
 
     // MARK: - Settings State Tracking
 
