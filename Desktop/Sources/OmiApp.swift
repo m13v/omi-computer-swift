@@ -570,6 +570,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Stop transcription retry service
         TranscriptionRetryService.shared.stop()
 
+        // Mark clean shutdown so next launch skips expensive DB integrity check
+        RewindDatabase.markCleanShutdown()
+
         // Report final resources before termination
         ResourceMonitor.shared.reportResourcesNow(context: "app_terminating")
         ResourceMonitor.shared.stop()
