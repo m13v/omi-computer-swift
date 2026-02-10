@@ -29,10 +29,13 @@ struct TaskClassificationBadge: View {
 
 /// Shows the status of a Claude agent working on a task
 /// Main click opens the detail modal; terminal icon opens Terminal directly
+/// Shows a launch button when no session exists
 struct AgentStatusIndicator: View {
-    let taskId: String
+    let task: TaskActionItem
     @Binding var showAgentDetail: Bool
     @ObservedObject private var manager = TaskAgentManager.shared
+
+    private var taskId: String { task.id }
 
     private var session: TaskAgentManager.AgentSession? {
         manager.getSession(for: taskId)
@@ -85,6 +88,8 @@ struct AgentStatusIndicator: View {
                 .buttonStyle(.plain)
                 .help("Open in Terminal")
             }
+        } else {
+            AgentLaunchButton(task: task)
         }
     }
 
@@ -648,7 +653,7 @@ struct TaskAgentDetailView: View {
 
 #Preview("Agent Status") {
     VStack(spacing: 16) {
-        AgentStatusIndicator(taskId: "test-1", showAgentDetail: .constant(false))
+        AgentStatusIndicator(task: TaskActionItem(id: "test-1", description: "Test task", completed: false, createdAt: Date()), showAgentDetail: .constant(false))
     }
     .padding()
 }
