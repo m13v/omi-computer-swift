@@ -1352,6 +1352,8 @@ struct TasksPage: View {
             if !viewModel.isLoading {
                 NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
             }
+            // Trigger prioritization scoring if needed (e.g. first time opening tasks tab)
+            Task { await TaskPrioritizationService.shared.runIfNeeded() }
         }
     }
 
@@ -1944,6 +1946,7 @@ struct TasksPage: View {
                                 showAllTasks: store.showAllTasks,
                                 hiddenTaskIds: store.hiddenTaskIds,
                                 onShowAll: { store.showAllTasks = true },
+                                onShowLess: { store.showAllTasks = false },
                                 indentLevelFor: { viewModel.getIndentLevel(for: $0) },
                                 isSelectedFor: { viewModel.selectedTaskIds.contains($0) },
                                 onToggle: { await viewModel.toggleTask($0) },
@@ -2055,6 +2058,7 @@ struct TaskCategorySection: View {
     var showAllTasks: Bool = true
     var hiddenTaskIds: Set<String> = []
     var onShowAll: (() -> Void)?
+    var onShowLess: (() -> Void)?
 
     // Callbacks for row data and actions (passed through to TaskRow)
     var indentLevelFor: ((String) -> Int)?
@@ -2153,6 +2157,26 @@ struct TaskCategorySection: View {
                             HStack(spacing: 6) {
                                 Image(systemName: "chevron.down")
                                 Text("Show \(hiddenCount) more")
+                            }
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .frame(maxWidth: .infinity)
+                            .background(OmiColors.backgroundTertiary.opacity(0.5))
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    // "Show less" button when expanded and there are tasks that would be hidden
+                    if showAllTasks && !hiddenTaskIds.isEmpty {
+                        Button {
+                            onShowLess?()
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "chevron.up")
+                                Text("Show less")
                             }
                             .font(.system(size: 13, weight: .medium))
                             .foregroundColor(OmiColors.textSecondary)
