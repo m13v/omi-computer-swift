@@ -715,12 +715,13 @@ actor ActionItemStorage {
         let recordToInsert = insertRecord
 
         let inserted = try await db.write { database in
-            // Shift all active tasks at this score and below down by 1
+            // Shift all active tasks at this score and below down by 1 (push less important tasks further down)
+            // Score 1 = most important (top), so shifting down means incrementing scores >= this one
             if let score = recordToInsert.relevanceScore {
                 try database.execute(sql: """
                     UPDATE action_items
-                    SET relevanceScore = relevanceScore - 1
-                    WHERE relevanceScore IS NOT NULL AND relevanceScore <= ?
+                    SET relevanceScore = relevanceScore + 1
+                    WHERE relevanceScore IS NOT NULL AND relevanceScore >= ?
                       AND completed = 0 AND deleted = 0
                 """, arguments: [score])
             }
