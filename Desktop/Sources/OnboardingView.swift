@@ -734,7 +734,7 @@ struct OnboardingView: View {
                                     .foregroundColor(.secondary)
 
                                 // Screenshot
-                                if let image = NSImage(contentsOfFile: Bundle.module.path(forResource: "microphone-settings", ofType: "png") ?? "") {
+                                if let image = NSImage(contentsOfFile: Bundle.resourceBundle.path(forResource: "microphone-settings", ofType: "png") ?? "") {
                                     Image(nsImage: image)
                                         .resizable()
                                         .scaledToFit()
