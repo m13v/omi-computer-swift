@@ -396,12 +396,7 @@ class AppState: ObservableObject {
                             return
                         }
                         if granted {
-                            DispatchQueue.main.async {
-                                NotificationService.shared.sendNotification(
-                                    title: "Notifications Enabled",
-                                    message: "You'll receive focus alerts from Omi."
-                                )
-                            }
+                            // Permission granted, no confirmation notification needed
                         }
                     }
                 } else if settings.authorizationStatus == .denied {
@@ -576,17 +571,6 @@ class AppState: ObservableObject {
                     self.lastNotificationBadgeEnabled = badgeEnabled
                 }
 
-                // Send confirmation notification when permission is newly granted
-                if !wasGranted && isNowGranted {
-                    // Customize message based on alert style
-                    let message = settings.alertStyle == .none
-                        ? "Banners are disabled. Set notification style to \"Banners\" in System Settings to see alerts."
-                        : "You'll receive proactive alerts from Omi."
-                    NotificationService.shared.sendNotification(
-                        title: "Notifications Enabled",
-                        message: message
-                    )
-                }
             }
         }
     }
