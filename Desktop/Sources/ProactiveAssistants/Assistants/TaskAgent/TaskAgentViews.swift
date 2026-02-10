@@ -59,8 +59,20 @@ struct AgentStatusIndicator: View {
     }
 
     var body: some View {
-        if let session = session {
-            HStack(spacing: 2) {
+        HStack(spacing: 4) {
+            // Terminal icon — always visible, opens detail modal
+            Button {
+                showAgentDetail = true
+            } label: {
+                Image(systemName: "terminal")
+                    .font(.system(size: 10))
+                    .foregroundColor(OmiColors.textTertiary)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(.plain)
+            .help("View Agent Details")
+
+            if let session = session {
                 // Status text — opens detail modal
                 Button {
                     showAgentDetail = true
@@ -75,21 +87,10 @@ struct AgentStatusIndicator: View {
                 }
                 .buttonStyle(.plain)
                 .help("View Agent Details")
-
-                // Terminal icon — opens terminal directly
-                Button {
-                    manager.openInTerminal(taskId: taskId)
-                } label: {
-                    Image(systemName: "terminal")
-                        .font(.system(size: 10))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .frame(width: 20, height: 20)
-                }
-                .buttonStyle(.plain)
-                .help("Open in Terminal")
+            } else {
+                // Run Agent button — launches immediately
+                AgentLaunchButton(task: task)
             }
-        } else {
-            AgentLaunchButton(task: task)
         }
     }
 
