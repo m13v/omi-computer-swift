@@ -72,6 +72,7 @@ struct SettingsContentView: View {
     @State private var taskMinConfidence: Double
     @State private var taskAllowedApps: Set<String>
     @State private var taskBrowserKeywords: [String]
+    @State private var isRescoringTasks = false
 
     // Advice Assistant states
     @State private var adviceEnabled: Bool
@@ -1887,6 +1888,34 @@ struct SettingsContentView: View {
                                 taskBrowserKeywords = TaskAssistantSettings.shared.browserKeywords
                             }
                         )
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Task Prioritization Re-score
+                    settingRow(title: "Task Prioritization", subtitle: "Re-score all tasks by relevance to your profile and goals") {
+                        if isRescoringTasks {
+                            ProgressView()
+                                .controlSize(.small)
+                        } else {
+                            Button(action: {
+                                isRescoringTasks = true
+                                Task {
+                                    await TaskPrioritizationService.shared.forceFullRescore()
+                                    await MainActor.run { isRescoringTasks = false }
+                                }
+                            }) {
+                                HStack(spacing: 4) {
+                                    Image(systemName: "arrow.trianglehead.counterclockwise")
+                                        .font(.system(size: 11))
+                                    Text("Re-score")
+                                        .font(.system(size: 12))
+                                }
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
                     }
                 }
             }
