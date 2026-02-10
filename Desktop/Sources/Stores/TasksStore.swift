@@ -808,6 +808,9 @@ class TasksStore: ObservableObject {
                 completed: !task.completed
             )
 
+            // Sync to local SQLite cache so auto-refresh doesn't revert the change
+            try await ActionItemStorage.shared.syncTaskActionItems([updated])
+
             // Move task between lists based on new completion status
             if updated.completed {
                 // Was incomplete, now completed - move to completed list
