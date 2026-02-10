@@ -199,6 +199,7 @@ public class ProactiveAssistantsPlugin: NSObject {
             }
 
             Task { await TaskDeduplicationService.shared.start() }
+            Task { await TaskPrioritizationService.shared.start() }
 
             adviceAssistant = try AdviceAssistant()
 
