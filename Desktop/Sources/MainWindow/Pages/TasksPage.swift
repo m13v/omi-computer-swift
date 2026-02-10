@@ -1959,7 +1959,8 @@ struct TasksPage: View {
                                 orderedTasks: orderedTasks,
                                 isMultiSelectMode: viewModel.isMultiSelectMode,
                                 showAllTasks: store.showAllTasks,
-                                hiddenTaskIds: store.hiddenTaskIds,
+                                visibleAITaskIds: store.visibleAITaskIds,
+                                hasCompletedScoring: store.hasCompletedScoring,
                                 onShowAll: { store.showAllTasks = true },
                                 onShowLess: { store.showAllTasks = false },
                                 indentLevelFor: { viewModel.getIndentLevel(for: $0) },
@@ -2069,9 +2070,10 @@ struct TaskCategorySection: View {
     let orderedTasks: [TaskActionItem]
     var isMultiSelectMode: Bool = false
 
-    // Prioritization: controls which tasks are visible in collapsed mode
+    // Prioritization: allowlist-based filtering for AI tasks
     var showAllTasks: Bool = true
-    var hiddenTaskIds: Set<String> = []
+    var visibleAITaskIds: Set<String> = []
+    var hasCompletedScoring: Bool = false
     var onShowAll: (() -> Void)?
     var onShowLess: (() -> Void)?
 
@@ -2086,12 +2088,16 @@ struct TaskCategorySection: View {
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
 
-    /// Tasks visible in current view (filtered by prioritization when collapsed)
+    /// Tasks visible in current view (allowlist filtering for AI tasks)
     private var visibleTasks: [TaskActionItem] {
-        if showAllTasks || hiddenTaskIds.isEmpty {
+        // Show all if user expanded, or if scoring hasn't completed yet
+        if showAllTasks || !hasCompletedScoring {
             return orderedTasks
         }
-        return orderedTasks.filter { !hiddenTaskIds.contains($0.id) }
+        return orderedTasks.filter { task in
+            // Manual tasks are always visible
+            task.source == "manual" || visibleAITaskIds.contains(task.id)
+        }
     }
 
     /// Number of tasks hidden by prioritization in this category
@@ -2185,7 +2191,7 @@ struct TaskCategorySection: View {
                     }
 
                     // "Show less" button when expanded and there are tasks that would be hidden
-                    if showAllTasks && !hiddenTaskIds.isEmpty {
+                    if showAllTasks && hasCompletedScoring && !visibleAITaskIds.isEmpty {
                         Button {
                             onShowLess?()
                         } label: {
