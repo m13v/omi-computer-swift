@@ -1227,11 +1227,7 @@ struct OnboardingView: View {
             currentStep += 1
         case 3:
             if appState.hasNotificationPermission {
-                // Permission already granted - send test notification anyway and advance
-                NotificationService.shared.sendNotification(
-                    title: "Notifications Enabled",
-                    message: "You'll receive focus alerts from Omi."
-                )
+                // Permission already granted - advance
                 AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Notifications")
                 AnalyticsManager.shared.permissionGranted(permission: "notifications")
                 currentStep += 1
