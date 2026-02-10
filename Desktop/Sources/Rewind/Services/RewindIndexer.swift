@@ -407,10 +407,18 @@ actor RewindIndexer {
         }
         guard await ensureInitialized() else { return }
 
+        // Read battery start time from PowerMonitor (must access on MainActor)
+        let batteryStart = await MainActor.run { PowerMonitor.shared.lastBatteryStartTime }
+
+        guard let since = batteryStart else {
+            log("RewindIndexer: Backfill skipped — no battery start time recorded")
+            return
+        }
+
         isBackfilling = true
         defer { isBackfilling = false }
 
-        log("RewindIndexer: Starting OCR backfill for unindexed screenshots...")
+        log("RewindIndexer: Starting OCR backfill for screenshots since \(since)...")
         var totalProcessed = 0
         let batchSize = 10
 
@@ -422,7 +430,7 @@ actor RewindIndexer {
                     return
                 }
 
-                let pending = try await RewindDatabase.shared.getPendingOCRScreenshots(limit: batchSize)
+                let pending = try await RewindDatabase.shared.getPendingOCRScreenshots(since: since, limit: batchSize)
                 if pending.isEmpty { break }
 
                 for screenshot in pending {
@@ -455,12 +463,13 @@ actor RewindIndexer {
                 }
             }
 
-            if totalProcessed > 0 {
-                log("RewindIndexer: OCR backfill complete — processed \(totalProcessed) screenshots")
-            }
+            log("RewindIndexer: OCR backfill complete — processed \(totalProcessed) screenshots")
         } catch {
             logError("RewindIndexer: OCR backfill failed: \(error)")
         }
+
+        // Clear the battery start time now that backfill is done
+        await MainActor.run { PowerMonitor.shared.clearBatteryStartTime() }
     }
 
     /// Set up PowerMonitor callback for OCR backfill on AC reconnect
