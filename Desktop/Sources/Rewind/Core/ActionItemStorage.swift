@@ -760,6 +760,71 @@ actor ActionItemStorage {
         }
     }
 
+    // MARK: - Relevance Scores
+
+    /// Batch-update relevance scores for tasks (by backendId)
+    func updateRelevanceScores(_ scores: [String: Int]) async throws {
+        guard !scores.isEmpty else { return }
+        let db = try await ensureInitialized()
+        let now = Date()
+
+        try await db.write { database in
+            for (backendId, score) in scores {
+                try database.execute(
+                    sql: "UPDATE action_items SET relevanceScore = ?, scoredAt = ? WHERE backendId = ?",
+                    arguments: [score, now, backendId]
+                )
+            }
+        }
+    }
+
+    /// Clear all relevance scores (for force re-scoring)
+    func clearAllRelevanceScores() async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE action_items SET relevanceScore = NULL, scoredAt = NULL WHERE relevanceScore IS NOT NULL"
+            )
+        }
+    }
+
+    /// Get all AI tasks that have not been scored yet (no relevanceScore)
+    func getUnscoredAITasks(limit: Int = 10000) async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let records = try ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == false)
+                .filter(Column("source") != "manual")
+                .filter(Column("relevanceScore") == nil)
+                .order(Column("createdAt").desc)
+                .limit(limit)
+                .fetchAll(database)
+
+            return records.map { $0.toTaskActionItem() }
+        }
+    }
+
+    /// Get AI tasks that have been scored, ordered by score descending
+    func getScoredAITasks(limit: Int = 10000) async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let records = try ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == false)
+                .filter(Column("source") != "manual")
+                .filter(Column("relevanceScore") != nil)
+                .order(Column("relevanceScore").desc)
+                .limit(limit)
+                .fetchAll(database)
+
+            return records.map { $0.toTaskActionItem() }
+        }
+    }
+
     // MARK: - Stats
 
     /// Get action item storage statistics
