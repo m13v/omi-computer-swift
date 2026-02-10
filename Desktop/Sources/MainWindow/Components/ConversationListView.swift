@@ -59,8 +59,9 @@ struct ConversationListView: View {
             return date1 > date2
         }
 
-        return sortedKeys.map { key in
-            (key, groups[key]!)
+        return sortedKeys.compactMap { key in
+            guard let convos = groups[key] else { return nil }
+            return (key, convos)
         }
     }
 
