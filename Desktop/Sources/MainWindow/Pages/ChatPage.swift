@@ -248,22 +248,9 @@ struct ChatPage: View {
                         }
                     } else {
                         // Default OMI assistant
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 18))
-                            .foregroundColor(OmiColors.purplePrimary)
-                            .frame(width: 32, height: 32)
-                            .background(OmiColors.backgroundTertiary)
-                            .clipShape(Circle())
-
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("OMI")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(OmiColors.textPrimary)
-
-                            Text("Personal Assistant")
-                                .font(.system(size: 11))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
+                        Text("Omi")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
                     }
 
                     if !appProvider.chatApps.isEmpty {
@@ -497,11 +484,15 @@ struct ChatPage: View {
                     .padding(.horizontal, 40)
             } else {
                 // Default OMI assistant
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 48))
-                    .foregroundColor(OmiColors.purplePrimary)
+                if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                   let logoImage = NSImage(contentsOf: logoURL) {
+                    Image(nsImage: logoImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 48, height: 48)
+                }
 
-                Text("Chat with OMI")
+                Text("Chat with Omi")
                     .font(.system(size: 18, weight: .semibold))
                     .foregroundColor(OmiColors.textPrimary)
 
@@ -628,12 +619,16 @@ struct ChatBubble: View {
                     .frame(width: 32, height: 32)
                     .clipShape(Circle())
                 } else {
-                    Image(systemName: "brain")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.purplePrimary)
-                        .frame(width: 32, height: 32)
-                        .background(OmiColors.backgroundTertiary)
-                        .clipShape(Circle())
+                    if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                       let logoImage = NSImage(contentsOf: logoURL) {
+                        Image(nsImage: logoImage)
+                            .resizable()
+                            .scaledToFit()
+                            .frame(width: 20, height: 20)
+                            .frame(width: 32, height: 32)
+                            .background(OmiColors.backgroundTertiary)
+                            .clipShape(Circle())
+                    }
                 }
             }
 
@@ -805,22 +800,20 @@ struct DefaultOmiRow: View {
     var body: some View {
         Button(action: onSelect) {
             HStack(spacing: 10) {
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 18))
-                    .foregroundColor(OmiColors.purplePrimary)
-                    .frame(width: 36, height: 36)
-                    .background(OmiColors.backgroundTertiary)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("OMI")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(OmiColors.textPrimary)
-
-                    Text("Personal Assistant")
-                        .font(.system(size: 11))
-                        .foregroundColor(OmiColors.textTertiary)
+                if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                   let logoImage = NSImage(contentsOf: logoURL) {
+                    Image(nsImage: logoImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 22, height: 22)
+                        .frame(width: 36, height: 36)
+                        .background(OmiColors.backgroundTertiary)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
+
+                Text("Omi")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(OmiColors.textPrimary)
 
                 Spacer()
 
