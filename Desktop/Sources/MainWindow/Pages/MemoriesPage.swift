@@ -1733,6 +1733,11 @@ private struct MemoryCardView: View {
 
             // Footer - metadata
             HStack(spacing: 6) {
+                // New badge
+                if isNewlyCreated {
+                    NewBadge()
+                }
+
                 // Unread indicator
                 if memory.isTip && !memory.isRead {
                     Circle()
@@ -1830,11 +1835,11 @@ private struct MemoryCardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(isHovered ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.textPrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+        .background(isHovered ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(memory.isTip && !memory.isRead ? OmiColors.textPrimary.opacity(0.3) : (isNewlyCreated ? OmiColors.textPrimary.opacity(0.3) : Color.clear), lineWidth: 1)
+                .stroke(memory.isTip && !memory.isRead ? OmiColors.textPrimary.opacity(0.3) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.3) : Color.clear), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
