@@ -419,12 +419,12 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     button.image = icon
                     log("AppDelegate: [MENUBAR] Rewind icon set successfully")
                 }
-            } else if let iconURL = Bundle.resourceBundle.url(forResource: "tray_icon", withExtension: "png"),
+            } else if let iconURL = Bundle.resourceBundle.url(forResource: "app_launcher_icon", withExtension: "png"),
                       let icon = NSImage(contentsOf: iconURL) {
                 icon.isTemplate = true
                 icon.size = NSSize(width: 18, height: 18)
                 button.image = icon
-                log("AppDelegate: [MENUBAR] Custom tray_icon set successfully")
+                log("AppDelegate: [MENUBAR] Custom app_launcher_icon set successfully")
             } else {
                 // Fallback to SF Symbol
                 if let icon = NSImage(systemSymbolName: "waveform.circle.fill", accessibilityDescription: "Omi") {
