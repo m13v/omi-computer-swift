@@ -58,7 +58,7 @@ struct TasksWidget: View {
                                 title: "Today",
                                 titleColor: OmiColors.textSecondary,
                                 icon: "calendar",
-                                tasks: Array(combinedTodayTasks.prefix(5)),
+                                tasks: Array(combinedTodayTasks.prefix(3)),
                                 totalCount: combinedTodayTasks.count,
                                 showDueDate: true,
                                 onToggle: onToggleCompletion
@@ -71,7 +71,7 @@ struct TasksWidget: View {
                                 title: "No Due Date",
                                 titleColor: OmiColors.textSecondary,
                                 icon: "tray",
-                                tasks: Array(recentTasks.prefix(5)),
+                                tasks: Array(recentTasks.prefix(3)),
                                 totalCount: recentTasks.count,
                                 showDueDate: false,
                                 onToggle: onToggleCompletion
@@ -79,7 +79,7 @@ struct TasksWidget: View {
                         }
                     }
                 }
-                .frame(maxHeight: 350)
+                .frame(maxHeight: 280)
 
                 // View all link
                 Button(action: {
