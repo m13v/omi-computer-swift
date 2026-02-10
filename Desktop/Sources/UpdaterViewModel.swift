@@ -38,10 +38,20 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     }
 
     /// Called when the update driver aborts with an error
+    /// Note: Sparkle also calls this with "You're up to date!" when no update is found,
+    /// which is not an actual error — updaterDidNotFindUpdate handles that case.
     func updater(_ updater: SPUUpdater, didAbortWithError error: Error) {
+        let message = error.localizedDescription
+        let nsError = error as NSError
+        let isUpToDate = nsError.domain == SUSparkleErrorDomain
+            && nsError.code == 1001 /* SUNoUpdateError */
         Task { @MainActor in
-            log("Sparkle: Update check failed - \(error.localizedDescription)")
-            AnalyticsManager.shared.updateCheckFailed(error: error.localizedDescription)
+            if isUpToDate {
+                log("Sparkle: Already up to date")
+            } else {
+                log("Sparkle: Update check failed - \(message)")
+                AnalyticsManager.shared.updateCheckFailed(error: message)
+            }
         }
     }
 
