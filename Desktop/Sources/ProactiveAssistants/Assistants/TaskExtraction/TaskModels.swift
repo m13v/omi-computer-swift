@@ -132,9 +132,9 @@ enum TaskClassification: String, Codable, CaseIterable {
     /// Categories that should trigger Claude agent execution
     static let agentCategories: Set<TaskClassification> = [.feature, .bug, .code]
 
-    /// Check if this category should trigger an agent
+    /// Check if this category should trigger an agent (any category can trigger)
     var shouldTriggerAgent: Bool {
-        Self.agentCategories.contains(self)
+        true
     }
 
     /// User-friendly display label
@@ -221,10 +221,9 @@ struct ExtractedTask: Codable {
         TaskSourceClassification.from(category: sourceCategory, subcategory: sourceSubcategory)
     }
 
-    /// Check if any tag should trigger agent execution
+    /// Check if this task should trigger agent execution (any task can trigger)
     var shouldTriggerAgent: Bool {
-        let agentTags: Set<String> = ["feature", "bug", "code"]
-        return tags.contains { agentTags.contains($0) }
+        true
     }
 
     /// Convert to dictionary for Flutter
