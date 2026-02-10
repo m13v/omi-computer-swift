@@ -280,10 +280,11 @@ extension Array where Element == Screenshot {
 
             // Sort screenshots by timestamp descending (most recent first)
             let sortedScreenshots = session.screenshots.sorted { $0.timestamp > $1.timestamp }
+            guard let representative = sortedScreenshots.first else { return nil }
 
             return SearchResultGroup(
                 id: "\(order.key)|\(order.sessionIndex)",
-                representativeScreenshot: sortedScreenshots.first!,
+                representativeScreenshot: representative,
                 screenshots: sortedScreenshots
             )
         }
