@@ -886,7 +886,7 @@ actor ActionItemStorage {
         }
     }
 
-    /// Get AI tasks that have been scored, ordered by score descending
+    /// Get AI tasks that have been scored, ordered by score ascending (1 = most important)
     /// - Parameter minDate: If set, only return tasks created or due after this date
     func getScoredAITasks(limit: Int = 10000, minDate: Date? = nil) async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
@@ -906,7 +906,7 @@ actor ActionItemStorage {
             }
 
             let records = try request
-                .order(Column("relevanceScore").desc)
+                .order(Column("relevanceScore").asc)
                 .limit(limit)
                 .fetchAll(database)
 
@@ -914,7 +914,7 @@ actor ActionItemStorage {
         }
     }
 
-    /// Get the top scored AI task with no due date
+    /// Get the top scored AI task with no due date (score 1 = most important)
     func getTopScoredNoDeadlineTask() async throws -> TaskActionItem? {
         let db = try await ensureInitialized()
 
@@ -925,7 +925,7 @@ actor ActionItemStorage {
                 .filter(Column("source") != "manual")
                 .filter(Column("relevanceScore") != nil)
                 .filter(Column("dueAt") == nil)
-                .order(Column("relevanceScore").desc)
+                .order(Column("relevanceScore").asc)
                 .limit(1)
                 .fetchOne(database) else {
                 return nil
@@ -948,6 +948,45 @@ actor ActionItemStorage {
                 .fetchAll(database)
 
             return records.map { $0.toTaskActionItem() }
+        }
+    }
+
+    /// Apply selective re-ranking: pull re-ranked tasks out of the ordered list,
+    /// insert them at their new positions, then renumber all tasks 1..N.
+    func applySelectiveReranking(_ reranks: [(backendId: String, newPosition: Int)]) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            // 1. Get all active tasks ordered by current relevanceScore ASC (1 = top)
+            let rows = try Row.fetchAll(database, sql: """
+                SELECT id, backendId, relevanceScore
+                FROM action_items
+                WHERE completed = 0 AND deleted = 0
+                ORDER BY COALESCE(relevanceScore, 999999) ASC
+            """)
+
+            // 2. Build ordered list of backendIds (current ranking)
+            var orderedIds: [String] = rows.compactMap { $0["backendId"] as? String }
+            let rerankedSet = Set(reranks.map { $0.backendId })
+
+            // 3. Remove re-ranked tasks from the list
+            orderedIds.removeAll { rerankedSet.contains($0) }
+
+            // 4. Insert re-ranked tasks at their new positions (sorted by position to insert correctly)
+            let sorted = reranks.sorted { $0.newPosition < $1.newPosition }
+            for rerank in sorted {
+                let insertIdx = max(0, min(rerank.newPosition - 1, orderedIds.count))
+                orderedIds.insert(rerank.backendId, at: insertIdx)
+            }
+
+            // 5. Reassign sequential scores 1..N
+            let now = Date()
+            for (index, backendId) in orderedIds.enumerated() {
+                try database.execute(
+                    sql: "UPDATE action_items SET relevanceScore = ?, scoredAt = ? WHERE backendId = ?",
+                    arguments: [index + 1, now, backendId]
+                )
+            }
         }
     }
 
