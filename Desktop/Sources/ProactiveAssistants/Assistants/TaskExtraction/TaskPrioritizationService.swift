@@ -12,8 +12,18 @@ actor TaskPrioritizationService {
     private var geminiClient: GeminiClient?
     private var timer: Task<Void, Never>?
     private var isRunning = false
-    private var lastFullRunTime: Date?
-    private var lastPartialRunTime: Date?
+    private var isScoringInProgress = false
+
+    // Persisted to UserDefaults so they survive app restarts
+    private static let fullRunKey = "TaskPrioritize.lastFullRunTime"
+    private static let partialRunKey = "TaskPrioritize.lastPartialRunTime"
+
+    private var lastFullRunTime: Date? {
+        didSet { UserDefaults.standard.set(lastFullRunTime, forKey: Self.fullRunKey) }
+    }
+    private var lastPartialRunTime: Date? {
+        didSet { UserDefaults.standard.set(lastPartialRunTime, forKey: Self.partialRunKey) }
+    }
 
     // Configuration
     private let fullRescoreInterval: TimeInterval = 86400   // 24 hours — full re-rank of all tasks
@@ -34,11 +44,22 @@ actor TaskPrioritizationService {
     private(set) var hasCompletedScoring = false
 
     private init() {
+        // Restore persisted timestamps
+        self.lastFullRunTime = UserDefaults.standard.object(forKey: Self.fullRunKey) as? Date
+        self.lastPartialRunTime = UserDefaults.standard.object(forKey: Self.partialRunKey) as? Date
+
         do {
             self.geminiClient = try GeminiClient(model: "gemini-3-pro-preview")
         } catch {
             log("TaskPrioritize: Failed to initialize GeminiClient: \(error)")
             self.geminiClient = nil
+        }
+
+        if let last = self.lastFullRunTime {
+            let hoursAgo = Int(Date().timeIntervalSince(last) / 3600)
+            log("TaskPrioritize: Last full rescore was \(hoursAgo)h ago")
+        } else {
+            log("TaskPrioritize: No previous full rescore recorded")
         }
     }
 
@@ -115,10 +136,17 @@ actor TaskPrioritizationService {
 
     /// Clear all scores and re-rank ALL AI tasks from scratch
     private func runFullRescore() async {
+        guard !isScoringInProgress else {
+            log("TaskPrioritize: [FULL] Skipping — scoring already in progress")
+            return
+        }
         guard let client = geminiClient else {
             log("TaskPrioritize: Skipping full rescore — Gemini client not initialized")
             return
         }
+
+        isScoringInProgress = true
+        defer { isScoringInProgress = false }
 
         log("TaskPrioritize: [FULL] Starting daily full rescore")
         await notifyStoreStarted()
