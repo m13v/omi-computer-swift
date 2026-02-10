@@ -1387,6 +1387,12 @@ actor RewindDatabase {
             print("[RewindDatabase] Migration 35: Added agent session fields to action_items")
         }
 
+        migrator.registerMigration("addSkippedForBattery") { db in
+            try db.alter(table: "screenshots") { t in
+                t.add(column: "skippedForBattery", .boolean).notNull().defaults(to: false)
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
@@ -1567,7 +1573,7 @@ actor RewindDatabase {
         try dbQueue.write { db in
             // Legacy: Update screenshots table (for backwards compatibility)
             try db.execute(
-                sql: "UPDATE screenshots SET ocrText = ?, ocrDataJson = ?, isIndexed = 1 WHERE id = ?",
+                sql: "UPDATE screenshots SET ocrText = ?, ocrDataJson = ?, isIndexed = 1, skippedForBattery = 0 WHERE id = ?",
                 arguments: [ocrResult.fullText, ocrDataJson, id]
             )
 
@@ -1625,15 +1631,15 @@ actor RewindDatabase {
         }
     }
 
-    /// Get screenshots pending OCR processing captured after a given date
-    func getPendingOCRScreenshots(since: Date, limit: Int = 10) throws -> [Screenshot] {
+    /// Get screenshots that were skipped due to battery and need OCR backfill
+    func getBatterySkippedScreenshots(limit: Int = 10) throws -> [Screenshot] {
         guard let dbQueue = dbQueue else {
             throw RewindError.databaseNotInitialized
         }
 
         return try dbQueue.read { db in
             try Screenshot
-                .filter(Column("isIndexed") == false && Column("timestamp") >= since)
+                .filter(Column("skippedForBattery") == true)
                 .order(Column("timestamp").asc)
                 .limit(limit)
                 .fetchAll(db)
