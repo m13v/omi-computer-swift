@@ -2252,7 +2252,8 @@ impl FirestoreService {
                 "description": {"stringValue": item.description},
                 "completed": {"booleanValue": item.completed},
                 "conversation_id": {"stringValue": conversation_id},
-                "created_at": {"timestampValue": now.to_rfc3339()}
+                "created_at": {"timestampValue": now.to_rfc3339()},
+                "updated_at": {"timestampValue": now.to_rfc3339()}
             });
 
             if let Some(due_at) = &item.due_at {
@@ -2309,7 +2310,8 @@ impl FirestoreService {
         let mut fields = json!({
             "description": {"stringValue": description},
             "completed": {"booleanValue": false},
-            "created_at": {"timestampValue": now.to_rfc3339()}
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "updated_at": {"timestampValue": now.to_rfc3339()}
         });
 
         if let Some(due) = due_at {
