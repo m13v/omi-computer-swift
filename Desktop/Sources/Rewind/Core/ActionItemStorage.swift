@@ -667,22 +667,67 @@ actor ActionItemStorage {
     }
 
     /// Get recent active (incomplete, not deleted) tasks
-    func getRecentActiveTasks(limit: Int = 30) async throws -> [(id: Int64, description: String, priority: String?)] {
+    func getRecentActiveTasks(limit: Int = 30) async throws -> [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] {
         let db = try await ensureInitialized()
 
         return try await db.read { database in
             try Row.fetchAll(database, sql: """
-                SELECT id, description, priority FROM action_items
+                SELECT id, description, priority, relevanceScore FROM action_items
                 WHERE completed = 0 AND deleted = 0
                 ORDER BY createdAt DESC LIMIT ?
             """, arguments: [limit]).map { row in
                 (
                     id: row["id"] as Int64,
                     description: row["description"] as String,
-                    priority: row["priority"] as String?
+                    priority: row["priority"] as String?,
+                    relevanceScore: row["relevanceScore"] as Int?
                 )
             }
         }
+    }
+
+    /// Get the current relevance score range (min and max) for active tasks
+    func getRelevanceScoreRange() async throws -> (min: Int, max: Int) {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let row = try Row.fetchOne(database, sql: """
+                SELECT COALESCE(MIN(relevanceScore), 0) as minScore,
+                       COALESCE(MAX(relevanceScore), 0) as maxScore
+                FROM action_items
+                WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NOT NULL
+            """)
+            return (
+                min: row?["minScore"] as? Int ?? 0,
+                max: row?["maxScore"] as? Int ?? 0
+            )
+        }
+    }
+
+    /// Insert a task with a specific relevanceScore, shifting existing tasks at that score
+    /// and below down by 1 to maintain uniqueness
+    func insertWithScoreShift(_ record: ActionItemRecord) async throws -> ActionItemRecord {
+        let db = try await ensureInitialized()
+
+        var insertRecord = record
+        insertRecord.backendSynced = false
+        let recordToInsert = insertRecord
+
+        let inserted = try await db.write { database in
+            // Shift all tasks at this score and below down by 1
+            if let score = recordToInsert.relevanceScore {
+                try database.execute(sql: """
+                    UPDATE action_items
+                    SET relevanceScore = relevanceScore - 1
+                    WHERE relevanceScore IS NOT NULL AND relevanceScore <= ?
+                """, arguments: [score])
+            }
+
+            return try recordToInsert.inserted(database)
+        }
+
+        log("ActionItemStorage: Inserted with score shift (id: \(inserted.id ?? -1), score: \(inserted.relevanceScore ?? -1))")
+        return inserted
     }
 
     /// Get recent completed tasks
