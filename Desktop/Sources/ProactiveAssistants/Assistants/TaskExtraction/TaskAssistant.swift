@@ -658,7 +658,7 @@ actor TaskAssistant: ProactiveAssistant {
                 parameters: GeminiTool.FunctionDeclaration.Parameters(
                     type: "object",
                     properties: [
-                        "title": .init(type: "string", description: "Brief, verb-first task title, ≤15 words. Include WHO and WHAT."),
+                        "title": .init(type: "string", description: "Verb-first task title, 6–15 words. MUST name a specific person/project/artifact and a concrete action. If you can't write 6+ specific words, call no_task_found instead."),
                         "description": .init(type: "string", description: "Additional context about the task. Empty string if none."),
                         "priority": .init(type: "string", description: "Task priority", enumValues: ["high", "medium", "low"]),
                         "tags": .init(type: "array", description: "1-3 relevant tags", items: .init(type: "string")),
@@ -733,6 +733,38 @@ actor TaskAssistant: ProactiveAssistant {
 
             case "extract_task":
                 let title = toolCall.arguments["title"] as? String ?? ""
+                let contextSummary = toolCall.arguments["context_summary"] as? String ?? ""
+                let currentActivity = toolCall.arguments["current_activity"] as? String ?? ""
+
+                // --- Hard validation: reject vague titles and ask the model to retry ---
+                let titleWords = title.split(separator: " ").count
+                let validationError = Self.validateTaskTitle(title, wordCount: titleWords)
+                if let error = validationError {
+                    log("Task: Title rejected (\(error)): \"\(title)\"")
+
+                    // Feed rejection back into the loop so the model can retry with more specifics
+                    contents.append(GeminiImageToolRequest.Content(
+                        role: "model",
+                        parts: [GeminiImageToolRequest.Part(
+                            functionCall: .init(name: toolCall.name, args: toolCall.arguments as? [String: String] ?? ["title": title]),
+                            thoughtSignature: toolCall.thoughtSignature
+                        )]
+                    ))
+                    contents.append(GeminiImageToolRequest.Content(
+                        role: "user",
+                        parts: [GeminiImageToolRequest.Part(functionResponse: .init(
+                            name: toolCall.name,
+                            response: .init(result: """
+                                REJECTED: \(error). \
+                                Your title was: "\(title)" (\(titleWords) words). \
+                                Either rewrite with 6+ words including a specific person/project name and concrete action, \
+                                or call no_task_found if you cannot be more specific.
+                                """)
+                        ))]
+                    ))
+                    continue
+                }
+
                 let description = toolCall.arguments["description"] as? String
                 let priorityStr = toolCall.arguments["priority"] as? String ?? "medium"
                 let priority = TaskPriority(rawValue: priorityStr) ?? .medium
@@ -752,8 +784,6 @@ actor TaskAssistant: ProactiveAssistant {
                 } else {
                     confidence = 0.5
                 }
-                let contextSummary = toolCall.arguments["context_summary"] as? String ?? ""
-                let currentActivity = toolCall.arguments["current_activity"] as? String ?? ""
                 let sourceCategory = toolCall.arguments["source_category"] as? String ?? "other"
                 let sourceSubcategory = toolCall.arguments["source_subcategory"] as? String ?? "other"
 
@@ -861,6 +891,50 @@ actor TaskAssistant: ProactiveAssistant {
 
         log("Task: Completed in \(searchCount) searches (loop exhausted without terminal tool)")
         return (nil, searchCount)
+    }
+
+    // MARK: - Title Validation
+
+    /// Validates a task title for minimum specificity. Returns an error message if invalid, nil if OK.
+    private static func validateTaskTitle(_ title: String, wordCount: Int) -> String? {
+        let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // Must not be empty
+        if trimmed.isEmpty {
+            return "Title is empty"
+        }
+
+        // Minimum 6 words
+        if wordCount < 6 {
+            return "Title too short (\(wordCount) words, minimum 6)"
+        }
+
+        // Reject titles that are purely generic verbs with no specifics
+        let genericPatterns: [String] = [
+            "investigate", "check logs", "clean up", "look into",
+            "look through", "update to", "fix the", "review the",
+            "check the", "modify the", "track the"
+        ]
+        let lowered = trimmed.lowercased()
+        for pattern in genericPatterns {
+            // If the entire title is just a generic pattern (possibly with 1-2 filler words), reject
+            if lowered == pattern || (wordCount <= 4 && lowered.hasPrefix(pattern)) {
+                return "Title too generic (matches vague pattern '\(pattern)')"
+            }
+        }
+
+        // Must contain at least one capitalized proper noun (person, project, app name)
+        // Heuristic: after the first word (verb), there should be at least one word starting with uppercase
+        let words = trimmed.split(separator: " ")
+        let hasProperNoun = words.dropFirst().contains { word in
+            guard let first = word.first else { return false }
+            return first.isUppercase
+        }
+        if !hasProperNoun {
+            return "Title lacks a specific name (person, project, or app) — no proper nouns found after the verb"
+        }
+
+        return nil
     }
 
     // MARK: - Context & Search
