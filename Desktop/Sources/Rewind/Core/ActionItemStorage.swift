@@ -632,12 +632,12 @@ actor ActionItemStorage {
         limit: Int = 20,
         includeCompleted: Bool = true,
         includeDeleted: Bool = false
-    ) async throws -> [(id: Int64, description: String, completed: Bool, deleted: Bool, deletedBy: String?)] {
+    ) async throws -> [(id: Int64, description: String, completed: Bool, deleted: Bool, deletedBy: String?, relevanceScore: Int?)] {
         let db = try await ensureInitialized()
 
         return try await db.read { database in
             var sql = """
-                SELECT a.id, a.description, a.completed, a.deleted, a.deletedBy
+                SELECT a.id, a.description, a.completed, a.deleted, a.deletedBy, a.relevanceScore
                 FROM action_items a
                 JOIN action_items_fts fts ON fts.rowid = a.id
                 WHERE action_items_fts MATCH ?
@@ -660,7 +660,8 @@ actor ActionItemStorage {
                     description: row["description"] as String,
                     completed: row["completed"] as Bool,
                     deleted: row["deleted"] as Bool,
-                    deletedBy: row["deletedBy"] as String?
+                    deletedBy: row["deletedBy"] as String?,
+                    relevanceScore: row["relevanceScore"] as Int?
                 )
             }
         }
