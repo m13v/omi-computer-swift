@@ -20,7 +20,7 @@ actor OCREmbeddingService {
         do {
             let embedding = try await EmbeddingService.shared.embed(text: ocrText)
             let data = await EmbeddingService.shared.floatsToData(embedding)
-            try RewindDatabase.shared.updateScreenshotEmbedding(id: id, embedding: data)
+            try await RewindDatabase.shared.updateScreenshotEmbedding(id: id, embedding: data)
         } catch {
             // Non-fatal: embedding failures don't block the pipeline
             logError("OCREmbeddingService: Failed to embed screenshot \(id)", error: error)
@@ -32,7 +32,7 @@ actor OCREmbeddingService {
     /// Backfill embeddings for existing screenshots that have OCR text but no embedding
     func backfillIfNeeded() async {
         do {
-            let status = try RewindDatabase.shared.getOCREmbeddingBackfillStatus()
+            let status = try await RewindDatabase.shared.getOCREmbeddingBackfillStatus()
             if status.completed {
                 log("OCREmbeddingService: Backfill already complete, skipping")
                 return
@@ -44,7 +44,7 @@ actor OCREmbeddingService {
             var totalProcessed = status.processedCount
 
             while true {
-                let items = try RewindDatabase.shared.getScreenshotsMissingEmbeddings(limit: batchSize)
+                let items = try await RewindDatabase.shared.getScreenshotsMissingEmbeddings(limit: batchSize)
                 if items.isEmpty { break }
 
                 let texts = items.map { $0.ocrText }
@@ -59,14 +59,14 @@ actor OCREmbeddingService {
                 for (i, embedding) in embeddings.enumerated() where i < items.count {
                     let item = items[i]
                     let data = await EmbeddingService.shared.floatsToData(embedding)
-                    try RewindDatabase.shared.updateScreenshotEmbedding(id: item.id, embedding: data)
+                    try await RewindDatabase.shared.updateScreenshotEmbedding(id: item.id, embedding: data)
                 }
 
                 totalProcessed += items.count
 
                 // Update progress every 1000 items
                 if totalProcessed % 1000 < batchSize {
-                    try RewindDatabase.shared.updateOCREmbeddingBackfillStatus(completed: false, processedCount: totalProcessed)
+                    try await RewindDatabase.shared.updateOCREmbeddingBackfillStatus(completed: false, processedCount: totalProcessed)
                     log("OCREmbeddingService: Backfill progress: \(totalProcessed) items")
                 }
 
@@ -75,7 +75,7 @@ actor OCREmbeddingService {
             }
 
             // Mark complete
-            try RewindDatabase.shared.updateOCREmbeddingBackfillStatus(completed: true, processedCount: totalProcessed)
+            try await RewindDatabase.shared.updateOCREmbeddingBackfillStatus(completed: true, processedCount: totalProcessed)
             log("OCREmbeddingService: Backfill complete — \(totalProcessed) items embedded")
 
         } catch {
@@ -102,7 +102,7 @@ actor OCREmbeddingService {
         var topResults: [(screenshotId: Int64, similarity: Float)] = []
 
         while true {
-            let batch = try RewindDatabase.shared.readEmbeddingBatch(
+            let batch = try await RewindDatabase.shared.readEmbeddingBatch(
                 startDate: startDate,
                 endDate: endDate,
                 appFilter: appFilter,
