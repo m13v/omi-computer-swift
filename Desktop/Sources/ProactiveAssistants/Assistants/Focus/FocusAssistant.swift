@@ -236,6 +236,10 @@ actor FocusAssistant: ProactiveAssistant {
         }
     }
 
+    var needsFrameDuringDelay: Bool {
+        lastNotifiedState == .distracted
+    }
+
     func clearPendingWork() async {
         // Cancel pending analysis tasks since those frames are now stale
         let count = pendingTasks.count
