@@ -5,21 +5,25 @@ import Foundation
 /// in overlapping batches — the model returns tasks in ranked order (not scores),
 /// and overlap tasks stitch batches into a coherent global ranking.
 /// Scores are persisted to SQLite. Manual tasks are always shown.
-/// From AI tasks, only the top 5 by score are visible.
+/// Two cadences: daily full re-rank of all tasks + every 2 hours re-rank 200 most recent.
 actor TaskPrioritizationService {
     static let shared = TaskPrioritizationService()
 
     private var geminiClient: GeminiClient?
     private var timer: Task<Void, Never>?
     private var isRunning = false
-    private var lastRunTime: Date?
+    private var lastFullRunTime: Date?
+    private var lastPartialRunTime: Date?
 
     // Configuration
-    private let intervalSeconds: TimeInterval = 86400   // 24 hours (once a day)
-    private let startupDelaySeconds: TimeInterval = 90  // 90s delay at app launch
-    private let cooldownSeconds: TimeInterval = 43200   // 12-hour cooldown
+    private let fullRescoreInterval: TimeInterval = 86400   // 24 hours — full re-rank of all tasks
+    private let partialRescoreInterval: TimeInterval = 7200 // 2 hours — re-rank 200 most recent tasks
+    private let startupDelaySeconds: TimeInterval = 90
+    private let checkIntervalSeconds: TimeInterval = 300    // Check every 5 minutes
     private let minimumTaskCount = 2
     private let defaultVisibleAICount = 5
+    private let partialRescoreCount = 200
+    private let anchorCount = 50  // Anchor tasks for calibration in partial runs
     private let batchSize = 250
     private let batchStepSize = 200  // 50-task overlap between consecutive batches
 
@@ -52,18 +56,20 @@ actor TaskPrioritizationService {
             while !Task.isCancelled {
                 guard let self = self else { break }
 
-                // Check cooldown
-                if let lastRun = await self.lastRunTime,
-                   Date().timeIntervalSince(lastRun) < self.cooldownSeconds {
-                    let remaining = self.cooldownSeconds - Date().timeIntervalSince(lastRun)
-                    try? await Task.sleep(nanoseconds: UInt64(remaining * 1_000_000_000))
-                    continue
+                let now = Date()
+                let timeSinceFull = self.lastFullRunTime.map { now.timeIntervalSince($0) } ?? .infinity
+                let timeSincePartial = self.lastPartialRunTime.map { now.timeIntervalSince($0) } ?? .infinity
+
+                if timeSinceFull >= self.fullRescoreInterval {
+                    // Daily: full re-rank of ALL tasks
+                    await self.runFullRescore()
+                } else if timeSincePartial >= self.partialRescoreInterval {
+                    // Every 2 hours: re-rank 200 most recent tasks
+                    await self.runPartialRescore()
                 }
 
-                await self.runPrioritization()
-
-                // Wait for next interval
-                try? await Task.sleep(nanoseconds: UInt64(self.intervalSeconds * 1_000_000_000))
+                // Check again in 5 minutes
+                try? await Task.sleep(nanoseconds: UInt64(self.checkIntervalSeconds * 1_000_000_000))
             }
         }
     }
@@ -83,60 +89,215 @@ actor TaskPrioritizationService {
         } catch {
             log("TaskPrioritize: Failed to clear scores: \(error)")
         }
-        lastRunTime = nil
-        await runPrioritization()
+        lastFullRunTime = nil
+        lastPartialRunTime = nil
+        await runFullRescore()
     }
 
-    /// Force a re-prioritization (e.g. when user opens Tasks tab)
+    /// Called when user opens Tasks tab — load allowlist immediately, trigger run if needed
     func runIfNeeded() async {
-        // If we have persisted scores, load the allowlist immediately
+        // Always load allowlist from SQLite for instant display
         if !hasCompletedScoring {
             await loadAllowlistFromSQLite()
         }
 
-        // Skip full scoring if already ran recently (within cooldown)
-        if let lastRun = lastRunTime,
-           Date().timeIntervalSince(lastRun) < cooldownSeconds {
-            return
+        let now = Date()
+        let timeSinceFull = lastFullRunTime.map { now.timeIntervalSince($0) } ?? .infinity
+        let timeSincePartial = lastPartialRunTime.map { now.timeIntervalSince($0) } ?? .infinity
+
+        if timeSinceFull >= fullRescoreInterval {
+            await runFullRescore()
+        } else if timeSincePartial >= partialRescoreInterval {
+            await runPartialRescore()
         }
-        await runPrioritization()
     }
 
-    // MARK: - Prioritization Logic
+    // MARK: - Full Rescore (Daily)
 
-    private func runPrioritization() async {
+    /// Clear all scores and re-rank ALL AI tasks from scratch
+    private func runFullRescore() async {
         guard let client = geminiClient else {
-            log("TaskPrioritize: Skipping - Gemini client not initialized")
+            log("TaskPrioritize: Skipping full rescore — Gemini client not initialized")
             return
         }
 
-        lastRunTime = Date()
-        log("TaskPrioritize: Starting prioritization run")
+        log("TaskPrioritize: [FULL] Starting daily full rescore")
         await notifyStoreStarted()
 
-        // 1. Load already-scored and unscored AI tasks from SQLite
-        let scoredTasks: [TaskActionItem]
-        let unscoredTasks: [TaskActionItem]
+        // Clear all existing scores
         do {
-            scoredTasks = try await ActionItemStorage.shared.getScoredAITasks()
-            unscoredTasks = try await ActionItemStorage.shared.getUnscoredAITasks()
+            try await ActionItemStorage.shared.clearAllRelevanceScores()
         } catch {
-            log("TaskPrioritize: Failed to fetch tasks from SQLite: \(error)")
+            log("TaskPrioritize: [FULL] Failed to clear scores: \(error)")
+        }
+
+        // Get ALL AI tasks (now all unscored after clearing)
+        let allTasks: [TaskActionItem]
+        do {
+            allTasks = try await ActionItemStorage.shared.getUnscoredAITasks(limit: 10000)
+        } catch {
+            log("TaskPrioritize: [FULL] Failed to fetch tasks: \(error)")
             await notifyStoreUpdated()
             return
         }
 
-        log("TaskPrioritize: Found \(scoredTasks.count) already-scored, \(unscoredTasks.count) unscored AI tasks")
+        log("TaskPrioritize: [FULL] Ranking \(allTasks.count) AI tasks")
 
-        guard unscoredTasks.count >= minimumTaskCount else {
-            log("TaskPrioritize: Only \(unscoredTasks.count) unscored tasks, refreshing allowlist from existing scores")
+        guard allTasks.count >= minimumTaskCount else {
+            log("TaskPrioritize: [FULL] Only \(allTasks.count) tasks, skipping")
             await loadAllowlistFromSQLite()
             await notifyStoreUpdated()
+            lastFullRunTime = Date()
+            lastPartialRunTime = Date()
             return
         }
 
-        // 2. Fetch user profile and goals
+        // Fetch context
+        let (referenceContext, profile, goals) = await fetchContext()
+
+        // Rank in overlapping batches
+        await rankInBatches(
+            tasks: allTasks,
+            existingScores: [:],
+            referenceContext: referenceContext,
+            profile: profile,
+            goals: goals,
+            client: client,
+            label: "FULL"
+        )
+
+        lastFullRunTime = Date()
+        lastPartialRunTime = Date()  // Reset partial timer too
+
+        await loadAllowlistFromSQLite()
+        log("TaskPrioritize: [FULL] Done. \(allTasks.count) tasks ranked. Top \(visibleAITaskIds.count) visible.")
+        await notifyStoreUpdated()
+    }
+
+    // MARK: - Partial Rescore (Every 2 Hours)
+
+    /// Re-rank the 200 most recent AI tasks with anchor calibration against the global scale
+    private func runPartialRescore() async {
+        guard let client = geminiClient else {
+            log("TaskPrioritize: Skipping partial rescore — Gemini client not initialized")
+            return
+        }
+
+        log("TaskPrioritize: [PARTIAL] Starting 2-hour partial rescore")
+        await notifyStoreStarted()
+
+        // Get 200 most recent AI tasks (regardless of score status)
+        let recentTasks: [TaskActionItem]
+        do {
+            recentTasks = try await ActionItemStorage.shared.getRecentAITasks(limit: partialRescoreCount)
+        } catch {
+            log("TaskPrioritize: [PARTIAL] Failed to fetch recent tasks: \(error)")
+            await notifyStoreUpdated()
+            return
+        }
+
+        guard recentTasks.count >= minimumTaskCount else {
+            log("TaskPrioritize: [PARTIAL] Only \(recentTasks.count) recent tasks, skipping")
+            lastPartialRunTime = Date()
+            await notifyStoreUpdated()
+            return
+        }
+
+        let recentIds = Set(recentTasks.map { $0.id })
+
+        // Get scored anchor tasks that are NOT in the recent set (for calibration)
+        let anchors: [TaskActionItem]
+        do {
+            let allScored = try await ActionItemStorage.shared.getScoredAITasks(limit: 10000)
+            anchors = selectDiverseAnchors(
+                from: allScored.filter { !recentIds.contains($0.id) },
+                count: anchorCount
+            )
+        } catch {
+            log("TaskPrioritize: [PARTIAL] Failed to fetch anchors: \(error)")
+            anchors = []
+        }
+
+        log("TaskPrioritize: [PARTIAL] Ranking \(recentTasks.count) recent tasks with \(anchors.count) anchors")
+
+        // Build combined batch (recent tasks + anchors for calibration)
+        let combinedBatch = recentTasks + anchors
+
+        // Build existing scores from anchors
+        var anchorScores: [String: Int] = [:]
+        for anchor in anchors {
+            if let score = anchor.relevanceScore {
+                anchorScores[anchor.id] = score
+            }
+        }
+
+        // Fetch context
+        let (referenceContext, profile, goals) = await fetchContext()
+
+        // Rank the combined batch (single batch since 200 + 50 = 250 fits in one call)
+        let rankedIds = await rankBatchWithGemini(
+            batch: combinedBatch,
+            referenceContext: referenceContext,
+            profile: profile,
+            goals: goals,
+            client: client
+        )
+
+        guard let rankedIds = rankedIds, !rankedIds.isEmpty else {
+            log("TaskPrioritize: [PARTIAL] Ranking failed")
+            lastPartialRunTime = Date()
+            await notifyStoreUpdated()
+            return
+        }
+
+        // Stitch scores using anchors for calibration
+        let batchScores: [String: Int]
+        if anchorScores.isEmpty {
+            batchScores = assignLinearScores(rankedIds: rankedIds)
+            log("TaskPrioritize: [PARTIAL] Linear scoring (no anchors)")
+        } else {
+            batchScores = stitchScores(rankedIds: rankedIds, globalScores: anchorScores)
+            log("TaskPrioritize: [PARTIAL] Stitched with \(anchors.count) anchors")
+        }
+
+        // Only persist scores for the target tasks (not anchors — their scores stay stable)
+        let targetScores = batchScores.filter { recentIds.contains($0.key) }
+        do {
+            try await ActionItemStorage.shared.updateRelevanceScores(targetScores)
+            log("TaskPrioritize: [PARTIAL] Persisted \(targetScores.count) scores")
+        } catch {
+            log("TaskPrioritize: [PARTIAL] Failed to persist scores: \(error)")
+        }
+
+        lastPartialRunTime = Date()
+
+        await loadAllowlistFromSQLite()
+        log("TaskPrioritize: [PARTIAL] Done. Top \(visibleAITaskIds.count) visible.")
+        await notifyStoreUpdated()
+    }
+
+    /// Select anchor tasks spread across the score range for calibration
+    private func selectDiverseAnchors(from tasks: [TaskActionItem], count: Int) -> [TaskActionItem] {
+        guard tasks.count > count else { return tasks }
+
+        // Tasks are already sorted by score DESC from getScoredAITasks
+        // Sample evenly across the range
+        var anchors: [TaskActionItem] = []
+        let step = Double(tasks.count - 1) / Double(count - 1)
+
+        for i in 0..<count {
+            let index = min(Int(round(Double(i) * step)), tasks.count - 1)
+            anchors.append(tasks[index])
+        }
+
+        return anchors
+    }
+
+    // MARK: - Shared Context Fetching
+
+    private func fetchContext() async -> (referenceContext: String, profile: String?, goals: [Goal]) {
         let userProfile = await AIUserProfileService.shared.getLatestProfile()
+
         let goals: [Goal]
         do {
             goals = try await APIClient.shared.getGoals()
@@ -145,7 +306,6 @@ actor TaskPrioritizationService {
             goals = []
         }
 
-        // 3. Build reference context (completed tasks the user engaged with)
         let referenceTasks: [TaskActionItem]
         do {
             referenceTasks = try await ActionItemStorage.shared.getLocalActionItems(
@@ -158,28 +318,14 @@ actor TaskPrioritizationService {
         }
         let referenceContext = buildReferenceContext(referenceTasks)
 
-        // 4. Rank unscored tasks in overlapping batches with overlap stitching
-        await rankInBatches(
-            unscoredTasks: unscoredTasks,
-            scoredTasks: scoredTasks,
-            referenceContext: referenceContext,
-            profile: userProfile?.profileText,
-            goals: goals,
-            client: client
-        )
-
-        // 5. Reload allowlist from SQLite
-        await loadAllowlistFromSQLite()
-
-        let totalAI = scoredTasks.count + unscoredTasks.count
-        log("TaskPrioritize: Done. \(totalAI) total AI tasks. Top \(visibleAITaskIds.count) visible.")
-        await notifyStoreUpdated()
+        return (referenceContext, userProfile?.profileText, goals)
     }
 
     // MARK: - Allowlist from SQLite
 
     private func loadAllowlistFromSQLite() async {
         do {
+            // Top 5 globally — no date filter. The store will ensure these are loaded.
             let topTasks = try await ActionItemStorage.shared.getScoredAITasks(
                 limit: defaultVisibleAICount
             )
@@ -193,43 +339,37 @@ actor TaskPrioritizationService {
 
     // MARK: - Listwise Ranking in Batches
 
-    /// Rank unscored tasks in overlapping batches. Each batch asks the model to return
+    /// Rank tasks in overlapping batches. Each batch asks the model to return
     /// task IDs in ranked order (most → least relevant). Overlap tasks between batches
     /// are used to stitch rankings into a coherent global score.
     private func rankInBatches(
-        unscoredTasks: [TaskActionItem],
-        scoredTasks: [TaskActionItem],
+        tasks: [TaskActionItem],
+        existingScores: [String: Int],
         referenceContext: String,
         profile: String?,
         goals: [Goal],
-        client: GeminiClient
+        client: GeminiClient,
+        label: String
     ) async {
-        // Build overlapping batches of unscored tasks
+        // Build overlapping batches
         var batches: [[TaskActionItem]] = []
         var startIndex = 0
 
-        while startIndex < unscoredTasks.count {
-            let endIndex = min(startIndex + batchSize, unscoredTasks.count)
-            let batch = Array(unscoredTasks[startIndex..<endIndex])
+        while startIndex < tasks.count {
+            let endIndex = min(startIndex + batchSize, tasks.count)
+            let batch = Array(tasks[startIndex..<endIndex])
             batches.append(batch)
             startIndex += batchStepSize
-            if endIndex == unscoredTasks.count { break }
+            if endIndex == tasks.count { break }
         }
 
-        log("TaskPrioritize: Ranking \(unscoredTasks.count) unscored tasks in \(batches.count) batches")
+        log("TaskPrioritize: [\(label)] \(tasks.count) tasks in \(batches.count) batches")
 
         // Track scores assigned so far (for overlap stitching)
-        var globalScores: [String: Int] = [:]
-
-        // Seed with existing scored tasks
-        for task in scoredTasks {
-            if let score = task.relevanceScore {
-                globalScores[task.id] = score
-            }
-        }
+        var globalScores = existingScores
 
         for (i, batch) in batches.enumerated() {
-            log("TaskPrioritize: Ranking batch \(i + 1)/\(batches.count) (\(batch.count) tasks)")
+            log("TaskPrioritize: [\(label)] Ranking batch \(i + 1)/\(batches.count) (\(batch.count) tasks)")
 
             // Find overlap tasks in this batch that already have global scores
             let overlapTasks = batch.filter { globalScores[$0.id] != nil }
@@ -243,7 +383,7 @@ actor TaskPrioritizationService {
             )
 
             guard let rankedIds = rankedIds, !rankedIds.isEmpty else {
-                log("TaskPrioritize: Batch \(i + 1) failed, skipping")
+                log("TaskPrioritize: [\(label)] Batch \(i + 1) failed, skipping")
                 continue
             }
 
@@ -251,16 +391,11 @@ actor TaskPrioritizationService {
             let batchScores: [String: Int]
 
             if overlapTasks.isEmpty {
-                // First batch or no overlap: assign linear scores from position
                 batchScores = assignLinearScores(rankedIds: rankedIds)
-                log("TaskPrioritize: Batch \(i + 1) — linear scoring (\(rankedIds.count) ranked)")
+                log("TaskPrioritize: [\(label)] Batch \(i + 1) — linear scoring (\(rankedIds.count) ranked)")
             } else {
-                // Stitch using overlap tasks as calibration anchors
-                batchScores = stitchScores(
-                    rankedIds: rankedIds,
-                    globalScores: globalScores
-                )
-                log("TaskPrioritize: Batch \(i + 1) — stitched with \(overlapTasks.count) overlap anchors (\(rankedIds.count) ranked)")
+                batchScores = stitchScores(rankedIds: rankedIds, globalScores: globalScores)
+                log("TaskPrioritize: [\(label)] Batch \(i + 1) — stitched with \(overlapTasks.count) overlap anchors (\(rankedIds.count) ranked)")
             }
 
             // Update global scores
@@ -271,9 +406,9 @@ actor TaskPrioritizationService {
             // Persist to SQLite after each batch
             do {
                 try await ActionItemStorage.shared.updateRelevanceScores(batchScores)
-                log("TaskPrioritize: Batch \(i + 1) persisted \(batchScores.count) scores")
+                log("TaskPrioritize: [\(label)] Batch \(i + 1) persisted \(batchScores.count) scores")
             } catch {
-                log("TaskPrioritize: Failed to persist batch \(i + 1) scores: \(error)")
+                log("TaskPrioritize: [\(label)] Failed to persist batch \(i + 1) scores: \(error)")
             }
 
             // Update UI progressively
@@ -331,8 +466,6 @@ actor TaskPrioritizationService {
         let lastPosition = rankedIds.count - 1
 
         for (position, id) in rankedIds.enumerated() {
-            // If this task already has a known score, use interpolated score
-            // to keep the stitching consistent
             let score: Int
 
             if position <= anchors.first!.position {
@@ -342,7 +475,6 @@ actor TaskPrioritizationService {
                     let slope = Double(a.score - b.score) / Double(b.position - a.position)
                     score = min(100, Int(round(Double(a.score) + slope * Double(a.position - position))))
                 } else {
-                    // Single anchor — scale linearly from 100 at position 0
                     let anchor = anchors[0]
                     if anchor.position == 0 {
                         score = anchor.score
@@ -358,7 +490,6 @@ actor TaskPrioritizationService {
                     let slope = Double(a.score - b.score) / Double(b.position - a.position)
                     score = max(0, Int(round(Double(b.score) - slope * Double(position - b.position))))
                 } else {
-                    // Single anchor — scale linearly to 0 at last position
                     let anchor = anchors[0]
                     if position == lastPosition && anchor.position == lastPosition {
                         score = anchor.score
