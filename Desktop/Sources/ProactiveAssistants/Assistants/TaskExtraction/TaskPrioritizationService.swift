@@ -361,7 +361,15 @@ actor TaskPrioritizationService {
             let topTasks = try await ActionItemStorage.shared.getScoredAITasks(
                 limit: defaultVisibleAICount
             )
-            visibleAITaskIds = Set(topTasks.map { $0.id })
+            var ids = Set(topTasks.map { $0.id })
+
+            // Ensure at least one no-deadline task is visible (so the section renders)
+            if let noDeadlineTask = try await ActionItemStorage.shared.getTopScoredNoDeadlineTask(),
+               !ids.contains(noDeadlineTask.id) {
+                ids.insert(noDeadlineTask.id)
+            }
+
+            visibleAITaskIds = ids
             hasCompletedScoring = true
             log("TaskPrioritize: Loaded allowlist from SQLite — \(visibleAITaskIds.count) AI tasks visible")
         } catch {
@@ -556,7 +564,7 @@ actor TaskPrioritizationService {
                 score = Int(round(Double(lower.score) + fraction * Double(upper.score - lower.score)))
             }
 
-            scores[id] = max(0, min(maxScore, score))
+            scores[id] = max(0, min(topAnchorScore, score))
         }
 
         return scores
