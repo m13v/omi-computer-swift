@@ -2627,7 +2627,7 @@ struct TaskRow: View {
 
                             Image(systemName: "checkmark")
                                 .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.white)
+                                .foregroundColor(.black)
                                 .scaleEffect(checkmarkScale)
                         }
                     }
