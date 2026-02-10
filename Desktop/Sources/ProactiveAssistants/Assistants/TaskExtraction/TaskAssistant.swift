@@ -979,15 +979,26 @@ actor TaskAssistant: ProactiveAssistant {
 
     /// Refresh context from local SQLite + cached goals
     private func refreshContext() async -> TaskExtractionContext {
-        var activeTasks: [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] = []
+        var topRelevanceTasks: [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] = []
+        var recentTasks: [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] = []
         var completedTasks: [(id: Int64, description: String)] = []
         var deletedTasks: [(id: Int64, description: String)] = []
 
         do {
-            activeTasks = try await ActionItemStorage.shared.getRecentActiveTasks(limit: 30)
+            topRelevanceTasks = try await ActionItemStorage.shared.getTopRelevanceTasks(limit: 30)
         } catch {
-            logError("Task: Failed to load active tasks", error: error)
+            logError("Task: Failed to load top relevance tasks", error: error)
         }
+
+        do {
+            recentTasks = try await ActionItemStorage.shared.getRecentActiveTasks(limit: 30)
+        } catch {
+            logError("Task: Failed to load recent tasks", error: error)
+        }
+
+        // Merge: top relevance tasks first, then recent ones not already included
+        let topIds = Set(topRelevanceTasks.map { $0.id })
+        let activeTasks = topRelevanceTasks + recentTasks.filter { !topIds.contains($0.id) }
 
         do {
             completedTasks = try await ActionItemStorage.shared.getRecentCompletedTasks(limit: 10)
