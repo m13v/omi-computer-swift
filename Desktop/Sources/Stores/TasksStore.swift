@@ -190,8 +190,34 @@ class TasksStore: ObservableObject {
             visibleAITaskIds = visible
             hasCompletedScoring = completed
             log("TasksStore: Updated from prioritization — \(visible.count) AI tasks visible, scoring completed: \(completed)")
+
+            // Ensure allowlisted tasks are loaded (they may be older than the 7-day window)
+            await ensureAllowlistedTasksLoaded(visible)
         }
         isPrioritizing = false
+    }
+
+    /// Fetch any allowlisted tasks missing from incompleteTasks (e.g. older than 7 days)
+    private func ensureAllowlistedTasksLoaded(_ allowlist: Set<String>) async {
+        let loadedIds = Set(incompleteTasks.map { $0.id })
+        let missingIds = allowlist.subtracting(loadedIds)
+        guard !missingIds.isEmpty else { return }
+
+        do {
+            // Fetch missing tasks from SQLite by their IDs
+            var fetched: [TaskActionItem] = []
+            for id in missingIds {
+                if let task = try await ActionItemStorage.shared.getLocalActionItem(byBackendId: id) {
+                    fetched.append(task)
+                }
+            }
+            if !fetched.isEmpty {
+                incompleteTasks.append(contentsOf: fetched)
+                log("TasksStore: Loaded \(fetched.count) allowlisted tasks outside 7-day window")
+            }
+        } catch {
+            log("TasksStore: Failed to load missing allowlisted tasks: \(error)")
+        }
     }
 
     /// Refresh tasks if already loaded (for auto-refresh)
