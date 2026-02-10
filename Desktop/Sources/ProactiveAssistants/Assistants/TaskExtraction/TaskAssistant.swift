@@ -964,7 +964,7 @@ actor TaskAssistant: ProactiveAssistant {
 
     /// Refresh context from local SQLite + cached goals
     private func refreshContext() async -> TaskExtractionContext {
-        var activeTasks: [(id: Int64, description: String, priority: String?)] = []
+        var activeTasks: [(id: Int64, description: String, priority: String?, relevanceScore: Int?)] = []
         var completedTasks: [(id: Int64, description: String)] = []
         var deletedTasks: [(id: Int64, description: String)] = []
 
