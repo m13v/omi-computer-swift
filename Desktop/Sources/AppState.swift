@@ -1293,7 +1293,9 @@ class AppState: ObservableObject {
 
     /// Delete a conversation locally (after successful API call)
     func deleteConversationLocally(_ conversationId: String) {
-        conversations.removeAll { $0.id == conversationId }
+        withAnimation {
+            conversations.removeAll { $0.id == conversationId }
+        }
     }
 
     /// Update a conversation title locally (after successful API call)
