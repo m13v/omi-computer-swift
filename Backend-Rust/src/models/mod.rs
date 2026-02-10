@@ -16,7 +16,7 @@ pub mod persona;
 pub mod request;
 pub mod user_settings;
 
-pub use action_item::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, CreateActionItemRequest, UpdateActionItemRequest};
+pub use action_item::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, BatchUpdateScoresRequest, CreateActionItemRequest, UpdateActionItemRequest};
 pub use advice::{AdviceCategory, AdviceDB, AdviceStatusResponse, CreateAdviceRequest, GetAdviceQuery, UpdateAdviceRequest};
 pub use app::{
     App, AppCapabilityDef, AppCategory, AppGroup, AppReview, AppSummary, AppsV2Meta, AppsV2Query,
