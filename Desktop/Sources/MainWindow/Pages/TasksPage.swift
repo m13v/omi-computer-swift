@@ -2697,7 +2697,7 @@ struct TaskRow: View {
 
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                     if TaskAgentSettings.shared.isEnabled {
-                        AgentStatusIndicator(taskId: task.id, showAgentDetail: $showAgentDetail)
+                        AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail)
                     }
 
                     // Due date badge - clickable
