@@ -159,7 +159,7 @@ struct ScoreWidget: View {
             }
         }
         .padding(20)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(OmiColors.backgroundTertiary.opacity(0.5))
