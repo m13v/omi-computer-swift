@@ -250,11 +250,6 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Report resources after initialization
         ResourceMonitor.shared.reportResourcesNow(context: "after_monitoring_start")
 
-        NotificationService.shared.sendNotification(
-            title: "Omi Assistants",
-            message: "Monitoring started"
-        )
-
         sendEvent(type: "monitoringStarted", data: [:])
         AnalyticsManager.shared.monitoringStarted()
         trackSettingsState()
@@ -325,11 +320,6 @@ public class ProactiveAssistantsPlugin: NSObject {
 
         // Report resources after stopping
         ResourceMonitor.shared.reportResourcesNow(context: "after_monitoring_stop")
-
-        NotificationService.shared.sendNotification(
-            title: "Omi Assistants",
-            message: "Monitoring stopped"
-        )
 
         sendEvent(type: "monitoringStopped", data: [:])
         AnalyticsManager.shared.monitoringStopped()
