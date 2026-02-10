@@ -20,9 +20,9 @@ enum TaskCategory: String, CaseIterable {
 
     var color: Color {
         switch self {
-        case .today: return .yellow
-        case .tomorrow: return .blue
-        case .later: return OmiColors.purplePrimary
+        case .today: return OmiColors.textPrimary
+        case .tomorrow: return OmiColors.textSecondary
+        case .later: return OmiColors.textSecondary
         case .noDeadline: return OmiColors.textTertiary
         }
     }
@@ -2497,12 +2497,12 @@ struct TaskRow: View {
                 } label: {
                     ZStack {
                         RoundedRectangle(cornerRadius: 4)
-                            .stroke(isSelected ? OmiColors.purplePrimary : OmiColors.textTertiary, lineWidth: 1.5)
+                            .stroke(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary, lineWidth: 1.5)
                             .frame(width: 20, height: 20)
 
                         if isSelected {
                             RoundedRectangle(cornerRadius: 4)
-                                .fill(OmiColors.purplePrimary)
+                                .fill(OmiColors.textPrimary)
                                 .frame(width: 20, height: 20)
 
                             Image(systemName: "checkmark")
@@ -2522,12 +2522,12 @@ struct TaskRow: View {
                 } label: {
                     ZStack {
                         Circle()
-                            .stroke(isCompletingAnimation || task.completed ? OmiColors.purplePrimary : OmiColors.textTertiary, lineWidth: 1.5)
+                            .stroke(isCompletingAnimation || task.completed ? OmiColors.textPrimary : OmiColors.textTertiary, lineWidth: 1.5)
                             .frame(width: 20, height: 20)
 
                         if isCompletingAnimation || task.completed {
                             Circle()
-                                .fill(OmiColors.purplePrimary)
+                                .fill(OmiColors.textPrimary)
                                 .frame(width: 20, height: 20)
                                 .scaleEffect(checkmarkScale)
 
@@ -2719,7 +2719,7 @@ struct TaskRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundPrimary))
+                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.textPrimary.opacity(0.15) : OmiColors.backgroundPrimary))
         )
         .opacity(rowOpacity)
         .offset(x: rowOffset)
@@ -2908,8 +2908,8 @@ struct PriorityBadgeInteractive: View {
 
     private var badgeColor: Color {
         switch priority {
-        case "high": return .red
-        case "medium": return .orange
+        case "high": return OmiColors.textPrimary
+        case "medium": return OmiColors.textSecondary
         case "low": return OmiColors.textTertiary
         default: return OmiColors.textTertiary
         }
@@ -2949,7 +2949,7 @@ struct PriorityBadgeInteractive: View {
             .popover(isPresented: $showPriorityPicker) {
                 VStack(spacing: 4) {
                     ForEach(["high", "medium", "low"], id: \.self) { value in
-                        let color: Color = value == "high" ? .red : value == "medium" ? .orange : OmiColors.textTertiary
+                        let color: Color = value == "high" ? OmiColors.textPrimary : value == "medium" ? OmiColors.textSecondary : OmiColors.textTertiary
                         let isSelected = priority == value
 
                         Button {
@@ -3102,8 +3102,8 @@ struct TaskCreateSheet: View {
                         HStack(spacing: 8) {
                             createPriorityButton(label: "None", value: nil)
                             createPriorityButton(label: "Low", value: "low", color: OmiColors.textTertiary)
-                            createPriorityButton(label: "Medium", value: "medium", color: .orange)
-                            createPriorityButton(label: "High", value: "high", color: .red)
+                            createPriorityButton(label: "Medium", value: "medium", color: OmiColors.textSecondary)
+                            createPriorityButton(label: "High", value: "high", color: OmiColors.textPrimary)
                         }
                     }
 
