@@ -866,6 +866,26 @@ actor ActionItemStorage {
         }
     }
 
+    /// Get the top scored AI task with no due date
+    func getTopScoredNoDeadlineTask() async throws -> TaskActionItem? {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            guard let record = try ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == false)
+                .filter(Column("source") != "manual")
+                .filter(Column("relevanceScore") != nil)
+                .filter(Column("dueAt") == nil)
+                .order(Column("relevanceScore").desc)
+                .limit(1)
+                .fetchOne(database) else {
+                return nil
+            }
+            return record.toTaskActionItem()
+        }
+    }
+
     /// Get the most recent AI tasks (by createdAt), regardless of score status
     func getRecentAITasks(limit: Int = 200) async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
