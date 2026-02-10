@@ -59,17 +59,17 @@ enum MemoryTag: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .focus: return OmiColors.info
-        case .focused: return Color.green
-        case .distracted: return Color.orange
-        case .tips: return OmiColors.warning
-        case .system: return OmiColors.info
-        case .interesting: return OmiColors.warning
-        case .manual: return OmiColors.purplePrimary
-        case .productivity: return OmiColors.info
-        case .health: return OmiColors.error
-        case .communication: return OmiColors.success
-        case .learning: return OmiColors.purplePrimary
+        case .focus: return OmiColors.textSecondary
+        case .focused: return OmiColors.textSecondary
+        case .distracted: return OmiColors.textSecondary
+        case .tips: return OmiColors.textSecondary
+        case .system: return OmiColors.textSecondary
+        case .interesting: return OmiColors.textSecondary
+        case .manual: return OmiColors.textSecondary
+        case .productivity: return OmiColors.textSecondary
+        case .health: return OmiColors.textSecondary
+        case .communication: return OmiColors.textSecondary
+        case .learning: return OmiColors.textSecondary
         case .other: return OmiColors.textTertiary
         }
     }
@@ -1558,21 +1558,14 @@ struct MemoriesPage: View {
 
     private func categoryColor(_ category: MemoryCategory) -> Color {
         switch category {
-        case .system: return OmiColors.info
-        case .interesting: return OmiColors.warning
-        case .manual: return OmiColors.purplePrimary
+        case .system: return OmiColors.textSecondary
+        case .interesting: return OmiColors.textSecondary
+        case .manual: return OmiColors.textSecondary
         }
     }
 
     private func tagColorFor(_ tag: String) -> Color {
-        switch tag {
-        case "productivity": return OmiColors.info
-        case "health": return OmiColors.error
-        case "communication": return OmiColors.success
-        case "learning": return OmiColors.purplePrimary
-        case "other": return OmiColors.textTertiary
-        default: return OmiColors.textTertiary
-        }
+        return OmiColors.textSecondary
     }
 
     private func formatDate(_ date: Date) -> String {
@@ -1743,7 +1736,7 @@ private struct MemoryCardView: View {
                 // Unread indicator
                 if memory.isTip && !memory.isRead {
                     Circle()
-                        .fill(OmiColors.warning)
+                        .fill(OmiColors.textPrimary)
                         .frame(width: 6, height: 6)
                 }
 
@@ -1837,11 +1830,11 @@ private struct MemoryCardView: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
-        .background(isHovered ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundTertiary))
+        .background(isHovered ? OmiColors.backgroundSecondary : (isNewlyCreated ? OmiColors.textPrimary.opacity(0.15) : OmiColors.backgroundTertiary))
         .cornerRadius(8)
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(memory.isTip && !memory.isRead ? OmiColors.warning.opacity(0.3) : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.3) : Color.clear), lineWidth: 1)
+                .stroke(memory.isTip && !memory.isRead ? OmiColors.textPrimary.opacity(0.3) : (isNewlyCreated ? OmiColors.textPrimary.opacity(0.3) : Color.clear), lineWidth: 1)
         )
         .contentShape(Rectangle())
         .onHover { hovering in
@@ -1889,7 +1882,7 @@ struct MemoryDetailSheet: View {
                 // Header with tags, visibility toggle, delete, and dismiss
                 HStack(spacing: 8) {
                     if memory.isTip {
-                        tagBadge("Tips", "lightbulb.fill", OmiColors.warning)
+                        tagBadge("Tips", "lightbulb.fill", OmiColors.textSecondary)
                         if let tipCat = memory.tipCategory {
                             tagBadge(tipCat.capitalized, memory.tipCategoryIcon, tagColorFor(tipCat))
                         }
