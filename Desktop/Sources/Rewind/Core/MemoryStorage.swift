@@ -329,11 +329,18 @@ actor MemoryStorage {
     func syncServerMemories(_ memories: [ServerMemory]) async throws {
         let db = try await ensureInitialized()
 
+        var skipped = 0
         try await db.write { database in
             for memory in memories {
                 if var existingRecord = try MemoryRecord
                     .filter(Column("backendId") == memory.id)
                     .fetchOne(database) {
+                    // Skip if local record is newer than incoming API data
+                    // This prevents auto-refresh from overwriting recent local changes
+                    if existingRecord.updatedAt > memory.updatedAt {
+                        skipped += 1
+                        continue
+                    }
                     existingRecord.updateFrom(memory)
                     try existingRecord.update(database)
                 } else {
@@ -342,7 +349,11 @@ actor MemoryStorage {
             }
         }
 
-        log("MemoryStorage: Synced \(memories.count) memories from backend")
+        if skipped > 0 {
+            log("MemoryStorage: Synced \(memories.count - skipped) memories from backend (skipped \(skipped) with newer local data)")
+        } else {
+            log("MemoryStorage: Synced \(memories.count) memories from backend")
+        }
     }
 
     // MARK: - Local Extraction Operations
@@ -471,6 +482,56 @@ actor MemoryStorage {
         }
 
         log("MemoryStorage: Soft deleted memory with backendId \(backendId)")
+    }
+
+    /// Soft delete all memories
+    func deleteAllMemories() async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE memories SET deleted = 1, updatedAt = ? WHERE deleted = 0",
+                arguments: [Date()]
+            )
+        }
+
+        log("MemoryStorage: Soft deleted all memories")
+    }
+
+    /// Update content by backend ID
+    func updateContentByBackendId(_ backendId: String, content: String) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE memories SET content = ?, updatedAt = ? WHERE backendId = ?",
+                arguments: [content, Date(), backendId]
+            )
+        }
+    }
+
+    /// Update visibility by backend ID
+    func updateVisibilityByBackendId(_ backendId: String, visibility: String) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE memories SET visibility = ?, updatedAt = ? WHERE backendId = ?",
+                arguments: [visibility, Date(), backendId]
+            )
+        }
+    }
+
+    /// Update read status by backend ID
+    func updateReadStatusByBackendId(_ backendId: String, isRead: Bool) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE memories SET isRead = ?, updatedAt = ? WHERE backendId = ?",
+                arguments: [isRead, Date(), backendId]
+            )
+        }
     }
 
     // MARK: - Stats
