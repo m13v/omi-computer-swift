@@ -1139,6 +1139,20 @@ actor RewindDatabase {
             try db.create(index: "idx_observations_screenshot", on: "observations", columns: ["screenshotId"])
         }
 
+        // Migration 25: Add window title to memories table
+        migrator.registerMigration("addMemoryWindowTitle") { db in
+            try db.alter(table: "memories") { t in
+                t.add(column: "windowTitle", .text)
+            }
+        }
+
+        // Migration 26: Add window title to focus_sessions table
+        migrator.registerMigration("addFocusSessionWindowTitle") { db in
+            try db.alter(table: "focus_sessions") { t in
+                t.add(column: "windowTitle", .text)
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
