@@ -350,6 +350,12 @@ actor TaskPrioritizationService {
 
     // MARK: - Allowlist from SQLite
 
+    /// Reload the allowlist from SQLite. Call after completing/deleting a task
+    /// so a new task can fill the vacated slot.
+    func reloadAllowlist() async {
+        await loadAllowlistFromSQLite()
+    }
+
     private func loadAllowlistFromSQLite() async {
         do {
             // Top 5 globally — no date filter. The store will ensure these are loaded.
