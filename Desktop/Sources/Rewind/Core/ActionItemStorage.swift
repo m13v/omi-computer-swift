@@ -824,22 +824,6 @@ actor ActionItemStorage {
 
     // MARK: - Relevance Scores
 
-    /// Batch-update relevance scores for tasks (by backendId)
-    func updateRelevanceScores(_ scores: [String: Int]) async throws {
-        guard !scores.isEmpty else { return }
-        let db = try await ensureInitialized()
-        let now = Date()
-
-        try await db.write { database in
-            for (backendId, score) in scores {
-                try database.execute(
-                    sql: "UPDATE action_items SET relevanceScore = ?, scoredAt = ? WHERE backendId = ?",
-                    arguments: [score, now, backendId]
-                )
-            }
-        }
-    }
-
     /// Clear all relevance scores (for force re-scoring)
     func clearAllRelevanceScores() async throws {
         let db = try await ensureInitialized()
@@ -848,24 +832,6 @@ actor ActionItemStorage {
             try database.execute(
                 sql: "UPDATE action_items SET relevanceScore = NULL, scoredAt = NULL WHERE relevanceScore IS NOT NULL"
             )
-        }
-    }
-
-    /// Get all AI tasks that have not been scored yet (no relevanceScore)
-    func getUnscoredAITasks(limit: Int = 10000) async throws -> [TaskActionItem] {
-        let db = try await ensureInitialized()
-
-        return try await db.read { database in
-            let records = try ActionItemRecord
-                .filter(Column("deleted") == false)
-                .filter(Column("completed") == false)
-                .filter(Column("source") != "manual")
-                .filter(Column("relevanceScore") == nil)
-                .order(Column("createdAt").desc)
-                .limit(limit)
-                .fetchAll(database)
-
-            return records.map { $0.toTaskActionItem() }
         }
     }
 
@@ -934,23 +900,6 @@ actor ActionItemStorage {
         }
     }
 
-    /// Get the most recent AI tasks (by createdAt), regardless of score status
-    func getRecentAITasks(limit: Int = 200) async throws -> [TaskActionItem] {
-        let db = try await ensureInitialized()
-
-        return try await db.read { database in
-            let records = try ActionItemRecord
-                .filter(Column("deleted") == false)
-                .filter(Column("completed") == false)
-                .filter(Column("source") != "manual")
-                .order(Column("createdAt").desc)
-                .limit(limit)
-                .fetchAll(database)
-
-            return records.map { $0.toTaskActionItem() }
-        }
-    }
-
     /// Apply selective re-ranking: pull re-ranked tasks out of the ordered list,
     /// insert them at their new positions, then renumber all tasks 1..N.
     func applySelectiveReranking(_ reranks: [(backendId: String, newPosition: Int)]) async throws {
@@ -987,20 +936,6 @@ actor ActionItemStorage {
                     arguments: [index + 1, now, backendId]
                 )
             }
-        }
-    }
-
-    /// Clear relevance scores for specific tasks (by backendId)
-    func clearRelevanceScores(forIds ids: [String]) async throws {
-        guard !ids.isEmpty else { return }
-        let db = try await ensureInitialized()
-
-        try await db.write { database in
-            let placeholders = ids.map { _ in "?" }.joined(separator: ",")
-            try database.execute(
-                sql: "UPDATE action_items SET relevanceScore = NULL, scoredAt = NULL WHERE backendId IN (\(placeholders))",
-                arguments: StatementArguments(ids)
-            )
         }
     }
 
