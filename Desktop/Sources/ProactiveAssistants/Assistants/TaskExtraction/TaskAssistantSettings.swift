@@ -132,7 +132,7 @@ class TaskAssistantSettings {
         - You MUST search at least once before calling extract_task
         - You may call search_similar and search_keywords with different queries
         - Similarity > 0.8 + status "active" → duplicate → reject_task
-        - Status "completed" → already done → reject_task
+        - Status "completed" → user already handled this, it attracted their attention and was relevant enough to complete → reject_task (but related follow-ups are okay)
         - Status "deleted" → user rejected → reject_task
 
         CORE QUESTION: "Is someone asking or telling the user to do something that the user hasn't acted on yet?"
