@@ -2696,7 +2696,7 @@ struct TaskRow: View {
                     }
 
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
-                    if task.shouldTriggerAgent {
+                    if TaskAgentSettings.shared.isEnabled {
                         AgentStatusIndicator(taskId: task.id, showAgentDetail: $showAgentDetail)
                     }
 
