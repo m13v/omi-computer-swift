@@ -248,6 +248,9 @@ class TaskAgentManager: ObservableObject {
     }
 
     private func launchTmuxSession(sessionName: String, prompt: String, workingDir: String) async throws {
+        // Kill any stale tmux session with the same name (e.g. survived an app restart)
+        killTmuxSession(sessionName: sessionName)
+
         // Check if tmux is available (source user's shell config to get full PATH)
         let tmuxCheck = Process()
         tmuxCheck.executableURL = URL(fileURLWithPath: "/bin/zsh")
