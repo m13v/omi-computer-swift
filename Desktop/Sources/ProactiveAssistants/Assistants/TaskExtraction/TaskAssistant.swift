@@ -200,6 +200,7 @@ actor TaskAssistant: ProactiveAssistant {
         _ taskResult: TaskExtractionResult,
         screenshotId: Int64?,
         appName: String,
+        windowTitle: String? = nil,
         sendEvent: @escaping (String, [String: Any]) -> Void
     ) async {
         // Save observation for every result (fire-and-forget)
@@ -246,7 +247,8 @@ actor TaskAssistant: ProactiveAssistant {
         let extractionRecord = await saveTaskToSQLite(
             task: task,
             screenshotId: screenshotId,
-            contextSummary: taskResult.contextSummary
+            contextSummary: taskResult.contextSummary,
+            windowTitle: windowTitle
         )
 
         // Generate embedding for new task in background
@@ -257,7 +259,7 @@ actor TaskAssistant: ProactiveAssistant {
         }
 
         // Sync to backend
-        if let backendId = await syncTaskToBackend(task: task, taskResult: taskResult) {
+        if let backendId = await syncTaskToBackend(task: task, taskResult: taskResult, windowTitle: windowTitle) {
             if let recordId = extractionRecord?.id {
                 do {
                     try await ActionItemStorage.shared.markSynced(id: recordId, backendId: backendId)
@@ -297,7 +299,8 @@ actor TaskAssistant: ProactiveAssistant {
     private func saveTaskToSQLite(
         task: ExtractedTask,
         screenshotId: Int64?,
-        contextSummary: String
+        contextSummary: String,
+        windowTitle: String? = nil
     ) async -> ActionItemRecord? {
         var metadata: [String: Any] = [
             "tags": task.tags,
@@ -310,6 +313,9 @@ actor TaskAssistant: ProactiveAssistant {
         }
         if let deadline = task.inferredDeadline {
             metadata["inferred_deadline"] = deadline
+        }
+        if let windowTitle = windowTitle {
+            metadata["window_title"] = windowTitle
         }
 
         let metadataJson: String?
@@ -338,6 +344,7 @@ actor TaskAssistant: ProactiveAssistant {
             screenshotId: screenshotId,
             confidence: task.confidence,
             sourceApp: task.sourceApp,
+            windowTitle: windowTitle,
             contextSummary: contextSummary,
             metadataJson: metadataJson
         )
@@ -353,7 +360,7 @@ actor TaskAssistant: ProactiveAssistant {
     }
 
     /// Sync task to backend API, returns backend ID if successful
-    private func syncTaskToBackend(task: ExtractedTask, taskResult: TaskExtractionResult) async -> String? {
+    private func syncTaskToBackend(task: ExtractedTask, taskResult: TaskExtractionResult, windowTitle: String? = nil) async -> String? {
         do {
             var metadata: [String: Any] = [
                 "source_app": task.sourceApp,
@@ -372,6 +379,9 @@ actor TaskAssistant: ProactiveAssistant {
             }
             if let deadline = task.inferredDeadline {
                 metadata["inferred_deadline"] = deadline
+            }
+            if let windowTitle = windowTitle {
+                metadata["window_title"] = windowTitle
             }
 
             let response = try await APIClient.shared.createActionItem(
@@ -493,7 +503,7 @@ actor TaskAssistant: ProactiveAssistant {
 
             log("Task: Analysis complete - hasNewTask: \(result.hasNewTask), context: \(result.contextSummary), searches: \(searchCount)")
 
-            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId, appName: frame.appName) { type, data in
+            await handleResultWithScreenshot(result, screenshotId: frame.screenshotId, appName: frame.appName, windowTitle: frame.windowTitle) { type, data in
                 Task { @MainActor in
                     AssistantCoordinator.shared.sendEvent(type: type, data: data)
                 }
