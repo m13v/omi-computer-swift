@@ -2043,6 +2043,7 @@ impl FirestoreService {
         priority: Option<&str>,
         category: Option<&str>,
         goal_id: Option<&str>,
+        relevance_score: Option<i32>,
     ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
         // Build update mask and fields
         let mut field_paths: Vec<&str> = vec!["updated_at"];
@@ -2087,6 +2088,11 @@ impl FirestoreService {
         if let Some(gid) = goal_id {
             field_paths.push("goal_id");
             fields["goal_id"] = json!({"stringValue": gid});
+        }
+
+        if let Some(score) = relevance_score {
+            field_paths.push("relevance_score");
+            fields["relevance_score"] = json!({"integerValue": score.to_string()});
         }
 
         let update_mask = field_paths
@@ -2294,6 +2300,7 @@ impl FirestoreService {
         priority: Option<&str>,
         metadata: Option<&str>,
         category: Option<&str>,
+        relevance_score: Option<i32>,
     ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
         let item_id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -2334,6 +2341,10 @@ impl FirestoreService {
             fields["category"] = json!({"stringValue": cat});
         }
 
+        if let Some(score) = relevance_score {
+            fields["relevance_score"] = json!({"integerValue": score.to_string()});
+        }
+
         let doc = json!({"fields": fields});
 
         let response = self
@@ -2359,6 +2370,66 @@ impl FirestoreService {
             source
         );
         Ok(action_item)
+    }
+
+    /// Batch update relevance scores for multiple action items using Firestore commit API.
+    /// Processes up to 500 writes per commit (Firestore limit).
+    pub async fn batch_update_scores(
+        &self,
+        uid: &str,
+        scores: &[(String, i32)],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let now = Utc::now();
+
+        for chunk in scores.chunks(500) {
+            let writes: Vec<Value> = chunk
+                .iter()
+                .map(|(item_id, score)| {
+                    let doc_name = format!(
+                        "projects/{}/databases/(default)/documents/{}/{}/{}/{}",
+                        self.project_id, USERS_COLLECTION, uid, ACTION_ITEMS_SUBCOLLECTION, item_id
+                    );
+                    json!({
+                        "update": {
+                            "name": doc_name,
+                            "fields": {
+                                "relevance_score": {"integerValue": score.to_string()},
+                                "updated_at": {"timestampValue": now.to_rfc3339()}
+                            }
+                        },
+                        "updateMask": {
+                            "fieldPaths": ["relevance_score", "updated_at"]
+                        }
+                    })
+                })
+                .collect();
+
+            let commit_url = format!(
+                "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:commit",
+                self.project_id
+            );
+
+            let body = json!({ "writes": writes });
+
+            let response = self
+                .build_request(reqwest::Method::POST, &commit_url)
+                .await?
+                .json(&body)
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                return Err(format!("Firestore batch commit error: {}", error_text).into());
+            }
+        }
+
+        tracing::info!(
+            "Batch updated {} relevance scores for user {}",
+            scores.len(),
+            uid
+        );
+        Ok(())
     }
 
     // =========================================================================
@@ -3184,6 +3255,7 @@ impl FirestoreService {
             kept_task_id: self.parse_string(fields, "kept_task_id"),
             category: self.parse_string(fields, "category"),
             goal_id: self.parse_string(fields, "goal_id"),
+            relevance_score: self.parse_int(fields, "relevance_score"),
         })
     }
 
