@@ -295,10 +295,12 @@ struct TaskSearchResult: Codable {
     let status: String          // "active", "completed", "deleted"
     let similarity: Double?     // cosine similarity (nil for FTS-only matches)
     let matchType: String       // "vector", "fts", "both"
+    let relevanceScore: Int?    // relevance ranking score (higher = more important)
 
     enum CodingKeys: String, CodingKey {
         case id, description, status, similarity
         case matchType = "match_type"
+        case relevanceScore = "relevance_score"
     }
 }
 
