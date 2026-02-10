@@ -821,6 +821,23 @@ actor ActionItemStorage {
         }
     }
 
+    /// Get ALL incomplete AI tasks regardless of score status (for full rescore)
+    func getAllAITasks(limit: Int = 10000) async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let records = try ActionItemRecord
+                .filter(Column("deleted") == false)
+                .filter(Column("completed") == false)
+                .filter(Column("source") != "manual")
+                .order(Column("createdAt").desc)
+                .limit(limit)
+                .fetchAll(database)
+
+            return records.map { $0.toTaskActionItem() }
+        }
+    }
+
     /// Get AI tasks that have been scored, ordered by score descending
     /// - Parameter minDate: If set, only return tasks created or due after this date
     func getScoredAITasks(limit: Int = 10000, minDate: Date? = nil) async throws -> [TaskActionItem] {
