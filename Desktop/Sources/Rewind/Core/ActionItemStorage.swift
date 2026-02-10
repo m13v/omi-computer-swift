@@ -781,6 +781,22 @@ actor ActionItemStorage {
         return inserted
     }
 
+    /// Compact relevance scores after a task is completed or deleted.
+    /// Shifts all scores above the removed score down by 1 to fill the gap.
+    func compactScoresAfterRemoval(removedScore: Int) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(sql: """
+                UPDATE action_items
+                SET relevanceScore = relevanceScore - 1
+                WHERE relevanceScore IS NOT NULL AND relevanceScore > ?
+                  AND completed = 0 AND deleted = 0
+            """, arguments: [removedScore])
+        }
+        log("ActionItemStorage: Compacted scores after removing score \(removedScore)")
+    }
+
     /// Get recent completed tasks
     func getRecentCompletedTasks(limit: Int = 10) async throws -> [(id: Int64, description: String)] {
         let db = try await ensureInitialized()
