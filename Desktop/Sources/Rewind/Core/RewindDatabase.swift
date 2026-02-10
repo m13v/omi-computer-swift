@@ -1233,6 +1233,38 @@ actor RewindDatabase {
             """)
         }
 
+        // Migration 30: Fix duplicate relevanceScores from migration 29.
+        // Migration 29 had a self-referencing UPDATE bug where SQLite reads modified data
+        // during the UPDATE loop. Fix: snapshot into a temp table first, then update from it.
+        migrator.registerMigration("fixRelevanceScoreDuplicates") { db in
+            // 1. Snapshot the correct sequential mapping into a temp table
+            try db.execute(sql: """
+                CREATE TEMP TABLE _score_map AS
+                SELECT id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY
+                               COALESCE(relevanceScore, 0) ASC,
+                               createdAt ASC
+                       ) as new_score
+                FROM action_items
+                WHERE completed = 0 AND deleted = 0
+            """)
+
+            // 2. Update from the snapshot (no self-reference)
+            try db.execute(sql: """
+                UPDATE action_items
+                SET relevanceScore = (
+                    SELECT new_score FROM _score_map
+                    WHERE _score_map.id = action_items.id
+                ),
+                scoredAt = datetime('now')
+                WHERE id IN (SELECT id FROM _score_map)
+            """)
+
+            // 3. Clean up
+            try db.execute(sql: "DROP TABLE _score_map")
+        }
+
         try migrator.migrate(queue)
     }
 
