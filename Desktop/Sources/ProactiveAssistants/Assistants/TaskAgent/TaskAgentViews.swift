@@ -6,22 +6,10 @@ import SwiftUI
 struct TaskClassificationBadge: View {
     let category: String
 
-    /// Check if this category triggers agent execution
-    var triggersAgent: Bool {
-        TaskAgentManager.agentCategories.contains(category.lowercased())
-    }
-
     var body: some View {
-        HStack(spacing: 3) {
-            Text(category.capitalized)
-                .font(.system(size: 10, weight: .medium))
-
-            if triggersAgent {
-                Image(systemName: "terminal")
-                    .font(.system(size: 7))
-            }
-        }
-        .foregroundColor(OmiColors.textSecondary)
+        Text(category.capitalized)
+            .font(.system(size: 10, weight: .medium))
+            .foregroundColor(OmiColors.textSecondary)
     }
 }
 
@@ -146,9 +134,6 @@ struct AgentLaunchButton: View {
                         ProgressView()
                             .scaleEffect(0.6)
                             .frame(width: 12, height: 12)
-                    } else {
-                        Image(systemName: "terminal")
-                            .font(.system(size: 10))
                     }
 
                     Text(isLaunching ? "Launching..." : "Run Agent")
