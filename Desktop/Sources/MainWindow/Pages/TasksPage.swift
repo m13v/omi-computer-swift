@@ -2851,7 +2851,6 @@ struct TaskRow: View {
 
     private func commitEdit() {
         let trimmed = editText.trimmingCharacters(in: .whitespacesAndNewlines)
-        isTextFieldFocused = false
 
         guard !trimmed.isEmpty, trimmed != task.description else {
             // Reset to original if empty or unchanged
