@@ -702,6 +702,18 @@ extension MixpanelManager {
         ])
     }
 
+    /// Comprehensive all-settings snapshot (fired on app launch, at most once per day)
+    func allSettingsStateTracked(properties: [String: Any]) {
+        let mixpanelProperties: [String: MixpanelType] = properties.compactMapValues { value in
+            if let s = value as? String { return s }
+            if let i = value as? Int { return i }
+            if let b = value as? Bool { return b }
+            if let d = value as? Double { return d }
+            return nil
+        }
+        track("All Settings State", properties: mixpanelProperties)
+    }
+
     // MARK: - Display Info
 
     func displayInfoTracked(info: [String: Any]) {
