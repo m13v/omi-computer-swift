@@ -2,8 +2,9 @@ import Foundation
 
 /// Service that scores AI-generated tasks by relevance to the user's profile,
 /// goals, and task engagement history. Uses overlapping batches with Gemini 3 Pro
-/// so each task is scored ~3 times for stability. Manual tasks are always shown.
-/// From AI tasks, only the top 5 by averaged score are visible.
+/// where each batch includes previously-scored anchor tasks for calibration.
+/// Scores are persisted to SQLite. Manual tasks are always shown.
+/// From AI tasks, only the top 5 by score are visible.
 actor TaskPrioritizationService {
     static let shared = TaskPrioritizationService()
 
@@ -18,13 +19,10 @@ actor TaskPrioritizationService {
     private let cooldownSeconds: TimeInterval = 43200   // 12-hour cooldown
     private let minimumTaskCount = 2
     private let defaultVisibleAICount = 5
-    private let batchSize = 50
-    private let batchStepSize = 17  // ~3x overlap: each task appears in ceil(50/17) ≈ 3 batches
+    private let batchSize = 250
+    private let batchStepSize = 200  // 50-task overlap between consecutive batches
 
-    /// In-memory cache of task relevance scores (task ID → averaged score 0-100)
-    private(set) var relevanceScores: [String: Int] = [:]
-
-    /// AI task IDs that are allowed to be visible (top N by averaged score)
+    /// AI task IDs that are allowed to be visible (top N by score)
     private(set) var visibleAITaskIds: Set<String> = []
 
     /// Whether prioritization has completed at least once
@@ -79,7 +77,12 @@ actor TaskPrioritizationService {
 
     /// Force a re-prioritization (e.g. when user opens Tasks tab)
     func runIfNeeded() async {
-        // Skip if already ran recently (within cooldown)
+        // If we have persisted scores, load the allowlist immediately
+        if !hasCompletedScoring {
+            await loadAllowlistFromSQLite()
+        }
+
+        // Skip full scoring if already ran recently (within cooldown)
         if let lastRun = lastRunTime,
            Date().timeIntervalSince(lastRun) < cooldownSeconds {
             return
@@ -99,47 +102,23 @@ actor TaskPrioritizationService {
         log("TaskPrioritize: Starting prioritization run")
         await notifyStoreStarted()
 
-        // 1. Fetch all tasks from local SQLite
-        let incompleteTasks: [TaskActionItem]
-        let referenceTasks: [TaskActionItem]
+        // 1. Load already-scored AI tasks from SQLite (these are our anchors)
+        let scoredTasks: [TaskActionItem]
+        let unscoredTasks: [TaskActionItem]
         do {
-            // All incomplete, non-deleted tasks
-            incompleteTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                limit: 10000,
-                completed: false
-            )
-            // Completed + deleted tasks as reference for user engagement patterns
-            let completedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                limit: 100,
-                completed: true
-            )
-            let deletedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                limit: 50,
-                completed: nil,
-                includeDeleted: true
-            )
-            // Only keep actually-deleted ones from the includeDeleted query
-            let actuallyDeleted = deletedTasks.filter { task in
-                // Tasks that are deleted but not in the incomplete set
-                !incompleteTasks.contains(where: { $0.id == task.id }) &&
-                !completedTasks.contains(where: { $0.id == task.id })
-            }
-            referenceTasks = completedTasks + actuallyDeleted
+            scoredTasks = try await ActionItemStorage.shared.getScoredAITasks()
+            unscoredTasks = try await ActionItemStorage.shared.getUnscoredAITasks()
         } catch {
             log("TaskPrioritize: Failed to fetch tasks from SQLite: \(error)")
             await notifyStoreUpdated()
             return
         }
 
-        // Only AI-generated tasks need scoring — manual tasks are always shown
-        let aiTasks = incompleteTasks.filter { $0.source != "manual" }
-        let manualCount = incompleteTasks.count - aiTasks.count
+        log("TaskPrioritize: Found \(scoredTasks.count) already-scored, \(unscoredTasks.count) unscored AI tasks")
 
-        guard aiTasks.count >= minimumTaskCount else {
-            log("TaskPrioritize: Only \(aiTasks.count) AI tasks, skipping (minimum: \(minimumTaskCount))")
-            relevanceScores = [:]
-            visibleAITaskIds = Set(aiTasks.map { $0.id })
-            hasCompletedScoring = true
+        guard unscoredTasks.count >= minimumTaskCount else {
+            log("TaskPrioritize: Only \(unscoredTasks.count) unscored tasks, refreshing allowlist from existing scores")
+            await loadAllowlistFromSQLite()
             await notifyStoreUpdated()
             return
         }
@@ -155,95 +134,114 @@ actor TaskPrioritizationService {
         }
 
         // 3. Build reference context (completed/deleted tasks the user engaged with)
+        let referenceTasks: [TaskActionItem]
+        do {
+            let completedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                limit: 100,
+                completed: true
+            )
+            referenceTasks = completedTasks
+        } catch {
+            log("TaskPrioritize: Failed to fetch reference tasks: \(error)")
+            referenceTasks = []
+        }
         let referenceContext = buildReferenceContext(referenceTasks)
 
-        // 4. Score AI tasks in overlapping batches (~3x exposure per task)
-        let averagedScores = await scoreInOverlappingBatches(
-            aiTasks: aiTasks,
+        // 4. Build anchor context from already-scored tasks (top + bottom for range calibration)
+        let anchorContext = buildAnchorContext(scoredTasks)
+
+        // 5. Score unscored tasks in overlapping batches, with anchors for calibration
+        await scoreInBatches(
+            unscoredTasks: unscoredTasks,
+            anchorContext: anchorContext,
             referenceContext: referenceContext,
             profile: userProfile?.profileText,
             goals: goals,
             client: client
         )
 
-        // 5. Update scores and build allowlist
-        relevanceScores = averagedScores
+        // 6. Reload allowlist from SQLite (now includes newly scored tasks)
+        await loadAllowlistFromSQLite()
 
-        // Sort by score descending, take top N as visible allowlist
-        let sortedByScore = aiTasks.sorted { a, b in
-            (averagedScores[a.id] ?? 0) > (averagedScores[b.id] ?? 0)
-        }
-        visibleAITaskIds = Set(sortedByScore.prefix(defaultVisibleAICount).map { $0.id })
-        hasCompletedScoring = true
-
-        let hiddenCount = aiTasks.count - visibleAITaskIds.count
-        log("TaskPrioritize: Scored \(aiTasks.count) AI tasks in batches (\(manualCount) manual always visible). Top \(visibleAITaskIds.count) AI visible, \(hiddenCount) hidden")
+        let totalAI = scoredTasks.count + unscoredTasks.count
+        log("TaskPrioritize: Done. \(totalAI) total AI tasks. Top \(visibleAITaskIds.count) visible.")
         await notifyStoreUpdated()
     }
 
-    // MARK: - Overlapping Batch Scoring
+    // MARK: - Allowlist from SQLite
 
-    /// Score tasks in overlapping sliding-window batches so each task is seen ~3 times.
-    /// Returns averaged scores across all appearances.
-    private func scoreInOverlappingBatches(
-        aiTasks: [TaskActionItem],
+    /// Load the top N scored AI tasks from SQLite and set them as the visible allowlist
+    private func loadAllowlistFromSQLite() async {
+        do {
+            let topTasks = try await ActionItemStorage.shared.getScoredAITasks(
+                limit: defaultVisibleAICount
+            )
+            visibleAITaskIds = Set(topTasks.map { $0.id })
+            hasCompletedScoring = true
+            log("TaskPrioritize: Loaded allowlist from SQLite — \(visibleAITaskIds.count) AI tasks visible")
+        } catch {
+            log("TaskPrioritize: Failed to load allowlist from SQLite: \(error)")
+        }
+    }
+
+    // MARK: - Batch Scoring
+
+    /// Score unscored tasks in overlapping batches. Each batch includes anchor tasks
+    /// (previously-scored) so the model can calibrate scores across the full range.
+    private func scoreInBatches(
+        unscoredTasks: [TaskActionItem],
+        anchorContext: String,
         referenceContext: String,
         profile: String?,
         goals: [Goal],
         client: GeminiClient
-    ) async -> [String: Int] {
-        // Build batches with overlap
+    ) async {
+        // Build overlapping batches
         var batches: [[TaskActionItem]] = []
         var startIndex = 0
 
-        while startIndex < aiTasks.count {
-            let endIndex = min(startIndex + batchSize, aiTasks.count)
-            let batch = Array(aiTasks[startIndex..<endIndex])
+        while startIndex < unscoredTasks.count {
+            let endIndex = min(startIndex + batchSize, unscoredTasks.count)
+            let batch = Array(unscoredTasks[startIndex..<endIndex])
             batches.append(batch)
             startIndex += batchStepSize
-            // If remaining tasks < batchStepSize, we've covered them in this batch
-            if endIndex == aiTasks.count { break }
+            if endIndex == unscoredTasks.count { break }
         }
 
-        log("TaskPrioritize: Scoring \(aiTasks.count) AI tasks in \(batches.count) overlapping batches")
-
-        // Score each batch sequentially (to avoid rate limits)
-        var allScores: [String: [Int]] = [:]  // task ID → list of scores from each batch
+        log("TaskPrioritize: Scoring \(unscoredTasks.count) unscored tasks in \(batches.count) batches")
 
         for (i, batch) in batches.enumerated() {
             log("TaskPrioritize: Scoring batch \(i + 1)/\(batches.count) (\(batch.count) tasks)")
 
             let batchScores = await scoreBatchWithGemini(
                 batch: batch,
+                anchorContext: anchorContext,
                 referenceContext: referenceContext,
                 profile: profile,
                 goals: goals,
                 client: client
             )
 
-            if let scores = batchScores {
-                for (taskId, score) in scores {
-                    allScores[taskId, default: []].append(score)
-                }
-            } else {
+            guard let scores = batchScores else {
                 log("TaskPrioritize: Batch \(i + 1) failed, skipping")
+                continue
+            }
+
+            // Persist scores to SQLite immediately after each batch
+            do {
+                try await ActionItemStorage.shared.updateRelevanceScores(scores)
+                log("TaskPrioritize: Batch \(i + 1) persisted \(scores.count) scores")
+            } catch {
+                log("TaskPrioritize: Failed to persist batch \(i + 1) scores: \(error)")
             }
         }
-
-        // Average scores across all appearances
-        var averaged: [String: Int] = [:]
-        for (taskId, scores) in allScores {
-            let sum = scores.reduce(0, +)
-            averaged[taskId] = sum / scores.count
-        }
-
-        return averaged
     }
 
     // MARK: - Single Batch Scoring
 
     private func scoreBatchWithGemini(
         batch: [TaskActionItem],
+        anchorContext: String,
         referenceContext: String,
         profile: String?,
         goals: [Goal],
@@ -289,6 +287,10 @@ actor TaskPrioritizationService {
             contextParts.append(referenceContext)
         }
 
+        if !anchorContext.isEmpty {
+            contextParts.append(anchorContext)
+        }
+
         let contextSection = contextParts.isEmpty ? "" : contextParts.joined(separator: "\n\n") + "\n\n"
 
         let prompt = """
@@ -298,6 +300,9 @@ actor TaskPrioritizationService {
         3. Whether the task is actionable and specific vs. vague
         4. Real-world importance (financial, health, commitments to others)
         5. Similarity to tasks the user has completed or engaged with (see reference)
+
+        Use the ANCHOR TASKS (already scored) to calibrate your scoring — place new tasks \
+        relative to those anchors on the same 0-100 scale.
 
         \(contextSection)TASKS TO SCORE:
         \(taskDescriptions)
@@ -315,7 +320,7 @@ actor TaskPrioritizationService {
         You are a task prioritization assistant. You score tasks by relevance to the user's \
         profile, goals, and priorities. Be decisive — most AI-extracted tasks are noise and \
         should score below 50. Only tasks that are clearly important to this specific user \
-        should score above 70.
+        should score above 70. Use the anchor tasks to maintain consistent scoring across batches.
         """
 
         let responseSchema = GeminiRequest.GenerationConfig.ResponseSchema(
@@ -375,7 +380,52 @@ actor TaskPrioritizationService {
         return scoresMap
     }
 
-    // MARK: - Reference Context
+    // MARK: - Context Builders
+
+    /// Build anchor context from already-scored tasks for calibration.
+    /// Includes a sample of high, medium, and low scored tasks so the model
+    /// understands the full range.
+    private func buildAnchorContext(_ scoredTasks: [TaskActionItem]) -> String {
+        guard !scoredTasks.isEmpty else { return "" }
+
+        // scoredTasks are already sorted by score descending (from getScoredAITasks)
+        // Pick anchors from top, middle, and bottom of the range
+        var anchors: [(TaskActionItem, Int)] = []
+
+        // Top 5
+        for task in scoredTasks.prefix(5) {
+            if let score = task.relevanceScore {
+                anchors.append((task, score))
+            }
+        }
+
+        // Middle 5
+        if scoredTasks.count > 15 {
+            let midStart = scoredTasks.count / 2 - 2
+            for task in scoredTasks[midStart..<min(midStart + 5, scoredTasks.count)] {
+                if let score = task.relevanceScore {
+                    anchors.append((task, score))
+                }
+            }
+        }
+
+        // Bottom 5
+        if scoredTasks.count > 10 {
+            for task in scoredTasks.suffix(5) {
+                if let score = task.relevanceScore {
+                    anchors.append((task, score))
+                }
+            }
+        }
+
+        guard !anchors.isEmpty else { return "" }
+
+        let lines = anchors.map { (task, score) in
+            "- [Score: \(score)] \(task.description)"
+        }.joined(separator: "\n")
+
+        return "ANCHOR TASKS (already scored — use these to calibrate your scoring scale):\n\(lines)"
+    }
 
     /// Build a context string from completed/deleted tasks showing what the user engages with
     private func buildReferenceContext(_ tasks: [TaskActionItem]) -> String {
