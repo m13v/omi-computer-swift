@@ -25,6 +25,9 @@ actor RewindDatabase {
     /// Track initialization state to prevent concurrent init attempts
     private var initializationTask: Task<Void, Error>?
 
+    /// Path to the running flag file (used to detect unclean shutdown)
+    private var runningFlagPath: String?
+
     // MARK: - Initialization
 
     private init() {}
@@ -35,6 +38,16 @@ actor RewindDatabase {
     /// Get the database queue for other storage actors
     func getDatabaseQueue() -> DatabaseQueue? {
         return dbQueue
+    }
+
+    /// Mark a clean shutdown by removing the running flag file.
+    /// Call from applicationWillTerminate to avoid unnecessary integrity checks on next launch.
+    /// This is nonisolated so it can be called synchronously from the main thread during termination.
+    nonisolated static func markCleanShutdown() {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let flagPath = appSupport.appendingPathComponent("Omi", isDirectory: true).appendingPathComponent(".omi_running").path
+        try? FileManager.default.removeItem(atPath: flagPath)
+        log("RewindDatabase: Clean shutdown flagged")
     }
 
     /// Initialize the database with migrations
@@ -76,12 +89,18 @@ actor RewindDatabase {
         try FileManager.default.createDirectory(at: omiDir, withIntermediateDirectories: true)
 
         let dbPath = omiDir.appendingPathComponent("omi.db").path
+        let flagPath = omiDir.appendingPathComponent(".omi_running").path
+        runningFlagPath = flagPath
         log("RewindDatabase: Opening database at \(dbPath)")
 
+        // Detect unclean shutdown: if the running flag file exists, the previous launch
+        // didn't exit cleanly (crash, force quit, power loss)
+        let previousCrashed = FileManager.default.fileExists(atPath: flagPath)
+        if previousCrashed {
+            log("RewindDatabase: Unclean shutdown detected (running flag exists)")
+        }
+
         // Clean up stale WAL files that can cause disk I/O errors (SQLite error 10)
-        // Skip the pre-open corruption check — it opens a separate DatabaseQueue that causes
-        // lock contention with the main connection's PRAGMA journal_mode = WAL.
-        // Post-migration verifyDatabaseIntegrity() already runs quick_check(1).
         if FileManager.default.fileExists(atPath: dbPath) {
             cleanupStaleWALFiles(at: dbPath)
         }
@@ -123,8 +142,20 @@ actor RewindDatabase {
 
         try migrate(queue)
 
-        // Verify database integrity after migration
-        try verifyDatabaseIntegrity(queue)
+        // Only run expensive integrity check after unclean shutdown (saves ~1.7s on normal launch)
+        if previousCrashed {
+            log("RewindDatabase: Running integrity check after unclean shutdown...")
+            try verifyDatabaseIntegrity(queue)
+        } else {
+            // Still log journal mode on clean startup (cheap PRAGMA, no full check)
+            try queue.read { db in
+                let journalMode = try String.fetchOne(db, sql: "PRAGMA journal_mode")
+                log("RewindDatabase: Journal mode is \(journalMode ?? "unknown")")
+            }
+        }
+
+        // Set running flag — will be cleared on clean shutdown
+        FileManager.default.createFile(atPath: flagPath, contents: nil)
 
         log("RewindDatabase: Initialized successfully")
 
@@ -1151,6 +1182,21 @@ actor RewindDatabase {
             try db.alter(table: "focus_sessions") { t in
                 t.add(column: "windowTitle", .text)
             }
+        }
+
+        // Migration 27: Backfill dueAt for action items that have no due date
+        // Sets dueAt to end of the day the task was created (11:59 PM local time)
+        migrator.registerMigration("backfillActionItemDueAt") { db in
+            // Set dueAt to createdAt date at 23:59:00 for all items missing a due date
+            // Since createdAt is stored as UTC, we add time to reach end of that UTC day
+            // (approximate — exact local timezone conversion isn't possible in pure SQL,
+            // but this is close enough for existing tasks)
+            try db.execute(sql: """
+                UPDATE action_items
+                SET dueAt = datetime(date(createdAt), '+23 hours', '+59 minutes'),
+                    updatedAt = datetime('now')
+                WHERE dueAt IS NULL AND deleted = 0
+            """)
         }
 
         try migrator.migrate(queue)
