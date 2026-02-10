@@ -52,6 +52,8 @@ pub use user_settings::{
     AIUserProfile, TranscriptionPreferences, UpdateAIUserProfileRequest, UpdateDailySummaryRequest,
     UpdateLanguageRequest, UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest,
     UserLanguage, UserProfile, UserSettingsStatusResponse,
+    AssistantSettingsData, SharedAssistantSettingsData, FocusSettingsData, TaskSettingsData,
+    AdviceSettingsData, MemorySettingsData,
 };
 pub use chat_session::{
     ChatSessionDB, ChatSessionStatusResponse, CreateChatSessionRequest, GetChatSessionsQuery,
