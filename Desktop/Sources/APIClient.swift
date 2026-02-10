@@ -1836,6 +1836,9 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
     /// ID of the goal this task is linked to
     let goalId: String?
 
+    // Prioritization (stored locally, not synced to backend)
+    var relevanceScore: Int?       // 0-100 relevance score from TaskPrioritizationService
+
     // Agent execution tracking (stored locally, not synced to backend)
     var agentStatus: String?       // nil, "pending", "processing", "completed", "failed"
     var agentPrompt: String?       // The prompt sent to Claude
@@ -1895,6 +1898,7 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         deletedReason: String? = nil,
         keptTaskId: String? = nil,
         goalId: String? = nil,
+        relevanceScore: Int? = nil,
         agentStatus: String? = nil,
         agentPrompt: String? = nil,
         agentPlan: String? = nil,
@@ -1920,6 +1924,7 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         self.deletedReason = deletedReason
         self.keptTaskId = keptTaskId
         self.goalId = goalId
+        self.relevanceScore = relevanceScore
         self.agentStatus = agentStatus
         self.agentPrompt = agentPrompt
         self.agentPlan = agentPlan
