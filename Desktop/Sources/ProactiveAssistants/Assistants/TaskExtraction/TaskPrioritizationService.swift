@@ -175,9 +175,10 @@ actor TaskPrioritizationService {
         // Fetch context
         let (referenceContext, profile, goals) = await fetchContext()
 
-        // Rank in overlapping batches
+        // Rank in overlapping batches (score range: 0 to totalTasks)
         await rankInBatches(
             tasks: allTasks,
+            totalTaskCount: allTasks.count,
             existingScores: [:],
             referenceContext: referenceContext,
             profile: profile,
@@ -232,16 +233,20 @@ actor TaskPrioritizationService {
 
         let recentIds = Set(recentTasks.map { $0.id })
 
-        // Get scored anchor tasks that are NOT in the recent set (for calibration)
+        // Get total AI task count for score range and anchor tasks
+        let totalTaskCount: Int
         let anchors: [TaskActionItem]
         do {
             let allScored = try await ActionItemStorage.shared.getScoredAITasks(limit: 10000)
+            let unscoredCount = try await ActionItemStorage.shared.getUnscoredAITasks(limit: 10000).count
+            totalTaskCount = allScored.count + unscoredCount
             anchors = selectDiverseAnchors(
                 from: allScored.filter { !recentIds.contains($0.id) },
                 count: anchorCount
             )
         } catch {
             log("TaskPrioritize: [PARTIAL] Failed to fetch anchors: \(error)")
+            totalTaskCount = recentTasks.count
             anchors = []
         }
 
@@ -277,14 +282,14 @@ actor TaskPrioritizationService {
             return
         }
 
-        // Stitch scores using anchors for calibration
+        // Stitch scores using anchors for calibration (range 0 to totalTaskCount)
         let batchScores: [String: Int]
         if anchorScores.isEmpty {
-            batchScores = assignLinearScores(rankedIds: rankedIds)
-            log("TaskPrioritize: [PARTIAL] Linear scoring (no anchors)")
+            batchScores = assignLinearScores(rankedIds: rankedIds, maxScore: totalTaskCount)
+            log("TaskPrioritize: [PARTIAL] Linear scoring (no anchors, range 0-\(totalTaskCount))")
         } else {
-            batchScores = stitchScores(rankedIds: rankedIds, globalScores: anchorScores)
-            log("TaskPrioritize: [PARTIAL] Stitched with \(anchors.count) anchors")
+            batchScores = stitchScores(rankedIds: rankedIds, maxScore: totalTaskCount, globalScores: anchorScores)
+            log("TaskPrioritize: [PARTIAL] Stitched with \(anchors.count) anchors (range 0-\(totalTaskCount))")
         }
 
         // Only persist scores for the target tasks (not anchors — their scores stay stable)
@@ -371,6 +376,7 @@ actor TaskPrioritizationService {
     /// are used to stitch rankings into a coherent global score.
     private func rankInBatches(
         tasks: [TaskActionItem],
+        totalTaskCount: Int,
         existingScores: [String: Int],
         referenceContext: String,
         profile: String?,
@@ -378,6 +384,7 @@ actor TaskPrioritizationService {
         client: GeminiClient,
         label: String
     ) async {
+        let maxScore = totalTaskCount
         // Build overlapping batches
         var batches: [[TaskActionItem]] = []
         var startIndex = 0
@@ -418,11 +425,11 @@ actor TaskPrioritizationService {
             let batchScores: [String: Int]
 
             if overlapTasks.isEmpty {
-                batchScores = assignLinearScores(rankedIds: rankedIds)
-                log("TaskPrioritize: [\(label)] Batch \(i + 1) — linear scoring (\(rankedIds.count) ranked)")
+                batchScores = assignLinearScores(rankedIds: rankedIds, maxScore: maxScore)
+                log("TaskPrioritize: [\(label)] Batch \(i + 1) — linear scoring (\(rankedIds.count) ranked, range 0-\(maxScore))")
             } else {
-                batchScores = stitchScores(rankedIds: rankedIds, globalScores: globalScores)
-                log("TaskPrioritize: [\(label)] Batch \(i + 1) — stitched with \(overlapTasks.count) overlap anchors (\(rankedIds.count) ranked)")
+                batchScores = stitchScores(rankedIds: rankedIds, maxScore: maxScore, globalScores: globalScores)
+                log("TaskPrioritize: [\(label)] Batch \(i + 1) — stitched with \(overlapTasks.count) overlap anchors (\(rankedIds.count) ranked, range 0-\(maxScore))")
             }
 
             // Update global scores
@@ -447,10 +454,10 @@ actor TaskPrioritizationService {
     // MARK: - Score Assignment
 
     /// Assign linear scores based on position in the ranked list.
-    /// Position 0 (most relevant) → 100, last position → 0.
-    private func assignLinearScores(rankedIds: [String]) -> [String: Int] {
+    /// Position 0 (most relevant) → maxScore, last position → 0.
+    private func assignLinearScores(rankedIds: [String], maxScore: Int = 100) -> [String: Int] {
         guard rankedIds.count > 1 else {
-            if let id = rankedIds.first { return [id: 50] }
+            if let id = rankedIds.first { return [id: maxScore / 2] }
             return [:]
         }
 
@@ -458,7 +465,7 @@ actor TaskPrioritizationService {
         let count = Double(rankedIds.count - 1)
 
         for (position, id) in rankedIds.enumerated() {
-            let score = Int(round(100.0 * (1.0 - Double(position) / count)))
+            let score = Int(round(Double(maxScore) * (1.0 - Double(position) / count)))
             scores[id] = score
         }
 
@@ -470,6 +477,7 @@ actor TaskPrioritizationService {
     /// define a mapping from local position → global score via linear interpolation.
     private func stitchScores(
         rankedIds: [String],
+        maxScore: Int = 100,
         globalScores: [String: Int]
     ) -> [String: Int] {
         // Find anchor points: (position in rankedIds, known global score)
@@ -482,7 +490,7 @@ actor TaskPrioritizationService {
 
         // If no anchors found, fall back to linear
         guard !anchors.isEmpty else {
-            return assignLinearScores(rankedIds: rankedIds)
+            return assignLinearScores(rankedIds: rankedIds, maxScore: maxScore)
         }
 
         // Sort anchors by position
@@ -500,14 +508,14 @@ actor TaskPrioritizationService {
                 if anchors.count >= 2 {
                     let a = anchors[0], b = anchors[1]
                     let slope = Double(a.score - b.score) / Double(b.position - a.position)
-                    score = min(100, Int(round(Double(a.score) + slope * Double(a.position - position))))
+                    score = min(maxScore, Int(round(Double(a.score) + slope * Double(a.position - position))))
                 } else {
                     let anchor = anchors[0]
                     if anchor.position == 0 {
                         score = anchor.score
                     } else {
                         let fraction = Double(position) / Double(anchor.position)
-                        score = min(100, Int(round(Double(anchor.score) + (100.0 - Double(anchor.score)) * (1.0 - fraction))))
+                        score = min(maxScore, Int(round(Double(anchor.score) + (Double(maxScore) - Double(anchor.score)) * (1.0 - fraction))))
                     }
                 }
             } else if position >= anchors.last!.position {
@@ -544,7 +552,7 @@ actor TaskPrioritizationService {
                 score = Int(round(Double(lower.score) + fraction * Double(upper.score - lower.score)))
             }
 
-            scores[id] = max(0, min(100, score))
+            scores[id] = max(0, min(maxScore, score))
         }
 
         return scores
@@ -653,6 +661,10 @@ actor TaskPrioritizationService {
             return nil
         }
 
+        // Log truncated response for debugging
+        let truncated = responseText.prefix(500)
+        log("TaskPrioritize: Gemini response (\(responseText.count) chars): \(truncated)\(responseText.count > 500 ? "..." : "")")
+
         guard let data = responseText.data(using: .utf8) else {
             log("TaskPrioritize: Failed to convert response to data")
             return nil
@@ -665,6 +677,8 @@ actor TaskPrioritizationService {
             log("TaskPrioritize: Failed to parse ranking response: \(error)")
             return nil
         }
+
+        log("TaskPrioritize: Parsed \(result.rankedTaskIds.count) ranked IDs. Top 3: \(result.rankedTaskIds.prefix(3).joined(separator: ", "))")
 
         // Validate: only keep IDs that are in this batch
         let validIds = Set(batch.map { $0.id })
