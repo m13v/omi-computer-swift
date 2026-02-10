@@ -342,7 +342,11 @@ class TasksStore: ObservableObject {
             await loadDeletedTasks()
         }
         // Kick off one-time full sync in background (populates SQLite with all tasks)
-        Task { await performFullSyncIfNeeded() }
+        // Then retry pushing any locally-created tasks that failed to sync
+        Task {
+            await performFullSyncIfNeeded()
+            await retryUnsyncedItems()
+        }
     }
 
     /// Load incomplete tasks (To Do) using local-first pattern
@@ -639,6 +643,51 @@ class TasksStore: ObservableObject {
         }
     }
 
+    /// Retry syncing locally-created tasks that failed to push to the backend.
+    /// These are records with backendSynced=false and no backendId — the API call
+    /// failed during extraction and there was no retry mechanism.
+    private func retryUnsyncedItems() async {
+        let items: [ActionItemRecord]
+        do {
+            items = try await ActionItemStorage.shared.getUnsyncedActionItems()
+        } catch {
+            logError("TasksStore: Failed to fetch unsynced items", error: error)
+            return
+        }
+
+        guard !items.isEmpty else { return }
+        log("TasksStore: Retrying sync for \(items.count) unsynced items")
+
+        var synced = 0
+        for item in items {
+            guard let localId = item.id else { continue }
+
+            // Parse metadata back from JSON
+            var metadata: [String: Any]?
+            if let json = item.metadataJson, let data = json.data(using: .utf8) {
+                metadata = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            }
+
+            do {
+                let response = try await APIClient.shared.createActionItem(
+                    description: item.description,
+                    dueAt: item.dueAt,
+                    source: item.source,
+                    priority: item.priority,
+                    category: item.category,
+                    metadata: metadata
+                )
+                try await ActionItemStorage.shared.markSynced(id: localId, backendId: response.id)
+                synced += 1
+            } catch {
+                // Skip this item, will retry next launch
+                continue
+            }
+        }
+
+        log("TasksStore: Retry sync completed — \(synced)/\(items.count) items synced")
+    }
+
     /// One-time backfill: patch backend tasks that have no dueAt.
     /// Sets dueAt to end of the day the task was created.
     private func backfillDueDatesOnBackendIfNeeded(userId: String) async {
@@ -816,6 +865,11 @@ class TasksStore: ObservableObject {
                 // Was incomplete, now completed - move to completed list
                 incompleteTasks.removeAll { $0.id == task.id }
                 completedTasks.insert(updated, at: 0)
+
+                // Compact relevance scores to fill the gap
+                if let score = task.relevanceScore {
+                    try await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+                }
             } else {
                 // Was completed, now incomplete - move to incomplete list
                 completedTasks.removeAll { $0.id == task.id }
@@ -869,6 +923,11 @@ class TasksStore: ObservableObject {
             incompleteTasks.removeAll { $0.id == task.id }
         }
 
+        // Compact relevance scores to fill the gap
+        if let score = task.relevanceScore {
+            try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+        }
+
         // Soft-delete on backend in background
         do {
             _ = try await APIClient.shared.softDeleteActionItem(id: task.id, deletedBy: "user")
@@ -919,6 +978,10 @@ class TasksStore: ObservableObject {
     // MARK: - Bulk Actions
 
     func deleteMultipleTasks(ids: [String]) async {
+        // Collect relevance scores before removing from memory
+        let allTasks = incompleteTasks + completedTasks
+        let scores = ids.compactMap { id in allTasks.first(where: { $0.id == id })?.relevanceScore }
+
         // Local-first: soft-delete all in SQLite and remove from memory immediately
         for id in ids {
             do {
@@ -928,6 +991,11 @@ class TasksStore: ObservableObject {
             }
             incompleteTasks.removeAll { $0.id == id }
             completedTasks.removeAll { $0.id == id }
+        }
+
+        // Compact relevance scores (process highest first so shifts don't affect each other)
+        for score in scores.sorted(by: >) {
+            try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
         }
 
         // Soft-delete on backend in background
