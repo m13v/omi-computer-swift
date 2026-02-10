@@ -823,6 +823,7 @@ struct SettingsContentView: View {
                         .tint(OmiColors.purplePrimary)
                         .onChange(of: analysisDelay) { _, newValue in
                             AssistantSettings.shared.analysisDelay = newValue
+                            SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(shared: SharedAssistantSettingsResponse(analysisDelay: newValue)))
                         }
                 }
             }
@@ -846,6 +847,7 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: focusEnabled) { _, newValue in
                                 FocusAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(focus: FocusSettingsResponse(enabled: newValue)))
                             }
                     }
 
@@ -864,6 +866,7 @@ struct SettingsContentView: View {
                                 .disabled(isPreviewRunning)
                                 .onChange(of: glowOverlayEnabled) { _, newValue in
                                     AssistantSettings.shared.glowOverlayEnabled = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(shared: SharedAssistantSettingsResponse(glowOverlayEnabled: newValue)))
                                     if newValue {
                                         startGlowPreview()
                                     }
@@ -892,6 +895,7 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: taskEnabled) { _, newValue in
                                 TaskAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(enabled: newValue)))
                             }
                     }
 
@@ -930,6 +934,7 @@ struct SettingsContentView: View {
                                 .tint(OmiColors.purplePrimary)
                                 .onChange(of: taskExtractionInterval) { _, newValue in
                                     TaskAssistantSettings.shared.extractionInterval = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(extractionInterval: newValue)))
                                 }
                         }
                     }
@@ -955,6 +960,7 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: adviceEnabled) { _, newValue in
                                 AdviceAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(enabled: newValue)))
                             }
                     }
 
@@ -993,6 +999,7 @@ struct SettingsContentView: View {
                                 .tint(OmiColors.purplePrimary)
                                 .onChange(of: adviceExtractionInterval) { _, newValue in
                                     AdviceAssistantSettings.shared.extractionInterval = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(extractionInterval: newValue)))
                                 }
                         }
                     }
@@ -1018,6 +1025,7 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: memoryEnabled) { _, newValue in
                                 MemoryAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(enabled: newValue)))
                             }
                     }
 
@@ -1056,6 +1064,7 @@ struct SettingsContentView: View {
                                 .tint(OmiColors.purplePrimary)
                                 .onChange(of: memoryExtractionInterval) { _, newValue in
                                     MemoryAssistantSettings.shared.extractionInterval = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(extractionInterval: newValue)))
                                 }
                         }
                     }
@@ -1634,6 +1643,7 @@ struct SettingsContentView: View {
                         .frame(width: 120)
                         .onChange(of: cooldownInterval) { _, newValue in
                             FocusAssistantSettings.shared.cooldownInterval = newValue
+                            SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(focus: FocusSettingsResponse(cooldownInterval: newValue)))
                         }
                     }
 
@@ -1757,6 +1767,7 @@ struct SettingsContentView: View {
                             .tint(OmiColors.purplePrimary)
                             .onChange(of: taskMinConfidence) { _, newValue in
                                 TaskAssistantSettings.shared.minConfidence = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(minConfidence: newValue)))
                             }
                     }
 
@@ -1922,6 +1933,7 @@ struct SettingsContentView: View {
                             .tint(OmiColors.purplePrimary)
                             .onChange(of: adviceMinConfidence) { _, newValue in
                                 AdviceAssistantSettings.shared.minConfidence = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(minConfidence: newValue)))
                             }
                     }
 
@@ -2045,6 +2057,7 @@ struct SettingsContentView: View {
                             .tint(OmiColors.purplePrimary)
                             .onChange(of: memoryMinConfidence) { _, newValue in
                                 MemoryAssistantSettings.shared.minConfidence = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(minConfidence: newValue)))
                             }
                     }
 
@@ -2054,6 +2067,7 @@ struct SettingsContentView: View {
                             .labelsHidden()
                             .onChange(of: memoryNotificationsEnabled) { _, newValue in
                                 MemoryAssistantSettings.shared.notificationsEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(notificationsEnabled: newValue)))
                             }
                     }
 
@@ -2894,13 +2908,17 @@ struct SettingsContentView: View {
                 async let cloudSyncTask = APIClient.shared.getPrivateCloudSync()
                 async let transcriptionTask = APIClient.shared.getTranscriptionPreferences()
 
-                let (dailySummary, notifications, language, recording, cloudSync, transcription) = try await (
+                // Sync assistant settings from server in parallel
+                async let assistantSyncTask: () = SettingsSyncManager.shared.syncFromServer()
+
+                let (dailySummary, notifications, language, recording, cloudSync, transcription, _) = try await (
                     dailySummaryTask,
                     notificationsTask,
                     languageTask,
                     recordingTask,
                     cloudSyncTask,
-                    transcriptionTask
+                    transcriptionTask,
+                    assistantSyncTask
                 )
 
                 await MainActor.run {
