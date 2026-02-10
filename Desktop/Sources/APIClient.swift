@@ -1806,7 +1806,7 @@ extension APIClient {
 
 /// Standalone action item stored in Firestore subcollection
 /// Different from ActionItem which is embedded in conversation structured data
-struct TaskActionItem: Codable, Identifiable {
+struct TaskActionItem: Codable, Identifiable, Equatable {
     let id: String
     let description: String
     let completed: Bool
