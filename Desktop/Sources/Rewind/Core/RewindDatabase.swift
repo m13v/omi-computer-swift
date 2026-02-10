@@ -148,7 +148,7 @@ actor RewindDatabase {
             try verifyDatabaseIntegrity(queue)
         } else {
             // Still log journal mode on clean startup (cheap PRAGMA, no full check)
-            try queue.read { db in
+            try await queue.read { db in
                 let journalMode = try String.fetchOne(db, sql: "PRAGMA journal_mode")
                 log("RewindDatabase: Journal mode is \(journalMode ?? "unknown")")
             }
