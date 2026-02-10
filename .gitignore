@@ -58,3 +58,10 @@ Desktop/Sources/Resources/ffmpeg
 *-snapshot.md
 reddit-*.md
 linkedin-*.md
+
+# Stray screenshots and documents in repo root
+/*.jpeg
+/*.png
+/*.docx
+/*.doc
+/*.pdf
