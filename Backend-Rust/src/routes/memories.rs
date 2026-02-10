@@ -88,6 +88,7 @@ async fn create_memory(
             request.reasoning.as_deref(),
             request.current_activity.as_deref(),
             request.source.as_deref(),
+            request.window_title.as_deref(),
         )
         .await
     {
