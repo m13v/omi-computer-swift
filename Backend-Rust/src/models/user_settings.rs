@@ -157,3 +157,65 @@ pub struct UpdateAIUserProfileRequest {
     pub generated_at: String,
     pub data_sources_used: i32,
 }
+
+// MARK: - Assistant Settings (synced to Firestore)
+
+/// Shared assistant settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SharedAssistantSettingsData {
+    pub cooldown_interval: Option<i32>,
+    pub glow_overlay_enabled: Option<bool>,
+    pub analysis_delay: Option<i32>,
+    pub screen_analysis_enabled: Option<bool>,
+}
+
+/// Focus assistant settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct FocusSettingsData {
+    pub enabled: Option<bool>,
+    pub analysis_prompt: Option<String>,
+    pub cooldown_interval: Option<i32>,
+    pub excluded_apps: Option<Vec<String>>,
+}
+
+/// Task extraction assistant settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TaskSettingsData {
+    pub enabled: Option<bool>,
+    pub analysis_prompt: Option<String>,
+    pub extraction_interval: Option<f64>,
+    pub min_confidence: Option<f64>,
+    pub allowed_apps: Option<Vec<String>>,
+    pub browser_keywords: Option<Vec<String>>,
+}
+
+/// Advice assistant settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AdviceSettingsData {
+    pub enabled: Option<bool>,
+    pub analysis_prompt: Option<String>,
+    pub extraction_interval: Option<f64>,
+    pub min_confidence: Option<f64>,
+    pub excluded_apps: Option<Vec<String>>,
+}
+
+/// Memory extraction assistant settings
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct MemorySettingsData {
+    pub enabled: Option<bool>,
+    pub analysis_prompt: Option<String>,
+    pub extraction_interval: Option<f64>,
+    pub min_confidence: Option<f64>,
+    pub notifications_enabled: Option<bool>,
+    pub excluded_apps: Option<Vec<String>>,
+}
+
+/// All assistant settings (response and request — all fields optional for partial updates)
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AssistantSettingsData {
+    pub shared: Option<SharedAssistantSettingsData>,
+    pub focus: Option<FocusSettingsData>,
+    pub task: Option<TaskSettingsData>,
+    pub advice: Option<AdviceSettingsData>,
+    pub memory: Option<MemorySettingsData>,
+}
