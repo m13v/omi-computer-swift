@@ -1330,6 +1330,23 @@ actor RewindDatabase {
             print("[RewindDatabase] Migration 32: Deleted \(deleted) orphaned unsynced action items with synced duplicates")
         }
 
+        migrator.registerMigration("addScreenshotEmbedding") { db in
+            try db.alter(table: "screenshots") { t in
+                t.add(column: "embedding", .blob)
+            }
+            // Partial index for backfill queries
+            try db.execute(sql: """
+                CREATE INDEX idx_screenshots_missing_embedding
+                ON screenshots(id) WHERE embedding IS NULL AND ocrText IS NOT NULL
+            """)
+            // Track backfill progress
+            try db.execute(sql: """
+                INSERT OR IGNORE INTO migration_status (name, completed, startedAt)
+                VALUES ('ocr_embedding_backfill', 0, datetime('now'))
+            """)
+            print("[RewindDatabase] Migration 33: Added embedding column to screenshots")
+        }
+
         try migrator.migrate(queue)
     }
 
@@ -1576,6 +1593,116 @@ actor RewindDatabase {
 
         return try dbQueue.read { db in
             try Screenshot.fetchOne(db, key: id)
+        }
+    }
+
+    // MARK: - OCR Embedding Methods
+
+    /// Store embedding BLOB for a screenshot
+    func updateScreenshotEmbedding(id: Int64, embedding: Data) throws {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        try dbQueue.write { db in
+            try db.execute(
+                sql: "UPDATE screenshots SET embedding = ? WHERE id = ?",
+                arguments: [embedding, id]
+            )
+        }
+    }
+
+    /// Get screenshots missing embeddings (for backfill)
+    func getScreenshotsMissingEmbeddings(limit: Int = 100) throws -> [(id: Int64, ocrText: String)] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT id, ocrText FROM screenshots
+                WHERE embedding IS NULL AND ocrText IS NOT NULL AND LENGTH(ocrText) >= 10
+                ORDER BY id LIMIT ?
+            """, arguments: [limit]).compactMap { row in
+                guard let id: Int64 = row["id"],
+                      let ocrText: String = row["ocrText"] else { return nil }
+                return (id: id, ocrText: ocrText)
+            }
+        }
+    }
+
+    /// Read embedding BLOBs in batches for disk-based vector search
+    func readEmbeddingBatch(startDate: Date, endDate: Date, appFilter: String? = nil, limit: Int = 5000, offset: Int = 0) throws -> [(screenshotId: Int64, embedding: Data)] {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            var sql = """
+                SELECT id, embedding FROM screenshots
+                WHERE embedding IS NOT NULL
+                  AND timestamp >= ? AND timestamp <= ?
+            """
+            var arguments: [DatabaseValueConvertible] = [startDate, endDate]
+
+            if let app = appFilter {
+                sql += " AND appName = ?"
+                arguments.append(app)
+            }
+
+            sql += " ORDER BY id LIMIT ? OFFSET ?"
+            arguments.append(limit)
+            arguments.append(offset)
+
+            return try Row.fetchAll(db, sql: sql, arguments: StatementArguments(arguments)).compactMap { row in
+                guard let id: Int64 = row["id"],
+                      let embedding: Data = row["embedding"] else { return nil }
+                return (screenshotId: id, embedding: embedding)
+            }
+        }
+    }
+
+    /// Check OCR embedding backfill status
+    func getOCREmbeddingBackfillStatus() throws -> (completed: Bool, processedCount: Int) {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            let row = try Row.fetchOne(db, sql: """
+                SELECT completed, COALESCE(processedCount, 0) as processedCount
+                FROM migration_status WHERE name = 'ocr_embedding_backfill'
+            """)
+            return (
+                completed: (row?["completed"] as? Int ?? 1) == 1,
+                processedCount: row?["processedCount"] as? Int ?? 0
+            )
+        }
+    }
+
+    /// Update OCR embedding backfill progress
+    func updateOCREmbeddingBackfillStatus(completed: Bool, processedCount: Int) throws {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        try dbQueue.write { db in
+            try db.execute(sql: """
+                UPDATE migration_status
+                SET completed = ?, processedCount = ?, completedAt = CASE WHEN ? = 1 THEN datetime('now') ELSE completedAt END
+                WHERE name = 'ocr_embedding_backfill'
+            """, arguments: [completed ? 1 : 0, processedCount, completed ? 1 : 0])
+        }
+    }
+
+    /// Get the last inserted row ID for screenshots (for embedding hook)
+    func getLastInsertedScreenshotId() throws -> Int64? {
+        guard let dbQueue = dbQueue else {
+            throw RewindError.databaseNotInitialized
+        }
+
+        return try dbQueue.read { db in
+            try Int64.fetchOne(db, sql: "SELECT MAX(id) FROM screenshots")
         }
     }
 
