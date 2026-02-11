@@ -31,8 +31,7 @@ struct SettingsPage: View {
                     SettingsContentView(
                         appState: appState,
                         selectedSection: $selectedSection,
-                        selectedAdvancedSubsection: $selectedAdvancedSubsection,
-                        scrollProxy: proxy
+                        selectedAdvancedSubsection: $selectedAdvancedSubsection
                     )
                     .padding(.horizontal, 32)
 
@@ -130,9 +129,6 @@ struct SettingsContentView: View {
     @Binding var selectedSection: SettingsSection
     @Binding var selectedAdvancedSubsection: AdvancedSubsection?
 
-    // Scroll proxy for scrolling to subsections
-    var scrollProxy: ScrollViewProxy
-
     // Notification settings (from backend)
     @State private var dailySummaryEnabled: Bool = true
     @State private var dailySummaryHour: Int = 22
@@ -222,13 +218,11 @@ struct SettingsContentView: View {
     init(
         appState: AppState,
         selectedSection: Binding<SettingsSection>,
-        selectedAdvancedSubsection: Binding<AdvancedSubsection?>,
-        scrollProxy: ScrollViewProxy
+        selectedAdvancedSubsection: Binding<AdvancedSubsection?>
     ) {
         self.appState = appState
         self._selectedSection = selectedSection
         self._selectedAdvancedSubsection = selectedAdvancedSubsection
-        self.scrollProxy = scrollProxy
         let settings = AssistantSettings.shared
         _isMonitoring = State(initialValue: ProactiveAssistantsPlugin.shared.isMonitoring)
         _isTranscribing = State(initialValue: appState.isTranscribing)
@@ -1317,6 +1311,7 @@ struct SettingsContentView: View {
                     }
                 }
             }
+            .id(AdvancedSubsection.aiUserProfile)
 
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -1375,6 +1370,8 @@ struct SettingsContentView: View {
                     }
                 }
             }
+            .id(AdvancedSubsection.stats)
+
             // Feature Tiers card
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
@@ -1461,6 +1458,7 @@ struct SettingsContentView: View {
                     }
                 }
             }
+            .id(AdvancedSubsection.featureTiers)
 
             // Focus Assistant Settings
             settingsCard {
@@ -1599,6 +1597,7 @@ struct SettingsContentView: View {
                     } // end if focusEnabled
                 }
             }
+            .id(AdvancedSubsection.focusAssistant)
 
             // Task Assistant Settings
             settingsCard {
@@ -1838,6 +1837,7 @@ struct SettingsContentView: View {
                     } // end if taskEnabled
                 }
             }
+            .id(AdvancedSubsection.taskAssistant)
 
             // Advice Assistant Settings
             settingsCard {
@@ -2007,6 +2007,7 @@ struct SettingsContentView: View {
                     } // end if adviceEnabled
                 }
             }
+            .id(AdvancedSubsection.adviceAssistant)
 
             // Memory Assistant Settings
             settingsCard {
@@ -2176,6 +2177,7 @@ struct SettingsContentView: View {
                     } // end if memoryEnabled
                 }
             }
+            .id(AdvancedSubsection.memoryAssistant)
 
             // Analysis Throttle (global — affects all assistants)
             settingsCard {
@@ -3433,5 +3435,9 @@ struct RunningAppChip: View {
 }
 
 #Preview {
-    SettingsPage(appState: AppState(), selectedSection: .constant(.general))
+    SettingsPage(
+        appState: AppState(),
+        selectedSection: .constant(.advanced),
+        selectedAdvancedSubsection: .constant(.aiUserProfile)
+    )
 }
