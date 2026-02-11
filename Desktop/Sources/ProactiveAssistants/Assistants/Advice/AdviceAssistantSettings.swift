@@ -11,6 +11,7 @@ class AdviceAssistantSettings {
     private let analysisPromptKey = "adviceAnalysisPrompt"
     private let extractionIntervalKey = "adviceExtractionInterval"
     private let minConfidenceKey = "adviceMinConfidence"
+    private let notificationsEnabledKey = "adviceNotificationsEnabled"
     private let excludedAppsKey = "adviceExcludedApps"
 
     // MARK: - Default Values
@@ -18,6 +19,7 @@ class AdviceAssistantSettings {
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes between analyses
     private let defaultMinConfidence: Double = 0.85 // High threshold - only show when very confident
+    private let defaultNotificationsEnabled = true
 
     /// Default system prompt for advice extraction
     static let defaultAnalysisPrompt = """
@@ -70,6 +72,7 @@ class AdviceAssistantSettings {
             enabledKey: defaultEnabled,
             extractionIntervalKey: defaultExtractionInterval,
             minConfidenceKey: defaultMinConfidence,
+            notificationsEnabledKey: defaultNotificationsEnabled,
         ])
     }
 
@@ -122,6 +125,15 @@ class AdviceAssistantSettings {
         set {
             UserDefaults.standard.set(newValue, forKey: minConfidenceKey)
             log("Advice min confidence threshold updated to \(newValue)")
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether to show notifications when advice is generated
+    var notificationsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: notificationsEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: notificationsEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
