@@ -173,3 +173,18 @@ onCreatePersona: {
     }
 }
 ```
+
+## User Task Completion Reporting
+
+When completing a task that was triggered by an app user request (bug report, feature request, support inquiry, etc.) and you have the user's email address, **send them an email about the results** using the `omi-email` skill:
+
+```bash
+node /Users/matthewdi/omi-analytics/scripts/send-email.js \
+  --to "<user-email>" \
+  --subject "<brief result summary>" \
+  --body "<what was done, what they should expect, any next steps>"
+```
+
+- Keep the email concise and friendly — written as Matt from OMI
+- Include what was investigated/fixed and any action the user needs to take (e.g. update the app)
+- Only send when there are meaningful results to share (don't email for internal-only changes)
