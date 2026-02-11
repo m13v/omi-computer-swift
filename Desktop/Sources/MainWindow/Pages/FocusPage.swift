@@ -68,7 +68,13 @@ class FocusViewModel: ObservableObject {
         objectWillChange.send()
     }
 
-    func refresh() async {
+    func refresh(force: Bool = false) async {
+        // Skip redundant reload if storage already has cached data
+        // FocusStorage.init() already loads from UserDefaults + SQLite
+        if !force && !storage.sessions.isEmpty {
+            NotificationCenter.default.post(name: .focusPageDidLoad, object: nil)
+            return
+        }
         isLoading = true
         await storage.refreshFromBackend()
         await MainActor.run {
@@ -145,7 +151,7 @@ struct FocusPage: View {
 
                     Menu {
                         Button {
-                            Task { await viewModel.refresh() }
+                            Task { await viewModel.refresh(force: true) }
                         } label: {
                             Label("Refresh", systemImage: "arrow.clockwise")
                         }
