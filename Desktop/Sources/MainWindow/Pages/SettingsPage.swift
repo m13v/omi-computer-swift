@@ -176,6 +176,28 @@ struct SettingsContentView: View {
         case about = "About"
     }
 
+    enum AdvancedSubsection: String, CaseIterable {
+        case aiUserProfile = "AI User Profile"
+        case stats = "Your Stats"
+        case featureTiers = "Feature Tiers"
+        case focusAssistant = "Focus Assistant"
+        case taskAssistant = "Task Assistant"
+        case adviceAssistant = "Advice Assistant"
+        case memoryAssistant = "Memory Assistant"
+
+        var icon: String {
+            switch self {
+            case .aiUserProfile: return "brain"
+            case .stats: return "chart.bar"
+            case .featureTiers: return "lock.shield"
+            case .focusAssistant: return "eye.fill"
+            case .taskAssistant: return "checklist"
+            case .adviceAssistant: return "lightbulb.fill"
+            case .memoryAssistant: return "brain.head.profile"
+            }
+        }
+    }
+
     @State private var showResetOnboardingAlert: Bool = false
 
     init(appState: AppState, selectedSection: Binding<SettingsSection>) {
