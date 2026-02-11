@@ -7,7 +7,7 @@ import Accelerate
 actor OCREmbeddingService {
     static let shared = OCREmbeddingService()
 
-    private let embeddingDimension = 3072
+    private let embeddingDimension = 768
     private let minTextLength = 20
 
     private init() {}
@@ -33,7 +33,7 @@ actor OCREmbeddingService {
         let formatted = Self.formatForEmbedding(ocrText: ocrText, appName: appName, windowTitle: windowTitle)
 
         do {
-            let embedding = try await EmbeddingService.shared.embed(text: formatted, model: .openai, taskType: "RETRIEVAL_DOCUMENT")
+            let embedding = try await EmbeddingService.shared.embed(text: formatted, taskType: "RETRIEVAL_DOCUMENT")
             let data = await EmbeddingService.shared.floatsToData(embedding)
             try await RewindDatabase.shared.updateScreenshotEmbedding(id: id, embedding: data)
         } catch {
@@ -65,7 +65,7 @@ actor OCREmbeddingService {
                 let texts = items.map { Self.formatForEmbedding(ocrText: $0.ocrText, appName: $0.appName, windowTitle: $0.windowTitle) }
                 let embeddings: [[Float]]
                 do {
-                    embeddings = try await EmbeddingService.shared.embedBatch(texts: texts, model: .openai, taskType: "RETRIEVAL_DOCUMENT")
+                    embeddings = try await EmbeddingService.shared.embedBatch(texts: texts, taskType: "RETRIEVAL_DOCUMENT")
                 } catch {
                     logError("OCREmbeddingService: Batch embed failed at \(totalProcessed) items, will retry on next launch", error: error)
                     hitError = true
@@ -115,8 +115,8 @@ actor OCREmbeddingService {
         appFilter: String? = nil,
         topK: Int = 50
     ) async throws -> [(screenshotId: Int64, similarity: Float)] {
-        // Embed the query with RETRIEVAL_QUERY task type for asymmetric search (using OpenAI 3072-dim)
-        let queryEmbedding = try await EmbeddingService.shared.embed(text: query, model: .openai, taskType: "RETRIEVAL_QUERY")
+        // Embed the query with RETRIEVAL_QUERY task type for asymmetric search (using Gemini 768-dim)
+        let queryEmbedding = try await EmbeddingService.shared.embed(text: query, taskType: "RETRIEVAL_QUERY")
 
         let batchSize = 5000
         var offset = 0
