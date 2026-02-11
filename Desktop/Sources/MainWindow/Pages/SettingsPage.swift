@@ -823,276 +823,56 @@ struct SettingsContentView: View {
 
     private var notificationsSection: some View {
         VStack(spacing: 20) {
-            // Analysis Throttle (global — affects all assistants)
-            settingsCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Analysis Throttle")
-                                .font(.system(size: 14))
-                                .foregroundColor(OmiColors.textSecondary)
-                            Text("Wait before analyzing after switching apps")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
-
-                        Spacer()
-
-                        Text(formatAnalysisDelay(analysisDelay))
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .frame(width: 80, alignment: .trailing)
-                    }
-
-                    Slider(value: Binding(
-                        get: { Double(analysisDelaySliderIndex) },
-                        set: { analysisDelay = analysisDelayOptions[Int($0)] }
-                    ), in: 0...Double(analysisDelayOptions.count - 1), step: 1)
-                        .tint(OmiColors.purplePrimary)
-                        .onChange(of: analysisDelay) { _, newValue in
-                            AssistantSettings.shared.analysisDelay = newValue
-                            SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(shared: SharedAssistantSettingsResponse(analysisDelay: newValue)))
-                        }
-                }
-            }
-
-            // Focus Assistant (simplified)
+            // Notifications
             settingsCard {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
-                        Image(systemName: "eye.fill")
+                        Image(systemName: "bell.badge.fill")
                             .font(.system(size: 16))
                             .foregroundColor(OmiColors.purplePrimary)
 
-                        Text("Focus Assistant")
+                        Text("Notifications")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
 
-                        Toggle("", isOn: $focusEnabled)
+                        Toggle("", isOn: $notificationsEnabled)
                             .toggleStyle(.switch)
                             .labelsHidden()
-                            .onChange(of: focusEnabled) { _, newValue in
-                                FocusAssistantSettings.shared.isEnabled = newValue
-                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(focus: FocusSettingsResponse(enabled: newValue)))
+                            .onChange(of: notificationsEnabled) { _, newValue in
+                                updateNotificationSettings(enabled: newValue)
                             }
                     }
 
-                    Text("Detect distractions and help you stay focused")
+                    Text("Control how often you receive notifications")
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textTertiary)
 
-                    if focusEnabled {
+                    if notificationsEnabled {
                         Divider()
                             .background(OmiColors.backgroundQuaternary)
 
-                        settingRow(title: "Visual Glow Effect", subtitle: "Show colored border when focus changes") {
-                            Toggle("", isOn: $glowOverlayEnabled)
+                        settingRow(title: "Frequency", subtitle: "How often to receive notifications") {
+                            Picker("", selection: $notificationFrequency) {
+                                ForEach(frequencyOptions, id: \.0) { option in
+                                    Text(option.1).tag(option.0)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .frame(width: 120)
+                            .onChange(of: notificationFrequency) { _, newValue in
+                                updateNotificationSettings(frequency: newValue)
+                            }
+                        }
+
+                        settingRow(title: "Memory Notifications", subtitle: "Show notification when a memory is extracted") {
+                            Toggle("", isOn: $memoryNotificationsEnabled)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
-                                .disabled(isPreviewRunning)
-                                .onChange(of: glowOverlayEnabled) { _, newValue in
-                                    AssistantSettings.shared.glowOverlayEnabled = newValue
-                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(shared: SharedAssistantSettingsResponse(glowOverlayEnabled: newValue)))
-                                    if newValue {
-                                        startGlowPreview()
-                                    }
-                                }
-                        }
-                    }
-                }
-            }
-
-            // Task Assistant (with extraction interval slider)
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "checklist")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Task Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $taskEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: taskEnabled) { _, newValue in
-                                TaskAssistantSettings.shared.isEnabled = newValue
-                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(enabled: newValue)))
-                            }
-                    }
-
-                    Text("Extract tasks and action items from your screen")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if taskEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        // Extraction Interval Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Extraction Interval")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("How often to scan for new tasks")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text(formatExtractionInterval(taskExtractionInterval))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 80, alignment: .trailing)
-                            }
-
-                            Slider(value: Binding(
-                                get: { Double(taskIntervalSliderIndex) },
-                                set: { taskExtractionInterval = extractionIntervalOptions[Int($0)] }
-                            ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: taskExtractionInterval) { _, newValue in
-                                    TaskAssistantSettings.shared.extractionInterval = newValue
-                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(extractionInterval: newValue)))
-                                }
-                        }
-                    }
-                }
-            }
-
-            // Advice Assistant (simplified - toggle + frequency slider)
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "lightbulb.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Advice Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $adviceEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: adviceEnabled) { _, newValue in
-                                AdviceAssistantSettings.shared.isEnabled = newValue
-                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(enabled: newValue)))
-                            }
-                    }
-
-                    Text("Get proactive tips and suggestions")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if adviceEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        // Advice Frequency Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Frequency")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("How often to check for advice opportunities")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text(formatExtractionInterval(adviceExtractionInterval))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 80, alignment: .trailing)
-                            }
-
-                            Slider(value: Binding(
-                                get: { Double(adviceIntervalSliderIndex) },
-                                set: { adviceExtractionInterval = extractionIntervalOptions[Int($0)] }
-                            ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: adviceExtractionInterval) { _, newValue in
-                                    AdviceAssistantSettings.shared.extractionInterval = newValue
-                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(extractionInterval: newValue)))
-                                }
-                        }
-                    }
-                }
-            }
-
-            // Memory Assistant (with extraction interval slider)
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "brain.head.profile")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Memory Assistant")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $memoryEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: memoryEnabled) { _, newValue in
-                                MemoryAssistantSettings.shared.isEnabled = newValue
-                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(enabled: newValue)))
-                            }
-                    }
-
-                    Text("Extract facts and wisdom from your screen")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if memoryEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        // Extraction Interval Slider
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text("Extraction Interval")
-                                        .font(.system(size: 14))
-                                        .foregroundColor(OmiColors.textSecondary)
-                                    Text("How often to scan for new memories")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(OmiColors.textTertiary)
-                                }
-
-                                Spacer()
-
-                                Text(formatExtractionInterval(memoryExtractionInterval))
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                    .frame(width: 80, alignment: .trailing)
-                            }
-
-                            Slider(value: Binding(
-                                get: { Double(memoryIntervalSliderIndex) },
-                                set: { memoryExtractionInterval = extractionIntervalOptions[Int($0)] }
-                            ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
-                                .tint(OmiColors.purplePrimary)
-                                .onChange(of: memoryExtractionInterval) { _, newValue in
-                                    MemoryAssistantSettings.shared.extractionInterval = newValue
-                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(extractionInterval: newValue)))
+                                .onChange(of: memoryNotificationsEnabled) { _, newValue in
+                                    MemoryAssistantSettings.shared.notificationsEnabled = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(notificationsEnabled: newValue)))
                                 }
                         }
                     }
@@ -1139,52 +919,6 @@ struct SettingsContentView: View {
                             .frame(width: 100)
                             .onChange(of: dailySummaryHour) { _, newValue in
                                 updateDailySummarySettings(hour: newValue)
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Notification Frequency
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
-                        Image(systemName: "bell.badge.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Notifications")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-
-                        Spacer()
-
-                        Toggle("", isOn: $notificationsEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: notificationsEnabled) { _, newValue in
-                                updateNotificationSettings(enabled: newValue)
-                            }
-                    }
-
-                    Text("Control how often you receive notifications")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-
-                    if notificationsEnabled {
-                        Divider()
-                            .background(OmiColors.backgroundQuaternary)
-
-                        settingRow(title: "Frequency", subtitle: "How often to receive notifications") {
-                            Picker("", selection: $notificationFrequency) {
-                                ForEach(frequencyOptions, id: \.0) { option in
-                                    Text(option.1).tag(option.0)
-                                }
-                            }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
-                            .onChange(of: notificationFrequency) { _, newValue in
-                                updateNotificationSettings(frequency: newValue)
                             }
                         }
                     }
@@ -1657,10 +1391,37 @@ struct SettingsContentView: View {
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
+
+                        Toggle("", isOn: $focusEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: focusEnabled) { _, newValue in
+                                FocusAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(focus: FocusSettingsResponse(enabled: newValue)))
+                            }
                     }
 
+                    Text("Detect distractions and help you stay focused")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if focusEnabled {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Visual Glow Effect", subtitle: "Show colored border when focus changes") {
+                        Toggle("", isOn: $glowOverlayEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .disabled(isPreviewRunning)
+                            .onChange(of: glowOverlayEnabled) { _, newValue in
+                                AssistantSettings.shared.glowOverlayEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(shared: SharedAssistantSettingsResponse(glowOverlayEnabled: newValue)))
+                                if newValue {
+                                    startGlowPreview()
+                                }
+                            }
+                    }
 
                     settingRow(title: "Focus Cooldown", subtitle: "Minimum time between distraction alerts") {
                         Picker("", selection: $cooldownInterval) {
@@ -1751,6 +1512,7 @@ struct SettingsContentView: View {
                             excludedApps: focusExcludedApps
                         )
                     }
+                    } // end if focusEnabled
                 }
             }
 
@@ -1767,10 +1529,54 @@ struct SettingsContentView: View {
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
+
+                        Toggle("", isOn: $taskEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: taskEnabled) { _, newValue in
+                                TaskAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(enabled: newValue)))
+                            }
                     }
 
+                    Text("Extract tasks and action items from your screen")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if taskEnabled {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
+
+                    // Extraction Interval Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Extraction Interval")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("How often to scan for new tasks")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Text(formatExtractionInterval(taskExtractionInterval))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .frame(width: 80, alignment: .trailing)
+                        }
+
+                        Slider(value: Binding(
+                            get: { Double(taskIntervalSliderIndex) },
+                            set: { taskExtractionInterval = extractionIntervalOptions[Int($0)] }
+                        ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
+                            .tint(OmiColors.purplePrimary)
+                            .onChange(of: taskExtractionInterval) { _, newValue in
+                                TaskAssistantSettings.shared.extractionInterval = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(extractionInterval: newValue)))
+                            }
+                    }
 
                     // Minimum Confidence Slider
                     VStack(alignment: .leading, spacing: 8) {
@@ -1945,6 +1751,7 @@ struct SettingsContentView: View {
                             .controlSize(.small)
                         }
                     }
+                    } // end if taskEnabled
                 }
             }
 
@@ -1961,10 +1768,54 @@ struct SettingsContentView: View {
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
+
+                        Toggle("", isOn: $adviceEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: adviceEnabled) { _, newValue in
+                                AdviceAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(enabled: newValue)))
+                            }
                     }
 
+                    Text("Get proactive tips and suggestions")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if adviceEnabled {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
+
+                    // Frequency Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Frequency")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("How often to check for advice opportunities")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Text(formatExtractionInterval(adviceExtractionInterval))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .frame(width: 80, alignment: .trailing)
+                        }
+
+                        Slider(value: Binding(
+                            get: { Double(adviceIntervalSliderIndex) },
+                            set: { adviceExtractionInterval = extractionIntervalOptions[Int($0)] }
+                        ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
+                            .tint(OmiColors.purplePrimary)
+                            .onChange(of: adviceExtractionInterval) { _, newValue in
+                                AdviceAssistantSettings.shared.extractionInterval = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(extractionInterval: newValue)))
+                            }
+                    }
 
                     // Minimum Confidence Slider
                     VStack(alignment: .leading, spacing: 8) {
@@ -2069,6 +1920,7 @@ struct SettingsContentView: View {
                             excludedApps: adviceExcludedApps
                         )
                     }
+                    } // end if adviceEnabled
                 }
             }
 
@@ -2085,10 +1937,54 @@ struct SettingsContentView: View {
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
+
+                        Toggle("", isOn: $memoryEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: memoryEnabled) { _, newValue in
+                                MemoryAssistantSettings.shared.isEnabled = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(enabled: newValue)))
+                            }
                     }
 
+                    Text("Extract facts and wisdom from your screen")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if memoryEnabled {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
+
+                    // Extraction Interval Slider
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Extraction Interval")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("How often to scan for new memories")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            Spacer()
+
+                            Text(formatExtractionInterval(memoryExtractionInterval))
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .frame(width: 80, alignment: .trailing)
+                        }
+
+                        Slider(value: Binding(
+                            get: { Double(memoryIntervalSliderIndex) },
+                            set: { memoryExtractionInterval = extractionIntervalOptions[Int($0)] }
+                        ), in: 0...Double(extractionIntervalOptions.count - 1), step: 1)
+                            .tint(OmiColors.purplePrimary)
+                            .onChange(of: memoryExtractionInterval) { _, newValue in
+                                MemoryAssistantSettings.shared.extractionInterval = newValue
+                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(extractionInterval: newValue)))
+                            }
+                    }
 
                     // Minimum Confidence Slider
                     VStack(alignment: .leading, spacing: 8) {
@@ -2115,16 +2011,6 @@ struct SettingsContentView: View {
                             .onChange(of: memoryMinConfidence) { _, newValue in
                                 MemoryAssistantSettings.shared.minConfidence = newValue
                                 SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(minConfidence: newValue)))
-                            }
-                    }
-
-                    settingRow(title: "Show Notifications", subtitle: "Show notification when a memory is extracted") {
-                        Toggle("", isOn: $memoryNotificationsEnabled)
-                            .toggleStyle(.switch)
-                            .labelsHidden()
-                            .onChange(of: memoryNotificationsEnabled) { _, newValue in
-                                MemoryAssistantSettings.shared.notificationsEnabled = newValue
-                                SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(memory: MemorySettingsResponse(notificationsEnabled: newValue)))
                             }
                     }
 
@@ -2203,6 +2089,40 @@ struct SettingsContentView: View {
                             excludedApps: memoryExcludedApps
                         )
                     }
+                    } // end if memoryEnabled
+                }
+            }
+
+            // Analysis Throttle (global — affects all assistants)
+            settingsCard {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Analysis Throttle")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Wait before analyzing after switching apps")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Text(formatAnalysisDelay(analysisDelay))
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundColor(OmiColors.textSecondary)
+                            .frame(width: 80, alignment: .trailing)
+                    }
+
+                    Slider(value: Binding(
+                        get: { Double(analysisDelaySliderIndex) },
+                        set: { analysisDelay = analysisDelayOptions[Int($0)] }
+                    ), in: 0...Double(analysisDelayOptions.count - 1), step: 1)
+                        .tint(OmiColors.purplePrimary)
+                        .onChange(of: analysisDelay) { _, newValue in
+                            AssistantSettings.shared.analysisDelay = newValue
+                            SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(shared: SharedAssistantSettingsResponse(analysisDelay: newValue)))
+                        }
                 }
             }
 
