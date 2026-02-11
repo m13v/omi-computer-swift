@@ -52,6 +52,19 @@ enum SidebarNavItem: Int, CaseIterable {
         }
     }
 
+    /// Minimum tier level required to access this item (0 = always available)
+    var requiredTier: Int {
+        switch self {
+        case .conversations, .rewind: return 1
+        case .memories: return 2
+        case .tasks: return 3
+        case .chat: return 4
+        case .dashboard: return 5
+        case .apps: return 6
+        default: return 0
+        }
+    }
+
     /// Items shown in the main navigation (top section)
     static var mainItems: [SidebarNavItem] {
         [.dashboard, .conversations, .chat, .memories, .tasks, .rewind, .apps]
@@ -105,23 +118,17 @@ struct SidebarView: View {
         isCollapsed ? collapsedWidth : expandedWidth
     }
 
-    /// Sidebar items filtered by tier level
-    private var visibleMainItems: [SidebarNavItem] {
-        Self.visibleItems(for: currentTierLevel)
+    /// Whether a sidebar item is locked at the current tier level
+    private func isItemLocked(_ item: SidebarNavItem) -> Bool {
+        currentTierLevel != 0 && currentTierLevel < item.requiredTier
     }
 
-    /// Static version for use in onChange (where self isn't fully available)
+    /// Static version: items unlocked at a given tier (used by unlock celebration logic)
     static func visibleItems(for tier: Int) -> [SidebarNavItem] {
-        if tier == 0 || tier >= 6 {
+        if tier == 0 {
             return SidebarNavItem.mainItems
         }
-        var items: [SidebarNavItem] = [.conversations, .rewind]  // Tier 1: always
-        if tier >= 2 { items.append(.memories) }
-        if tier >= 3 { items.append(.tasks) }
-        if tier >= 4 { items.append(.chat) }
-        if tier >= 5 { items.append(.dashboard) }
-        // Tier 6 or 0: + apps (included in full list above)
-        return items
+        return SidebarNavItem.mainItems.filter { $0.requiredTier <= tier }
     }
 
     /// Color for focus status indicator (green = focused, orange = distracted, nil = no status)
@@ -149,7 +156,7 @@ struct SidebarView: View {
                 // Main navigation section
                 VStack(alignment: .leading, spacing: 0) {
                     // Main navigation items
-                    ForEach(visibleMainItems, id: \.rawValue) { item in
+                    ForEach(SidebarNavItem.mainItems, id: \.rawValue) { item in
                         Group {
                             if item == .conversations {
                                 // Conversations - icon shows audio activity when recording
@@ -240,15 +247,11 @@ struct SidebarView: View {
                                 )
                             }
                         }
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .scale(scale: 0.8)).combined(with: .offset(x: -20)),
-                            removal: .opacity
-                        ))
                         .overlay(
                             TierUnlockCelebration(isActive: newlyUnlockedItems.contains(item))
                         )
                     }
-                    .animation(.easeOut(duration: 0.4), value: visibleMainItems.map(\.rawValue))
+                    .animation(.easeOut(duration: 0.4), value: currentTierLevel)
 
                     Spacer()
 
