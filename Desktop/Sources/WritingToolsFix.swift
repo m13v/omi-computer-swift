@@ -6,7 +6,7 @@ extension View {
     @ViewBuilder
     func if_available_writingToolsNone() -> some View {
         if #available(macOS 15.1, *) {
-            self.writingToolsBehavior(.none)
+            self.writingToolsBehavior(.disabled)
         } else {
             self
         }
