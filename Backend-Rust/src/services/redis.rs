@@ -147,6 +147,73 @@ impl RedisService {
     }
 
     // ============================================================================
+    // TASK SHARING
+    // ============================================================================
+
+    /// Store task share data in Redis with 30-day TTL
+    /// Key format: task_share:{token}
+    pub async fn store_task_share(
+        &self,
+        token: &str,
+        uid: &str,
+        display_name: &str,
+        task_ids: &[String],
+    ) -> Result<(), redis::RedisError> {
+        let mut conn = self.get_connection().await?;
+        let key = format!("task_share:{}", token);
+        let value = serde_json::json!({
+            "uid": uid,
+            "display_name": display_name,
+            "task_ids": task_ids,
+        });
+        let _: () = conn.set_ex(&key, value.to_string(), 30 * 24 * 60 * 60).await?;
+        tracing::info!("Stored task share: {} -> {} tasks", token, task_ids.len());
+        Ok(())
+    }
+
+    /// Get task share data from Redis
+    /// Returns (uid, display_name, task_ids) or None if expired/missing
+    pub async fn get_task_share(
+        &self,
+        token: &str,
+    ) -> Result<Option<(String, String, Vec<String>)>, redis::RedisError> {
+        let mut conn = self.get_connection().await?;
+        let key = format!("task_share:{}", token);
+        let raw: Option<String> = conn.get(&key).await?;
+        match raw {
+            Some(data) => {
+                if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&data) {
+                    let uid = parsed["uid"].as_str().unwrap_or("").to_string();
+                    let display_name = parsed["display_name"].as_str().unwrap_or("").to_string();
+                    let task_ids: Vec<String> = parsed["task_ids"]
+                        .as_array()
+                        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
+                        .unwrap_or_default();
+                    Ok(Some((uid, display_name, task_ids)))
+                } else {
+                    Ok(None)
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    /// Atomically try to accept a task share for a user
+    /// Returns true if this is a new acceptance, false if already accepted
+    pub async fn try_accept_task_share(
+        &self,
+        token: &str,
+        uid: &str,
+    ) -> Result<bool, redis::RedisError> {
+        let mut conn = self.get_connection().await?;
+        let key = format!("task_share:{}:accepted", token);
+        let added: i32 = conn.sadd(&key, uid).await?;
+        // Set 30-day TTL on the accepted set
+        let _: () = conn.expire(&key, 30 * 24 * 60 * 60).await?;
+        Ok(added == 1)
+    }
+
+    // ============================================================================
     // APP INSTALLS - matches Python backend redis_db.py
     // ============================================================================
 
