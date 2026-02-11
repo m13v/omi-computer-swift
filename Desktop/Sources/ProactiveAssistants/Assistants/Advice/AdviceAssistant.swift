@@ -196,8 +196,13 @@ actor AdviceAssistant: ProactiveAssistant {
             AnalyticsManager.shared.adviceGenerated(category: advice.category.rawValue)
         }
 
-        // Send notification
-        await sendAdviceNotification(advice: advice)
+        // Send notification if enabled
+        let notificationsEnabled = await MainActor.run {
+            AdviceAssistantSettings.shared.notificationsEnabled
+        }
+        if notificationsEnabled {
+            await sendAdviceNotification(advice: advice)
+        }
 
         // Send event to Flutter
         sendEvent("adviceProvided", [
