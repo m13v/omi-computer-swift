@@ -444,6 +444,9 @@ struct TaskTestRunnerView: View {
                 let settings = TaskAssistantSettings.shared
                 return (settings.allowedApps, TaskAssistantSettings.browserApps, settings.browserKeywords)
             }
+            log("TaskTestRunner: allowedApps = \(allowedApps)")
+            log("TaskTestRunner: browserApps = \(browserApps)")
+            log("TaskTestRunner: browserPatterns count = \(browserPatterns.count)")
 
             // Fetch all filtered screenshots chronologically from last 24h
             log("TaskTestRunner: Fetching screenshots from last 24h with filters")
