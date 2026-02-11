@@ -344,11 +344,8 @@ async fn share_tasks(
         }
     }
 
-    // Get sender display name
-    let display_name = match state.firestore.get_user_profile(&user.uid).await {
-        Ok(profile) => profile.name.unwrap_or_else(|| "Someone".to_string()),
-        Err(_) => "Someone".to_string(),
-    };
+    // Get sender display name from Firebase token
+    let display_name = user.name.clone().unwrap_or_else(|| "Someone".to_string());
 
     // Generate token and store in Redis
     let token = uuid::Uuid::new_v4().simple().to_string();
