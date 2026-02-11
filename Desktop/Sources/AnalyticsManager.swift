@@ -686,6 +686,7 @@ class AnalyticsManager {
         // -- Focus Assistant --
         let focus = FocusAssistantSettings.shared
         props["focus_enabled"] = focus.isEnabled
+        props["focus_notifications_enabled"] = focus.notificationsEnabled
         props["focus_cooldown_interval"] = focus.cooldownInterval
         props["focus_has_custom_prompt"] = focus.analysisPrompt != FocusAssistantSettings.defaultAnalysisPrompt
         props["focus_prompt_length"] = focus.analysisPrompt.count
@@ -694,6 +695,7 @@ class AnalyticsManager {
         // -- Task Extraction Assistant --
         let task = TaskAssistantSettings.shared
         props["task_enabled"] = task.isEnabled
+        props["task_notifications_enabled"] = task.notificationsEnabled
         props["task_extraction_interval"] = task.extractionInterval
         props["task_min_confidence"] = task.minConfidence
         props["task_has_custom_prompt"] = task.analysisPrompt != TaskAssistantSettings.defaultAnalysisPrompt
@@ -714,6 +716,7 @@ class AnalyticsManager {
         // -- Advice Assistant --
         let advice = AdviceAssistantSettings.shared
         props["advice_enabled"] = advice.isEnabled
+        props["advice_notifications_enabled"] = advice.notificationsEnabled
         props["advice_extraction_interval"] = advice.extractionInterval
         props["advice_min_confidence"] = advice.minConfidence
         props["advice_has_custom_prompt"] = advice.analysisPrompt != AdviceAssistantSettings.defaultAnalysisPrompt
