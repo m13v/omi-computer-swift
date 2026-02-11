@@ -1125,7 +1125,7 @@ struct NavItemView: View {
     @State private var isHovered = false
 
     /// Foreground color for icon and text when locked
-    private var lockedColor: Color { OmiColors.textQuaternary }
+    private var lockedColor: Color { OmiColors.textQuaternary.opacity(0.45) }
 
     var body: some View {
         HStack(spacing: 12) {
