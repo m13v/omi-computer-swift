@@ -3287,12 +3287,14 @@ struct FocusSettingsResponse: Codable {
     var enabled: Bool?
     var analysisPrompt: String?
     var cooldownInterval: Int?
+    var notificationsEnabled: Bool?
     var excludedApps: [String]?
 
     enum CodingKeys: String, CodingKey {
         case enabled
         case analysisPrompt = "analysis_prompt"
         case cooldownInterval = "cooldown_interval"
+        case notificationsEnabled = "notifications_enabled"
         case excludedApps = "excluded_apps"
     }
 }
@@ -3302,6 +3304,7 @@ struct TaskSettingsResponse: Codable {
     var analysisPrompt: String?
     var extractionInterval: Double?
     var minConfidence: Double?
+    var notificationsEnabled: Bool?
     var allowedApps: [String]?
     var browserKeywords: [String]?
 
@@ -3310,6 +3313,7 @@ struct TaskSettingsResponse: Codable {
         case analysisPrompt = "analysis_prompt"
         case extractionInterval = "extraction_interval"
         case minConfidence = "min_confidence"
+        case notificationsEnabled = "notifications_enabled"
         case allowedApps = "allowed_apps"
         case browserKeywords = "browser_keywords"
     }
@@ -3320,6 +3324,7 @@ struct AdviceSettingsResponse: Codable {
     var analysisPrompt: String?
     var extractionInterval: Double?
     var minConfidence: Double?
+    var notificationsEnabled: Bool?
     var excludedApps: [String]?
 
     enum CodingKeys: String, CodingKey {
@@ -3327,6 +3332,7 @@ struct AdviceSettingsResponse: Codable {
         case analysisPrompt = "analysis_prompt"
         case extractionInterval = "extraction_interval"
         case minConfidence = "min_confidence"
+        case notificationsEnabled = "notifications_enabled"
         case excludedApps = "excluded_apps"
     }
 }
