@@ -7070,43 +7070,76 @@ impl FirestoreService {
         &self,
         uid: &str,
     ) -> Result<(i32, i32), Box<dyn std::error::Error + Send + Sync>> {
-        // Use same URL pattern as working get_action_items method
         let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
-        let url = format!("{}:runQuery", parent);
+        let agg_url = format!("{}:runAggregationQuery", parent);
 
-        let query = json!({
-            "structuredQuery": {
-                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
-                "limit": 2000
+        let structured_query = json!({
+            "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}]
+        });
+
+        // Count total and completed in parallel using aggregation queries
+        let total_query = json!({
+            "structuredAggregationQuery": {
+                "structuredQuery": structured_query,
+                "aggregations": [{"alias": "count", "count": {}}]
             }
         });
 
-        let response = self
-            .build_request(reqwest::Method::POST, &url)
-            .await?
-            .json(&query)
-            .send()
-            .await?;
-
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(format!("Firestore query error: {}", error_text).into());
-        }
-
-        let results: Vec<Value> = response.json().await?;
-        let mut completed = 0;
-        let mut total = 0;
-
-        for result in results {
-            if let Some(doc) = result.get("document") {
-                if let Some(fields) = doc.get("fields") {
-                    total += 1;
-                    if self.parse_bool(fields, "completed").unwrap_or(false) {
-                        completed += 1;
+        let completed_query = json!({
+            "structuredAggregationQuery": {
+                "structuredQuery": {
+                    "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                    "where": {
+                        "fieldFilter": {
+                            "field": {"fieldPath": "completed"},
+                            "op": "EQUAL",
+                            "value": {"booleanValue": true}
+                        }
                     }
-                }
+                },
+                "aggregations": [{"alias": "count", "count": {}}]
             }
-        }
+        });
+
+        let (total_resp, completed_resp) = tokio::join!(
+            async {
+                self.build_request(reqwest::Method::POST, &agg_url)
+                    .await?
+                    .json(&total_query)
+                    .send()
+                    .await
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
+            },
+            async {
+                self.build_request(reqwest::Method::POST, &agg_url)
+                    .await?
+                    .json(&completed_query)
+                    .send()
+                    .await
+                    .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
+            }
+        );
+
+        let parse_count = |response: reqwest::Response| async move {
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                return Err(format!("Firestore aggregation query error: {}", error_text).into());
+            }
+            let results: Vec<Value> = response.json().await?;
+            let count = results
+                .first()
+                .and_then(|r| r.get("result"))
+                .and_then(|r| r.get("aggregateFields"))
+                .and_then(|f| f.get("count"))
+                .and_then(|c| c.get("integerValue"))
+                .and_then(|v| v.as_str())
+                .and_then(|s| s.parse::<i32>().ok())
+                .unwrap_or(0);
+            Ok::<i32, Box<dyn std::error::Error + Send + Sync>>(count)
+        };
+
+        let total = parse_count(total_resp?).await?;
+        let completed = parse_count(completed_resp?).await?;
 
         tracing::info!("Overall score for user {}: {}/{} tasks completed", uid, completed, total);
         Ok((completed, total))
