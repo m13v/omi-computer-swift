@@ -640,6 +640,7 @@ struct ChatBubble: View {
                     Markdown(message.text)
                         .markdownTheme(message.sender == .user ? .userMessage : .aiMessage)
                         .textSelection(.enabled)
+                        .if_available_writingToolsNone()
                         .padding(.horizontal, 14)
                         .padding(.vertical, 10)
                         .background(message.sender == .user ? OmiColors.purplePrimary : OmiColors.backgroundSecondary)
