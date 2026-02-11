@@ -18,6 +18,7 @@ class ViewModelContainer: ObservableObject {
     @Published var isInitialLoadComplete = false
     @Published var isLoading = false
     @Published var databaseInitFailed = false
+    @Published var initStatusMessage: String = "Preparing your data..."
 
     /// Load all data in parallel at app launch
     func loadAllData() async {
@@ -31,6 +32,7 @@ class ViewModelContainer: ObservableObject {
         do {
             try await RewindDatabase.shared.initialize()
             databaseInitFailed = false
+            initStatusMessage = "Loading your content..."
         } catch {
             logError("ViewModelContainer: Database pre-init failed, DB-dependent loads will be skipped", error: error)
             databaseInitFailed = true
