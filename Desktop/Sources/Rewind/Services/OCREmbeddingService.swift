@@ -1,24 +1,52 @@
 import Foundation
 import Accelerate
 
-/// Actor-based service for embedding ocr_texts entries using Gemini embeddings
+/// Actor-based service for embedding screenshot OCR text using Gemini embeddings
 /// and performing disk-based vector search (no in-memory index).
-/// Embeds individual deduplicated text blocks from the ocr_texts table,
-/// then resolves matches back to screenshots via ocr_occurrences.
+/// Embeds per-screenshot concatenated OCR text with app context prefix.
 actor OCREmbeddingService {
     static let shared = OCREmbeddingService()
 
     private let embeddingDimension = 3072
-    private let minTextLength = 10
+    private let minTextLength = 20
 
     private init() {}
 
+    // MARK: - Text Formatting
+
+    /// Format screenshot text for embedding: prepend app context for better retrieval
+    static func formatForEmbedding(ocrText: String, appName: String, windowTitle: String?) -> String {
+        var result = "[\(appName)]"
+        if let title = windowTitle, !title.isEmpty {
+            result += " \(title)"
+        }
+        result += "\n\(ocrText)"
+        return result
+    }
+
+    // MARK: - Single Embedding (for new screenshots in pipeline)
+
+    /// Embed a single screenshot's OCR text and store the result
+    func embedScreenshot(id: Int64, ocrText: String, appName: String, windowTitle: String?) async {
+        guard ocrText.count >= minTextLength else { return }
+
+        let formatted = Self.formatForEmbedding(ocrText: ocrText, appName: appName, windowTitle: windowTitle)
+
+        do {
+            let embedding = try await EmbeddingService.shared.embed(text: formatted)
+            let data = await EmbeddingService.shared.floatsToData(embedding)
+            try await RewindDatabase.shared.updateScreenshotEmbedding(id: id, embedding: data)
+        } catch {
+            logError("OCREmbeddingService: Failed to embed screenshot \(id)", error: error)
+        }
+    }
+
     // MARK: - Backfill
 
-    /// Backfill embeddings for existing ocr_texts rows that have no embedding
+    /// Backfill embeddings for existing screenshots that have OCR text but no embedding
     func backfillIfNeeded() async {
         do {
-            let status = try await RewindDatabase.shared.getOCRTextEmbeddingBackfillStatus()
+            let status = try await RewindDatabase.shared.getScreenshotEmbeddingBackfillStatus()
             if status.completed {
                 log("OCREmbeddingService: Backfill already complete, skipping")
                 return
@@ -30,10 +58,10 @@ actor OCREmbeddingService {
             var totalProcessed = status.processedCount
 
             while true {
-                let items = try await RewindDatabase.shared.getOCRTextsMissingEmbeddings(limit: batchSize)
+                let items = try await RewindDatabase.shared.getScreenshotsMissingEmbeddings(limit: batchSize)
                 if items.isEmpty { break }
 
-                let texts = items.map { $0.text }
+                let texts = items.map { Self.formatForEmbedding(ocrText: $0.ocrText, appName: $0.appName, windowTitle: $0.windowTitle) }
                 let embeddings: [[Float]]
                 do {
                     embeddings = try await EmbeddingService.shared.embedBatch(texts: texts)
@@ -45,14 +73,14 @@ actor OCREmbeddingService {
                 for (i, embedding) in embeddings.enumerated() where i < items.count {
                     let item = items[i]
                     let data = await EmbeddingService.shared.floatsToData(embedding)
-                    try await RewindDatabase.shared.updateOCRTextEmbedding(id: item.id, embedding: data)
+                    try await RewindDatabase.shared.updateScreenshotEmbedding(id: item.id, embedding: data)
                 }
 
                 totalProcessed += items.count
 
                 // Update progress every 1000 items
                 if totalProcessed % 1000 < batchSize {
-                    try await RewindDatabase.shared.updateOCRTextEmbeddingBackfillStatus(completed: false, processedCount: totalProcessed)
+                    try await RewindDatabase.shared.updateScreenshotEmbeddingBackfillStatus(completed: false, processedCount: totalProcessed)
                     log("OCREmbeddingService: Backfill progress: \(totalProcessed) items")
                 }
 
@@ -61,7 +89,7 @@ actor OCREmbeddingService {
             }
 
             // Mark complete
-            try await RewindDatabase.shared.updateOCRTextEmbeddingBackfillStatus(completed: true, processedCount: totalProcessed)
+            try await RewindDatabase.shared.updateScreenshotEmbeddingBackfillStatus(completed: true, processedCount: totalProcessed)
             log("OCREmbeddingService: Backfill complete — \(totalProcessed) items embedded")
 
         } catch {
@@ -72,8 +100,7 @@ actor OCREmbeddingService {
     // MARK: - Disk-Based Semantic Search
 
     /// Search for screenshots similar to a query using disk-based vector search.
-    /// Reads ocr_texts embedding BLOBs (date-filtered via ocr_occurrences→screenshots join),
-    /// computes cosine similarity, then resolves top-K text matches back to screenshot IDs.
+    /// Reads screenshot embedding BLOBs in batches, computes cosine similarity via vDSP.
     func searchSimilar(
         query: String,
         startDate: Date,
@@ -86,10 +113,10 @@ actor OCREmbeddingService {
 
         let batchSize = 5000
         var offset = 0
-        var topTextResults: [(ocrTextId: Int64, similarity: Float)] = []
+        var topResults: [(screenshotId: Int64, similarity: Float)] = []
 
         while true {
-            let batch = try await RewindDatabase.shared.readOCRTextEmbeddingBatch(
+            let batch = try await RewindDatabase.shared.readEmbeddingBatch(
                 startDate: startDate,
                 endDate: endDate,
                 appFilter: appFilter,
@@ -99,42 +126,24 @@ actor OCREmbeddingService {
 
             if batch.isEmpty { break }
 
-            for (ocrTextId, embeddingData) in batch {
+            for (screenshotId, embeddingData) in batch {
                 guard let storedEmbedding = dataToFloats(embeddingData) else { continue }
                 let sim = cosineSimilarity(queryEmbedding, storedEmbedding)
-                topTextResults.append((ocrTextId: ocrTextId, similarity: sim))
+                topResults.append((screenshotId: screenshotId, similarity: sim))
             }
 
             // Compact top results periodically to keep memory bounded
-            if topTextResults.count > topK * 4 {
-                topTextResults.sort { $0.similarity > $1.similarity }
-                topTextResults = Array(topTextResults.prefix(topK * 2))
+            if topResults.count > topK * 2 {
+                topResults.sort { $0.similarity > $1.similarity }
+                topResults = Array(topResults.prefix(topK))
             }
 
             offset += batchSize
         }
 
-        // Get top-K text matches
-        topTextResults.sort { $0.similarity > $1.similarity }
-        let topTexts = Array(topTextResults.prefix(topK))
-
-        guard !topTexts.isEmpty else { return [] }
-
-        // Resolve ocr_text IDs → screenshot IDs
-        let ocrTextIds = topTexts.map { $0.ocrTextId }
-        let screenshotIds = try await RewindDatabase.shared.getScreenshotIdsForOCRTexts(
-            ocrTextIds: ocrTextIds,
-            startDate: startDate,
-            endDate: endDate,
-            appFilter: appFilter
-        )
-
-        // For each screenshot, find the best similarity from its linked texts.
-        // Since getScreenshotIdsForOCRTexts just returns IDs, we use the max similarity
-        // from the matched text set as the score for each screenshot.
-        // (All returned screenshots matched at least one top text, so use the global max.)
-        let maxSim = topTexts.first?.similarity ?? 0
-        return screenshotIds.map { (screenshotId: $0, similarity: maxSim) }
+        // Final sort and trim
+        topResults.sort { $0.similarity > $1.similarity }
+        return Array(topResults.prefix(topK))
     }
 
     // MARK: - Helpers
