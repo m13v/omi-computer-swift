@@ -4085,6 +4085,7 @@ impl FirestoreService {
             enabled: self.parse_bool(f, "enabled").ok(),
             analysis_prompt: self.parse_string(f, "analysis_prompt"),
             cooldown_interval: self.parse_int(f, "cooldown_interval"),
+            notifications_enabled: self.parse_bool(f, "notifications_enabled").ok(),
             excluded_apps: Some(self.parse_string_array(f, "excluded_apps")),
         });
 
@@ -4094,6 +4095,7 @@ impl FirestoreService {
             analysis_prompt: self.parse_string(f, "analysis_prompt"),
             extraction_interval: self.parse_float(f, "extraction_interval"),
             min_confidence: self.parse_float(f, "min_confidence"),
+            notifications_enabled: self.parse_bool(f, "notifications_enabled").ok(),
             allowed_apps: Some(self.parse_string_array(f, "allowed_apps")),
             browser_keywords: Some(self.parse_string_array(f, "browser_keywords")),
         });
@@ -4104,6 +4106,7 @@ impl FirestoreService {
             analysis_prompt: self.parse_string(f, "analysis_prompt"),
             extraction_interval: self.parse_float(f, "extraction_interval"),
             min_confidence: self.parse_float(f, "min_confidence"),
+            notifications_enabled: self.parse_bool(f, "notifications_enabled").ok(),
             excluded_apps: Some(self.parse_string_array(f, "excluded_apps")),
         });
 
