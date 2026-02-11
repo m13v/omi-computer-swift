@@ -148,11 +148,6 @@ class FocusStorage: ObservableObject {
         }
 
         saveToStorage()
-
-        // Sync to backend in background
-        Task {
-            await syncSession(session)
-        }
     }
 
     /// Get today's sessions
@@ -357,53 +352,6 @@ class FocusStorage: ObservableObject {
             UserDefaults.standard.set(data, forKey: storageKey)
         } catch {
             logError("Failed to save focus sessions", error: error)
-        }
-    }
-
-    private func syncSession(_ session: StoredFocusSession) async {
-        do {
-            // Build content for the memory
-            let statusText = session.status == .focused ? "Focused" : "Distracted"
-            let content = "\(statusText) on \(session.appOrSite): \(session.description)"
-
-            // Build tags: ["focus", "focused"/"distracted", "app:{appName}"]
-            let statusTag = session.status == .focused ? "focused" : "distracted"
-            let appTag = "app:\(session.appOrSite)"
-            var tags = ["focus", statusTag, appTag]
-
-            // Add message as additional context if present
-            if let message = session.message, !message.isEmpty {
-                tags.append("has-message")
-            }
-
-            let response = try await APIClient.shared.createMemory(
-                content: content,
-                visibility: "private",
-                category: .system,
-                tags: tags,
-                source: "desktop"
-            )
-
-            // Mark as synced with the backend memory ID
-            await MainActor.run {
-                if let index = self.sessions.firstIndex(where: { $0.id == session.id }) {
-                    // Update the session with backend ID for future reference
-                    let syncedSession = StoredFocusSession(
-                        id: response.id,  // Use backend ID
-                        status: session.status,
-                        appOrSite: session.appOrSite,
-                        description: session.description,
-                        message: session.message,
-                        createdAt: session.createdAt,
-                        durationSeconds: session.durationSeconds,
-                        isSynced: true
-                    )
-                    self.sessions[index] = syncedSession
-                    self.saveToStorage()
-                }
-            }
-        } catch {
-            logError("Failed to sync focus session as memory to backend", error: error)
         }
     }
 
