@@ -380,6 +380,207 @@ async fn fetch_sentry_event_details(
     (feedback_message, reporter_name, reporter_email, Some(extra))
 }
 
+/// POST /v1/webhooks/sentry/poll - Poll Sentry for new feedback and create action items
+/// This is needed because Sentry webhooks don't fire for feedback category issues
+/// (see https://github.com/getsentry/sentry/issues/89436)
+async fn poll_sentry_feedback(
+    State(state): State<AppState>,
+) -> Result<Json<Value>, StatusCode> {
+    let admin_uid = state
+        .config
+        .sentry_admin_uid
+        .as_deref()
+        .ok_or_else(|| {
+            tracing::error!("Sentry poll: SENTRY_ADMIN_UID not configured");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    let auth_token = state
+        .config
+        .sentry_auth_token
+        .as_deref()
+        .ok_or_else(|| {
+            tracing::error!("Sentry poll: SENTRY_AUTH_TOKEN not configured");
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    tracing::info!("Sentry poll: fetching recent feedback issues");
+
+    // 1. Fetch existing sentry_feedback action items to get already-processed issue IDs
+    let existing_items = state
+        .firestore
+        .get_action_items(
+            admin_uid,
+            200,   // limit
+            0,     // offset
+            None,  // completed_filter
+            None,  // conversation_id
+            None,  // start_date
+            None,  // end_date
+            None,  // due_start_date
+            None,  // due_end_date
+            None,  // sort_by
+            None,  // include_deleted
+        )
+        .await
+        .unwrap_or_default();
+
+    // Extract sentry_issue_ids from existing action items' metadata
+    let mut existing_issue_ids: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for item in &existing_items {
+        if item.source.as_deref() != Some("sentry_feedback") {
+            continue;
+        }
+        if let Some(meta_str) = &item.metadata {
+            if let Ok(meta) = serde_json::from_str::<Value>(meta_str) {
+                if let Some(id) = meta.get("sentry_issue_id").and_then(|v| v.as_str()) {
+                    existing_issue_ids.insert(id.to_string());
+                }
+            }
+        }
+    }
+
+    tracing::info!(
+        "Sentry poll: found {} existing sentry_feedback action items",
+        existing_issue_ids.len()
+    );
+
+    // 2. Fetch recent feedback issues from Sentry
+    let client = reqwest::Client::new();
+    let sentry_url = "https://sentry.io/api/0/organizations/mediar-n5/issues/?query=issue.category:feedback&limit=25&sort=date";
+
+    let response = client
+        .get(sentry_url)
+        .header("Authorization", format!("Bearer {}", auth_token))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("Sentry poll: API request failed: {}", e);
+            StatusCode::INTERNAL_SERVER_ERROR
+        })?;
+
+    if !response.status().is_success() {
+        tracing::error!("Sentry poll: API returned {}", response.status());
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let issues: Vec<Value> = response.json().await.map_err(|e| {
+        tracing::error!("Sentry poll: failed to parse issues: {}", e);
+        StatusCode::INTERNAL_SERVER_ERROR
+    })?;
+
+    tracing::info!("Sentry poll: fetched {} feedback issues from Sentry", issues.len());
+
+    // 3. Create action items for new issues
+    let mut created = 0;
+    let mut skipped = 0;
+
+    for issue in &issues {
+        let issue_id = issue.get("id").and_then(|v| v.as_str()).unwrap_or("");
+        let short_id = issue.get("shortId").and_then(|v| v.as_str()).unwrap_or("unknown");
+
+        if issue_id.is_empty() {
+            continue;
+        }
+
+        // Skip if already processed
+        if existing_issue_ids.contains(issue_id) {
+            skipped += 1;
+            continue;
+        }
+
+        let issue_title = issue.get("title").and_then(|v| v.as_str()).unwrap_or("");
+
+        tracing::info!("Sentry poll: processing new feedback issue {} ({})", issue_id, short_id);
+
+        // Fetch full event details
+        let (feedback_message, reporter_name, reporter_email, metadata) =
+            fetch_sentry_event_details(&state, issue_id, short_id).await;
+
+        // Build description
+        let description = if !feedback_message.is_empty() {
+            format!("[Sentry Feedback] {}: {}", short_id, feedback_message)
+        } else if !issue_title.is_empty() {
+            format!("[Sentry Feedback] {}: {}", short_id, issue_title)
+        } else {
+            format!("[Sentry Feedback] {}", short_id)
+        };
+
+        // Build metadata JSON
+        let mut meta = json!({
+            "sentry_issue_id": issue_id,
+            "sentry_short_id": short_id,
+            "sentry_url": format!("https://mediar-n5.sentry.io/issues/{}/", issue_id),
+        });
+
+        if !reporter_name.is_empty() {
+            meta["reporter_name"] = json!(reporter_name);
+        }
+        if !reporter_email.is_empty() {
+            meta["reporter_email"] = json!(reporter_email);
+        }
+        if let Some(extra) = metadata {
+            if let Value::Object(extra_map) = extra {
+                if let Value::Object(ref mut meta_map) = meta {
+                    for (k, v) in extra_map {
+                        meta_map.insert(k, v);
+                    }
+                }
+            }
+        }
+
+        let metadata_str = serde_json::to_string(&meta).unwrap_or_default();
+
+        match state
+            .firestore
+            .create_action_item(
+                admin_uid,
+                &description,
+                None,
+                Some("sentry_feedback"),
+                Some("high"),
+                Some(&metadata_str),
+                Some("other"),
+                None,
+            )
+            .await
+        {
+            Ok(item) => {
+                tracing::info!(
+                    "Sentry poll: created action item {} for issue {} ({})",
+                    item.id,
+                    issue_id,
+                    short_id
+                );
+                created += 1;
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Sentry poll: failed to create action item for issue {}: {}",
+                    issue_id,
+                    e
+                );
+            }
+        }
+    }
+
+    tracing::info!(
+        "Sentry poll: done. created={}, skipped={} (already existed), total_fetched={}",
+        created,
+        skipped,
+        issues.len()
+    );
+
+    Ok(Json(json!({
+        "status": "ok",
+        "created": created,
+        "skipped": skipped,
+        "total_fetched": issues.len()
+    })))
+}
+
 pub fn webhook_routes() -> Router<AppState> {
-    Router::new().route("/v1/webhooks/sentry", post(handle_sentry_webhook))
+    Router::new()
+        .route("/v1/webhooks/sentry", post(handle_sentry_webhook))
+        .route("/v1/webhooks/sentry/poll", post(poll_sentry_feedback))
 }
