@@ -514,6 +514,7 @@ actor ActionItemStorage {
                             WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NOT NULL
                         """) ?? 0
                         newRecord.relevanceScore = maxScore + 1
+                        newRecord.scoredAt = Date()
                     }
                     try newRecord.insert(database)
                 }
