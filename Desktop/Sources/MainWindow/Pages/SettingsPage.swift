@@ -6,35 +6,50 @@ import UniformTypeIdentifiers
 struct SettingsPage: View {
     @ObservedObject var appState: AppState
     @Binding var selectedSection: SettingsContentView.SettingsSection
+    @Binding var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection?
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Section header
-                HStack {
-                    Text(selectedSection.rawValue)
-                        .font(.system(size: 28, weight: .bold))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .id(selectedSection)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.15), value: selectedSection)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Section header
+                    HStack {
+                        Text(selectedSection.rawValue)
+                            .font(.system(size: 28, weight: .bold))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .id(selectedSection)
+                            .transition(.opacity)
+                            .animation(.easeInOut(duration: 0.15), value: selectedSection)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.top, 32)
+                    .padding(.bottom, 24)
+
+                    // Settings content - embedded SettingsView with dark theme override
+                    SettingsContentView(
+                        appState: appState,
+                        selectedSection: $selectedSection,
+                        selectedAdvancedSubsection: $selectedAdvancedSubsection,
+                        scrollProxy: proxy
+                    )
+                    .padding(.horizontal, 32)
 
                     Spacer()
                 }
-                .padding(.horizontal, 32)
-                .padding(.top, 32)
-                .padding(.bottom, 24)
-
-                // Settings content - embedded SettingsView with dark theme override
-                SettingsContentView(appState: appState, selectedSection: $selectedSection)
-                    .padding(.horizontal, 32)
-
-                Spacer()
             }
-        }
-        .background(OmiColors.backgroundSecondary.opacity(0.3))
-        .onAppear {
-            AnalyticsManager.shared.settingsPageOpened()
+            .background(OmiColors.backgroundSecondary.opacity(0.3))
+            .onAppear {
+                AnalyticsManager.shared.settingsPageOpened()
+            }
+            .onChange(of: selectedAdvancedSubsection) { _, newValue in
+                if let subsection = newValue {
+                    withAnimation {
+                        proxy.scrollTo(subsection, anchor: .top)
+                    }
+                }
+            }
         }
     }
 }
@@ -113,6 +128,10 @@ struct SettingsContentView: View {
 
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
+    @Binding var selectedAdvancedSubsection: AdvancedSubsection?
+
+    // Scroll proxy for scrolling to subsections
+    var scrollProxy: ScrollViewProxy
 
     // Notification settings (from backend)
     @State private var dailySummaryEnabled: Bool = true
@@ -200,9 +219,16 @@ struct SettingsContentView: View {
 
     @State private var showResetOnboardingAlert: Bool = false
 
-    init(appState: AppState, selectedSection: Binding<SettingsSection>) {
+    init(
+        appState: AppState,
+        selectedSection: Binding<SettingsSection>,
+        selectedAdvancedSubsection: Binding<AdvancedSubsection?>,
+        scrollProxy: ScrollViewProxy
+    ) {
         self.appState = appState
         self._selectedSection = selectedSection
+        self._selectedAdvancedSubsection = selectedAdvancedSubsection
+        self.scrollProxy = scrollProxy
         let settings = AssistantSettings.shared
         _isMonitoring = State(initialValue: ProactiveAssistantsPlugin.shared.isMonitoring)
         _isTranscribing = State(initialValue: appState.isTranscribing)
