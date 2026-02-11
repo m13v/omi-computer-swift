@@ -506,7 +506,15 @@ actor ActionItemStorage {
                     try orphan.update(database)
                     adopted += 1
                 } else {
-                    let newRecord = ActionItemRecord.from(item)
+                    var newRecord = ActionItemRecord.from(item)
+                    // Auto-assign max+1 score for tasks arriving without a score
+                    if newRecord.relevanceScore == nil {
+                        let maxScore = try Int.fetchOne(database, sql: """
+                            SELECT COALESCE(MAX(relevanceScore), 0) FROM action_items
+                            WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NOT NULL
+                        """) ?? 0
+                        newRecord.relevanceScore = maxScore + 1
+                    }
                     try newRecord.insert(database)
                 }
             }
@@ -519,6 +527,17 @@ actor ActionItemStorage {
         }
     }
 
+
+    /// Returns all active scored tasks for batch-syncing scores to backend
+    func getAllScoredTasks() async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+        return try await db.read { database in
+            try ActionItemRecord
+                .filter(Column("deleted") == false && Column("completed") == false && Column("relevanceScore") != nil)
+                .fetchAll(database)
+                .map { $0.toTaskActionItem() }
+        }
+    }
 
     /// Permanently delete an action item from local cache by backend ID.
     /// Used when user explicitly deletes a task.
