@@ -84,7 +84,7 @@ class AdviceStorage: ObservableObject {
 
     // MARK: - Public Methods
 
-    /// Add new advice to storage and sync to backend
+    /// Add new advice to storage for UI display (backend sync handled by AdviceAssistant)
     func addAdvice(_ result: AdviceExtractionResult) {
         guard let advice = result.advice else { return }
 
@@ -95,15 +95,10 @@ class AdviceStorage: ObservableObject {
             currentActivity: result.currentActivity
         )
 
-        // Add locally first for immediate UI update
+        // Add locally for immediate UI update
         adviceHistory.insert(storedAdvice, at: 0)
         trimLocalCache()
         saveToLocalCache()
-
-        // Sync to backend
-        Task {
-            await createAdviceOnBackend(storedAdvice)
-        }
     }
 
     /// Mark advice as read
@@ -224,33 +219,6 @@ class AdviceStorage: ObservableObject {
         }
 
         isSyncing = false
-    }
-
-    private func createAdviceOnBackend(_ advice: StoredAdvice) async {
-        do {
-            // Build tags: ["tips", "<category>"]
-            let categoryTag = advice.advice.category.rawValue.lowercased()
-            let tags = ["tips", categoryTag]
-
-            // Create as memory with tags instead of separate advice
-            // source = "screenshot" since tips come from screen capture
-            let response = try await APIClient.shared.createMemory(
-                content: advice.advice.advice,
-                visibility: "private",
-                category: .system, // Tips are stored as system category with tags
-                confidence: advice.advice.confidence,
-                sourceApp: advice.advice.sourceApp,
-                contextSummary: advice.contextSummary,
-                tags: tags,
-                reasoning: advice.advice.reasoning,
-                currentActivity: advice.currentActivity,
-                source: "screenshot"
-            )
-
-            log("Advice: Created as memory with tags \(tags), source=screenshot, ID: \(response.id)")
-        } catch {
-            logError("Advice: Failed to create on backend", error: error)
-        }
     }
 
     private func updateAdviceOnBackend(id: String, isRead: Bool?, isDismissed: Bool?) async {
