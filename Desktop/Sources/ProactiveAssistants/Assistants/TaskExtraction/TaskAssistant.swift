@@ -52,9 +52,15 @@ actor TaskAssistant: ProactiveAssistant {
         guard let deadline = inferredDeadline, !deadline.isEmpty else {
             return nil
         }
+        let startOfToday = Calendar.current.startOfDay(for: Date())
+
         // Try ISO8601 first (e.g. "2025-10-04T14:00:00Z")
         let iso = ISO8601DateFormatter()
         if let date = iso.date(from: deadline) {
+            if date < startOfToday {
+                log("Task: Rejected past due date '\(deadline)' → \(date). Today is \(Date()). Due dates must be today or in the future.")
+                return nil
+            }
             return date
         }
         // Try common date formats
@@ -74,6 +80,10 @@ actor TaskAssistant: ProactiveAssistant {
         for format in formats {
             formatter.dateFormat = format
             if let date = formatter.date(from: deadline) {
+                if date < startOfToday {
+                    log("Task: Rejected past due date '\(deadline)' → \(date). Today is \(Date()). Due dates must be today or in the future.")
+                    return nil
+                }
                 return date
             }
         }
@@ -82,6 +92,12 @@ actor TaskAssistant: ProactiveAssistant {
         let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.date.rawValue)
         if let match = detector?.firstMatch(in: deadline, range: NSRange(deadline.startIndex..., in: deadline)),
            let date = match.date {
+            // Validate that the parsed date is not in the past
+            let startOfToday = Calendar.current.startOfDay(for: Date())
+            if date < startOfToday {
+                log("Task: Rejected past due date '\(deadline)' → \(date). Today is \(Date()). Due dates must be today or in the future.")
+                return nil
+            }
             return date
         }
 
