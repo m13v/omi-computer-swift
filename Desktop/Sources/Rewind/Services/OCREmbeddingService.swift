@@ -10,6 +10,9 @@ actor OCREmbeddingService {
     private let embeddingDimension = 768
     private let minTextLength = 20
 
+    // TESTING: Limit backfill to 10 items for Gemini 768-dim validation
+    private let testLimit = 10
+
     private init() {}
 
     // MARK: - Text Formatting
@@ -59,10 +62,19 @@ actor OCREmbeddingService {
             var hitError = false
 
             while true {
+                // TESTING: Stop after testLimit items
+                if totalProcessed >= testLimit {
+                    log("OCREmbeddingService: Test limit reached (\(testLimit) items), stopping backfill")
+                    break
+                }
+
                 let items = try await RewindDatabase.shared.getScreenshotsMissingEmbeddings(limit: batchSize)
                 if items.isEmpty { break }
 
-                let texts = items.map { Self.formatForEmbedding(ocrText: $0.ocrText, appName: $0.appName, windowTitle: $0.windowTitle) }
+                // TESTING: Limit to remaining items needed
+                let itemsToProcess = Array(items.prefix(testLimit - totalProcessed))
+
+                let texts = itemsToProcess.map { Self.formatForEmbedding(ocrText: $0.ocrText, appName: $0.appName, windowTitle: $0.windowTitle) }
                 let embeddings: [[Float]]
                 do {
                     embeddings = try await EmbeddingService.shared.embedBatch(texts: texts, taskType: "RETRIEVAL_DOCUMENT")
@@ -72,13 +84,13 @@ actor OCREmbeddingService {
                     break
                 }
 
-                for (i, embedding) in embeddings.enumerated() where i < items.count {
-                    let item = items[i]
+                for (i, embedding) in embeddings.enumerated() where i < itemsToProcess.count {
+                    let item = itemsToProcess[i]
                     let data = await EmbeddingService.shared.floatsToData(embedding)
                     try await RewindDatabase.shared.updateScreenshotEmbedding(id: item.id, embedding: data)
                 }
 
-                totalProcessed += items.count
+                totalProcessed += itemsToProcess.count
 
                 // Update progress every 1000 items
                 if totalProcessed % 1000 < batchSize {
