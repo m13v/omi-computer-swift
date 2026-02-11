@@ -289,7 +289,8 @@ struct DashboardPage: View {
                     },
                     onMoveToFolder: { id, folderId in
                         await appState.moveConversationToFolder(id, folderId: folderId)
-                    }
+                    },
+                    appState: appState
                 )
                 .padding(.horizontal, 24)
                 .padding(.bottom, 24)
