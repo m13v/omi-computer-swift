@@ -758,6 +758,36 @@ actor ActionItemStorage {
         }
     }
 
+    /// One-time backfill: assign max+1 sequentially to all active unscored tasks.
+    /// Returns the number of tasks that were backfilled.
+    func backfillUnscoredTasks() async throws -> Int {
+        let db = try await ensureInitialized()
+
+        return try await db.write { database in
+            let maxScore = try Int.fetchOne(database, sql: """
+                SELECT COALESCE(MAX(relevanceScore), 0) FROM action_items
+                WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NOT NULL
+            """) ?? 0
+
+            let unscoredIds = try String.fetchAll(database, sql: """
+                SELECT id FROM action_items
+                WHERE completed = 0 AND deleted = 0 AND relevanceScore IS NULL
+                ORDER BY createdAt ASC
+            """)
+
+            guard !unscoredIds.isEmpty else { return 0 }
+
+            for (index, id) in unscoredIds.enumerated() {
+                try database.execute(
+                    sql: "UPDATE action_items SET relevanceScore = ? WHERE id = ?",
+                    arguments: [maxScore + 1 + index, id]
+                )
+            }
+
+            return unscoredIds.count
+        }
+    }
+
     /// Get the current relevance score range (min and max) for active tasks
     func getRelevanceScoreRange() async throws -> (min: Int, max: Int) {
         let db = try await ensureInitialized()
