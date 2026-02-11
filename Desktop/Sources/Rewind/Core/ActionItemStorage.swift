@@ -607,11 +607,14 @@ actor ActionItemStorage {
     /// Get action items that haven't been synced to backend yet
     func getUnsyncedActionItems() async throws -> [ActionItemRecord] {
         let db = try await ensureInitialized()
+        let ageThreshold = Date().addingTimeInterval(-30)
 
         return try await db.read { database in
             try ActionItemRecord
                 .filter(Column("backendSynced") == false)
+                .filter(Column("backendId") == nil || Column("backendId") == "")
                 .filter(Column("deleted") == false)
+                .filter(Column("createdAt") < ageThreshold)
                 .order(Column("createdAt").asc)
                 .fetchAll(database)
         }
