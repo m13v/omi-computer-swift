@@ -42,6 +42,12 @@ pub struct Config {
     pub posthog_api_key: Option<String>,
     /// PostHog Project ID
     pub posthog_project_id: String,
+    /// Sentry webhook HMAC-SHA256 secret for signature verification
+    pub sentry_webhook_secret: Option<String>,
+    /// Sentry API auth token for fetching event details
+    pub sentry_auth_token: Option<String>,
+    /// Firestore UID where Sentry feedback action items are created
+    pub sentry_admin_uid: Option<String>,
 }
 
 impl Config {
@@ -76,6 +82,9 @@ impl Config {
             posthog_api_key: env::var("POSTHOG_PERSONAL_API_KEY").ok(),
             posthog_project_id: env::var("POSTHOG_PROJECT_ID")
                 .unwrap_or_else(|_| "302298".to_string()),
+            sentry_webhook_secret: env::var("SENTRY_WEBHOOK_SECRET").ok(),
+            sentry_auth_token: env::var("SENTRY_AUTH_TOKEN").ok(),
+            sentry_admin_uid: env::var("SENTRY_ADMIN_UID").ok(),
         }
     }
 
