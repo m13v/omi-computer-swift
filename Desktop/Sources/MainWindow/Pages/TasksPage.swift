@@ -474,8 +474,9 @@ class TasksViewModel: ObservableObject {
                     }
                 }
             }
-            // When non-status filters are applied, query SQLite directly
-            let hasNonStatusFilters = selectedTags.contains(where: { $0.group != .status })
+            // When non-status/non-date filters are applied, query SQLite directly
+            // Date filters (like last7Days) are applied in-memory, not via SQLite
+            let hasNonStatusFilters = selectedTags.contains(where: { $0.group != .status && $0.group != .date })
             if hasNonStatusFilters {
                 Task { await loadFilteredTasksFromDatabase() }
             } else {
@@ -826,7 +827,7 @@ class TasksViewModel: ObservableObject {
 
     /// Load filtered tasks from SQLite when non-status filters are applied
     private func loadFilteredTasksFromDatabase() async {
-        let nonStatusTags = selectedTags.filter { $0.group != .status }
+        let nonStatusTags = selectedTags.filter { $0.group != .status && $0.group != .date }
         let hasDynamicFilters = !selectedDynamicTags.isEmpty
 
         guard !nonStatusTags.isEmpty || hasDynamicFilters else {
@@ -956,6 +957,17 @@ class TasksViewModel: ObservableObject {
             counts[.health] = filterCounts.categories["health"] ?? 0
             counts[.other] = filterCounts.categories["other"] ?? 0
 
+            // Date range counts (computed in-memory)
+            let allTasks = store.incompleteTasks + store.completedTasks
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            counts[.last7Days] = allTasks.filter { task in
+                if let dueAt = task.dueAt {
+                    return dueAt >= sevenDaysAgo
+                } else {
+                    return task.createdAt >= sevenDaysAgo
+                }
+            }.count
+
             // Source counts
             counts[.sourceScreen] = filterCounts.sources["screenshot"] ?? 0
             counts[.sourceOmi] = filterCounts.sources["transcription:omi"] ?? 0
@@ -1084,43 +1096,23 @@ class TasksViewModel: ObservableObject {
 
         // Apply status filters to SQLite results (if needed)
         // Note: Non-status filters are already applied by SQLite query
-        let hasNonStatusFilters = selectedTags.contains(where: { $0.group != .status })
+        // Date filters (like last7Days) are applied in-memory, not via SQLite
+        let hasSQLiteFilters = selectedTags.contains(where: { $0.group != .status && $0.group != .date })
+        let hasDateFilters = selectedTags.contains(where: { $0.group == .date })
         let filteredTasks: [TaskActionItem]
         if !searchText.isEmpty {
             filteredTasks = applyNonStatusTagFilters(sourceTasks)
-        } else if hasNonStatusFilters {
+        } else if hasSQLiteFilters {
             // SQLite already filtered by category/source/priority
-            // But we may still need to apply status filters
-            filteredTasks = applyStatusFilters(sourceTasks)
+            // But we may still need to apply status + date filters
+            let statusFiltered = applyStatusFilters(sourceTasks)
+            filteredTasks = hasDateFilters ? applyDateFilters(statusFiltered) : statusFiltered
         } else {
             filteredTasks = applyTagFilters(sourceTasks)
         }
 
-        // Apply iOS-matching filters when sorting by due date:
-        // 1. Exclude soft-deleted tasks (deleted by AI dedup)
-        // 2. Exclude completed tasks
-        // 3. Filter to last 7 days (by dueAt or createdAt)
-        let ageFiltered: [TaskActionItem]
-        if sortOption == .dueDate {
-            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-            ageFiltered = filteredTasks.filter { task in
-                // Exclude soft-deleted tasks
-                if task.deleted == true { return false }
-                // Exclude completed tasks
-                if task.completed { return false }
-                // 7-day age filter
-                if let dueAt = task.dueAt {
-                    return dueAt >= sevenDaysAgo
-                } else {
-                    return task.createdAt >= sevenDaysAgo
-                }
-            }
-        } else {
-            ageFiltered = filteredTasks
-        }
-
         // Sort
-        let sorted = sortTasks(ageFiltered)
+        let sorted = sortTasks(filteredTasks)
 
         // Apply display cap for filtered/search mode
         if isInFilteredMode {
@@ -1197,6 +1189,15 @@ class TasksViewModel: ObservableObject {
             if statusTags.contains(.done) && task.completed { return true }
             if statusTags.contains(.todo) && !task.completed && task.deleted != true { return true }
             return false
+        }
+    }
+
+    /// Apply only date filters (e.g., last7Days) — used when SQLite handled other filters
+    private func applyDateFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+        let dateTags = selectedTags.filter { $0.group == .date }
+        guard !dateTags.isEmpty else { return tasks }
+        return tasks.filter { task in
+            dateTags.contains { $0.matches(task) }
         }
     }
 
@@ -1517,17 +1518,9 @@ struct TasksPage: View {
 
     // MARK: - Filter Dropdown
 
-    /// Whether any filters are visually active (including implicit age filter from Due Date sort)
-    private var hasEffectiveFilters: Bool {
-        viewModel.hasActiveFilters || viewModel.sortOption == .dueDate
-    }
-
     private var filterLabel: String {
         let totalCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
         if totalCount == 0 {
-            if viewModel.sortOption == .dueDate {
-                return "To Do"
-            }
             return "All"
         } else if totalCount == 1 {
             if let tag = viewModel.selectedTags.first {
@@ -1574,18 +1567,18 @@ struct TasksPage: View {
                 Image(systemName: "line.3.horizontal.decrease")
                     .font(.system(size: 12))
                 Text(filterLabel)
-                    .font(.system(size: 13, weight: hasEffectiveFilters ? .medium : .regular))
+                    .font(.system(size: 13, weight: viewModel.hasActiveFilters ? .medium : .regular))
                 Image(systemName: "chevron.down")
                     .font(.system(size: 10))
             }
-            .foregroundColor(hasEffectiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
+            .foregroundColor(viewModel.hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(8)
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(hasEffectiveFilters ? OmiColors.border : Color.clear, lineWidth: 1)
+                    .stroke(viewModel.hasActiveFilters ? OmiColors.border : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
@@ -1665,48 +1658,6 @@ struct TasksPage: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-
-                    // Implicit filters when sorting by Due Date
-                    // (To Do + not deleted + last 7 days — matches iOS behavior)
-                    if viewModel.sortOption == .dueDate {
-                        Divider()
-                            .padding(.vertical, 4)
-
-                        Text("DUE DATE SORT")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundColor(OmiColors.textTertiary)
-                            .textCase(.uppercase)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 4)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-
-                        ForEach(["To Do only", "Last 7 days", "Exclude deleted"], id: \.self) { label in
-                            HStack {
-                                Image(systemName: label == "To Do only" ? "circle" : label == "Last 7 days" ? "clock.arrow.circlepath" : "trash.slash")
-                                    .font(.system(size: 12))
-                                    .frame(width: 20)
-                                Text(label)
-                                    .font(.system(size: 13))
-                                Spacer()
-                                Text("auto")
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundColor(OmiColors.textTertiary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(OmiColors.backgroundTertiary)
-                                    .cornerRadius(4)
-                                Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundColor(.white)
-                            }
-                            .foregroundColor(OmiColors.textPrimary)
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(OmiColors.backgroundTertiary.opacity(0.5))
-                            .cornerRadius(6)
-                            .contentShape(Rectangle())
-                        }
-                    }
 
                     // Groups
                     ForEach(TaskFilterGroup.allCases, id: \.self) { group in
