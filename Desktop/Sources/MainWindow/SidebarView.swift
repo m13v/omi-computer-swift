@@ -223,15 +223,18 @@ struct SidebarView: View {
                                     showRewindIcon: true
                                 )
                             } else {
+                                let locked = isItemLocked(item)
                                 NavItemView(
                                     icon: item.icon,
                                     label: item.title,
-                                    isSelected: selectedIndex == item.rawValue,
+                                    isSelected: !locked && selectedIndex == item.rawValue,
                                     isCollapsed: isCollapsed,
                                     iconWidth: iconWidth,
                                     badge: item == .advice ? adviceStorage.unreadCount : 0,
                                     statusColor: item == .focus ? focusStatusColor : nil,
                                     isLoading: pageLoadingState(for: item),
+                                    isLocked: locked,
+                                    lockTooltip: locked ? "Unlocks at Tier \(item.requiredTier)" : nil,
                                     onTap: {
                                         // Show loading immediately when navigating
                                         if selectedIndex != item.rawValue {
@@ -374,10 +377,10 @@ struct SidebarView: View {
             checkForDeferredUnlockAnimation()
         }
         .onChange(of: currentTierLevel) { _, newTier in
-            // Redirect if current page is no longer visible
-            let newVisible = Self.visibleItems(for: newTier)
-            let visibleRawValues = Set(newVisible.map(\.rawValue))
-            if !visibleRawValues.contains(selectedIndex) && selectedIndex != SidebarNavItem.settings.rawValue && selectedIndex != SidebarNavItem.permissions.rawValue && selectedIndex != SidebarNavItem.device.rawValue && selectedIndex != SidebarNavItem.help.rawValue {
+            // Redirect if current page became locked after tier change
+            if let currentItem = SidebarNavItem(rawValue: selectedIndex),
+               newTier != 0 && newTier < currentItem.requiredTier,
+               selectedIndex != SidebarNavItem.settings.rawValue && selectedIndex != SidebarNavItem.permissions.rawValue && selectedIndex != SidebarNavItem.device.rawValue && selectedIndex != SidebarNavItem.help.rawValue {
                 selectedIndex = SidebarNavItem.conversations.rawValue
             }
             // If sidebar is currently visible (not in settings), play animation immediately
@@ -1115,37 +1118,50 @@ struct NavItemView: View {
     var badge: Int = 0
     var statusColor: Color? = nil
     var isLoading: Bool = false
+    var isLocked: Bool = false
+    var lockTooltip: String? = nil
     let onTap: () -> Void
 
     @State private var isHovered = false
 
+    /// Foreground color for icon and text when locked
+    private var lockedColor: Color { OmiColors.textQuaternary }
+
     var body: some View {
         HStack(spacing: 12) {
             ZStack(alignment: .topTrailing) {
-                if isLoading {
+                if isLoading && !isLocked {
                     ProgressView()
                         .scaleEffect(0.5)
                         .frame(width: iconWidth, height: 17)
                 } else {
                     Image(systemName: icon)
                         .font(.system(size: 17))
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                        .foregroundColor(isLocked ? lockedColor : (isSelected ? OmiColors.textPrimary : OmiColors.textTertiary))
                         .frame(width: iconWidth)
                 }
 
-                // Badge on icon when collapsed
-                if isCollapsed && badge > 0 {
+                // Badge on icon when collapsed (hidden when locked)
+                if isCollapsed && badge > 0 && !isLocked {
                     Circle()
                         .fill(OmiColors.purplePrimary)
                         .frame(width: 8, height: 8)
                         .offset(x: 4, y: -4)
                 }
 
-                // Status indicator when collapsed (for Focus)
-                if isCollapsed, let color = statusColor {
+                // Status indicator when collapsed (for Focus, hidden when locked)
+                if isCollapsed, let color = statusColor, !isLocked {
                     Circle()
                         .fill(color)
                         .frame(width: 8, height: 8)
+                        .offset(x: 4, y: -4)
+                }
+
+                // Lock badge when collapsed
+                if isCollapsed && isLocked {
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 8))
+                        .foregroundColor(lockedColor)
                         .offset(x: 4, y: -4)
                 }
             }
@@ -1153,26 +1169,33 @@ struct NavItemView: View {
             if !isCollapsed {
                 Text(label)
                     .font(.system(size: 14, weight: isSelected ? .medium : .regular))
-                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                    .foregroundColor(isLocked ? lockedColor : (isSelected ? OmiColors.textPrimary : OmiColors.textSecondary))
 
                 Spacer()
 
-                // Status indicator when expanded (for Focus)
-                if let color = statusColor {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 8, height: 8)
-                }
+                if isLocked {
+                    // Lock icon when expanded
+                    Image(systemName: "lock.fill")
+                        .font(.system(size: 10))
+                        .foregroundColor(lockedColor)
+                } else {
+                    // Status indicator when expanded (for Focus)
+                    if let color = statusColor {
+                        Circle()
+                            .fill(color)
+                            .frame(width: 8, height: 8)
+                    }
 
-                // Badge count when expanded
-                if badge > 0 {
-                    Text("\(badge)")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(OmiColors.purplePrimary)
-                        .clipShape(Capsule())
+                    // Badge count when expanded
+                    if badge > 0 {
+                        Text("\(badge)")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(OmiColors.purplePrimary)
+                            .clipShape(Capsule())
+                    }
                 }
             }
         }
@@ -1181,19 +1204,20 @@ struct NavItemView: View {
         .contentShape(Rectangle())
         .background(
             RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected
+                .fill(isLocked ? Color.clear : (isSelected
                       ? OmiColors.backgroundTertiary.opacity(0.8)
-                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
+                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)))
         )
         .onTapGesture {
+            guard !isLocked else { return }
             log("SIDEBAR: NavItem '\(label)' tapped at mouse position: \(NSEvent.mouseLocation)")
             onTap()
         }
         .onHover { hovering in
-            isHovered = hovering
+            isHovered = isLocked ? false : hovering
         }
         .padding(.bottom, 2)
-        .help(isCollapsed ? label : "")
+        .help(isLocked ? (lockTooltip ?? label) : (isCollapsed ? label : ""))
     }
 }
 
