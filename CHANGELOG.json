@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.5.2",
+      "date": "2026-02-10",
+      "changes": [
+        "Battery optimization: OCR pauses automatically when on battery to save power",
+        "Task agents now work with all task categories, not just allowlisted ones",
+        "Sentry webhook integration for real-time bug and feedback tracking",
+        "Improved OCR deduplication with perceptual hashing (dHash) for better accuracy",
+        "Inline task editing with debounced auto-save",
+        "Date range filter for tasks sorted by due date",
+        "Upgraded embeddings to 3072 dimensions with task-type-aware search",
+        "Task relevance scores sync bidirectionally with backend",
+        "Smarter task extraction that ignores outgoing messages in chat apps",
+        "Hidden mouse cursor during window capture for cleaner screenshots"
+      ]
+    },
+    {
       "version": "0.5.1",
       "date": "2026-02-10",
       "changes": [
