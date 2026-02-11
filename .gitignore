@@ -53,6 +53,7 @@ scripts/
 # Python reference code (for Rust porting)
 **/python_reference/
 Desktop/Sources/Resources/ffmpeg
+Desktop/Sources/Resources/node
 
 # Generated browser snapshots (contain PII)
 *-snapshot.md
