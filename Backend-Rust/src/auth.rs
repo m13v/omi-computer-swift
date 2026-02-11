@@ -112,8 +112,8 @@ impl FirebaseAuth {
         Ok(())
     }
 
-    /// Verify a Firebase ID token and extract the user ID
-    pub async fn verify_token(&self, token: &str) -> Result<String, AuthError> {
+    /// Verify a Firebase ID token and extract the user ID and name
+    pub async fn verify_token(&self, token: &str) -> Result<(String, Option<String>), AuthError> {
         // Decode header to get kid
         let header = decode_header(token).map_err(|e| AuthError {
             error: "invalid_token".to_string(),
@@ -148,7 +148,7 @@ impl FirebaseAuth {
             }
         })?;
 
-        Ok(token_data.claims.sub)
+        Ok((token_data.claims.sub, token_data.claims.name))
     }
 }
 
@@ -157,6 +157,7 @@ impl FirebaseAuth {
 #[derive(Debug, Clone)]
 pub struct AuthUser {
     pub uid: String,
+    pub name: Option<String>,
 }
 
 /// Extension to store Firebase auth in request
@@ -199,9 +200,9 @@ where
             })?;
 
         // Verify token
-        let uid = firebase_auth.0.verify_token(token).await?;
+        let (uid, name) = firebase_auth.0.verify_token(token).await?;
 
-        Ok(AuthUser { uid })
+        Ok(AuthUser { uid, name })
     }
 }
 
