@@ -19,6 +19,7 @@ pub mod personas;
 pub mod updates;
 pub mod stats;
 pub mod users;
+pub mod webhooks;
 
 pub use action_items::action_items_routes;
 pub use advice::advice_routes;
@@ -39,3 +40,4 @@ pub use personas::personas_routes;
 pub use stats::stats_routes;
 pub use updates::updates_routes;
 pub use users::users_routes;
+pub use webhooks::webhook_routes;
