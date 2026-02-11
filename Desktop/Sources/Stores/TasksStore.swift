@@ -651,6 +651,9 @@ class TasksStore: ObservableObject {
 
             // Backfill due dates on backend for tasks that have none
             await backfillDueDatesOnBackendIfNeeded(userId: userId)
+
+            // Backfill relevance scores for unscored tasks
+            await backfillRelevanceScoresIfNeeded(userId: userId)
         } catch {
             logError("TasksStore: Full sync failed (will retry next launch)", error: error)
         }
@@ -752,6 +755,22 @@ class TasksStore: ObservableObject {
             log("TasksStore: Due date backfill complete - patched \(patchedCount) tasks")
         } catch {
             logError("TasksStore: Due date backfill failed", error: error)
+        }
+    }
+
+    /// One-time backfill: assign relevance scores to all unscored active tasks.
+    /// Each unscored task gets max+1 sequentially so they appear at the bottom
+    /// until the next Gemini rescore properly ranks them.
+    private func backfillRelevanceScoresIfNeeded(userId: String) async {
+        let backfillKey = "tasksRelevanceScoreBackfill_v1_\(userId)"
+        guard !UserDefaults.standard.bool(forKey: backfillKey) else { return }
+
+        do {
+            let count = try await ActionItemStorage.shared.backfillUnscoredTasks()
+            UserDefaults.standard.set(true, forKey: backfillKey)
+            log("TasksStore: Relevance score backfill complete - scored \(count) tasks")
+        } catch {
+            logError("TasksStore: Relevance score backfill failed", error: error)
         }
     }
 
