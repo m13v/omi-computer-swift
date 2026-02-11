@@ -116,10 +116,6 @@ final class UpdaterViewModel: ObservableObject {
         // Wire up delegate back-reference
         updaterDelegate.viewModel = self
 
-        // TODO: Remove after testing — force update button visible
-        updateAvailable = true
-        availableVersion = "2.0.0"
-
         // Check for updates every 10 minutes
         updaterController.updater.updateCheckInterval = 600
 
