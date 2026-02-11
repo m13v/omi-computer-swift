@@ -110,7 +110,7 @@ class TaskAssistantSettings {
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes
     private let defaultMinConfidence: Double = 0.75
-    private let defaultNotificationsEnabled = true
+    private let defaultNotificationsEnabled = false
 
     /// Default system prompt for task extraction (loop-based with tool calling)
     static let defaultAnalysisPrompt = """
