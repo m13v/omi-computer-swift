@@ -175,6 +175,7 @@ pub struct FocusSettingsData {
     pub enabled: Option<bool>,
     pub analysis_prompt: Option<String>,
     pub cooldown_interval: Option<i32>,
+    pub notifications_enabled: Option<bool>,
     pub excluded_apps: Option<Vec<String>>,
 }
 
@@ -185,6 +186,7 @@ pub struct TaskSettingsData {
     pub analysis_prompt: Option<String>,
     pub extraction_interval: Option<f64>,
     pub min_confidence: Option<f64>,
+    pub notifications_enabled: Option<bool>,
     pub allowed_apps: Option<Vec<String>>,
     pub browser_keywords: Option<Vec<String>>,
 }
@@ -196,6 +198,7 @@ pub struct AdviceSettingsData {
     pub analysis_prompt: Option<String>,
     pub extraction_interval: Option<f64>,
     pub min_confidence: Option<f64>,
+    pub notifications_enabled: Option<bool>,
     pub excluded_apps: Option<Vec<String>>,
 }
 
