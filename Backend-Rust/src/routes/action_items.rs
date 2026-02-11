@@ -10,7 +10,7 @@ use axum::{
 use serde::Deserialize;
 
 use crate::auth::AuthUser;
-use crate::models::{ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, BatchUpdateScoresRequest, CreateActionItemRequest, UpdateActionItemRequest};
+use crate::models::{AcceptTasksRequest, AcceptTasksResponse, ActionItemDB, ActionItemsListResponse, ActionItemStatusResponse, BatchCreateActionItemsRequest, BatchUpdateScoresRequest, CreateActionItemRequest, ShareTasksRequest, ShareTasksResponse, SharedTaskInfo, SharedTasksResponse, UpdateActionItemRequest};
 use crate::AppState;
 
 #[derive(Deserialize)]
@@ -317,11 +317,187 @@ async fn batch_update_scores(
     }
 }
 
+/// POST /v1/action-items/share - Share tasks via a link
+async fn share_tasks(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<ShareTasksRequest>,
+) -> Result<Json<ShareTasksResponse>, StatusCode> {
+    let task_count = request.task_ids.len();
+    if task_count == 0 || task_count > 20 {
+        tracing::warn!("Invalid task_ids count: {}", task_count);
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Verify ownership of each task
+    for id in &request.task_ids {
+        match state.firestore.get_action_item_by_id(&user.uid, id).await {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                tracing::warn!("Task {} not found for user {}", id, user.uid);
+                return Err(StatusCode::NOT_FOUND);
+            }
+            Err(e) => {
+                tracing::error!("Failed to verify task ownership: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        }
+    }
+
+    // Get sender display name
+    let display_name = match state.firestore.get_user_profile(&user.uid).await {
+        Ok(profile) => profile.name.unwrap_or_else(|| "Someone".to_string()),
+        Err(_) => "Someone".to_string(),
+    };
+
+    // Generate token and store in Redis
+    let token = uuid::Uuid::new_v4().simple().to_string();
+
+    if let Some(redis) = &state.redis {
+        if let Err(e) = redis.store_task_share(&token, &user.uid, &display_name, &request.task_ids).await {
+            tracing::error!("Failed to store task share in Redis: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    } else {
+        tracing::error!("Redis not configured");
+        return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    }
+
+    let url = format!("https://h.omi.me/tasks/{}", token);
+    tracing::info!("User {} shared {} tasks, token={}", user.uid, task_count, token);
+
+    Ok(Json(ShareTasksResponse { url, token }))
+}
+
+/// GET /v1/action-items/shared/:token - Get shared tasks (public, no auth)
+async fn get_shared_tasks(
+    State(state): State<AppState>,
+    Path(token): Path<String>,
+) -> Result<Json<SharedTasksResponse>, StatusCode> {
+    let redis = state.redis.as_ref().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (sender_uid, sender_name, task_ids) = match redis.get_task_share(&token).await {
+        Ok(Some(data)) => data,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get task share from Redis: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Fetch each task from sender's Firestore (only expose description + due_at)
+    let mut tasks = Vec::new();
+    for id in &task_ids {
+        match state.firestore.get_action_item_by_id(&sender_uid, id).await {
+            Ok(Some(item)) => {
+                tasks.push(SharedTaskInfo {
+                    description: item.description,
+                    due_at: item.due_at,
+                });
+            }
+            _ => {
+                // Task may have been deleted since sharing — skip it
+            }
+        }
+    }
+
+    let count = tasks.len();
+    Ok(Json(SharedTasksResponse {
+        sender_name,
+        tasks,
+        count,
+    }))
+}
+
+/// POST /v1/action-items/accept - Accept shared tasks (authenticated)
+async fn accept_tasks(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<AcceptTasksRequest>,
+) -> Result<Json<AcceptTasksResponse>, StatusCode> {
+    let redis = state.redis.as_ref().ok_or(StatusCode::INTERNAL_SERVER_ERROR)?;
+
+    let (sender_uid, _sender_name, task_ids) = match redis.get_task_share(&request.token).await {
+        Ok(Some(data)) => data,
+        Ok(None) => return Err(StatusCode::NOT_FOUND),
+        Err(e) => {
+            tracing::error!("Failed to get task share from Redis: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
+
+    // Block self-accept
+    if sender_uid == user.uid {
+        return Err(StatusCode::BAD_REQUEST);
+    }
+
+    // Atomic accept — prevent double-accept
+    match redis.try_accept_task_share(&request.token, &user.uid).await {
+        Ok(true) => {} // newly accepted
+        Ok(false) => return Err(StatusCode::CONFLICT), // already accepted
+        Err(e) => {
+            tracing::error!("Failed to accept task share: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    // Create tasks in recipient's Firestore
+    let mut created_ids = Vec::new();
+    for id in &task_ids {
+        match state.firestore.get_action_item_by_id(&sender_uid, id).await {
+            Ok(Some(item)) => {
+                let metadata = serde_json::json!({
+                    "shared_from": sender_uid,
+                    "share_token": request.token,
+                })
+                .to_string();
+
+                match state
+                    .firestore
+                    .create_action_item(
+                        &user.uid,
+                        &item.description,
+                        item.due_at,
+                        Some("shared"),
+                        item.priority.as_deref(),
+                        Some(&metadata),
+                        item.category.as_deref(),
+                        item.relevance_score,
+                    )
+                    .await
+                {
+                    Ok(new_item) => created_ids.push(new_item.id),
+                    Err(e) => {
+                        tracing::error!("Failed to create shared task: {}", e);
+                    }
+                }
+            }
+            _ => {} // skip deleted tasks
+        }
+    }
+
+    let count = created_ids.len();
+    tracing::info!(
+        "User {} accepted {} tasks from share token={}",
+        user.uid,
+        count,
+        request.token
+    );
+
+    Ok(Json(AcceptTasksResponse {
+        created: created_ids,
+        count,
+    }))
+}
+
 pub fn action_items_routes() -> Router<AppState> {
     Router::new()
         .route("/v1/action-items", get(get_action_items).post(create_action_item))
         .route("/v1/action-items/batch", axum::routing::post(batch_create_action_items))
         .route("/v1/action-items/batch-scores", axum::routing::patch(batch_update_scores))
+        .route("/v1/action-items/share", axum::routing::post(share_tasks))
+        .route("/v1/action-items/shared/:token", get(get_shared_tasks))
+        .route("/v1/action-items/accept", axum::routing::post(accept_tasks))
         .route(
             "/v1/action-items/:id",
             get(get_action_item_by_id).patch(update_action_item).delete(delete_action_item),
