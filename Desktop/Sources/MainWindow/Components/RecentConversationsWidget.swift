@@ -5,6 +5,7 @@ struct RecentConversationsWidget: View {
     let folders: [Folder]
     let onViewAll: () -> Void
     let onMoveToFolder: (String, String?) async -> Void
+    var appState: AppState
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -40,7 +41,8 @@ struct RecentConversationsWidget: View {
                             onTap: onViewAll,
                             folders: folders,
                             onMoveToFolder: onMoveToFolder,
-                            isCompactView: true
+                            isCompactView: true,
+                            appState: appState
                         )
                     }
                 }
