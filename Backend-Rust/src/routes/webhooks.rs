@@ -151,6 +151,40 @@ async fn handle_sentry_webhook(
         short_id
     );
 
+    // Dedup + relevance score: fetch existing items once for both checks
+    let existing_items = state
+        .firestore
+        .get_action_items(admin_uid, 500, 0, None, None, None, None, None, None, None, None)
+        .await
+        .unwrap_or_default();
+
+    let already_exists = existing_items.iter().any(|item| {
+        if item.source.as_deref() != Some("sentry_feedback") {
+            return false;
+        }
+        if let Some(meta_str) = &item.metadata {
+            if let Ok(meta) = serde_json::from_str::<Value>(meta_str) {
+                return meta.get("sentry_issue_id").and_then(|v| v.as_str()) == Some(issue_id);
+            }
+        }
+        false
+    });
+
+    if already_exists {
+        tracing::info!(
+            "Sentry webhook: issue {} ({}) already exists as action item, skipping",
+            issue_id,
+            short_id
+        );
+        return Ok(Json(WebhookResponse {
+            status: "duplicate".to_string(),
+        }));
+    }
+
+    // Dynamically calculate top-10% relevance score from existing tasks
+    let max_score = existing_items.iter().filter_map(|i| i.relevance_score).max().unwrap_or(100);
+    let top_10_score = std::cmp::max(1, (max_score as f64 * 0.1).round() as i32);
+
     // Fetch full event details from Sentry API
     let (feedback_message, reporter_name, reporter_email, metadata) =
         fetch_sentry_event_details(&state, issue_id, short_id).await;
@@ -190,19 +224,6 @@ async fn handle_sentry_webhook(
     }
 
     let metadata_str = serde_json::to_string(&meta).unwrap_or_default();
-
-    // Dynamically calculate top-10% relevance score from existing tasks
-    let top_10_score = match state
-        .firestore
-        .get_action_items(admin_uid, 200, 0, None, None, None, None, None, None, None, None)
-        .await
-    {
-        Ok(items) => {
-            let max_score = items.iter().filter_map(|i| i.relevance_score).max().unwrap_or(100);
-            std::cmp::max(1, (max_score as f64 * 0.1).round() as i32)
-        }
-        Err(_) => 10, // fallback
-    };
 
     // Create action item
     match state
@@ -425,7 +446,7 @@ async fn poll_sentry_feedback(
         .firestore
         .get_action_items(
             admin_uid,
-            200,   // limit
+            500,   // limit — must be large enough to include all sentry_feedback items
             0,     // offset
             None,  // completed_filter
             None,  // conversation_id
