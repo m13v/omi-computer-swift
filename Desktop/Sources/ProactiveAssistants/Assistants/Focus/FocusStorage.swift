@@ -235,9 +235,18 @@ class FocusStorage: ObservableObject {
             sessions.remove(at: index)
             saveToStorage()
 
-            // Delete from backend
-            if session.isSynced {
-                Task {
+            Task {
+                // Delete from SQLite (focus_sessions and memories tables)
+                if let sqliteId = Int64(id) {
+                    // Unsynced session — id is the SQLite row ID
+                    try? await ProactiveStorage.shared.deleteFocusSession(id: sqliteId)
+                } else if session.isSynced {
+                    // Synced session — id is the backend memory ID
+                    try? await MemoryStorage.shared.deleteMemoryByBackendId(id)
+                }
+
+                // Delete from backend
+                if session.isSynced {
                     await deleteFromBackend(id)
                 }
             }
