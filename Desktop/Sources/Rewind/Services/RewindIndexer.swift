@@ -56,6 +56,11 @@ actor RewindIndexer {
         Task(priority: .background) {
             await OCREmbeddingService.shared.backfillIfNeeded()
         }
+
+        // Reduce ocrDataJson float precision for existing rows (one-time migration)
+        Task(priority: .background) {
+            await RewindDatabase.shared.reduceOCRDataPrecisionIfNeeded()
+        }
     }
 
     /// Try to initialize with exponential backoff. Returns true if initialized.
