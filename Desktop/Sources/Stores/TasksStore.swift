@@ -687,7 +687,8 @@ class TasksStore: ObservableObject {
                     source: item.source,
                     priority: item.priority,
                     category: item.category,
-                    metadata: metadata
+                    metadata: metadata,
+                    relevanceScore: item.relevanceScore
                 )
                 try await ActionItemStorage.shared.markSynced(id: localId, backendId: response.id)
                 synced += 1
@@ -881,6 +882,7 @@ class TasksStore: ObservableObject {
                 // Compact relevance scores to fill the gap
                 if let score = task.relevanceScore {
                     try await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+                    Task { await self.syncScoresToBackend() }
                 }
 
                 // Refresh allowlist so a new task fills the slot
@@ -941,6 +943,7 @@ class TasksStore: ObservableObject {
         // Compact relevance scores to fill the gap
         if let score = task.relevanceScore {
             try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+            Task { await self.syncScoresToBackend() }
         }
 
         // Refresh allowlist so a new task fills the slot
@@ -1015,6 +1018,9 @@ class TasksStore: ObservableObject {
         for score in scores.sorted(by: >) {
             try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
         }
+        if !scores.isEmpty {
+            Task { await self.syncScoresToBackend() }
+        }
 
         // Soft-delete on backend in background
         for id in ids {
@@ -1023,6 +1029,21 @@ class TasksStore: ObservableObject {
             } catch {
                 logError("TasksStore: Failed to soft-delete task \(id) on backend (local delete preserved)", error: error)
             }
+        }
+    }
+
+    /// Sync all scored tasks' relevance scores to backend
+    private func syncScoresToBackend() async {
+        do {
+            let tasks = try await ActionItemStorage.shared.getAllScoredTasks()
+            let scores = tasks.compactMap { t -> (id: String, score: Int)? in
+                guard let s = t.relevanceScore, !t.id.hasPrefix("local_") else { return nil }
+                return (id: t.id, score: s)
+            }
+            guard !scores.isEmpty else { return }
+            try await APIClient.shared.batchUpdateScores(scores)
+        } catch {
+            logError("TasksStore: Failed to sync scores to backend", error: error)
         }
     }
 }
