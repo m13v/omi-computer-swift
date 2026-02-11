@@ -1495,15 +1495,14 @@ struct TasksPage: View {
     }
 
     private var filterLabel: String {
-        let userCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
-        let implicitCount = viewModel.sortOption == .dueDate ? 1 : 0
-        let totalCount = userCount + implicitCount
+        let totalCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
         if totalCount == 0 {
+            if viewModel.sortOption == .dueDate {
+                return "Last 7 days"
+            }
             return "All"
         } else if totalCount == 1 {
-            if implicitCount == 1 {
-                return "Last 7 days"
-            } else if let tag = viewModel.selectedTags.first {
+            if let tag = viewModel.selectedTags.first {
                 return tag.displayName
             } else if let dynamicTag = viewModel.selectedDynamicTags.first {
                 return dynamicTag.displayName
