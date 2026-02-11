@@ -1128,6 +1128,7 @@ dependencies = [
  "futures",
  "hex",
  "hkdf",
+ "hmac",
  "jsonwebtoken",
  "redis",
  "regex",
