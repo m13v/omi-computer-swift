@@ -347,6 +347,7 @@ struct TaskDetailView: View {
                 .font(.system(size: 12))
                 .foregroundColor(OmiColors.textPrimary)
                 .textSelection(.enabled)
+                .if_available_writingToolsNone()
         }
     }
 
@@ -360,6 +361,7 @@ struct TaskDetailView: View {
                 .font(.system(size: 12))
                 .foregroundColor(OmiColors.textPrimary)
                 .textSelection(.enabled)
+                .if_available_writingToolsNone()
         }
     }
 }
