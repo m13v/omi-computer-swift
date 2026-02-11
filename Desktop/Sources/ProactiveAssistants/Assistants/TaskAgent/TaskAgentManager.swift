@@ -625,10 +625,11 @@ class TaskAgentManager: ObservableObject {
                     finalSession.status = finalStatus
                     finalSession.completedAt = finalSession.completedAt ?? Date()
 
+                    let sessionToStore = finalSession
                     await MainActor.run {
-                        activeSessions[taskId] = finalSession
+                        activeSessions[taskId] = sessionToStore
                     }
-                    persistSession(finalSession)
+                    persistSession(sessionToStore)
                     logMessage("TaskAgentManager: Session dead for task \(taskId), marked as \(finalStatus.rawValue)")
                 }
             }
