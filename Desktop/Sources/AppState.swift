@@ -525,7 +525,6 @@ class AppState: ObservableObject {
     func checkNotificationPermission() {
         UNUserNotificationCenter.current().getNotificationSettings { settings in
             DispatchQueue.main.async {
-                let wasGranted = self.hasNotificationPermission
                 let isNowGranted = settings.authorizationStatus == .authorized
                 self.hasNotificationPermission = isNowGranted
                 self.notificationAlertStyle = settings.alertStyle
