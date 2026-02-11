@@ -32,6 +32,7 @@ enum TaskCategory: String, CaseIterable {
 
 enum TaskFilterGroup: String, CaseIterable {
     case status = "Status"
+    case date = "Date Range"
     case category = "Category"
     case source = "Source"
     case priority = "Priority"
@@ -69,6 +70,9 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     case priorityMedium
     case priorityLow
 
+    // Date Range
+    case last7Days
+
     // Origin (source classification)
     case originDirectRequest
     case originSelfGenerated
@@ -82,6 +86,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     var group: TaskFilterGroup {
         switch self {
         case .todo, .done, .removedByAI, .removedByMe: return .status
+        case .last7Days: return .date
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
         case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual, .sourceOmiAnalytics: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
@@ -95,6 +100,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .done: return "Done"
         case .removedByAI: return "Removed by AI"
         case .removedByMe: return "Removed by me"
+        case .last7Days: return "Last 7 days"
         case .personal: return "Personal"
         case .work: return "Work"
         case .feature: return "Feature"
@@ -128,6 +134,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .done: return "checkmark.circle.fill"
         case .removedByAI: return "trash.slash"
         case .removedByMe: return "trash"
+        case .last7Days: return "clock.arrow.circlepath"
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
         case .feature: return "sparkles"
@@ -162,6 +169,13 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .done: return task.completed
         case .removedByAI: return task.deleted == true && task.deletedBy != "user"
         case .removedByMe: return task.deleted == true && task.deletedBy == "user"
+        case .last7Days:
+            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            if let dueAt = task.dueAt {
+                return dueAt >= sevenDaysAgo
+            } else {
+                return task.createdAt >= sevenDaysAgo
+            }
         case .personal: return task.tags.contains("personal")
         case .work: return task.tags.contains("work")
         case .feature: return task.tags.contains("feature")
@@ -424,7 +438,13 @@ class TasksViewModel: ObservableObject {
         }
     }
     @Published var sortOption: TaskSortOption = .relevance {
-        didSet { recomputeDisplayCaches() }
+        didSet {
+            if sortOption == .dueDate && !selectedTags.contains(.last7Days) {
+                selectedTags.insert(.last7Days)  // triggers its own recompute
+            } else {
+                recomputeDisplayCaches()
+            }
+        }
     }
 
 
