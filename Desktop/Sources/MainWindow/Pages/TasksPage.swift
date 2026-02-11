@@ -2401,6 +2401,7 @@ struct TaskRow: View {
     @State private var rowOffset: CGFloat = 0
     @State private var showAgentDetail = false
     @State private var showTaskDetail = false
+    @State private var isCopyingLink = false
 
     // Inline editing state
     @State private var editText = ""
@@ -2858,6 +2859,19 @@ struct TaskRow: View {
                         .help("Increase indent")
                     }
 
+                    // Share link button
+                    Button {
+                        Task { await copyShareLink() }
+                    } label: {
+                        Image(systemName: isCopyingLink ? "arrow.triangle.2.circlepath" : "link")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .frame(width: 24, height: 24)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isCopyingLink)
+                    .help("Copy share link")
+
                     // Delete button
                     Button {
                         showDeleteConfirmation = true
@@ -2916,6 +2930,24 @@ struct TaskRow: View {
 
         Task {
             await onUpdateDetails?(task, trimmed, nil, nil)
+        }
+    }
+
+    // MARK: - Share Link
+
+    private func copyShareLink() async {
+        guard !isCopyingLink else { return }
+        isCopyingLink = true
+        defer { isCopyingLink = false }
+
+        do {
+            let response = try await APIClient.shared.shareTasks(taskIds: [task.id])
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(response.url, forType: .string)
+            log("Copied task share link to clipboard: \(response.url)")
+        } catch {
+            log("Failed to get task share link: \(error)")
         }
     }
 
