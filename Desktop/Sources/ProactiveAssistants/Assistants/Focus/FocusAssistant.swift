@@ -397,16 +397,22 @@ actor FocusAssistant: ProactiveAssistant {
                     let fullMessage = "\(analysis.appOrSite) - \(message)"
                     log("ALERT: \(message)")
 
+                    let notificationsEnabled = await MainActor.run {
+                        FocusAssistantSettings.shared.notificationsEnabled
+                    }
+
                     await MainActor.run {
                         // Track focus alert shown
                         AnalyticsManager.shared.focusAlertShown(app: analysis.appOrSite)
 
-                        NotificationService.shared.sendNotification(
-                            title: "Focus",
-                            message: fullMessage,
-                            assistantId: identifier,
-                            sound: .focusLost
-                        )
+                        if notificationsEnabled {
+                            NotificationService.shared.sendNotification(
+                                title: "Focus",
+                                message: fullMessage,
+                                assistantId: identifier,
+                                sound: .focusLost
+                            )
+                        }
                     }
 
                     // Call the callback for Flutter event streaming
@@ -437,13 +443,18 @@ actor FocusAssistant: ProactiveAssistant {
 
                     if let message = analysis.message {
                         log("Back on track: \(message)")
-                        await MainActor.run {
-                            NotificationService.shared.sendNotification(
-                                title: "Focus",
-                                message: message,
-                                assistantId: identifier,
-                                sound: .focusRegained
-                            )
+                        let notificationsEnabled = await MainActor.run {
+                            FocusAssistantSettings.shared.notificationsEnabled
+                        }
+                        if notificationsEnabled {
+                            await MainActor.run {
+                                NotificationService.shared.sendNotification(
+                                    title: "Focus",
+                                    message: message,
+                                    assistantId: identifier,
+                                    sound: .focusRegained
+                                )
+                            }
                         }
                     }
                 }
