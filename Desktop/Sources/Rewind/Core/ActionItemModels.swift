@@ -279,6 +279,7 @@ extension ActionItemRecord {
             contextSummary: nil,
             currentActivity: nil,
             metadataJson: item.metadata,
+            relevanceScore: item.relevanceScore,
             createdAt: item.createdAt,
             updatedAt: item.updatedAt ?? item.createdAt
         )
@@ -318,6 +319,11 @@ extension ActionItemRecord {
            let data = try? JSONEncoder().encode(itemTags),
            let json = String(data: data, encoding: .utf8) {
             self.tagsJson = json
+        }
+
+        // Adopt API score when local record has none (avoids overwriting recent Gemini re-ranking)
+        if self.relevanceScore == nil, let apiScore = item.relevanceScore {
+            self.relevanceScore = apiScore
         }
     }
 
