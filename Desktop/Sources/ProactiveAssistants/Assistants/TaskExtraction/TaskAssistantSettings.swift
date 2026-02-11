@@ -216,6 +216,7 @@ class TaskAssistantSettings {
         - Do NOT invent deadlines — if no timeframe is mentioned, leave inferred_deadline as empty string
         - Resolve relative dates using the current date provided: "Thursday" → the next upcoming Thursday, "tomorrow" → the next day, "next week" → the following Monday
         - If a specific time is mentioned ("by 3pm Friday"), just use the date portion (yyyy-MM-dd)
+        - CRITICAL: Any deadline you assign MUST be today or in the future. If you see a date mentioned in the screenshot that is already in the past (before the current date provided), do NOT use it as the deadline. Leave inferred_deadline empty instead.
 
         SOURCE CLASSIFICATION (mandatory for every extracted task):
         Classify each task's origin with source_category + source_subcategory.
