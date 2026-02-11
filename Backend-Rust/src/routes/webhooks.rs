@@ -169,6 +169,7 @@ async fn handle_sentry_webhook(
         "sentry_issue_id": issue_id,
         "sentry_short_id": short_id,
         "sentry_url": format!("https://mediar-n5.sentry.io/issues/{}/", issue_id),
+        "tags": ["bug"],
     });
 
     if !reporter_name.is_empty() {
@@ -190,6 +191,19 @@ async fn handle_sentry_webhook(
 
     let metadata_str = serde_json::to_string(&meta).unwrap_or_default();
 
+    // Dynamically calculate top-10% relevance score from existing tasks
+    let top_10_score = match state
+        .firestore
+        .get_action_items(admin_uid, 200, 0, None, None, None, None, None, None, None, None)
+        .await
+    {
+        Ok(items) => {
+            let max_score = items.iter().filter_map(|i| i.relevance_score).max().unwrap_or(100);
+            std::cmp::max(1, (max_score as f64 * 0.1).round() as i32)
+        }
+        Err(_) => 10, // fallback
+    };
+
     // Create action item
     match state
         .firestore
@@ -200,8 +214,8 @@ async fn handle_sentry_webhook(
             Some("sentry_feedback"),       // source
             Some("high"),                  // priority
             Some(&metadata_str),           // metadata
-            Some("other"),                 // category
-            None,                          // relevance_score
+            Some("bug"),                   // category
+            Some(top_10_score),            // relevance_score
         )
         .await
     {
@@ -440,9 +454,20 @@ async fn poll_sentry_feedback(
         }
     }
 
+    // Find the max relevance_score across all items to calculate dynamic top-10% score
+    let max_relevance_score = existing_items
+        .iter()
+        .filter_map(|item| item.relevance_score)
+        .max()
+        .unwrap_or(100); // default if no scored tasks exist
+
+    let top_10_score = std::cmp::max(1, (max_relevance_score as f64 * 0.1).round() as i32);
+
     tracing::info!(
-        "Sentry poll: found {} existing sentry_feedback action items",
-        existing_issue_ids.len()
+        "Sentry poll: found {} existing sentry_feedback action items, max_score={}, top_10%_score={}",
+        existing_issue_ids.len(),
+        max_relevance_score,
+        top_10_score,
     );
 
     // 2. Fetch recent feedback issues from Sentry
@@ -511,6 +536,7 @@ async fn poll_sentry_feedback(
             "sentry_issue_id": issue_id,
             "sentry_short_id": short_id,
             "sentry_url": format!("https://mediar-n5.sentry.io/issues/{}/", issue_id),
+            "tags": ["bug"],
         });
 
         if !reporter_name.is_empty() {
@@ -540,8 +566,8 @@ async fn poll_sentry_feedback(
                 Some("sentry_feedback"),
                 Some("high"),
                 Some(&metadata_str),
-                Some("other"),
-                None,
+                Some("bug"),
+                Some(top_10_score),
             )
             .await
         {
