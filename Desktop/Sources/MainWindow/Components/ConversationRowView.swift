@@ -16,7 +16,7 @@ struct ConversationRowView: View {
     var isSelected: Bool = false
     var onToggleSelection: (() -> Void)? = nil
 
-    @EnvironmentObject var appState: AppState
+    var appState: AppState
     @State private var isStarring = false
     @State private var isHovering = false
 
