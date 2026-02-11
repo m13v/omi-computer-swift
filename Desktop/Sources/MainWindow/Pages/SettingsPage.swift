@@ -1439,6 +1439,7 @@ struct SettingsContentView: View {
                                     .font(.system(size: 13, design: .monospaced))
                                     .foregroundColor(OmiColors.textSecondary)
                                     .textSelection(.enabled)
+                                    .if_available_writingToolsNone()
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .frame(maxHeight: 200)
