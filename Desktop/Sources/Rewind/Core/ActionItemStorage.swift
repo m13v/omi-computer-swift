@@ -842,12 +842,13 @@ actor ActionItemStorage {
         let db = try await ensureInitialized()
 
         try await db.write { database in
+            let now = Date()
             try database.execute(sql: """
                 UPDATE action_items
-                SET relevanceScore = relevanceScore - 1
+                SET relevanceScore = relevanceScore - 1, updatedAt = ?
                 WHERE relevanceScore IS NOT NULL AND relevanceScore > ?
                   AND completed = 0 AND deleted = 0
-            """, arguments: [removedScore])
+            """, arguments: [now, removedScore])
         }
         log("ActionItemStorage: Compacted scores after removing score \(removedScore)")
     }
@@ -1051,8 +1052,8 @@ actor ActionItemStorage {
             let now = Date()
             for (index, backendId) in orderedIds.enumerated() {
                 try database.execute(
-                    sql: "UPDATE action_items SET relevanceScore = ?, scoredAt = ? WHERE backendId = ?",
-                    arguments: [index + 1, now, backendId]
+                    sql: "UPDATE action_items SET relevanceScore = ?, scoredAt = ?, updatedAt = ? WHERE backendId = ?",
+                    arguments: [index + 1, now, now, backendId]
                 )
             }
         }
