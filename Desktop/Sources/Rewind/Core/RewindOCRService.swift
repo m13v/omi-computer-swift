@@ -183,10 +183,10 @@ actor RewindOCRService {
                     let boundingBox = observation.boundingBox
                     let block = OCRTextBlock(
                         text: candidate.string,
-                        x: (boundingBox.origin.x * 1000).rounded() / 1000,
-                        y: (boundingBox.origin.y * 1000).rounded() / 1000,
-                        width: (boundingBox.width * 1000).rounded() / 1000,
-                        height: (boundingBox.height * 1000).rounded() / 1000,
+                        x: Double((boundingBox.origin.x * 1000).rounded()) / 1000,
+                        y: Double((boundingBox.origin.y * 1000).rounded()) / 1000,
+                        width: Double((boundingBox.width * 1000).rounded()) / 1000,
+                        height: Double((boundingBox.height * 1000).rounded()) / 1000,
                         confidence: (Double(candidate.confidence) * 1000).rounded() / 1000
                     )
                     blocks.append(block)
