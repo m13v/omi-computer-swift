@@ -113,6 +113,10 @@ final class UpdaterViewModel: ObservableObject {
         // Wire up delegate back-reference
         updaterDelegate.viewModel = self
 
+        // TODO: Remove after testing — force update button visible
+        updateAvailable = true
+        availableVersion = "2.0.0"
+
         // Initialize published property from updater state
         automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
 
