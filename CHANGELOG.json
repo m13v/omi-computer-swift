@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.6.0",
+      "date": "2026-02-11",
+      "changes": [
+        "Task sharing: copy a link to share your tasks with others",
+        "Task detail view with rich metadata display",
+        "Per-assistant notification controls for Focus, Task, and Advice",
+        "Update available widget in sidebar with one-click install",
+        "Advanced settings subsections with sidebar navigation",
+        "Smarter task extraction: ignores past deadlines and due dates",
+        "Optimized focus session storage to reduce unnecessary UI re-renders",
+        "Fixed CPU spike caused by macOS writing tools on 15.1+",
+        "Fixed actor isolation and memory sync issues",
+        "Fixed auth validation edge case during backfill"
+      ]
+    },
+    {
       "version": "0.5.2",
       "date": "2026-02-10",
       "changes": [
