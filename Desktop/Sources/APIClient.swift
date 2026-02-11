@@ -1644,6 +1644,64 @@ extension APIClient {
         let request = BatchRequest(scores: scores.map { ScoreUpdate(id: $0.id, relevance_score: $0.score) })
         let _: StatusResponse = try await patch("v1/action-items/batch-scores", body: request)
     }
+
+    // MARK: - Task Sharing
+
+    /// Shares tasks and returns a shareable URL
+    func shareTasks(taskIds: [String]) async throws -> ShareTasksResponse {
+        struct ShareRequest: Encodable {
+            let taskIds: [String]
+            enum CodingKeys: String, CodingKey {
+                case taskIds = "task_ids"
+            }
+        }
+        return try await post("v1/action-items/share", body: ShareRequest(taskIds: taskIds))
+    }
+
+    /// Gets shared task info by token (public, no auth required)
+    func getSharedTasks(token: String) async throws -> SharedTasksResponse {
+        return try await get("v1/action-items/shared/\(token)", requireAuth: false)
+    }
+
+    /// Accepts shared tasks into the current user's task list
+    func acceptSharedTasks(token: String) async throws -> AcceptTasksResponse {
+        struct AcceptRequest: Encodable {
+            let token: String
+        }
+        return try await post("v1/action-items/accept", body: AcceptRequest(token: token))
+    }
+}
+
+/// Response types for task sharing
+struct ShareTasksResponse: Codable {
+    let url: String
+    let token: String
+}
+
+struct SharedTaskInfo: Codable {
+    let description: String
+    let dueAt: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case description
+        case dueAt = "due_at"
+    }
+}
+
+struct SharedTasksResponse: Codable {
+    let senderName: String
+    let tasks: [SharedTaskInfo]
+    let count: Int
+
+    enum CodingKeys: String, CodingKey {
+        case senderName = "sender_name"
+        case tasks, count
+    }
+}
+
+struct AcceptTasksResponse: Codable {
+    let created: [String]
+    let count: Int
 }
 
 /// Request body for creating an action item (used in batch operations)
