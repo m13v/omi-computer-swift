@@ -311,7 +311,13 @@ extension ActionItemRecord {
         self.category = item.category
         self.dueAt = item.dueAt
         self.metadataJson = item.metadata
-        self.updatedAt = item.updatedAt ?? Date()
+
+        // Only update updatedAt if the incoming timestamp is newer than local
+        // This prevents sync from resetting local timestamps when backend data hasn't changed
+        let incomingTimestamp = item.updatedAt ?? item.createdAt
+        if incomingTimestamp > self.updatedAt {
+            self.updatedAt = incomingTimestamp
+        }
 
         // Sync tags from TaskActionItem
         let itemTags = item.tags
