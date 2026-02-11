@@ -8,7 +8,7 @@ import Accelerate
 actor OCREmbeddingService {
     static let shared = OCREmbeddingService()
 
-    private let embeddingDimension = 768
+    private let embeddingDimension = 3072
     private let minTextLength = 10
 
     private init() {}
