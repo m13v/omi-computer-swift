@@ -329,8 +329,8 @@ actor MemoryStorage {
     func syncServerMemories(_ memories: [ServerMemory]) async throws {
         let db = try await ensureInitialized()
 
-        var skipped = 0
-        try await db.write { database in
+        let skipped = try await db.write { database -> Int in
+            var skipped = 0
             for memory in memories {
                 if var existingRecord = try MemoryRecord
                     .filter(Column("backendId") == memory.id)
@@ -347,6 +347,7 @@ actor MemoryStorage {
                     _ = try MemoryRecord.from(memory).inserted(database)
                 }
             }
+            return skipped
         }
 
         if skipped > 0 {
