@@ -1,17 +1,5 @@
 import Foundation
 import GRDB
-import CryptoKit
-
-// MARK: - String SHA256 Extension
-
-extension String {
-    /// Compute SHA256 hash of the string (for OCR text deduplication)
-    var sha256Hash: String {
-        let data = Data(self.utf8)
-        let hash = SHA256.hash(data: data)
-        return hash.compactMap { String(format: "%02x", $0) }.joined()
-    }
-}
 
 /// Actor-based database manager for Rewind screenshots
 actor RewindDatabase {
@@ -1423,6 +1411,140 @@ actor RewindDatabase {
         }
 
         try migrator.migrate(queue)
+    }
+
+    // MARK: - OCR Precision Reduction Migration
+
+    /// Reduce ocrDataJson float precision from 16 to 3 decimal places (~31% size saving)
+    /// Runs once in background at startup; safe to interrupt and resume.
+    func reduceOCRDataPrecisionIfNeeded() async {
+        guard let dbQueue = dbQueue else { return }
+
+        // Check if already completed
+        let isComplete: Bool
+        do {
+            isComplete = try await dbQueue.read { db in
+                let completed = try Int.fetchOne(db, sql: """
+                    SELECT completed FROM migration_status
+                    WHERE name = 'ocr_precision_reduction'
+                """) ?? 1
+                return completed == 1
+            }
+        } catch {
+            log("RewindDatabase: Failed to check precision migration status: \(error)")
+            return
+        }
+
+        guard !isComplete else {
+            log("RewindDatabase: OCR precision reduction already complete, skipping")
+            return
+        }
+
+        log("RewindDatabase: Starting OCR precision reduction migration...")
+
+        let batchSize = 500
+        var offset = 0
+        var totalProcessed = 0
+        var totalUpdated = 0
+        let decoder = JSONDecoder()
+        let encoder = JSONEncoder()
+
+        do {
+            while true {
+                let currentOffset = offset
+                let batch: [(id: Int64, json: String)] = try await dbQueue.read { db in
+                    try Row.fetchAll(db, sql: """
+                        SELECT id, ocrDataJson FROM screenshots
+                        WHERE ocrDataJson IS NOT NULL
+                        ORDER BY id
+                        LIMIT ? OFFSET ?
+                    """, arguments: [batchSize, currentOffset]).compactMap { row in
+                        guard let id: Int64 = row["id"],
+                              let json: String = row["ocrDataJson"]
+                        else { return nil }
+                        return (id, json)
+                    }
+                }
+
+                if batch.isEmpty { break }
+
+                var updates: [(id: Int64, json: String)] = []
+                for (id, jsonString) in batch {
+                    guard let jsonData = jsonString.data(using: .utf8),
+                          let ocrResult = try? decoder.decode(OCRResult.self, from: jsonData)
+                    else { continue }
+
+                    // Round all block coordinates to 3 decimal places
+                    let roundedBlocks = ocrResult.blocks.map { block in
+                        OCRTextBlock(
+                            text: block.text,
+                            x: (block.x * 1000).rounded() / 1000,
+                            y: (block.y * 1000).rounded() / 1000,
+                            width: (block.width * 1000).rounded() / 1000,
+                            height: (block.height * 1000).rounded() / 1000,
+                            confidence: (block.confidence * 1000).rounded() / 1000
+                        )
+                    }
+
+                    let roundedResult = OCRResult(
+                        fullText: ocrResult.fullText,
+                        blocks: roundedBlocks,
+                        processedAt: ocrResult.processedAt
+                    )
+
+                    guard let data = try? encoder.encode(roundedResult),
+                          let newJson = String(data: data, encoding: .utf8)
+                    else { continue }
+
+                    // Only update if the JSON actually changed (avoid unnecessary writes)
+                    if newJson.count < jsonString.count {
+                        updates.append((id, newJson))
+                    }
+                }
+
+                if !updates.isEmpty {
+                    try await dbQueue.write { db in
+                        for (id, json) in updates {
+                            try db.execute(
+                                sql: "UPDATE screenshots SET ocrDataJson = ? WHERE id = ?",
+                                arguments: [json, id]
+                            )
+                        }
+                    }
+                    totalUpdated += updates.count
+                }
+
+                offset += batchSize
+                totalProcessed += batch.count
+
+                if totalProcessed % 5000 == 0 {
+                    log("RewindDatabase: Precision reduction — processed \(totalProcessed) rows, updated \(totalUpdated)...")
+                    // Update progress
+                    try? await dbQueue.write { db in
+                        try db.execute(sql: """
+                            UPDATE migration_status SET processedCount = ?
+                            WHERE name = 'ocr_precision_reduction'
+                        """, arguments: [totalProcessed])
+                    }
+                }
+
+                // Small yield to avoid hogging the database
+                try? await Task.sleep(nanoseconds: 10_000_000) // 10ms
+            }
+
+            // Mark complete
+            try await dbQueue.write { db in
+                try db.execute(sql: """
+                    UPDATE migration_status
+                    SET completed = 1, processedCount = ?, completedAt = datetime('now')
+                    WHERE name = 'ocr_precision_reduction'
+                """, arguments: [totalProcessed])
+            }
+
+            log("RewindDatabase: OCR precision reduction complete — processed \(totalProcessed) rows, updated \(totalUpdated)")
+        } catch {
+            log("RewindDatabase: OCR precision reduction failed at offset \(offset): \(error)")
+        }
     }
 
     // MARK: - CRUD Operations
