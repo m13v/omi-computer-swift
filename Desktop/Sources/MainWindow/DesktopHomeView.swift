@@ -16,6 +16,7 @@ struct DesktopHomeView: View {
     // Settings sidebar state
     @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .general
     @State private var previousIndexBeforeSettings: Int = 0
+    @State private var logoPulse = false
 
     /// Whether we're currently viewing the settings page
     private var isInSettings: Bool {
@@ -56,43 +57,76 @@ struct DesktopHomeView: View {
                     }
             } else {
                 // State 3: Signed in and onboarded - show main content
-                mainContent
-                    .onAppear {
-                        log("DesktopHomeView: Showing mainContent (signed in and onboarded)")
-                        // Check all permissions on launch
-                        appState.checkAllPermissions()
+                ZStack {
+                    mainContent
+                        .opacity(viewModelContainer.isInitialLoadComplete ? 1 : 0)
+                        .onAppear {
+                            log("DesktopHomeView: Showing mainContent (signed in and onboarded)")
+                            // Check all permissions on launch
+                            appState.checkAllPermissions()
 
-                        let settings = AssistantSettings.shared
+                            let settings = AssistantSettings.shared
 
-                        // Auto-start transcription if enabled in settings
-                        if settings.transcriptionEnabled && !appState.isTranscribing {
-                            log("DesktopHomeView: Auto-starting transcription")
-                            appState.startTranscription()
-                        } else if !settings.transcriptionEnabled {
-                            log("DesktopHomeView: Transcription disabled in settings, skipping auto-start")
-                        }
-
-                        // Start proactive assistants monitoring if enabled in settings
-                        if settings.screenAnalysisEnabled {
-                            ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
-                                if success {
-                                    log("DesktopHomeView: Screen analysis started")
-                                } else {
-                                    log("DesktopHomeView: Screen analysis failed to start: \(error ?? "unknown")")
-                                }
+                            // Auto-start transcription if enabled in settings
+                            if settings.transcriptionEnabled && !appState.isTranscribing {
+                                log("DesktopHomeView: Auto-starting transcription")
+                                appState.startTranscription()
+                            } else if !settings.transcriptionEnabled {
+                                log("DesktopHomeView: Transcription disabled in settings, skipping auto-start")
                             }
-                        } else {
-                            log("DesktopHomeView: Screen analysis disabled in settings, skipping auto-start")
+
+                            // Start proactive assistants monitoring if enabled in settings
+                            if settings.screenAnalysisEnabled {
+                                ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
+                                    if success {
+                                        log("DesktopHomeView: Screen analysis started")
+                                    } else {
+                                        log("DesktopHomeView: Screen analysis failed to start: \(error ?? "unknown")")
+                                    }
+                                }
+                            } else {
+                                log("DesktopHomeView: Screen analysis disabled in settings, skipping auto-start")
+                            }
                         }
+                        .task {
+                            // Trigger eager data loading when main content appears
+                            // Load conversations/folders in parallel with other data
+                            async let vmLoad: Void = viewModelContainer.loadAllData()
+                            async let conversations: Void = appState.loadConversations()
+                            async let folders: Void = appState.loadFolders()
+                            _ = await (vmLoad, conversations, folders)
+                        }
+
+                    if !viewModelContainer.isInitialLoadComplete {
+                        VStack(spacing: 24) {
+                            if let iconURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                               let nsImage = NSImage(contentsOf: iconURL) {
+                                Image(nsImage: nsImage)
+                                    .resizable()
+                                    .scaledToFit()
+                                    .frame(width: 72, height: 72)
+                                    .scaleEffect(logoPulse ? 1.08 : 1.0)
+                                    .opacity(logoPulse ? 1.0 : 0.7)
+                                    .animation(
+                                        .easeInOut(duration: 1.2).repeatForever(autoreverses: true),
+                                        value: logoPulse
+                                    )
+                                    .onAppear { logoPulse = true }
+                            }
+
+                            Text(viewModelContainer.initStatusMessage)
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OmiColors.textTertiary)
+
+                            ProgressView()
+                                .scaleEffect(0.8)
+                                .tint(OmiColors.purplePrimary.opacity(0.6))
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(OmiColors.backgroundPrimary)
+                        .transition(.opacity.animation(.easeOut(duration: 0.3)))
                     }
-                    .task {
-                        // Trigger eager data loading when main content appears
-                        // Load conversations/folders in parallel with other data
-                        async let vmLoad: Void = viewModelContainer.loadAllData()
-                        async let conversations: Void = appState.loadConversations()
-                        async let folders: Void = appState.loadFolders()
-                        _ = await (vmLoad, conversations, folders)
-                    }
+                }
             }
         }
         .background(OmiColors.backgroundPrimary)
