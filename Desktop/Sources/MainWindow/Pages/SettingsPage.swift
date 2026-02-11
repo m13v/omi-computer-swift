@@ -64,12 +64,14 @@ struct SettingsContentView: View {
     @State private var cooldownInterval: Int
     @State private var glowOverlayEnabled: Bool
     @State private var analysisDelay: Int
+    @State private var focusNotificationsEnabled: Bool
     @State private var focusExcludedApps: Set<String>
 
     // Task Assistant states
     @State private var taskEnabled: Bool
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
+    @State private var taskNotificationsEnabled: Bool
     @State private var taskAllowedApps: Set<String>
     @State private var taskBrowserKeywords: [String]
     @State private var isRescoringTasks = false
@@ -78,6 +80,7 @@ struct SettingsContentView: View {
     @State private var adviceEnabled: Bool
     @State private var adviceExtractionInterval: Double
     @State private var adviceMinConfidence: Double
+    @State private var adviceNotificationsEnabled: Bool
     @State private var adviceExcludedApps: Set<String>
 
     // Memory Assistant states
@@ -185,15 +188,18 @@ struct SettingsContentView: View {
         _cooldownInterval = State(initialValue: FocusAssistantSettings.shared.cooldownInterval)
         _glowOverlayEnabled = State(initialValue: settings.glowOverlayEnabled)
         _analysisDelay = State(initialValue: settings.analysisDelay)
+        _focusNotificationsEnabled = State(initialValue: FocusAssistantSettings.shared.notificationsEnabled)
         _focusExcludedApps = State(initialValue: FocusAssistantSettings.shared.excludedApps)
         _taskEnabled = State(initialValue: TaskAssistantSettings.shared.isEnabled)
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
+        _taskNotificationsEnabled = State(initialValue: TaskAssistantSettings.shared.notificationsEnabled)
         _taskAllowedApps = State(initialValue: TaskAssistantSettings.shared.allowedApps)
         _taskBrowserKeywords = State(initialValue: TaskAssistantSettings.shared.browserKeywords)
         _adviceEnabled = State(initialValue: AdviceAssistantSettings.shared.isEnabled)
         _adviceExtractionInterval = State(initialValue: AdviceAssistantSettings.shared.extractionInterval)
         _adviceMinConfidence = State(initialValue: AdviceAssistantSettings.shared.minConfidence)
+        _adviceNotificationsEnabled = State(initialValue: AdviceAssistantSettings.shared.notificationsEnabled)
         _adviceExcludedApps = State(initialValue: AdviceAssistantSettings.shared.excludedApps)
         _memoryEnabled = State(initialValue: MemoryAssistantSettings.shared.isEnabled)
         _memoryExtractionInterval = State(initialValue: MemoryAssistantSettings.shared.extractionInterval)
@@ -864,6 +870,36 @@ struct SettingsContentView: View {
                             .onChange(of: notificationFrequency) { _, newValue in
                                 updateNotificationSettings(frequency: newValue)
                             }
+                        }
+
+                        settingRow(title: "Focus Notifications", subtitle: "Show notification on focus changes") {
+                            Toggle("", isOn: $focusNotificationsEnabled)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .onChange(of: focusNotificationsEnabled) { _, newValue in
+                                    FocusAssistantSettings.shared.notificationsEnabled = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(focus: FocusSettingsResponse(notificationsEnabled: newValue)))
+                                }
+                        }
+
+                        settingRow(title: "Task Notifications", subtitle: "Show notification when a task is extracted") {
+                            Toggle("", isOn: $taskNotificationsEnabled)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .onChange(of: taskNotificationsEnabled) { _, newValue in
+                                    TaskAssistantSettings.shared.notificationsEnabled = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(task: TaskSettingsResponse(notificationsEnabled: newValue)))
+                                }
+                        }
+
+                        settingRow(title: "Advice Notifications", subtitle: "Show notification when advice is generated") {
+                            Toggle("", isOn: $adviceNotificationsEnabled)
+                                .toggleStyle(.switch)
+                                .labelsHidden()
+                                .onChange(of: adviceNotificationsEnabled) { _, newValue in
+                                    AdviceAssistantSettings.shared.notificationsEnabled = newValue
+                                    SettingsSyncManager.shared.pushPartialUpdate(AssistantSettingsResponse(advice: AdviceSettingsResponse(notificationsEnabled: newValue)))
+                                }
                         }
 
                         settingRow(title: "Memory Notifications", subtitle: "Show notification when a memory is extracted") {
