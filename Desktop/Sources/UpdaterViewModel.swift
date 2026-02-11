@@ -5,6 +5,9 @@ import Sparkle
 /// Delegate to track Sparkle update events for analytics
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
+    /// Back-reference to the view model (set after init)
+    weak var viewModel: UpdaterViewModel?
+
     /// Called when Sparkle is about to check for updates (permission gate)
     func updater(_ updater: SPUUpdater, mayPerform check: SPUUpdateCheck) throws {
         Task { @MainActor in
@@ -26,6 +29,8 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         Task { @MainActor in
             log("Sparkle: Found update v\(version)")
             AnalyticsManager.shared.updateAvailable(version: version)
+            self.viewModel?.updateAvailable = true
+            self.viewModel?.availableVersion = version
         }
     }
 
@@ -34,6 +39,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         Task { @MainActor in
             log("Sparkle: No update available")
             AnalyticsManager.shared.updateNotFound()
+            self.viewModel?.updateAvailable = false
         }
     }
 
@@ -61,6 +67,7 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         Task { @MainActor in
             log("Sparkle: Installing update v\(version)")
             AnalyticsManager.shared.updateInstalled(version: version)
+            self.viewModel?.updateAvailable = false
         }
     }
 }
@@ -84,6 +91,12 @@ final class UpdaterViewModel: ObservableObject {
     /// Whether the updater can check for updates (e.g., not already checking)
     @Published private(set) var canCheckForUpdates: Bool = true
 
+    /// Whether a new update is available (set by delegate callbacks)
+    @Published var updateAvailable: Bool = false
+
+    /// Version string of the available update
+    @Published var availableVersion: String = ""
+
     /// The date of the last update check
     var lastUpdateCheckDate: Date? {
         updaterController.updater.lastUpdateCheckDate
@@ -96,6 +109,9 @@ final class UpdaterViewModel: ObservableObject {
             updaterDelegate: updaterDelegate,
             userDriverDelegate: nil
         )
+
+        // Wire up delegate back-reference
+        updaterDelegate.viewModel = self
 
         // Initialize published property from updater state
         automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
