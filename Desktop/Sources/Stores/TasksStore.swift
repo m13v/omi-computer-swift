@@ -360,6 +360,11 @@ class TasksStore: ObservableObject {
             await performFullSyncIfNeeded()
             await retryUnsyncedItems()
         }
+        // Backfill relevance scores for unscored tasks (independent of full sync)
+        Task {
+            let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
+            await backfillRelevanceScoresIfNeeded(userId: userId)
+        }
     }
 
     /// Load incomplete tasks (To Do) using local-first pattern
@@ -651,9 +656,6 @@ class TasksStore: ObservableObject {
 
             // Backfill due dates on backend for tasks that have none
             await backfillDueDatesOnBackendIfNeeded(userId: userId)
-
-            // Backfill relevance scores for unscored tasks
-            await backfillRelevanceScoresIfNeeded(userId: userId)
         } catch {
             logError("TasksStore: Full sync failed (will retry next launch)", error: error)
         }
