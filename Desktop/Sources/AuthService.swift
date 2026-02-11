@@ -721,8 +721,13 @@ class AuthService {
             // Validate token belongs to current user to prevent using stale tokens after account switch
             // Allow tokens without userId (backward compatibility with pre-c052b0b tokens)
             if let tokenUserId = storedTokenUserId {
-                // Token has userId - must match expected user
-                if let expected = expectedUserId, tokenUserId == expected {
+                if expectedUserId == nil {
+                    // expectedUserId missing (migration gap, crash recovery) - trust the token
+                    // and backfill the userId so future calls don't hit this path
+                    NSLog("OMI AUTH: expectedUserId is nil but token has userId %@ - backfilling", tokenUserId)
+                    UserDefaults.standard.set(tokenUserId, forKey: kAuthUserId)
+                    return token
+                } else if tokenUserId == expectedUserId {
                     return token
                 } else {
                     NSLog("OMI AUTH: Stored token user mismatch (token: %@, expected: %@) - clearing stale token",
@@ -737,10 +742,10 @@ class AuthService {
         }
 
         // Second try: Refresh using stored refresh token
-        // Allow refresh for tokens without userId (backward compatibility)
+        // Allow refresh when expectedUserId is nil (token was saved by valid sign-in)
         if let _ = storedRefreshToken {
             let tokenUserId = storedTokenUserId
-            let canRefresh = tokenUserId == nil || (expectedUserId != nil && tokenUserId == expectedUserId)
+            let canRefresh = tokenUserId == nil || expectedUserId == nil || tokenUserId == expectedUserId
             if canRefresh {
                 do {
                     return try await refreshIdToken()
@@ -753,7 +758,12 @@ class AuthService {
         // Third try: Use Firebase SDK (only if user matches expected user)
         // This prevents returning a stale user's token during sign-out race conditions
         if let user = Auth.auth().currentUser {
-            if let expected = expectedUserId, user.uid == expected {
+            if expectedUserId == nil || user.uid == expectedUserId {
+                if expectedUserId == nil {
+                    // Backfill the missing userId
+                    NSLog("OMI AUTH: expectedUserId is nil, backfilling from Firebase SDK user %@", user.uid)
+                    UserDefaults.standard.set(user.uid, forKey: kAuthUserId)
+                }
                 let tokenResult = try await user.getIDTokenResult(forcingRefresh: forceRefresh)
                 return tokenResult.token
             } else {
