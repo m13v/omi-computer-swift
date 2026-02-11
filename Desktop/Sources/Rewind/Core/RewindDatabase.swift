@@ -1840,7 +1840,10 @@ actor RewindDatabase {
             }
         }
 
-        guard !conditions.isEmpty else { return [] }
+        guard !conditions.isEmpty else {
+            log("RewindDatabase.getScreenshotsFiltered: No conditions generated, returning empty")
+            return []
+        }
 
         let sql = """
             SELECT * FROM screenshots
@@ -1850,8 +1853,18 @@ actor RewindDatabase {
         """
         arguments.append(limit)
 
+        log("RewindDatabase.getScreenshotsFiltered: Executing query")
+        log("  SQL: \(sql)")
+        log("  Date range: \(startDate) to \(endDate)")
+        log("  nonBrowserApps: \(nonBrowserApps.sorted())")
+        log("  allowedBrowserApps: \(allowedBrowserApps.sorted())")
+        log("  browserWindowPatterns count: \(browserWindowPatterns.count)")
+        log("  Total arguments count: \(arguments.count)")
+
         return try dbQueue.read { db in
-            try Screenshot.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            let results = try Screenshot.fetchAll(db, sql: sql, arguments: StatementArguments(arguments))
+            log("RewindDatabase.getScreenshotsFiltered: Returned \(results.count) screenshots")
+            return results
         }
     }
 
