@@ -2400,6 +2400,7 @@ struct TaskRow: View {
     @State private var rowOpacity: Double = 1.0
     @State private var rowOffset: CGFloat = 0
     @State private var showAgentDetail = false
+    @State private var showTaskDetail = false
 
     // Inline editing state
     @State private var editText = ""
@@ -2452,6 +2453,12 @@ struct TaskRow: View {
                 TaskAgentDetailView(
                     task: task,
                     onDismiss: { showAgentDetail = false }
+                )
+            }
+            .sheet(isPresented: $showTaskDetail) {
+                TaskDetailView(
+                    task: task,
+                    onDismiss: { showTaskDetail = false }
                 )
             }
     }
@@ -2754,6 +2761,11 @@ struct TaskRow: View {
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                     if TaskAgentSettings.shared.isEnabled {
                         AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail)
+                    }
+
+                    // Task detail button for tasks with rich metadata
+                    if task.hasDetailMetadata {
+                        TaskDetailButton(showDetail: $showTaskDetail)
                     }
 
                     // Due date badge - clickable
