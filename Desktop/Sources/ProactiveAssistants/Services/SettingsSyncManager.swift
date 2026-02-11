@@ -56,6 +56,7 @@ class SettingsSyncManager {
             if let v = focus.enabled { FocusAssistantSettings.shared.isEnabled = v }
             if let v = focus.analysisPrompt { FocusAssistantSettings.shared.analysisPrompt = v }
             if let v = focus.cooldownInterval { FocusAssistantSettings.shared.cooldownInterval = v }
+            if let v = focus.notificationsEnabled { FocusAssistantSettings.shared.notificationsEnabled = v }
             if let v = focus.excludedApps { FocusAssistantSettings.shared.excludedApps = Set(v) }
         }
 
@@ -65,6 +66,7 @@ class SettingsSyncManager {
             if let v = task.analysisPrompt { TaskAssistantSettings.shared.analysisPrompt = v }
             if let v = task.extractionInterval { TaskAssistantSettings.shared.extractionInterval = v }
             if let v = task.minConfidence { TaskAssistantSettings.shared.minConfidence = v }
+            if let v = task.notificationsEnabled { TaskAssistantSettings.shared.notificationsEnabled = v }
             if let v = task.allowedApps { TaskAssistantSettings.shared.allowedApps = Set(v) }
             if let v = task.browserKeywords { TaskAssistantSettings.shared.browserKeywords = v }
         }
@@ -75,6 +77,7 @@ class SettingsSyncManager {
             if let v = advice.analysisPrompt { AdviceAssistantSettings.shared.analysisPrompt = v }
             if let v = advice.extractionInterval { AdviceAssistantSettings.shared.extractionInterval = v }
             if let v = advice.minConfidence { AdviceAssistantSettings.shared.minConfidence = v }
+            if let v = advice.notificationsEnabled { AdviceAssistantSettings.shared.notificationsEnabled = v }
             if let v = advice.excludedApps { AdviceAssistantSettings.shared.excludedApps = Set(v) }
         }
 
@@ -103,6 +106,7 @@ class SettingsSyncManager {
             enabled: FocusAssistantSettings.shared.isEnabled,
             analysisPrompt: FocusAssistantSettings.shared.analysisPrompt,
             cooldownInterval: FocusAssistantSettings.shared.cooldownInterval,
+            notificationsEnabled: FocusAssistantSettings.shared.notificationsEnabled,
             excludedApps: Array(FocusAssistantSettings.shared.excludedApps)
         )
 
@@ -111,6 +115,7 @@ class SettingsSyncManager {
             analysisPrompt: TaskAssistantSettings.shared.analysisPrompt,
             extractionInterval: TaskAssistantSettings.shared.extractionInterval,
             minConfidence: TaskAssistantSettings.shared.minConfidence,
+            notificationsEnabled: TaskAssistantSettings.shared.notificationsEnabled,
             allowedApps: Array(TaskAssistantSettings.shared.allowedApps),
             browserKeywords: TaskAssistantSettings.shared.browserKeywords
         )
@@ -120,6 +125,7 @@ class SettingsSyncManager {
             analysisPrompt: AdviceAssistantSettings.shared.analysisPrompt,
             extractionInterval: AdviceAssistantSettings.shared.extractionInterval,
             minConfidence: AdviceAssistantSettings.shared.minConfidence,
+            notificationsEnabled: AdviceAssistantSettings.shared.notificationsEnabled,
             excludedApps: Array(AdviceAssistantSettings.shared.excludedApps)
         )
 
