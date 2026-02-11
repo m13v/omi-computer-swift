@@ -20,17 +20,21 @@ actor EmbeddingService {
     // MARK: - Embedding API
 
     /// Generate embedding for a single text
-    func embed(text: String) async throws -> [Float] {
+    /// - Parameter taskType: Optional Gemini task type (e.g. "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY")
+    func embed(text: String, taskType: String? = nil) async throws -> [Float] {
         guard let apiKey = apiKey else {
             throw EmbeddingError.missingAPIKey
         }
 
-        let requestBody: [String: Any] = [
+        var requestBody: [String: Any] = [
             "model": "models/\(model)",
             "content": [
                 "parts": [["text": text]]
             ]
         ]
+        if let taskType = taskType {
+            requestBody["taskType"] = taskType
+        }
 
         let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):embedContent?key=\(apiKey)")!
         var request = URLRequest(url: url)
@@ -52,18 +56,23 @@ actor EmbeddingService {
     }
 
     /// Batch embed multiple texts (up to 100 per call)
-    func embedBatch(texts: [String]) async throws -> [[Float]] {
+    /// - Parameter taskType: Optional Gemini task type (e.g. "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY")
+    func embedBatch(texts: [String], taskType: String? = nil) async throws -> [[Float]] {
         guard let apiKey = apiKey else {
             throw EmbeddingError.missingAPIKey
         }
 
         let requests = texts.map { text in
-            [
+            var req: [String: Any] = [
                 "model": "models/\(model)",
                 "content": [
                     "parts": [["text": text]]
                 ]
-            ] as [String: Any]
+            ]
+            if let taskType = taskType {
+                req["taskType"] = taskType
+            }
+            return req
         }
 
         let requestBody: [String: Any] = ["requests": requests]
