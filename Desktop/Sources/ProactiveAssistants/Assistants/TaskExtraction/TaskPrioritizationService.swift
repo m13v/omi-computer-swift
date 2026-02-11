@@ -315,9 +315,28 @@ actor TaskPrioritizationService {
 
         lastFullRunTime = Date()
 
+        // Sync all scores to backend after re-ranking
+        await syncAllScoresToBackend()
+
         await loadAllowlistFromSQLite()
         log("TaskPrioritize: [FULL] Done. Top \(visibleAITaskIds.count) visible.")
         await notifyStoreUpdated()
+    }
+
+    /// Sync all scored tasks to the backend after Gemini re-ranking
+    private func syncAllScoresToBackend() async {
+        do {
+            let tasks = try await ActionItemStorage.shared.getAllScoredTasks()
+            let scores = tasks.compactMap { t -> (id: String, score: Int)? in
+                guard let s = t.relevanceScore, !t.id.hasPrefix("local_") else { return nil }
+                return (id: t.id, score: s)
+            }
+            guard !scores.isEmpty else { return }
+            try await APIClient.shared.batchUpdateScores(scores)
+            log("TaskPrioritize: Synced \(scores.count) scores to backend")
+        } catch {
+            logError("TaskPrioritize: Failed to sync scores to backend", error: error)
+        }
     }
 
     // MARK: - Shared Context Fetching
