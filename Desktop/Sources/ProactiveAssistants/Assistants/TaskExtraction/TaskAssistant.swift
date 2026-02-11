@@ -325,7 +325,13 @@ actor TaskAssistant: ProactiveAssistant {
             AnalyticsManager.shared.taskExtracted(taskCount: 1)
         }
 
-        await sendTaskNotification(task: task)
+        // Send notification if enabled
+        let notificationsEnabled = await MainActor.run {
+            TaskAssistantSettings.shared.notificationsEnabled
+        }
+        if notificationsEnabled {
+            await sendTaskNotification(task: task)
+        }
 
         sendEvent("taskExtracted", [
             "assistant": identifier,
