@@ -522,7 +522,7 @@ struct TaskTestRunnerView: View {
 
                     // Run extraction pipeline
                     let analyzeStart = Date()
-                    let (result, searchCount) = try await assistant.testAnalyze(jpegData: jpegData, appName: screenshot.appName)
+                    let (result, searchCount) = try await taskAssistant.testAnalyze(jpegData: jpegData, appName: screenshot.appName)
                     let duration = Date().timeIntervalSince(analyzeStart)
 
                     await MainActor.run {
