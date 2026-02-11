@@ -313,7 +313,7 @@ extension APIClient {
         // Set visibility to shared
         try await setConversationVisibility(id: id, visibility: "shared")
         // Return the web URL for the shared conversation
-        return "https://omi.me/c/\(id)"
+        return "https://h.omi.me/conversations/\(id)"
     }
 
     /// Updates the title of a conversation
