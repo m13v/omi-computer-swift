@@ -185,6 +185,6 @@ node /Users/matthewdi/omi-analytics/scripts/send-email.js \
   --body "<what was done, what they should expect, any next steps>"
 ```
 
-- Keep the email concise and friendly — written as Matt from OMI
-- Include what was investigated/fixed and any action the user needs to take (e.g. update the app)
+- Write as Matt (first person "I", not "we") — the user already has an ongoing email thread with us, so treat this as a casual continuation of that conversation, not a fresh introduction
+- Be concise and direct — they know the context, just share what was done and any next steps (e.g. "update the app")
 - Only send when there are meaningful results to share (don't email for internal-only changes)
