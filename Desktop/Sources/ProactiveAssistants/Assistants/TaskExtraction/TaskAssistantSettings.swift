@@ -11,6 +11,7 @@ class TaskAssistantSettings {
     private let analysisPromptKey = "taskAnalysisPrompt"
     private let extractionIntervalKey = "taskExtractionInterval"
     private let minConfidenceKey = "taskMinConfidence"
+    private let notificationsEnabledKey = "taskNotificationsEnabled"
     private let allowedAppsKey = "taskAllowedApps"
     private let browserKeywordsKey = "taskBrowserKeywords"
 
@@ -109,6 +110,7 @@ class TaskAssistantSettings {
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes
     private let defaultMinConfidence: Double = 0.75
+    private let defaultNotificationsEnabled = true
 
     /// Default system prompt for task extraction (loop-based with tool calling)
     static let defaultAnalysisPrompt = """
@@ -244,6 +246,7 @@ class TaskAssistantSettings {
             enabledKey: defaultEnabled,
             extractionIntervalKey: defaultExtractionInterval,
             minConfidenceKey: defaultMinConfidence,
+            notificationsEnabledKey: defaultNotificationsEnabled,
         ])
     }
 
@@ -296,6 +299,15 @@ class TaskAssistantSettings {
         set {
             UserDefaults.standard.set(newValue, forKey: minConfidenceKey)
             log("Task min confidence threshold updated to \(newValue)")
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether to show notifications when tasks are extracted
+    var notificationsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: notificationsEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: notificationsEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
