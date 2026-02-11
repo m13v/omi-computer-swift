@@ -1,7 +1,6 @@
 import Foundation
 import Vision
 import AppKit
-import CryptoKit
 import Sentry
 
 /// Represents a text block with its bounding box (in normalized coordinates 0-1)
@@ -80,43 +79,56 @@ actor RewindOCRService {
 
     // MARK: - Frame Deduplication
 
-    private var lastFrameFingerprint: SHA256Digest?
+    private var lastFrameFingerprint: UInt64?
+
+    /// Hamming distance threshold for dHash deduplication.
+    /// Distances at or below this value are considered "same screen" (cursor blink, spinner, clock tick).
+    /// Empirically: spinner animation = 1, cursor shift = 4, real content change = 23.
+    private let dedupThreshold = 5
 
     /// Track last-logged OCR mode to only log on change
     private var lastLoggedOCRMode: String?
 
-    /// Compute a SHA256 fingerprint of a CGImage by scaling to 1024x1024 grayscale and hashing pixel data.
-    /// Using SHA256 instead of Data.hashValue because Swift's hashValue only samples a subset of bytes,
-    /// causing false collisions on large (1MB) buffers where most pixels are similar.
-    static func fingerprint(of cgImage: CGImage) -> SHA256Digest? {
-        let size = 1024
-        let bytesPerRow = size
-        let totalBytes = size * size
-
-        guard let context = CGContext(
-            data: nil,
-            width: size,
-            height: size,
-            bitsPerComponent: 8,
-            bytesPerRow: bytesPerRow,
+    /// Compute a perceptual difference hash (dHash) of a CGImage.
+    /// Downscales to 9x8 grayscale, then compares each pixel to its right neighbor
+    /// to produce a 64-bit hash. Small localized changes (cursor, spinners) affect
+    /// only 1-2 bits, while real content changes affect many bits.
+    static func dHash(of cgImage: CGImage) -> UInt64 {
+        let w = 9, h = 8
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h,
+            bitsPerComponent: 8, bytesPerRow: w,
             space: CGColorSpaceCreateDeviceGray(),
             bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
+        ) else { return 0 }
 
-        context.interpolationQuality = .low
-        context.draw(cgImage, in: CGRect(x: 0, y: 0, width: size, height: size))
+        ctx.interpolationQuality = .low
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: w, height: h))
 
-        guard let data = context.data else { return nil }
-        let buffer = UnsafeBufferPointer(start: data.assumingMemoryBound(to: UInt8.self), count: totalBytes)
-        return SHA256.hash(data: buffer)
+        guard let data = ctx.data else { return 0 }
+        let pixels = data.assumingMemoryBound(to: UInt8.self)
+
+        var hash: UInt64 = 0
+        for row in 0..<h {
+            for col in 0..<(w - 1) {
+                let idx = row * w + col
+                if pixels[idx] > pixels[idx + 1] {
+                    hash |= 1 << (row * (w - 1) + col)
+                }
+            }
+        }
+        return hash
     }
 
-    /// Check if a frame should skip OCR because it's identical to the previous frame
+    /// Check if a frame should skip OCR because it's perceptually identical to the previous frame.
+    /// Uses dHash with Hamming distance — small changes (cursor blink, spinners) produce
+    /// distance 1-4 and are skipped, while real content changes produce distance 10+ and trigger OCR.
     func shouldSkipOCR(for cgImage: CGImage) async -> Bool {
-        guard let fingerprint = Self.fingerprint(of: cgImage) else { return false }
-        let isDuplicate = (lastFrameFingerprint != nil && fingerprint == lastFrameFingerprint!)
-        lastFrameFingerprint = fingerprint
-        return isDuplicate
+        let fingerprint = Self.dHash(of: cgImage)
+        defer { lastFrameFingerprint = fingerprint }
+        guard let last = lastFrameFingerprint else { return false }
+        let distance = (fingerprint ^ last).nonzeroBitCount
+        return distance <= dedupThreshold
     }
 
     // MARK: - Text Extraction with Bounding Boxes
