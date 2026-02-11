@@ -372,7 +372,7 @@ actor FocusAssistant: ProactiveAssistant {
                 // Save to SQLite and sync to backend
                 await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId, windowTitle: frame.windowTitle)
 
-                // Also save to old storage for UI compatibility (dual-write during transition)
+                // Update FocusStorage UI state (sessions list, currentStatus, currentApp)
                 Task { @MainActor in
                     FocusStorage.shared.addSession(from: analysis)
                 }
@@ -426,7 +426,7 @@ actor FocusAssistant: ProactiveAssistant {
                 // Save to SQLite and sync to backend
                 await saveFocusSessionToSQLite(analysis: analysis, screenshotId: frame.screenshotId, windowTitle: frame.windowTitle)
 
-                // Also save to old storage for UI compatibility (dual-write during transition)
+                // Update FocusStorage UI state (sessions list, currentStatus, currentApp)
                 Task { @MainActor in
                     FocusStorage.shared.addSession(from: analysis)
                 }
