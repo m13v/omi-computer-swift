@@ -19,7 +19,7 @@ class AdviceAssistantSettings {
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes between analyses
     private let defaultMinConfidence: Double = 0.85 // High threshold - only show when very confident
-    private let defaultNotificationsEnabled = true
+    private let defaultNotificationsEnabled = false
 
     /// Default system prompt for advice extraction
     static let defaultAnalysisPrompt = """
