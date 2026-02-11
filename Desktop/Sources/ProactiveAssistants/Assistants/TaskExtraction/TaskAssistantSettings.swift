@@ -316,9 +316,15 @@ class TaskAssistantSettings {
     /// The full editable set of allowed apps. Initialized from defaults if user hasn't customized.
     var allowedApps: Set<String> {
         get {
-            if let saved = UserDefaults.standard.array(forKey: allowedAppsKey) as? [String] {
+            let rawValue = UserDefaults.standard.array(forKey: allowedAppsKey)
+            log("TaskAssistantSettings.allowedApps: Raw UserDefaults value for '\(allowedAppsKey)': \(String(describing: rawValue))")
+            log("TaskAssistantSettings.allowedApps: defaultAllowedApps count: \(TaskAssistantSettings.defaultAllowedApps.count)")
+
+            if let saved = rawValue as? [String] {
+                log("TaskAssistantSettings.allowedApps: Returning saved value with \(saved.count) items: \(saved)")
                 return Set(saved)
             }
+            log("TaskAssistantSettings.allowedApps: No saved value, returning defaults with \(TaskAssistantSettings.defaultAllowedApps.count) items")
             return TaskAssistantSettings.defaultAllowedApps
         }
         set {
@@ -331,8 +337,10 @@ class TaskAssistantSettings {
     var browserKeywords: [String] {
         get {
             if let saved = UserDefaults.standard.array(forKey: browserKeywordsKey) as? [String] {
+                log("TaskAssistantSettings.browserKeywords: Returning saved value with \(saved.count) items")
                 return saved
             }
+            log("TaskAssistantSettings.browserKeywords: No saved value, returning defaults with \(TaskAssistantSettings.defaultBrowserKeywords.count) items")
             return TaskAssistantSettings.defaultBrowserKeywords
         }
         set {
