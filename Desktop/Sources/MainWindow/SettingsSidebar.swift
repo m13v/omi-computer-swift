@@ -3,6 +3,7 @@ import SwiftUI
 /// Settings sidebar that replaces the main sidebar when in settings
 struct SettingsSidebar: View {
     @Binding var selectedSection: SettingsContentView.SettingsSection
+    @Binding var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection?
     let onBack: () -> Void
 
     @State private var isBackHovered = false
@@ -27,18 +28,36 @@ struct SettingsSidebar: View {
                 .padding(.bottom, 16)
 
             // Settings sections
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(SettingsContentView.SettingsSection.allCases, id: \.self) { section in
-                    SettingsSidebarItem(
-                        section: section,
-                        isSelected: selectedSection == section,
-                        iconWidth: iconWidth,
-                        onTap: {
-                            withAnimation(.easeInOut(duration: 0.15)) {
-                                selectedSection = section
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(SettingsContentView.SettingsSection.allCases, id: \.self) { section in
+                        SettingsSidebarItem(
+                            section: section,
+                            isSelected: selectedSection == section,
+                            iconWidth: iconWidth,
+                            onTap: {
+                                withAnimation(.easeInOut(duration: 0.15)) {
+                                    selectedSection = section
+                                }
+                            }
+                        )
+
+                        // Show Advanced subsections when Advanced is selected
+                        if section == .advanced && selectedSection == .advanced {
+                            ForEach(SettingsContentView.AdvancedSubsection.allCases, id: \.self) { subsection in
+                                SettingsSubsectionItem(
+                                    subsection: subsection,
+                                    isSelected: selectedAdvancedSubsection == subsection,
+                                    iconWidth: iconWidth,
+                                    onTap: {
+                                        withAnimation(.easeInOut(duration: 0.15)) {
+                                            selectedAdvancedSubsection = subsection
+                                        }
+                                    }
+                                )
                             }
                         }
-                    )
+                    }
                 }
             }
             .padding(.horizontal, 8)
@@ -132,9 +151,54 @@ struct SettingsSidebarItem: View {
     }
 }
 
+// MARK: - Settings Subsection Item
+struct SettingsSubsectionItem: View {
+    let subsection: SettingsContentView.AdvancedSubsection
+    let isSelected: Bool
+    let iconWidth: CGFloat
+    let onTap: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 10) {
+            // Indentation spacer
+            Spacer()
+                .frame(width: iconWidth + 12)
+
+            Image(systemName: subsection.icon)
+                .font(.system(size: 14))
+                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                .frame(width: 16)
+
+            Text(subsection.rawValue)
+                .font(.system(size: 13, weight: isSelected ? .medium : .regular))
+                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+        .contentShape(Rectangle())
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isSelected
+                      ? OmiColors.backgroundTertiary.opacity(0.6)
+                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.3) : Color.clear))
+        )
+        .onTapGesture {
+            onTap()
+        }
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
 #Preview {
     SettingsSidebar(
-        selectedSection: .constant(.general),
+        selectedSection: .constant(.advanced),
+        selectedAdvancedSubsection: .constant(.aiUserProfile),
         onBack: {}
     )
     .preferredColorScheme(.dark)
