@@ -188,7 +188,14 @@ actor RewindIndexer {
                 skippedForBattery: skippedForBattery
             )
 
-            try await RewindDatabase.shared.insertScreenshot(screenshot)
+            let inserted = try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            // Embed OCR text for semantic search (non-blocking)
+            if let ocrText = ocrText, !ocrText.isEmpty, let id = inserted.id {
+                Task(priority: .utility) {
+                    await OCREmbeddingService.shared.embedScreenshot(id: id, ocrText: ocrText, appName: frame.appName, windowTitle: frame.windowTitle)
+                }
+            }
 
             // Notify that a new frame was captured (for live UI updates)
             DispatchQueue.main.async {
@@ -258,7 +265,14 @@ actor RewindIndexer {
                 skippedForBattery: skippedForBattery
             )
 
-            try await RewindDatabase.shared.insertScreenshot(screenshot)
+            let inserted = try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            // Embed OCR text for semantic search (non-blocking)
+            if let ocrText = ocrText, !ocrText.isEmpty, let id = inserted.id {
+                Task(priority: .utility) {
+                    await OCREmbeddingService.shared.embedScreenshot(id: id, ocrText: ocrText, appName: appName, windowTitle: windowTitle)
+                }
+            }
 
             DispatchQueue.main.async {
                 NotificationCenter.default.post(name: .rewindFrameCaptured, object: nil)
@@ -347,7 +361,14 @@ actor RewindIndexer {
                 skippedForBattery: skippedForBattery
             )
 
-            try await RewindDatabase.shared.insertScreenshot(screenshot)
+            let inserted = try await RewindDatabase.shared.insertScreenshot(screenshot)
+
+            // Embed OCR text for semantic search (non-blocking)
+            if let ocrText = ocrText, !ocrText.isEmpty, let id = inserted.id {
+                Task(priority: .utility) {
+                    await OCREmbeddingService.shared.embedScreenshot(id: id, ocrText: ocrText, appName: frame.appName, windowTitle: frame.windowTitle)
+                }
+            }
 
             // Notify that a new frame was captured (for live UI updates)
             DispatchQueue.main.async {
