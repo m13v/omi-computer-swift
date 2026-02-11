@@ -2054,6 +2054,23 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         return json["confidence"] as? Double
     }
 
+    /// Parse full metadata JSON dictionary
+    var parsedMetadata: [String: Any]? {
+        guard let metadata = metadata,
+              let data = metadata.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
+            return nil
+        }
+        return json
+    }
+
+    /// Whether this task has detail metadata worth showing (beyond tags/category already visible as badges)
+    var hasDetailMetadata: Bool {
+        guard let json = parsedMetadata else { return false }
+        let displayedKeys: Set<String> = ["tags", "category", "source_category", "source_subcategory"]
+        return json.keys.contains(where: { !displayedKeys.contains($0) })
+    }
+
     /// Display-friendly source label
     var sourceLabel: String {
         guard let source = source else { return "Task" }
