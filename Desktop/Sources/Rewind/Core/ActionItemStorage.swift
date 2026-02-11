@@ -473,9 +473,9 @@ actor ActionItemStorage {
     func syncTaskActionItems(_ items: [TaskActionItem]) async throws {
         let db = try await ensureInitialized()
 
-        var skipped = 0
-        var adopted = 0
-        try await db.write { database in
+        let (skipped, adopted) = try await db.write { database -> (Int, Int) in
+            var skipped = 0
+            var adopted = 0
             for item in items {
                 if var existingRecord = try ActionItemRecord
                     .filter(Column("backendId") == item.id)
@@ -518,6 +518,7 @@ actor ActionItemStorage {
                     try newRecord.insert(database)
                 }
             }
+            return (skipped, adopted)
         }
 
         if skipped > 0 || adopted > 0 {
