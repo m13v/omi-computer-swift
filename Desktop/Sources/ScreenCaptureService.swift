@@ -388,6 +388,7 @@ final class ScreenCaptureService: Sendable {
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = SCStreamConfiguration()
             config.scalesToFit = true
+            config.showsCursor = false
             // Calculate dimensions maintaining aspect ratio (don't create square canvas)
             let windowWidth = window.frame.width
             let windowHeight = window.frame.height
@@ -448,6 +449,7 @@ final class ScreenCaptureService: Sendable {
             let filter = SCContentFilter(desktopIndependentWindow: window)
             let config = SCStreamConfiguration()
             config.scalesToFit = true
+            config.showsCursor = false
             let windowWidth = window.frame.width
             let windowHeight = window.frame.height
             let aspectRatio = windowWidth / windowHeight
