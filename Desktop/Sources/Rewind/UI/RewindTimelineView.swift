@@ -604,12 +604,14 @@ struct ScreenshotPreviewView: View {
                     Text(highlightedText(text, query: query))
                         .font(.system(size: 11))
                         .textSelection(.enabled)
+                        .if_available_writingToolsNone()
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     Text(text)
                         .font(.system(size: 11))
                         .foregroundColor(OmiColors.textSecondary)
                         .textSelection(.enabled)
+                        .if_available_writingToolsNone()
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
