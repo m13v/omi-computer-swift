@@ -4168,6 +4168,8 @@ impl FirestoreService {
             if let Some(v) = ap { m.insert("analysis_prompt".into(), json!({"stringValue": v})); }
             let ci = new.cooldown_interval.or(cur.cooldown_interval);
             if let Some(v) = ci { m.insert("cooldown_interval".into(), json!({"integerValue": v.to_string()})); }
+            let ne = new.notifications_enabled.or(cur.notifications_enabled);
+            if let Some(v) = ne { m.insert("notifications_enabled".into(), json!({"booleanValue": v})); }
             let ea = new.excluded_apps.or(cur.excluded_apps);
             if let Some(v) = ea { m.insert("excluded_apps".into(), self.build_string_array_value(&v)); }
             if !m.is_empty() {
@@ -4190,6 +4192,8 @@ impl FirestoreService {
             if let Some(v) = mc { m.insert("min_confidence".into(), json!({"doubleValue": v})); }
             let aa = new.allowed_apps.or(cur.allowed_apps);
             if let Some(v) = aa { m.insert("allowed_apps".into(), self.build_string_array_value(&v)); }
+            let ne = new.notifications_enabled.or(cur.notifications_enabled);
+            if let Some(v) = ne { m.insert("notifications_enabled".into(), json!({"booleanValue": v})); }
             let bk = new.browser_keywords.or(cur.browser_keywords);
             if let Some(v) = bk { m.insert("browser_keywords".into(), self.build_string_array_value(&v)); }
             if !m.is_empty() {
@@ -4210,6 +4214,8 @@ impl FirestoreService {
             if let Some(v) = ei { m.insert("extraction_interval".into(), json!({"doubleValue": v})); }
             let mc = new.min_confidence.or(cur.min_confidence);
             if let Some(v) = mc { m.insert("min_confidence".into(), json!({"doubleValue": v})); }
+            let ne = new.notifications_enabled.or(cur.notifications_enabled);
+            if let Some(v) = ne { m.insert("notifications_enabled".into(), json!({"booleanValue": v})); }
             let ea = new.excluded_apps.or(cur.excluded_apps);
             if let Some(v) = ea { m.insert("excluded_apps".into(), self.build_string_array_value(&v)); }
             if !m.is_empty() {
