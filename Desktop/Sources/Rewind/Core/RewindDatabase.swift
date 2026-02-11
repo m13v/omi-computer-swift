@@ -1422,6 +1422,21 @@ actor RewindDatabase {
             """)
         }
 
+        migrator.registerMigration("resumeEmbeddingBackfill") { db in
+            // Fix: previous backfill could mark completed on API error,
+            // leaving some screenshots without embeddings. Reset to resume.
+            let missing = try Int64.fetchOne(db, sql: """
+                SELECT COUNT(*) FROM screenshots
+                WHERE embedding IS NULL AND ocrText IS NOT NULL AND LENGTH(ocrText) >= 20
+            """) ?? 0
+            if missing > 0 {
+                try db.execute(sql: """
+                    UPDATE migration_status SET completed = 0
+                    WHERE name = 'screenshot_embedding_backfill'
+                """)
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
