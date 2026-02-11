@@ -1515,8 +1515,9 @@ actor RewindDatabase {
                 }
 
                 if !updates.isEmpty {
+                    let updatesToApply = updates
                     try await dbQueue.write { db in
-                        for (id, json) in updates {
+                        for (id, json) in updatesToApply {
                             try db.execute(
                                 sql: "UPDATE screenshots SET ocrDataJson = ? WHERE id = ?",
                                 arguments: [json, id]
@@ -1532,11 +1533,12 @@ actor RewindDatabase {
                 if totalProcessed % 5000 == 0 {
                     log("RewindDatabase: Precision reduction — processed \(totalProcessed) rows, updated \(totalUpdated)...")
                     // Update progress
+                    let currentProcessed = totalProcessed
                     try? await dbQueue.write { db in
                         try db.execute(sql: """
                             UPDATE migration_status SET processedCount = ?
                             WHERE name = 'ocr_precision_reduction'
-                        """, arguments: [totalProcessed])
+                        """, arguments: [currentProcessed])
                     }
                 }
 
@@ -1545,12 +1547,13 @@ actor RewindDatabase {
             }
 
             // Mark complete
+            let finalProcessed = totalProcessed
             try await dbQueue.write { db in
                 try db.execute(sql: """
                     UPDATE migration_status
                     SET completed = 1, processedCount = ?, completedAt = datetime('now')
                     WHERE name = 'ocr_precision_reduction'
-                """, arguments: [totalProcessed])
+                """, arguments: [finalProcessed])
             }
 
             log("RewindDatabase: OCR precision reduction complete — processed \(totalProcessed) rows, updated \(totalUpdated)")
