@@ -37,6 +37,7 @@ actor OCREmbeddingService {
 
         do {
             let embedding = try await EmbeddingService.shared.embed(text: formatted, taskType: "RETRIEVAL_DOCUMENT")
+            log("OCREmbeddingService: Created embedding for screenshot \(id) with \(embedding.count) dimensions")
             let data = await EmbeddingService.shared.floatsToData(embedding)
             try await RewindDatabase.shared.updateScreenshotEmbedding(id: id, embedding: data)
         } catch {
