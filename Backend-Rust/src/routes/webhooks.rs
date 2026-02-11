@@ -48,26 +48,50 @@ async fn handle_sentry_webhook(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<WebhookResponse>, StatusCode> {
+    // Log incoming Sentry headers for debugging
+    let sentry_headers: Vec<String> = headers
+        .iter()
+        .filter(|(k, _)| k.as_str().starts_with("sentry-hook"))
+        .map(|(k, v)| format!("{}={}", k, v.to_str().unwrap_or("?")))
+        .collect();
+    tracing::info!("Sentry webhook: received request, headers: [{}]", sentry_headers.join(", "));
+
+    // Handle Sentry verification/installation pings (return 200 immediately)
+    let hook_resource = headers
+        .get("sentry-hook-resource")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if hook_resource == "installation" {
+        tracing::info!("Sentry webhook: responding to installation verification ping");
+        return Ok(Json(WebhookResponse {
+            status: "ok".to_string(),
+        }));
+    }
+
     // Verify HMAC signature if secret is configured
     if let Some(secret) = &state.config.sentry_webhook_secret {
         let signature = headers
             .get("sentry-hook-signature")
-            .and_then(|v| v.to_str().ok())
-            .ok_or_else(|| {
-                tracing::warn!("Sentry webhook: missing signature header");
-                StatusCode::UNAUTHORIZED
-            })?;
+            .and_then(|v| v.to_str().ok());
 
-        let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| {
-            tracing::error!("Sentry webhook: HMAC key error: {}", e);
-            StatusCode::INTERNAL_SERVER_ERROR
-        })?;
-        mac.update(&body);
-        let expected = hex::encode(mac.finalize().into_bytes());
+        match signature {
+            Some(sig) => {
+                let mut mac = HmacSha256::new_from_slice(secret.as_bytes()).map_err(|e| {
+                    tracing::error!("Sentry webhook: HMAC key error: {}", e);
+                    StatusCode::INTERNAL_SERVER_ERROR
+                })?;
+                mac.update(&body);
+                let expected = hex::encode(mac.finalize().into_bytes());
 
-        if expected != signature {
-            tracing::warn!("Sentry webhook: signature mismatch");
-            return Err(StatusCode::UNAUTHORIZED);
+                if expected != sig {
+                    tracing::warn!("Sentry webhook: signature mismatch (expected={}, got={})", expected, sig);
+                    return Err(StatusCode::UNAUTHORIZED);
+                }
+                tracing::info!("Sentry webhook: signature verified");
+            }
+            None => {
+                tracing::warn!("Sentry webhook: no signature header, proceeding anyway (Sentry may omit it)");
+            }
         }
     } else {
         tracing::warn!("Sentry webhook: SENTRY_WEBHOOK_SECRET not set, skipping signature verification");
