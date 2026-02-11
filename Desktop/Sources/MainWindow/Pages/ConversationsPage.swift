@@ -334,7 +334,8 @@ struct ConversationsPage: View {
                             } else {
                                 selectedConversationIds.insert(conversationId)
                             }
-                        }
+                        },
+                        appState: appState
                     )
 
                     // Floating merge action bar
@@ -408,7 +409,8 @@ struct ConversationsPage: View {
                                         } else {
                                             selectedConversationIds.insert(conversation.id)
                                         }
-                                    }
+                                    },
+                                    appState: appState
                                 )
                             }
                         }
