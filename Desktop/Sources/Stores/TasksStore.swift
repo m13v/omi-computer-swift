@@ -63,6 +63,7 @@ class TasksStore: ObservableObject {
     /// Whether we're currently showing all tasks (no date filter) or just recent
     private var isShowingAllIncompleteTasks = false
     private var cancellables = Set<AnyCancellable>()
+    private var isRetryingUnsynced = false
 
     /// Whether the tasks page (or dashboard) is currently visible.
     /// Auto-refresh only runs when active to avoid unnecessary API calls.
@@ -659,6 +660,13 @@ class TasksStore: ObservableObject {
     /// These are records with backendSynced=false and no backendId — the API call
     /// failed during extraction and there was no retry mechanism.
     private func retryUnsyncedItems() async {
+        guard !isRetryingUnsynced else {
+            log("TasksStore: Skipping retryUnsyncedItems (already in progress)")
+            return
+        }
+        isRetryingUnsynced = true
+        defer { isRetryingUnsynced = false }
+
         let items: [ActionItemRecord]
         do {
             items = try await ActionItemStorage.shared.getUnsyncedActionItems()
@@ -673,6 +681,12 @@ class TasksStore: ObservableObject {
         var synced = 0
         for item in items {
             guard let localId = item.id else { continue }
+
+            // Re-check: the normal sync path may have synced this item while we were iterating
+            if let current = try? await ActionItemStorage.shared.getActionItem(id: localId),
+               current.backendSynced || (current.backendId != nil && !current.backendId!.isEmpty) {
+                continue
+            }
 
             // Parse metadata back from JSON
             var metadata: [String: Any]?
