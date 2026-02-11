@@ -15,6 +15,7 @@ struct DesktopHomeView: View {
 
     // Settings sidebar state
     @State private var selectedSettingsSection: SettingsContentView.SettingsSection = .general
+    @State private var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection? = nil
     @State private var previousIndexBeforeSettings: Int = 0
     @State private var logoPulse = false
 
@@ -189,6 +190,7 @@ struct DesktopHomeView: View {
             if isInSettings {
                 SettingsSidebar(
                     selectedSection: $selectedSettingsSection,
+                    selectedAdvancedSubsection: $selectedAdvancedSubsection,
                     onBack: {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             selectedIndex = previousIndexBeforeSettings
