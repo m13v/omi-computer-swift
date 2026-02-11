@@ -10,12 +10,14 @@ class FocusAssistantSettings {
     private let enabledKey = "focusAssistantEnabled"
     private let analysisPromptKey = "focusAnalysisPrompt"
     private let cooldownIntervalKey = "focusCooldownInterval"
+    private let notificationsEnabledKey = "focusNotificationsEnabled"
     private let excludedAppsKey = "focusExcludedApps"
 
     // MARK: - Default Values
 
     private let defaultEnabled = true
     private let defaultCooldownInterval = 10 // minutes
+    private let defaultNotificationsEnabled = true
 
     /// Default system prompt for focus analysis
     static let defaultAnalysisPrompt = """
@@ -51,6 +53,7 @@ class FocusAssistantSettings {
         UserDefaults.standard.register(defaults: [
             enabledKey: defaultEnabled,
             cooldownIntervalKey: defaultCooldownInterval,
+            notificationsEnabledKey: defaultNotificationsEnabled,
         ])
     }
 
@@ -94,6 +97,15 @@ class FocusAssistantSettings {
             let previewLength = min(newValue.count, 50)
             let preview = String(newValue.prefix(previewLength)) + (newValue.count > 50 ? "..." : "")
             log("Focus analysis prompt updated (\(newValue.count) chars, custom: \(isCustom)): \(preview)")
+            NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
+        }
+    }
+
+    /// Whether to show notifications for focus changes
+    var notificationsEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: notificationsEnabledKey) }
+        set {
+            UserDefaults.standard.set(newValue, forKey: notificationsEnabledKey)
             NotificationCenter.default.post(name: .assistantSettingsDidChange, object: nil)
         }
     }
