@@ -110,15 +110,15 @@ final class UpdaterViewModel: ObservableObject {
             userDriverDelegate: nil
         )
 
+        // Initialize published property from updater state (must be before using `self`)
+        automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
+
         // Wire up delegate back-reference
         updaterDelegate.viewModel = self
 
         // TODO: Remove after testing — force update button visible
         updateAvailable = true
         availableVersion = "2.0.0"
-
-        // Initialize published property from updater state
-        automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
 
         // Check for updates every 10 minutes
         updaterController.updater.updateCheckInterval = 600
