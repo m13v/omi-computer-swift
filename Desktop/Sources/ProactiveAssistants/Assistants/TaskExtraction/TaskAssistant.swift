@@ -408,7 +408,8 @@ actor TaskAssistant: ProactiveAssistant {
             windowTitle: windowTitle,
             contextSummary: contextSummary,
             metadataJson: metadataJson,
-            relevanceScore: task.relevanceScore
+            relevanceScore: task.relevanceScore,
+            scoredAt: task.relevanceScore != nil ? Date() : nil
         )
 
         do {
