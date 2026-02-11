@@ -240,7 +240,11 @@ struct DesktopHomeView: View {
                     case 8:
                         AppsPage(appProvider: viewModelContainer.appProvider)
                     case 9:
-                        SettingsPage(appState: appState, selectedSection: $selectedSettingsSection)
+                        SettingsPage(
+                            appState: appState,
+                            selectedSection: $selectedSettingsSection,
+                            selectedAdvancedSubsection: $selectedAdvancedSubsection
+                        )
                     case 10:
                         PermissionsPage(appState: appState)
                     case 11:
