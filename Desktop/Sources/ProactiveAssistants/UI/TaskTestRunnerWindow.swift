@@ -408,6 +408,7 @@ struct TaskTestRunnerView: View {
     // MARK: - Test Execution
 
     private func runTest() {
+        log("TaskTestRunner: runTest() called")
         isRunning = true
         results = []
         progress = 0
@@ -416,20 +417,27 @@ struct TaskTestRunnerView: View {
         statusMessage = "Finding context switches..."
 
         Task {
+            log("TaskTestRunner: Starting test task")
             let startTime = Date()
             let now = Date()
             let periodStart = now.addingTimeInterval(-24 * 60 * 60) // last 24 hours
 
             // Get TaskAssistant from coordinator
-            guard let assistant = await MainActor.run(body: {
+            log("TaskTestRunner: Looking up task-extraction assistant")
+            let assistant = await MainActor.run(body: {
                 AssistantCoordinator.shared.assistant(withIdentifier: "task-extraction")
-            }) as? TaskAssistant else {
+            })
+            log("TaskTestRunner: Assistant lookup result: \(assistant != nil ? "found" : "nil")")
+
+            guard let taskAssistant = assistant as? TaskAssistant else {
+                log("TaskTestRunner: ERROR - Task Assistant not available or wrong type")
                 await MainActor.run {
                     statusMessage = "Task Assistant not available"
                     isRunning = false
                 }
                 return
             }
+            log("TaskTestRunner: Task Assistant successfully retrieved")
 
             // Build filter parameters from current settings
             let (allowedApps, browserApps, browserPatterns) = await MainActor.run { () -> (Set<String>, Set<String>, [String]) in
@@ -438,6 +446,7 @@ struct TaskTestRunnerView: View {
             }
 
             // Fetch all filtered screenshots chronologically from last 24h
+            log("TaskTestRunner: Fetching screenshots from last 24h with filters")
             let allScreenshots: [Screenshot]
             do {
                 allScreenshots = try await RewindDatabase.shared.getScreenshotsFiltered(
@@ -449,6 +458,7 @@ struct TaskTestRunnerView: View {
                     limit: 100_000
                 ).reversed()  // getScreenshotsFiltered returns desc, we want chronological
             } catch {
+                log("TaskTestRunner: ERROR - Failed to load screenshots: \(error)")
                 await MainActor.run {
                     statusMessage = "Failed to load screenshots: \(error.localizedDescription)"
                     isRunning = false
@@ -456,7 +466,10 @@ struct TaskTestRunnerView: View {
                 return
             }
 
+            log("TaskTestRunner: Loaded \(allScreenshots.count) screenshots from last 24h")
+
             guard allScreenshots.count >= 2 else {
+                log("TaskTestRunner: ERROR - Not enough screenshots (\(allScreenshots.count) < 2)")
                 await MainActor.run {
                     statusMessage = "Not enough screenshots in last 24h to detect context switches"
                     isRunning = false
