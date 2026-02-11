@@ -1076,11 +1076,19 @@ class TasksViewModel: ObservableObject {
             filteredTasks = applyTagFilters(sourceTasks)
         }
 
-        // Apply 7-day age filter when sorting by due date (matches iOS behavior)
+        // Apply iOS-matching filters when sorting by due date:
+        // 1. Exclude soft-deleted tasks (deleted by AI dedup)
+        // 2. Exclude completed tasks
+        // 3. Filter to last 7 days (by dueAt or createdAt)
         let ageFiltered: [TaskActionItem]
         if sortOption == .dueDate {
             let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
             ageFiltered = filteredTasks.filter { task in
+                // Exclude soft-deleted tasks
+                if task.deleted == true { return false }
+                // Exclude completed tasks
+                if task.completed { return false }
+                // 7-day age filter
                 if let dueAt = task.dueAt {
                     return dueAt >= sevenDaysAgo
                 } else {
@@ -1498,7 +1506,7 @@ struct TasksPage: View {
         let totalCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
         if totalCount == 0 {
             if viewModel.sortOption == .dueDate {
-                return "Last 7 days"
+                return "To Do"
             }
             return "All"
         } else if totalCount == 1 {
@@ -1638,36 +1646,46 @@ struct TasksPage: View {
                     }
                     .buttonStyle(.plain)
 
-                    // Implicit age filter when sorting by Due Date
+                    // Implicit filters when sorting by Due Date
+                    // (To Do + not deleted + last 7 days — matches iOS behavior)
                     if viewModel.sortOption == .dueDate {
                         Divider()
                             .padding(.vertical, 4)
 
-                        HStack {
-                            Image(systemName: "clock.arrow.circlepath")
-                                .font(.system(size: 12))
-                                .frame(width: 20)
-                            Text("Last 7 days")
-                                .font(.system(size: 13))
-                            Spacer()
-                            Text("auto")
-                                .font(.system(size: 10, weight: .medium))
-                                .foregroundColor(OmiColors.textTertiary)
-                                .padding(.horizontal, 6)
-                                .padding(.vertical, 2)
-                                .background(OmiColors.backgroundTertiary)
-                                .cornerRadius(4)
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 12, weight: .medium))
-                                .foregroundColor(.white)
+                        Text("DUE DATE SORT")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .textCase(.uppercase)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+
+                        ForEach(["To Do only", "Last 7 days", "Exclude deleted"], id: \.self) { label in
+                            HStack {
+                                Image(systemName: label == "To Do only" ? "circle" : label == "Last 7 days" ? "clock.arrow.circlepath" : "trash.slash")
+                                    .font(.system(size: 12))
+                                    .frame(width: 20)
+                                Text(label)
+                                    .font(.system(size: 13))
+                                Spacer()
+                                Text("auto")
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(OmiColors.backgroundTertiary)
+                                    .cornerRadius(4)
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.white)
+                            }
+                            .foregroundColor(OmiColors.textPrimary)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(OmiColors.backgroundTertiary.opacity(0.5))
+                            .cornerRadius(6)
+                            .contentShape(Rectangle())
                         }
-                        .foregroundColor(OmiColors.textPrimary)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background(OmiColors.backgroundTertiary.opacity(0.5))
-                        .cornerRadius(6)
-                        .contentShape(Rectangle())
-                        .help("Applied automatically when sorting by Due Date")
                     }
 
                     // Groups
