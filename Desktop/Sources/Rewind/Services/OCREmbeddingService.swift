@@ -33,7 +33,7 @@ actor OCREmbeddingService {
         let formatted = Self.formatForEmbedding(ocrText: ocrText, appName: appName, windowTitle: windowTitle)
 
         do {
-            let embedding = try await EmbeddingService.shared.embed(text: formatted)
+            let embedding = try await EmbeddingService.shared.embed(text: formatted, taskType: "RETRIEVAL_DOCUMENT")
             let data = await EmbeddingService.shared.floatsToData(embedding)
             try await RewindDatabase.shared.updateScreenshotEmbedding(id: id, embedding: data)
         } catch {
@@ -64,7 +64,7 @@ actor OCREmbeddingService {
                 let texts = items.map { Self.formatForEmbedding(ocrText: $0.ocrText, appName: $0.appName, windowTitle: $0.windowTitle) }
                 let embeddings: [[Float]]
                 do {
-                    embeddings = try await EmbeddingService.shared.embedBatch(texts: texts)
+                    embeddings = try await EmbeddingService.shared.embedBatch(texts: texts, taskType: "RETRIEVAL_DOCUMENT")
                 } catch {
                     logError("OCREmbeddingService: Batch embed failed, will retry later", error: error)
                     break
@@ -108,8 +108,8 @@ actor OCREmbeddingService {
         appFilter: String? = nil,
         topK: Int = 50
     ) async throws -> [(screenshotId: Int64, similarity: Float)] {
-        // Embed the query
-        let queryEmbedding = try await EmbeddingService.shared.embed(text: query)
+        // Embed the query with RETRIEVAL_QUERY task type for asymmetric search
+        let queryEmbedding = try await EmbeddingService.shared.embed(text: query, taskType: "RETRIEVAL_QUERY")
 
         let batchSize = 5000
         var offset = 0
