@@ -131,11 +131,16 @@ class FocusStorage: ObservableObject {
             message: analysis.message
         )
 
-        sessions.insert(session, at: 0)
+        // Update status before inserting session to reduce @Published change count
+        // (insert triggers sessions change, so update others only if different)
+        if currentStatus != analysis.status {
+            currentStatus = analysis.status
+        }
+        if currentApp != analysis.appOrSite {
+            currentApp = analysis.appOrSite
+        }
 
-        // Update current status
-        currentStatus = analysis.status
-        currentApp = analysis.appOrSite
+        sessions.insert(session, at: 0)
 
         // Trim if needed
         if sessions.count > maxStoredSessions {
@@ -315,20 +320,29 @@ class FocusStorage: ObservableObject {
                 )
             }
 
-            // Update on main thread
+            // Update on main thread — skip if data hasn't changed to avoid unnecessary re-renders
             await MainActor.run {
-                self.sessions = converted
+                let newStatus = converted.first?.status
+                let newApp = converted.first?.appOrSite
 
-                // Update current status from most recent session
-                if let latest = self.sessions.first {
-                    self.currentStatus = latest.status
-                    self.currentApp = latest.appOrSite
+                // Only update if data actually changed
+                let sessionsChanged = self.sessions.map(\.id) != converted.map(\.id)
+                if sessionsChanged {
+                    self.sessions = converted
+                }
+                if self.currentStatus != newStatus {
+                    self.currentStatus = newStatus
+                }
+                if self.currentApp != newApp {
+                    self.currentApp = newApp
                 }
 
-                // Also update UserDefaults cache
-                self.saveToStorage()
+                // Update UserDefaults cache if data changed
+                if sessionsChanged {
+                    self.saveToStorage()
+                }
 
-                log("FocusStorage: Loaded \(converted.count) sessions from SQLite")
+                log("FocusStorage: Loaded \(converted.count) sessions from SQLite (changed: \(sessionsChanged))")
             }
         } catch {
             logError("Failed to load focus sessions from SQLite", error: error)
