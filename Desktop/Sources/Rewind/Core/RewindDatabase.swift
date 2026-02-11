@@ -1392,6 +1392,18 @@ actor RewindDatabase {
             print("[RewindDatabase] Migration: Switched to per-screenshot embeddings, reset backfill")
         }
 
+        migrator.registerMigration("reEmbedWithTaskTypes") { db in
+            // Clear embeddings created without RETRIEVAL_DOCUMENT task type
+            try db.execute(sql: "UPDATE screenshots SET embedding = NULL WHERE embedding IS NOT NULL")
+            // Reset backfill to re-embed with task types
+            try db.execute(sql: """
+                UPDATE migration_status
+                SET completed = 0, processedCount = 0, startedAt = datetime('now'), completedAt = NULL
+                WHERE name = 'screenshot_embedding_backfill'
+            """)
+            print("[RewindDatabase] Migration: Reset embeddings for RETRIEVAL_DOCUMENT task type re-backfill")
+        }
+
         migrator.registerMigration("dropNormalizedOCRTables") { db in
             // These tables are unused — all search uses screenshots_fts,
             // all embeddings use screenshots.embedding
