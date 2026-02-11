@@ -25,9 +25,6 @@ class ViewModelContainer: ObservableObject {
         guard !isLoading else { return }
         isLoading = true
 
-        // TEMP: Remove after testing loading screen
-        try? await Task.sleep(for: .seconds(5))
-
         let timer = PerfTimer("ViewModelContainer.loadAllData", logCPU: true)
         logPerf("DATA LOAD: Starting eager data load for all pages", cpu: true)
 
