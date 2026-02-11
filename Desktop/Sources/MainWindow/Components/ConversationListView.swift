@@ -16,6 +16,8 @@ struct ConversationListView: View {
     var selectedIds: Set<String> = []
     var onToggleSelection: ((String) -> Void)? = nil
 
+    var appState: AppState
+
     /// Group conversations by date
     private var groupedConversations: [(String, [ServerConversation])] {
         let calendar = Calendar.current
@@ -164,7 +166,8 @@ struct ConversationListView: View {
                             isCompactView: isCompactView,
                             isMultiSelectMode: isMultiSelectMode,
                             isSelected: selectedIds.contains(conversation.id),
-                            onToggleSelection: { onToggleSelection?(conversation.id) }
+                            onToggleSelection: { onToggleSelection?(conversation.id) },
+                            appState: appState
                         )
                     }
                 }
@@ -185,7 +188,8 @@ struct ConversationListView: View {
         folders: [],
         onSelect: { _ in },
         onRefresh: { },
-        onMoveToFolder: { _, _ in }
+        onMoveToFolder: { _, _ in },
+        appState: AppState()
     )
     .frame(width: 400, height: 600)
     .background(OmiColors.backgroundSecondary)
