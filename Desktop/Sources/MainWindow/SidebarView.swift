@@ -80,6 +80,7 @@ struct SidebarView: View {
     @ObservedObject private var focusStorage = FocusStorage.shared
     @ObservedObject private var deviceProvider = DeviceProvider.shared
     @ObservedObject private var audioLevels = AudioLevelMonitor.shared
+    @ObservedObject private var updaterViewModel = UpdaterViewModel.shared
 
     // State for Get Omi Widget (shown when no device is paired, dismissible)
     @AppStorage("showGetOmiWidget") private var showGetOmiWidget = true
@@ -271,6 +272,13 @@ struct SidebarView: View {
                     if showGetOmiWidget && deviceProvider.pairedDevice == nil {
                         Spacer().frame(height: 12)
                         getOmiWidget
+                    }
+
+                    // Update available widget
+                    if updaterViewModel.updateAvailable {
+                        Spacer().frame(height: 12)
+                        updateAvailableWidget
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                     }
 
                     Spacer().frame(height: 16)
@@ -605,6 +613,56 @@ struct SidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help("Dismiss")
+            }
+        }
+    }
+
+    // MARK: - Update Available Widget
+    @State private var updateGlowAnimating = false
+
+    private var updateAvailableWidget: some View {
+        Button(action: {
+            updaterViewModel.checkForUpdates()
+        }) {
+            HStack(spacing: 12) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .font(.system(size: 17))
+                    .foregroundColor(.white)
+                    .frame(width: iconWidth)
+
+                if !isCollapsed {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Update Available")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+
+                        if !updaterViewModel.availableVersion.isEmpty {
+                            Text("v\(updaterViewModel.availableVersion)")
+                                .font(.system(size: 11))
+                                .foregroundColor(.white.opacity(0.8))
+                        }
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(OmiColors.purplePrimary)
+            )
+            .shadow(color: OmiColors.purplePrimary.opacity(updateGlowAnimating ? 0.7 : 0.3), radius: 8)
+        }
+        .buttonStyle(.plain)
+        .help(isCollapsed ? "Update Available — click to install" : "")
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) {
+                updateGlowAnimating = true
             }
         }
     }
