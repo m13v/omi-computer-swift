@@ -7,15 +7,36 @@ class LaunchAtLoginManager: ObservableObject {
     static let shared = LaunchAtLoginManager()
 
     @Published private(set) var isEnabled: Bool = false
+    @Published private(set) var statusDescription: String = "Checking..."
 
     private init() {
         // Check current status on init
         updateStatus()
     }
 
-    /// Updates the published status from the system
+    /// Updates the published status from the system (reads SMAppService off main thread)
     func updateStatus() {
-        isEnabled = SMAppService.mainApp.status == .enabled
+        Task.detached {
+            let status = SMAppService.mainApp.status
+            let enabled = status == .enabled
+            let description: String
+            switch status {
+            case .enabled:
+                description = "App will start when you log in"
+            case .notRegistered:
+                description = "App won't start automatically"
+            case .notFound:
+                description = "Login item not found"
+            case .requiresApproval:
+                description = "Requires approval in System Settings"
+            @unknown default:
+                description = "Unknown status"
+            }
+            await MainActor.run {
+                self.isEnabled = enabled
+                self.statusDescription = description
+            }
+        }
     }
 
     /// Enables or disables launch at login
@@ -37,22 +58,6 @@ class LaunchAtLoginManager: ObservableObject {
             log("LaunchAtLogin: Failed to \(enabled ? "register" : "unregister"): \(error.localizedDescription)")
             updateStatus()
             return false
-        }
-    }
-
-    /// Human-readable status description
-    var statusDescription: String {
-        switch SMAppService.mainApp.status {
-        case .enabled:
-            return "App will start when you log in"
-        case .notRegistered:
-            return "App won't start automatically"
-        case .notFound:
-            return "Login item not found"
-        case .requiresApproval:
-            return "Requires approval in System Settings"
-        @unknown default:
-            return "Unknown status"
         }
     }
 }
