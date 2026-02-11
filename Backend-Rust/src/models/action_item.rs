@@ -117,6 +117,47 @@ pub struct CreateActionItemRequest {
     pub relevance_score: Option<i32>,
 }
 
+/// Request body for sharing tasks
+#[derive(Debug, Clone, Deserialize)]
+pub struct ShareTasksRequest {
+    pub task_ids: Vec<String>,
+}
+
+/// Response for sharing tasks
+#[derive(Debug, Clone, Serialize)]
+pub struct ShareTasksResponse {
+    pub url: String,
+    pub token: String,
+}
+
+/// Info about a single shared task (privacy-safe subset)
+#[derive(Debug, Clone, Serialize)]
+pub struct SharedTaskInfo {
+    pub description: String,
+    pub due_at: Option<DateTime<Utc>>,
+}
+
+/// Response for getting shared tasks
+#[derive(Debug, Clone, Serialize)]
+pub struct SharedTasksResponse {
+    pub sender_name: String,
+    pub tasks: Vec<SharedTaskInfo>,
+    pub count: usize,
+}
+
+/// Request body for accepting shared tasks
+#[derive(Debug, Clone, Deserialize)]
+pub struct AcceptTasksRequest {
+    pub token: String,
+}
+
+/// Response for accepting shared tasks
+#[derive(Debug, Clone, Serialize)]
+pub struct AcceptTasksResponse {
+    pub created: Vec<String>,
+    pub count: usize,
+}
+
 /// Request body for batch updating relevance scores
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchUpdateScoresRequest {
