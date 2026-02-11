@@ -56,6 +56,7 @@ actor OCREmbeddingService {
 
             let batchSize = 100
             var totalProcessed = status.processedCount
+            var hitError = false
 
             while true {
                 let items = try await RewindDatabase.shared.getScreenshotsMissingEmbeddings(limit: batchSize)
@@ -66,7 +67,8 @@ actor OCREmbeddingService {
                 do {
                     embeddings = try await EmbeddingService.shared.embedBatch(texts: texts, taskType: "RETRIEVAL_DOCUMENT")
                 } catch {
-                    logError("OCREmbeddingService: Batch embed failed, will retry later", error: error)
+                    logError("OCREmbeddingService: Batch embed failed at \(totalProcessed) items, will retry on next launch", error: error)
+                    hitError = true
                     break
                 }
 
@@ -88,9 +90,14 @@ actor OCREmbeddingService {
                 try await Task.sleep(nanoseconds: 200_000_000) // 200ms
             }
 
-            // Mark complete
-            try await RewindDatabase.shared.updateScreenshotEmbeddingBackfillStatus(completed: true, processedCount: totalProcessed)
-            log("OCREmbeddingService: Backfill complete — \(totalProcessed) items embedded")
+            // Only mark complete if we finished naturally (no API errors)
+            if hitError {
+                try await RewindDatabase.shared.updateScreenshotEmbeddingBackfillStatus(completed: false, processedCount: totalProcessed)
+                log("OCREmbeddingService: Backfill paused at \(totalProcessed) items due to error, will resume on next launch")
+            } else {
+                try await RewindDatabase.shared.updateScreenshotEmbeddingBackfillStatus(completed: true, processedCount: totalProcessed)
+                log("OCREmbeddingService: Backfill complete — \(totalProcessed) items embedded")
+            }
 
         } catch {
             logError("OCREmbeddingService: Backfill failed", error: error)
