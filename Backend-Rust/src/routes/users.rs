@@ -14,8 +14,8 @@ use crate::models::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
     TranscriptionPreferences, UpdateDailySummaryRequest, UpdateLanguageRequest,
     AIUserProfile, UpdateAIUserProfileRequest, UpdateNotificationSettingsRequest,
-    UpdateTranscriptionPreferencesRequest, UserLanguage, UserProfile, UserSettingsStatusResponse,
-    AssistantSettingsData,
+    UpdateTranscriptionPreferencesRequest, UpdateUserProfileRequest, UserLanguage, UserProfile,
+    UserSettingsStatusResponse, AssistantSettingsData,
 };
 use crate::AppState;
 
@@ -347,7 +347,55 @@ async fn get_profile(
                 name: None,
                 time_zone: None,
                 created_at: None,
+                motivation: None,
+                use_case: None,
+                job: None,
+                company: None,
             }))
+        }
+    }
+}
+
+/// PATCH /v1/users/profile
+async fn update_profile(
+    State(state): State<AppState>,
+    user: AuthUser,
+    Json(request): Json<UpdateUserProfileRequest>,
+) -> Result<Json<UserProfile>, StatusCode> {
+    tracing::info!("Updating profile for user {}", user.uid);
+
+    // Validate string lengths (max 500 chars each)
+    let check_len = |val: &Option<String>, name: &str| -> Result<(), StatusCode> {
+        if let Some(ref s) = val {
+            if s.len() > 500 {
+                tracing::warn!("{} too long: {} chars (max 500)", name, s.len());
+                return Err(StatusCode::BAD_REQUEST);
+            }
+        }
+        Ok(())
+    };
+    check_len(&request.name, "name")?;
+    check_len(&request.motivation, "motivation")?;
+    check_len(&request.use_case, "use_case")?;
+    check_len(&request.job, "job")?;
+    check_len(&request.company, "company")?;
+
+    match state
+        .firestore
+        .update_user_profile(
+            &user.uid,
+            request.name,
+            request.motivation,
+            request.use_case,
+            request.job,
+            request.company,
+        )
+        .await
+    {
+        Ok(profile) => Ok(Json(profile)),
+        Err(e) => {
+            tracing::error!("Failed to update profile: {}", e);
+            Err(StatusCode::INTERNAL_SERVER_ERROR)
         }
     }
 }
@@ -535,7 +583,7 @@ pub fn users_routes() -> Router<AppState> {
             get(get_notification_settings).patch(update_notification_settings),
         )
         // Profile
-        .route("/v1/users/profile", get(get_profile))
+        .route("/v1/users/profile", get(get_profile).patch(update_profile))
         // AI-generated user profile
         .route(
             "/v1/users/ai-profile",
