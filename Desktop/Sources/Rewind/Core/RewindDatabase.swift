@@ -1437,6 +1437,25 @@ actor RewindDatabase {
             }
         }
 
+        migrator.registerMigration("fullEmbeddingBackfillV2") { db in
+            // Clear ALL embeddings to ensure everyone gets fresh Gemini embeddings
+            // Previous versions may have had:
+            // - Test limit (only 1000 items embedded)
+            // - Incomplete backfills
+            // - Wrong embedding parameters
+            // This migration ensures all users start fresh with correct embeddings
+            try db.execute(sql: "UPDATE screenshots SET embedding = NULL WHERE embedding IS NOT NULL")
+
+            // Reset backfill status to process all screenshots
+            try db.execute(sql: """
+                UPDATE migration_status
+                SET completed = 0, processedCount = 0, startedAt = datetime('now'), completedAt = NULL
+                WHERE name = 'screenshot_embedding_backfill'
+            """)
+
+            print("[RewindDatabase] Migration: Cleared all embeddings for full Gemini backfill (no test limit)")
+        }
+
         try migrator.migrate(queue)
     }
 
