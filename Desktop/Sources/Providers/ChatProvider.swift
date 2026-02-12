@@ -233,6 +233,10 @@ class ChatProvider: ObservableObject {
     private var cachedContext: ChatContextResponse?
     private var cachedMemories: [ServerMemory] = []
     private var memoriesLoaded = false
+    private var cachedGoals: [Goal] = []
+    private var goalsLoaded = false
+    private var cachedAIProfile: String = ""
+    private var aiProfileLoaded = false
 
     // MARK: - Current Session ID
     var currentSessionId: String? {
@@ -529,6 +533,62 @@ class ChatProvider: ObservableObject {
         return lines.joined(separator: "\n")
     }
 
+    // MARK: - Load Goals
+
+    /// Fetches user goals from the backend for use in prompts
+    private func loadGoalsIfNeeded() async {
+        guard !goalsLoaded else { return }
+
+        do {
+            cachedGoals = try await APIClient.shared.getGoals()
+            goalsLoaded = true
+            log("ChatProvider loaded \(cachedGoals.count) goals for context")
+        } catch {
+            logError("Failed to load goals for chat context", error: error)
+        }
+    }
+
+    /// Formats goals into a prompt section
+    private func formatGoalSection() -> String {
+        let activeGoals = cachedGoals.filter { $0.isActive }
+        guard !activeGoals.isEmpty else { return "" }
+
+        var lines: [String] = ["\n<user_goals>"]
+        for goal in activeGoals {
+            var line = "- \(goal.title)"
+            if let desc = goal.description, !desc.isEmpty {
+                line += ": \(desc)"
+            }
+            if goal.goalType != .boolean {
+                line += " (progress: \(Int(goal.currentValue))/\(Int(goal.targetValue))"
+                if let unit = goal.unit, !unit.isEmpty { line += " \(unit)" }
+                line += ")"
+            }
+            lines.append(line)
+        }
+        lines.append("</user_goals>")
+        return lines.joined(separator: "\n")
+    }
+
+    // MARK: - Load AI User Profile
+
+    /// Fetches the latest AI-generated user profile from local database
+    private func loadAIProfileIfNeeded() async {
+        guard !aiProfileLoaded else { return }
+
+        if let profile = await AIUserProfileService.shared.getLatestProfile() {
+            cachedAIProfile = profile.profileText
+            log("ChatProvider loaded AI profile (generated \(profile.generatedAt))")
+        }
+        aiProfileLoaded = true
+    }
+
+    /// Formats AI profile into a prompt section
+    private func formatAIProfileSection() -> String {
+        guard !cachedAIProfile.isEmpty else { return "" }
+        return "\n<ai_user_profile>\n\(cachedAIProfile)\n</ai_user_profile>"
+    }
+
     // MARK: - Fetch Context from Backend
 
     /// Fetches rich context (conversations + memories) from backend using LLM-based retrieval
@@ -574,10 +634,12 @@ class ChatProvider: ObservableObject {
         // Fall back to just memories if context is empty
         let contextSection = contextString.isEmpty ? formatMemoriesSection() : contextString
 
-        // Build base prompt
+        // Build base prompt with goals and AI profile
         var prompt = ChatPromptBuilder.buildDesktopChat(
             userName: userName,
-            memoriesSection: contextSection
+            memoriesSection: contextSection,
+            goalSection: formatGoalSection(),
+            aiProfileSection: formatAIProfileSection()
         )
 
         // Append conversation history from Firestore (source of truth for cross-platform sync)
@@ -672,6 +734,8 @@ class ChatProvider: ObservableObject {
             await loadDefaultChatMessages()
         }
         await loadMemoriesIfNeeded()
+        await loadGoalsIfNeeded()
+        await loadAIProfileIfNeeded()
     }
 
     /// Reinitialize after settings change
