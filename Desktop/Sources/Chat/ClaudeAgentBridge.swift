@@ -33,6 +33,7 @@ actor ClaudeAgentBridge {
     /// Pending messages from the bridge
     private var pendingMessages: [InboundMessage] = []
     private var messageContinuation: CheckedContinuation<InboundMessage, Error>?
+    private var messageGeneration: UInt64 = 0
 
     // MARK: - Lifecycle
 
@@ -292,14 +293,18 @@ actor ClaudeAgentBridge {
             return pendingMessages.removeFirst()
         }
 
+        // Increment generation so stale timeout tasks become no-ops
+        messageGeneration &+= 1
+        let expectedGeneration = messageGeneration
+
         // Wait for next message with timeout
         return try await withCheckedThrowingContinuation { continuation in
             self.messageContinuation = continuation
 
-            // Set up timeout
+            // Set up timeout — only fires if this is still the active generation
             Task {
                 try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                if self.messageContinuation != nil {
+                if self.messageGeneration == expectedGeneration, self.messageContinuation != nil {
                     self.messageContinuation = nil
                     continuation.resume(throwing: BridgeError.timeout)
                 }
