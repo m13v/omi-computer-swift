@@ -136,7 +136,7 @@ if [ -d "$SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle" ]; then
 fi
 
 # Copy icon
-cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns" 2>/dev/null || true
+cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/OmiIcon.icns" 2>/dev/null || true
 
 # Copy .env.app
 if [ -f ".env.app" ]; then
