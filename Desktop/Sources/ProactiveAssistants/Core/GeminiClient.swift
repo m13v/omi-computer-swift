@@ -749,6 +749,20 @@ extension GeminiClient {
                     ],
                     required: []
                 )
+            ),
+            // Search screenshots (Rewind)
+            GeminiTool.FunctionDeclaration(
+                name: "search_screenshots",
+                description: "Search the user's screen history (Rewind). Finds screenshots by what was visible on screen — app content, text, websites, messages, code, documents, etc. Use this when the user asks about something they saw on screen, what they were doing at a certain time, what app they used, or wants to find specific content from their screen history.",
+                parameters: GeminiTool.FunctionDeclaration.Parameters(
+                    type: "object",
+                    properties: [
+                        "query": .init(type: "string", description: "Search query — what to look for in screen content. Can be keywords or a description of what was on screen."),
+                        "days": .init(type: "integer", description: "Search the last N days (default: 7). Use 1 for today only."),
+                        "app_filter": .init(type: "string", description: "Optional: filter by app name (e.g., 'Google Chrome', 'Cursor', 'Slack', 'Messages')")
+                    ],
+                    required: ["query"]
+                )
             )
         ])
     ]
