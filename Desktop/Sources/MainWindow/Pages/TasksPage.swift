@@ -185,8 +185,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
             }
         case .topScoredOnly:
             // Filter to manual tasks OR tasks in the allowlist
-            // Note: This requires accessing TasksStore.shared - may need refactoring
-            return task.source == "manual" || TasksStore.shared.visibleAITaskIds.contains(task.id)
+            return task.source == "manual" || MainActor.assumeIsolated { TasksStore.shared.visibleAITaskIds.contains(task.id) }
         case .personal: return task.tags.contains("personal")
         case .work: return task.tags.contains("work")
         case .feature: return task.tags.contains("feature")
