@@ -30,12 +30,9 @@ actor ClaudeAgentBridge {
     private var isRunning = false
     private var readTask: Task<Void, Never>?
 
-    /// Pending messages from the bridge, keyed by type
+    /// Pending messages from the bridge
     private var pendingMessages: [InboundMessage] = []
     private var messageContinuation: CheckedContinuation<InboundMessage, Error>?
-
-    /// Current session ID from the Agent SDK
-    private var currentSessionId: String?
 
     // MARK: - Lifecycle
 
@@ -122,7 +119,6 @@ actor ClaudeAgentBridge {
         stdoutPipe = nil
         stderrPipe = nil
         isRunning = false
-        currentSessionId = nil
 
         // Cancel any pending continuation
         messageContinuation?.resume(throwing: BridgeError.stopped)
@@ -132,9 +128,11 @@ actor ClaudeAgentBridge {
     // MARK: - Query
 
     /// Send a query to the Claude agent and stream results back.
+    /// Each query is standalone — conversation history is passed via the system prompt.
+    /// This ensures cross-platform sync (messages from mobile/other clients are included).
     /// - Parameters:
     ///   - prompt: User's message
-    ///   - systemPrompt: System prompt with context
+    ///   - systemPrompt: System prompt with context and conversation history
     ///   - onTextDelta: Called for each streaming text chunk
     ///   - onToolCall: Called when an OMI tool needs Swift execution
     /// - Returns: Final complete response text
@@ -143,22 +141,18 @@ actor ClaudeAgentBridge {
         systemPrompt: String,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler
-    ) async throws -> (text: String, sessionId: String) {
+    ) async throws -> String {
         guard isRunning else {
             throw BridgeError.notRunning
         }
 
-        // Build query message
-        var queryDict: [String: Any] = [
+        // Build query message — no session resume, each query is independent
+        let queryDict: [String: Any] = [
             "type": "query",
             "id": UUID().uuidString,
             "prompt": prompt,
             "systemPrompt": systemPrompt
         ]
-
-        if let sessionId = currentSessionId {
-            queryDict["sessionId"] = sessionId
-        }
 
         let jsonData = try JSONSerialization.data(withJSONObject: queryDict)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -172,9 +166,8 @@ actor ClaudeAgentBridge {
             let message = try await waitForMessage(timeout: 120.0)
 
             switch message {
-            case .`init`(let sessionId):
-                currentSessionId = sessionId
-                log("ClaudeAgentBridge: session initialized: \(sessionId)")
+            case .`init`:
+                log("ClaudeAgentBridge: new session started")
 
             case .textDelta(let text):
                 onTextDelta(text)
@@ -193,9 +186,8 @@ actor ClaudeAgentBridge {
                     sendLine(resultString)
                 }
 
-            case .result(let text, let sessionId, _):
-                currentSessionId = sessionId
-                return (text: text, sessionId: sessionId)
+            case .result(let text, _, _):
+                return text
 
             case .error(let message):
                 throw BridgeError.agentError(message)
