@@ -15,6 +15,7 @@ struct OnboardingChatView: View {
     @State private var isProcessing: Bool = false
     @State private var hasStarted: Bool = false
     @State private var suggestedReplies: [String] = []
+    @State private var isComplete: Bool = false
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
@@ -36,7 +37,32 @@ struct OnboardingChatView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 16) {
-                        if !hasStarted {
+                        if isComplete {
+                            // Completion screen
+                            VStack(spacing: 24) {
+                                Spacer()
+
+                                // Show all chat messages
+                                ForEach(messages) { message in
+                                    OnboardingChatBubble(message: message)
+                                }
+
+                                // Continue button
+                                Button(action: {
+                                    completeOnboarding()
+                                }) {
+                                    Text("Continue")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .frame(maxWidth: 200)
+                                        .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
+                                .padding(.top, 8)
+
+                                Spacer()
+                            }
+                        } else if !hasStarted {
                             // Welcome screen
                             VStack(spacing: 16) {
                                 if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
@@ -114,7 +140,7 @@ struct OnboardingChatView: View {
                 }
             }
 
-            if hasStarted {
+            if hasStarted && !isComplete {
                 Divider()
                     .background(OmiColors.backgroundTertiary)
 
@@ -308,11 +334,9 @@ struct OnboardingChatView: View {
                 messages.append(aiMessage)
             }
 
-            // Complete onboarding if signaled
+            // Show completion UI if signaled
             if shouldComplete {
-                // Small delay so user can read the final message
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-                completeOnboarding()
+                isComplete = true
             }
 
         } catch {
