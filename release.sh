@@ -376,6 +376,17 @@ if [ -f "$FFMPEG_PATH" ]; then
         "$FFMPEG_PATH"
 fi
 
+# Sign native binaries in agent-bridge node_modules
+AGENT_BRIDGE_RESOURCES="$APP_BUNDLE/Contents/Resources/agent-bridge/node_modules"
+if [ -d "$AGENT_BRIDGE_RESOURCES" ]; then
+    echo "  Signing agent-bridge native binaries..."
+    find "$AGENT_BRIDGE_RESOURCES" \( -name "*.node" -o -name "*.dylib" -o -name "rg" \) -type f | while read -r binary; do
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" \
+            "$binary" 2>/dev/null && echo "    Signed: $(basename "$binary")" || true
+    done
+fi
+
 # Sign Sparkle framework components (innermost first)
 # XPC Services
 codesign --force --options runtime --timestamp \
