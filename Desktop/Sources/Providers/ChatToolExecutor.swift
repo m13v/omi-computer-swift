@@ -174,25 +174,25 @@ class ChatToolExecutor {
         let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) ?? endDate
 
         do {
-            // Run FTS and vector search in parallel (same pattern as RewindViewModel)
-            async let ftsTask = RewindDatabase.shared.search(
+            // Run FTS and vector search — both non-fatal since natural language
+            // queries from AI often break FTS syntax, and vector search may lack embeddings
+            let ftsResults: [Screenshot] = (try? await RewindDatabase.shared.search(
                 query: query,
                 appFilter: appFilter,
                 startDate: startDate,
                 endDate: endDate,
                 limit: 20
-            )
-            async let vectorTask = OCREmbeddingService.shared.searchSimilar(
+            )) ?? []
+
+            let vectorResults = (try? await OCREmbeddingService.shared.searchSimilar(
                 query: query,
                 startDate: startDate,
                 endDate: endDate,
                 appFilter: appFilter,
                 topK: 20
-            )
+            )) ?? []
 
-            let ftsResults = try await ftsTask
-            // Vector search failures are non-fatal
-            let vectorResults = (try? await vectorTask) ?? []
+            log("Tool search_screenshots: FTS returned \(ftsResults.count), vector returned \(vectorResults.count)")
 
             // Merge: FTS first, then add vector-only results above threshold
             let ftsIds = Set(ftsResults.compactMap { $0.id })
