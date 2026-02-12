@@ -47,6 +47,12 @@ export interface ResultMessage {
   costUsd?: number;
 }
 
+export interface ToolActivityMessage {
+  type: "tool_activity";
+  name: string;
+  status: "started" | "completed";
+}
+
 export interface ErrorMessage {
   type: "error";
   message: string;
@@ -56,5 +62,6 @@ export type OutboundMessage =
   | InitMessage
   | TextDeltaMessage
   | ToolUseMessage
+  | ToolActivityMessage
   | ResultMessage
   | ErrorMessage;
