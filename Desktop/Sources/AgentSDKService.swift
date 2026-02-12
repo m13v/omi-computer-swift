@@ -45,6 +45,75 @@ class AgentSDKService: ObservableObject {
         let error: String?
     }
 
+    // MARK: - Conversational Chat (with tool use)
+
+    struct ChatMessage: Codable {
+        let role: String
+        let content: String
+    }
+
+    struct ToolCall: Codable {
+        let name: String
+        let input: [String: String]
+    }
+
+    struct ChatRequest: Codable {
+        let messages: [ChatMessage]
+        let collected_data: [String: String]?
+
+        enum CodingKeys: String, CodingKey {
+            case messages
+            case collected_data = "collected_data"
+        }
+    }
+
+    struct ChatResponse: Codable {
+        let success: Bool
+        let response: String?
+        let tool_calls: [ToolCall]?
+        let stop_reason: String?
+        let error: String?
+
+        enum CodingKeys: String, CodingKey {
+            case success, response, error
+            case tool_calls = "tool_calls"
+            case stop_reason = "stop_reason"
+        }
+    }
+
+    func chat(messages: [(role: String, content: String)], collectedData: [String: String]? = nil) async throws -> (response: String, toolCalls: [ToolCall]) {
+        guard isHealthy else {
+            throw AgentSDKError.serviceUnavailable
+        }
+
+        let url = URL(string: "\(baseURL)/agent/chat")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+
+        let chatMessages = messages.map { ChatMessage(role: $0.role, content: $0.content) }
+        let body = ChatRequest(messages: chatMessages, collected_data: collectedData)
+        request.httpBody = try JSONEncoder().encode(body)
+
+        let (data, response) = try await session.data(for: request)
+
+        guard let httpResponse = response as? HTTPURLResponse,
+              httpResponse.statusCode == 200 else {
+            throw AgentSDKError.invalidResponse
+        }
+
+        let chatResponse = try JSONDecoder().decode(ChatResponse.self, from: data)
+
+        guard chatResponse.success else {
+            throw AgentSDKError.agentFailed(message: chatResponse.error ?? "Unknown error")
+        }
+
+        let responseText = chatResponse.response ?? ""
+        let toolCalls = chatResponse.tool_calls ?? []
+
+        return (responseText, toolCalls)
+    }
+
     func runAgent(prompt: String, context: [String: String]? = nil) async throws -> String {
         guard isHealthy else {
             throw AgentSDKError.serviceUnavailable
