@@ -1229,9 +1229,9 @@ class AppState: ObservableObject {
     }
 
     /// Create a new folder
-    func createFolder(name: String, color: String? = nil) async -> Folder? {
+    func createFolder(name: String, description: String? = nil, color: String? = nil) async -> Folder? {
         do {
-            let folder = try await APIClient.shared.createFolder(name: name, color: color)
+            let folder = try await APIClient.shared.createFolder(name: name, description: description, color: color)
             folders.append(folder)
             log("Folders: Created folder '\(name)'")
             return folder
@@ -1252,6 +1252,19 @@ class AppState: ObservableObject {
             log("Folders: Deleted folder \(folderId)")
         } catch {
             logError("Folders: Failed to delete folder", error: error)
+        }
+    }
+
+    /// Update a folder
+    func updateFolder(_ folderId: String, name: String?, description: String?, color: String?) async {
+        do {
+            let updated = try await APIClient.shared.updateFolder(id: folderId, name: name, description: description, color: color)
+            if let index = folders.firstIndex(where: { $0.id == folderId }) {
+                folders[index] = updated
+            }
+            log("Folders: Updated folder \(folderId)")
+        } catch {
+            logError("Folders: Failed to update folder", error: error)
         }
     }
 
