@@ -766,32 +766,38 @@ class ChatProvider: ObservableObject {
             let systemPrompt = buildSystemPrompt(contextString: contextString)
 
             // First, try tool-enabled request to see if tools are needed
-            let result = try await client.sendToolChatRequest(
+            var result = try await client.sendToolChatRequest(
                 messages: chatHistory,
                 systemPrompt: systemPrompt,
                 tools: GeminiClient.chatTools
             )
 
-            var finalResponse: String
+            // Multi-turn tool loop: keep executing tools until Gemini returns text (max 5 rounds)
+            let maxToolRounds = 5
+            var toolRound = 0
 
-            if result.requiresToolExecution && !result.toolCalls.isEmpty {
-                // Execute tool calls
-                log("Executing \(result.toolCalls.count) tool call(s)")
-                updateMessage(id: aiMessageId, text: "Using tools...")
+            while result.requiresToolExecution && !result.toolCalls.isEmpty && toolRound < maxToolRounds {
+                toolRound += 1
+                log("Tool round \(toolRound): executing \(result.toolCalls.count) tool call(s)")
+                updateMessage(id: aiMessageId, text: toolRound == 1 ? "Using tools..." : "Searching more...")
 
                 let toolResults = await ChatToolExecutor.executeAll(result.toolCalls)
 
-                // Continue with tool results to get final response
-                finalResponse = try await client.continueWithToolResults(
-                    originalMessages: chatHistory,
+                // Continue with tool results — pass tools so Gemini can make more calls if needed
+                result = try await client.continueWithToolResults(
+                    previousContents: result.contents ?? [],
                     toolCalls: result.toolCalls,
                     toolResults: toolResults,
-                    systemPrompt: systemPrompt
+                    systemPrompt: systemPrompt,
+                    tools: GeminiClient.chatTools
                 )
-            } else {
-                // No tools needed, use direct response
-                finalResponse = result.text
             }
+
+            if toolRound > 0 {
+                log("Tool loop completed after \(toolRound) round(s)")
+            }
+
+            let finalResponse = result.text
 
             // Extract citations from the response and strip markers for display
             let citationSources = cachedContext?.citationSources ?? []
