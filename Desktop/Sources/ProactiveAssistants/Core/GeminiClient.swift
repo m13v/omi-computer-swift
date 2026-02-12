@@ -724,55 +724,28 @@ extension GeminiClient {
     /// Available chat tools
     static let chatTools: [GeminiTool] = [
         GeminiTool(functionDeclarations: [
-            // Create action item / task
+            // Execute SQL on local omi.db
             GeminiTool.FunctionDeclaration(
-                name: "create_action_item",
-                description: "Create a new task or action item for the user. Use this when the user asks to remind them about something, create a task, add a to-do item, or set a reminder.",
+                name: "execute_sql",
+                description: "Execute a SQL query on the local omi.db database. Supports SELECT, INSERT, UPDATE, DELETE. Use this for any structured data lookup — app usage, screenshots, tasks, conversations, time-based queries, aggregations, etc. The system prompt contains the full database schema.",
                 parameters: GeminiTool.FunctionDeclaration.Parameters(
                     type: "object",
                     properties: [
-                        "description": .init(type: "string", description: "The task description - what needs to be done"),
-                        "due_date": .init(type: "string", description: "Optional due date in ISO 8601 format (e.g., 2024-01-15T10:00:00Z)"),
-                        "priority": .init(type: "string", description: "Task priority", enumValues: ["high", "medium", "low"])
+                        "query": .init(type: "string", description: "SQL query to execute. SELECT queries auto-limit to 200 rows. UPDATE/DELETE require WHERE clause. DROP/ALTER/CREATE are blocked.")
                     ],
-                    required: ["description"]
+                    required: ["query"]
                 )
             ),
-            // Get recent conversations
+            // Semantic vector search
             GeminiTool.FunctionDeclaration(
-                name: "get_conversations",
-                description: "Retrieve the user's recent conversations. Use this when the user asks about what they discussed, their conversation history, or needs context from past conversations.",
+                name: "semantic_search",
+                description: "Search screen history using semantic similarity (vector embeddings). Use this for fuzzy conceptual queries where exact keywords won't work — e.g. 'reading about machine learning', 'working on design mockups', 'chatting with friends'. Returns screenshots ranked by semantic similarity.",
                 parameters: GeminiTool.FunctionDeclaration.Parameters(
                     type: "object",
                     properties: [
-                        "limit": .init(type: "integer", description: "Maximum number of conversations to return (default: 10)"),
-                        "days": .init(type: "integer", description: "Only include conversations from the last N days (default: 7)")
-                    ],
-                    required: []
-                )
-            ),
-            // Get user memories
-            GeminiTool.FunctionDeclaration(
-                name: "get_memories",
-                description: "Retrieve facts and memories about the user. Use this when you need to know more about the user's preferences, background, or personal information.",
-                parameters: GeminiTool.FunctionDeclaration.Parameters(
-                    type: "object",
-                    properties: [
-                        "limit": .init(type: "integer", description: "Maximum number of memories to return (default: 20)")
-                    ],
-                    required: []
-                )
-            ),
-            // Search screenshots (Rewind)
-            GeminiTool.FunctionDeclaration(
-                name: "search_screenshots",
-                description: "Search the user's screen history (Rewind). Finds screenshots by what was visible on screen — app content, text, websites, messages, code, documents, etc. Use this when the user asks about something they saw on screen, what they were doing at a certain time, what app they used, or wants to find specific content from their screen history.",
-                parameters: GeminiTool.FunctionDeclaration.Parameters(
-                    type: "object",
-                    properties: [
-                        "query": .init(type: "string", description: "Search query — what to look for in screen content. Can be keywords or a description of what was on screen."),
+                        "query": .init(type: "string", description: "Natural language description of what to search for."),
                         "days": .init(type: "integer", description: "Search the last N days (default: 7). Use 1 for today only."),
-                        "app_filter": .init(type: "string", description: "Optional: filter by app name (e.g., 'Google Chrome', 'Cursor', 'Slack', 'Messages')")
+                        "app_filter": .init(type: "string", description: "Optional: filter by app name (e.g., 'Google Chrome', 'Cursor', 'Slack')")
                     ],
                     required: ["query"]
                 )
