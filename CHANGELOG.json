@@ -1,6 +1,18 @@
 {
   "releases": [
     {
+      "version": "0.6.6",
+      "date": "2026-02-12",
+      "changes": [
+        "Updated app icon",
+        "Tasks date view now auto-selects 'Last 7 Days' for a cleaner default",
+        "Get Omi widget now shows regardless of device pairing status",
+        "Updated onboarding completion screen layout",
+        "Fixed app restart interrupting in-progress updates",
+        "Fixed old tasks appearing in date-filtered views"
+      ]
+    },
+    {
       "version": "0.6.5",
       "date": "2026-02-12",
       "changes": [
