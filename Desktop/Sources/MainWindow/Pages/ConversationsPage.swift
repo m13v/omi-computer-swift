@@ -55,13 +55,14 @@ struct ConversationsPage: View {
     // Date picker state
     @State private var showDatePicker: Bool = false
 
-    // Folder picker state
-    @State private var showFolderPicker: Bool = false
+    // Folder management state
+    @State private var showCreateFolderSheet: Bool = false
+    @State private var editingFolder: Folder? = nil
+    @State private var deletingFolder: Folder? = nil
 
     // Filter loading states (to show loading on the clicked button)
     @State private var isFilteringStarred: Bool = false
     @State private var isFilteringDate: Bool = false
-    @State private var isFilteringFolder: Bool = false
 
     // Multi-select state for merging
     @State private var isMultiSelectMode: Bool = false
@@ -120,6 +121,21 @@ struct ConversationsPage: View {
                     await appState.loadFolders()
                 }
             }
+        }
+        .dismissableSheet(isPresented: $showCreateFolderSheet) {
+            FolderFormSheet(folder: nil, onDismiss: { showCreateFolderSheet = false })
+                .environmentObject(appState)
+                .frame(width: 380)
+        }
+        .dismissableSheet(item: $editingFolder) { folder in
+            FolderFormSheet(folder: folder, onDismiss: { editingFolder = nil })
+                .environmentObject(appState)
+                .frame(width: 380)
+        }
+        .dismissableSheet(item: $deletingFolder) { folder in
+            DeleteFolderSheet(folder: folder, onDismiss: { deletingFolder = nil })
+                .environmentObject(appState)
+                .frame(width: 380)
         }
     }
 
@@ -300,6 +316,16 @@ struct ConversationsPage: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+
+            // Folder tabs strip
+            FolderTabsStrip(
+                appState: appState,
+                onCreateFolder: { showCreateFolderSheet = true },
+                onEditFolder: { folder in editingFolder = folder },
+                onDeleteFolder: { folder in deletingFolder = folder }
+            )
+            .padding(.horizontal, 16)
+            .padding(.bottom, 8)
 
             // List - show search results or regular conversations
             if !searchQuery.isEmpty {
@@ -552,61 +578,6 @@ struct ConversationsPage: View {
                 datePickerPopover
             }
 
-            // Folder filter button (only show if folders exist)
-            if !appState.folders.isEmpty {
-                Button(action: {
-                    showFolderPicker.toggle()
-                }) {
-                    HStack(spacing: 6) {
-                        if isFilteringFolder {
-                            ProgressView()
-                                .scaleEffect(0.5)
-                                .frame(width: 12, height: 12)
-                        } else {
-                            Image(systemName: "folder")
-                                .font(.system(size: 12))
-                        }
-                        if let folderId = appState.selectedFolderId,
-                           let folder = appState.folders.first(where: { $0.id == folderId }) {
-                            Text(folder.name)
-                                .font(.system(size: 12, weight: .medium))
-                                .lineLimit(1)
-                            // Clear button
-                            Button(action: {
-                                Task {
-                                    isFilteringFolder = true
-                                    await appState.setFolderFilter(nil)
-                                    isFilteringFolder = false
-                                }
-                            }) {
-                                Image(systemName: "xmark.circle.fill")
-                                    .font(.system(size: 10))
-                            }
-                            .buttonStyle(.plain)
-                        } else {
-                            Text("Folder")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                    }
-                    .foregroundColor(appState.selectedFolderId != nil ? .black : OmiColors.textSecondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(appState.selectedFolderId != nil ? Color.white : OmiColors.backgroundTertiary.opacity(0.6))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(appState.selectedFolderId != nil ? OmiColors.border : Color.clear, lineWidth: 1)
-                    )
-                }
-                .buttonStyle(.plain)
-                .disabled(isFilteringFolder)
-                .popover(isPresented: $showFolderPicker) {
-                    folderPickerPopover
-                }
-            }
-
             // Clear all filters button (only show if any filter is active)
             if appState.showStarredOnly || appState.selectedDateFilter != nil || appState.selectedFolderId != nil {
                 Button(action: {
@@ -653,52 +624,6 @@ struct ConversationsPage: View {
         let formatter = DateFormatter()
         formatter.dateFormat = "MMM d"
         return formatter.string(from: date)
-    }
-
-    private var folderPickerPopover: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Filter by Folder")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundColor(OmiColors.textSecondary)
-                .padding(.horizontal, 8)
-                .padding(.bottom, 4)
-
-            ForEach(appState.folders) { folder in
-                Button(action: {
-                    showFolderPicker = false
-                    Task {
-                        isFilteringFolder = true
-                        await appState.setFolderFilter(folder.id)
-                        isFilteringFolder = false
-                    }
-                }) {
-                    HStack(spacing: 8) {
-                        Circle()
-                            .fill(Color(hex: folder.color) ?? OmiColors.textTertiary)
-                            .frame(width: 8, height: 8)
-                        Text(folder.name)
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textPrimary)
-                        Spacer()
-                        if appState.selectedFolderId == folder.id {
-                            Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .semibold))
-                                .foregroundColor(OmiColors.textPrimary)
-                        }
-                    }
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(appState.selectedFolderId == folder.id ? OmiColors.backgroundTertiary : Color.clear)
-                    )
-                }
-                .buttonStyle(.plain)
-            }
-        }
-        .padding(8)
-        .frame(minWidth: 180)
-        .background(OmiColors.backgroundSecondary)
     }
 
     // MARK: - Merge Action Bar
