@@ -15,7 +15,6 @@ class DashboardViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
     private var lastGoalRefreshTime: Date = .distantPast
-    private let goalsCacheKey = "omi.goals.cache"
 
     // Computed properties that delegate to TasksStore
     var overdueTasks: [TaskActionItem] { tasksStore.overdueTasks }
@@ -31,8 +30,8 @@ class DashboardViewModel: ObservableObject {
             }
             .store(in: &cancellables)
 
-        // Load cached goals immediately for instant display
-        loadGoalsFromCache()
+        // Load goals from local SQLite for instant display
+        loadGoalsFromLocal()
 
         // Refresh goals when one is auto-created
         NotificationCenter.default.publisher(for: .goalAutoCreated)
@@ -68,10 +67,15 @@ class DashboardViewModel: ObservableObject {
     }
 
     private func loadGoals() async {
+        // 1. Show local data first (already loaded in init)
+        // 2. Fetch from API
         do {
-            goals = try await APIClient.shared.getGoals()
+            let apiGoals = try await APIClient.shared.getGoals()
+            // 3. Sync to SQLite
+            try await GoalStorage.shared.syncServerGoals(apiGoals)
+            // 4. Reload from SQLite (source of truth)
+            goals = try await GoalStorage.shared.getLocalGoals()
             lastGoalRefreshTime = Date()
-            saveGoalsToCache()
         } catch {
             logError("Failed to load goals", error: error)
         }
@@ -86,26 +90,15 @@ class DashboardViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Goals Cache
+    // MARK: - Local Goals Storage
 
-    private func loadGoalsFromCache() {
-        guard let data = UserDefaults.standard.data(forKey: goalsCacheKey) else { return }
-        do {
-            let cached = try JSONDecoder().decode([Goal].self, from: data)
-            if goals.isEmpty {
-                goals = cached
+    private func loadGoalsFromLocal() {
+        Task {
+            do {
+                goals = try await GoalStorage.shared.getLocalGoals()
+            } catch {
+                logError("Failed to load goals from local storage", error: error)
             }
-        } catch {
-            logError("Failed to load goals from cache", error: error)
-        }
-    }
-
-    private func saveGoalsToCache() {
-        do {
-            let data = try JSONEncoder().encode(goals)
-            UserDefaults.standard.set(data, forKey: goalsCacheKey)
-        } catch {
-            logError("Failed to save goals to cache", error: error)
         }
     }
 
@@ -124,11 +117,8 @@ class DashboardViewModel: ObservableObject {
                 targetValue: targetValue,
                 unit: unit
             )
-            goals.insert(goal, at: 0)
-            if goals.count > 3 {
-                goals = Array(goals.prefix(3))
-            }
-            saveGoalsToCache()
+            try? await GoalStorage.shared.syncServerGoal(goal)
+            goals = try await GoalStorage.shared.getLocalGoals()
         } catch {
             logError("Failed to create goal", error: error)
         }
@@ -137,11 +127,11 @@ class DashboardViewModel: ObservableObject {
     func updateGoalProgress(_ goal: Goal, currentValue: Double) async {
         log("Goals: Updating '\(goal.title)' progress to \(currentValue)")
 
-        // Optimistically update local value and cache immediately
+        // Optimistically update local SQLite
         if let index = goals.firstIndex(where: { $0.id == goal.id }) {
             goals[index].currentValue = currentValue
         }
-        saveGoalsToCache()
+        try? await GoalStorage.shared.updateProgress(backendId: goal.id, currentValue: currentValue)
 
         do {
             let updated = try await APIClient.shared.updateGoalProgress(
@@ -149,19 +139,18 @@ class DashboardViewModel: ObservableObject {
                 currentValue: currentValue
             )
 
+            // Sync API response to SQLite
+            try? await GoalStorage.shared.syncServerGoal(updated)
+
             // Check if the backend auto-completed this goal
             if updated.completedAt != nil {
                 log("Goals: '\(goal.title)' COMPLETED! Triggering celebration.")
-                goals.removeAll { $0.id == goal.id }
-                saveGoalsToCache()
+                goals = try await GoalStorage.shared.getLocalGoals()
                 NotificationCenter.default.post(name: .goalCompleted, object: updated)
                 return
             }
 
-            if let index = goals.firstIndex(where: { $0.id == goal.id }) {
-                goals[index] = updated
-            }
-            saveGoalsToCache()
+            goals = try await GoalStorage.shared.getLocalGoals()
             log("Goals: Updated '\(goal.title)' progress confirmed by API")
         } catch {
             logError("Failed to update goal progress", error: error)
@@ -170,9 +159,11 @@ class DashboardViewModel: ObservableObject {
 
     func deleteGoal(_ goal: Goal) async {
         do {
+            // Soft-delete locally first for instant UI update
+            try? await GoalStorage.shared.softDelete(backendId: goal.id)
+            goals = try await GoalStorage.shared.getLocalGoals()
+            // Then delete on backend
             try await APIClient.shared.deleteGoal(id: goal.id)
-            goals.removeAll { $0.id == goal.id }
-            saveGoalsToCache()
         } catch {
             logError("Failed to delete goal", error: error)
         }
