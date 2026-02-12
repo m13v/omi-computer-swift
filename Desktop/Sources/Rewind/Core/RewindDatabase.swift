@@ -281,6 +281,16 @@ actor RewindDatabase {
             let dest = userDir.appendingPathComponent(name)
             guard fileManager.fileExists(atPath: source.path) else { continue }
             do {
+                // Remove empty placeholder dirs at dest (created by earlier partial runs)
+                if fileManager.fileExists(atPath: dest.path) {
+                    let contents = try? fileManager.contentsOfDirectory(atPath: dest.path)
+                    if contents?.isEmpty == true {
+                        try fileManager.removeItem(at: dest)
+                    } else {
+                        log("RewindDatabase: Skipping \(name) — non-empty dest already exists")
+                        continue
+                    }
+                }
                 try fileManager.moveItem(at: source, to: dest)
                 log("RewindDatabase: Migrated \(name)")
             } catch {
