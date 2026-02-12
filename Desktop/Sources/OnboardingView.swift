@@ -377,7 +377,6 @@ struct OnboardingView: View {
                 TextField("Enter your name", text: $nameInput)
                     .textFieldStyle(.roundedBorder)
                     .font(.body)
-                    .frame(maxWidth: 280)
                     .focused($isNameFieldFocused)
                     .onSubmit {
                         if isNameValid {
@@ -402,7 +401,7 @@ struct OnboardingView: View {
                         .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
-            .padding(.horizontal, 40)
+            .frame(width: 280)
             .padding(.top, 8)
         }
         .onAppear {
