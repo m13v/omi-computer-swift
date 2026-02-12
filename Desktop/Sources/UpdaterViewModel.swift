@@ -91,6 +91,9 @@ final class UpdaterViewModel: ObservableObject {
     /// Whether the updater can check for updates (e.g., not already checking)
     @Published private(set) var canCheckForUpdates: Bool = true
 
+    /// Whether Sparkle has an active update session (downloading, installing, etc.)
+    @Published private(set) var updateSessionInProgress: Bool = false
+
     /// Whether a new update is available (set by delegate callbacks)
     @Published var updateAvailable: Bool = false
 
@@ -123,6 +126,15 @@ final class UpdaterViewModel: ObservableObject {
         updaterController.updater.publisher(for: \.canCheckForUpdates)
             .receive(on: DispatchQueue.main)
             .assign(to: &$canCheckForUpdates)
+
+        updaterController.updater.publisher(for: \.sessionInProgress)
+            .receive(on: DispatchQueue.main)
+            .assign(to: &$updateSessionInProgress)
+    }
+
+    /// Quick check if Sparkle is mid-update (safe to call from anywhere)
+    static var isUpdateInProgress: Bool {
+        shared.updateSessionInProgress
     }
 
     /// Manually check for updates
