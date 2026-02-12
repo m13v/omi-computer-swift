@@ -38,6 +38,7 @@ class GoalGenerationService {
                 if daysSinceUpdate >= staleGoalDays {
                     log("GoalGenerationService: Completing stale goal '\(goal.title)' — no update for \(Int(daysSinceUpdate / 86400)) days")
                     _ = try await APIClient.shared.completeGoal(id: goal.id)
+                    try? await GoalStorage.shared.markCompleted(backendId: goal.id)
                     NotificationCenter.default.post(name: .goalAutoCreated, object: nil)
                 }
             }
