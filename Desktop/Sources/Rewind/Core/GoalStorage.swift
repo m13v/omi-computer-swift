@@ -131,8 +131,9 @@ actor GoalStorage {
         var insertRecord = record
         insertRecord.backendSynced = false
 
+        let recordToInsert = insertRecord
         let inserted = try await db.write { database in
-            try insertRecord.inserted(database)
+            try recordToInsert.inserted(database)
         }
 
         log("GoalStorage: Inserted local goal (id: \(inserted.id ?? -1))")
