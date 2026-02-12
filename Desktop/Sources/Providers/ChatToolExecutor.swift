@@ -1,7 +1,8 @@
 import Foundation
+import GRDB
 
 /// Executes tool calls from Gemini and returns results
-/// Tools call backend APIs to perform actions or fetch data
+/// Tools: execute_sql (read/write SQL on omi.db), semantic_search (vector similarity)
 @MainActor
 class ChatToolExecutor {
 
@@ -10,17 +11,11 @@ class ChatToolExecutor {
         log("Executing tool: \(toolCall.name) with args: \(toolCall.arguments)")
 
         switch toolCall.name {
-        case "create_action_item":
-            return await executeCreateActionItem(toolCall.arguments)
+        case "execute_sql":
+            return await executeSQL(toolCall.arguments)
 
-        case "get_conversations":
-            return await executeGetConversations(toolCall.arguments)
-
-        case "get_memories":
-            return await executeGetMemories(toolCall.arguments)
-
-        case "search_screenshots":
-            return await executeSearchScreenshots(toolCall.arguments)
+        case "semantic_search":
+            return await executeSemanticSearch(toolCall.arguments)
 
         default:
             return "Unknown tool: \(toolCall.name)"
@@ -38,130 +33,143 @@ class ChatToolExecutor {
         return results
     }
 
-    // MARK: - Tool Implementations
+    // MARK: - SQL Execution
 
-    /// Create an action item / task
-    private static func executeCreateActionItem(_ args: [String: Any]) async -> String {
-        guard let description = args["description"] as? String else {
-            return "Error: description is required"
+    /// Blocked SQL keywords that are never allowed
+    private static let blockedKeywords: Set<String> = [
+        "DROP", "ALTER", "CREATE", "PRAGMA", "ATTACH", "DETACH", "VACUUM"
+    ]
+
+    /// Execute a SQL query on omi.db
+    private static func executeSQL(_ args: [String: Any]) async -> String {
+        guard let query = args["query"] as? String, !query.isEmpty else {
+            return "Error: query is required"
         }
 
-        let priority = args["priority"] as? String
-        let dueDateString = args["due_date"] as? String
+        let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let upper = trimmed.uppercased()
 
-        // Parse due date if provided
-        var dueDate: Date? = nil
-        if let dateStr = dueDateString {
-            let formatter = ISO8601DateFormatter()
-            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-            dueDate = formatter.date(from: dateStr)
-
-            // Try without fractional seconds
-            if dueDate == nil {
-                formatter.formatOptions = [.withInternetDateTime]
-                dueDate = formatter.date(from: dateStr)
+        // Block dangerous keywords
+        for keyword in blockedKeywords {
+            // Match keyword at word boundary (start of string or after whitespace/punctuation)
+            if upper.range(of: "\\b\(keyword)\\b", options: .regularExpression) != nil {
+                return "Error: \(keyword) statements are not allowed"
             }
+        }
+
+        // Block multi-statement queries (semicolon followed by another statement)
+        let statements = trimmed.components(separatedBy: ";")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        if statements.count > 1 {
+            return "Error: multi-statement queries are not allowed. Send one statement at a time."
+        }
+
+        // Determine query type
+        let isSelect = upper.hasPrefix("SELECT") || upper.hasPrefix("WITH")
+        let isInsert = upper.hasPrefix("INSERT")
+        let isUpdate = upper.hasPrefix("UPDATE")
+        let isDelete = upper.hasPrefix("DELETE")
+
+        // Block UPDATE/DELETE without WHERE
+        if (isUpdate || isDelete) && !upper.contains("WHERE") {
+            return "Error: \(isUpdate ? "UPDATE" : "DELETE") without WHERE clause is not allowed"
+        }
+
+        // Get database queue
+        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+            return "Error: database not available"
         }
 
         do {
-            let actionItem = try await APIClient.shared.createActionItem(
-                description: description,
-                dueAt: dueDate,
-                source: "chat",
-                priority: priority
-            )
-
-            var result = "Created task: \"\(actionItem.description)\""
-            if let due = actionItem.dueAt {
-                let formatter = DateFormatter()
-                formatter.dateStyle = .medium
-                formatter.timeStyle = .short
-                result += " (due: \(formatter.string(from: due)))"
+            if isSelect {
+                return try await executeSelectQuery(trimmed, upper: upper, dbQueue: dbQueue)
+            } else if isInsert || isUpdate || isDelete {
+                return try await executeWriteQuery(trimmed, dbQueue: dbQueue)
+            } else {
+                return "Error: only SELECT, INSERT, UPDATE, DELETE statements are allowed"
             }
-
-            log("Tool create_action_item succeeded: \(actionItem.id)")
-            return result
-
         } catch {
-            logError("Tool create_action_item failed", error: error)
-            return "Failed to create task: \(error.localizedDescription)"
+            logError("Tool execute_sql failed", error: error)
+            return "SQL Error: \(error.localizedDescription)"
         }
     }
 
-    /// Get recent conversations
-    private static func executeGetConversations(_ args: [String: Any]) async -> String {
-        let limit = (args["limit"] as? Int) ?? 10
-        let days = (args["days"] as? Int) ?? 7
-
-        // Calculate start date
-        let startDate = Calendar.current.date(byAdding: .day, value: -days, to: Date()) ?? Date()
-
-        do {
-            let conversations = try await APIClient.shared.getConversations(
-                limit: limit,
-                offset: 0,
-                statuses: [],
-                includeDiscarded: false,
-                startDate: startDate
-            )
-
-            if conversations.isEmpty {
-                return "No conversations found in the last \(days) days."
+    /// Execute a SELECT query and format results as text
+    private static func executeSelectQuery(_ query: String, upper: String, dbQueue: DatabaseQueue) async throws -> String {
+        // Auto-append LIMIT 200 if no LIMIT clause
+        var finalQuery = query
+        if !upper.contains("LIMIT") {
+            // Remove trailing semicolon if present
+            if finalQuery.hasSuffix(";") {
+                finalQuery = String(finalQuery.dropLast())
             }
+            finalQuery += " LIMIT 200"
+        }
 
-            // Format conversations for the model
-            var lines: [String] = ["Found \(conversations.count) conversation(s):"]
+        let rows = try await dbQueue.read { db in
+            try Row.fetchAll(db, sql: finalQuery)
+        }
 
-            for (index, conv) in conversations.prefix(limit).enumerated() {
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateStyle = .medium
-                dateFormatter.timeStyle = .short
-                let dateStr = dateFormatter.string(from: conv.createdAt)
+        if rows.isEmpty {
+            return "No results"
+        }
 
-                lines.append("\(index + 1). \(conv.structured.emoji) \(conv.title) (\(dateStr))")
-                if !conv.overview.isEmpty {
-                    lines.append("   Summary: \(conv.overview)")
+        // Get column names from first row
+        let columns = rows[0].columnNames
+        var lines: [String] = []
+
+        // Header
+        lines.append(columns.joined(separator: " | "))
+        lines.append(String(repeating: "-", count: min(columns.count * 20, 120)))
+
+        // Rows (max 200)
+        for row in rows.prefix(200) {
+            let values = columns.map { col -> String in
+                guard let idx = row.index(forColumn: col) else { return "NULL" }
+                if row.hasNull(atIndex: idx) { return "NULL" }
+
+                let value: String
+                if let str: String = try? row[col] as String {
+                    value = str
+                } else if let int: Int64 = try? row[col] as Int64 {
+                    value = String(int)
+                } else if let dbl: Double = try? row[col] as Double {
+                    value = String(dbl)
+                } else if let data: Data = try? row[col] as Data {
+                    value = "<\(data.count) bytes>"
+                } else {
+                    value = String(describing: row[col] as (any DatabaseValueConvertible)?)
                 }
+                // Truncate long cell values
+                if value.count > 500 {
+                    return String(value.prefix(500)) + "..."
+                }
+                return value
             }
-
-            log("Tool get_conversations returned \(conversations.count) results")
-            return lines.joined(separator: "\n")
-
-        } catch {
-            logError("Tool get_conversations failed", error: error)
-            return "Failed to fetch conversations: \(error.localizedDescription)"
+            lines.append(values.joined(separator: " | "))
         }
+
+        lines.append("\n\(rows.count) row(s)")
+        log("Tool execute_sql returned \(rows.count) rows")
+        return lines.joined(separator: "\n")
     }
 
-    /// Get user memories/facts
-    private static func executeGetMemories(_ args: [String: Any]) async -> String {
-        let limit = (args["limit"] as? Int) ?? 20
-
-        do {
-            let memories = try await APIClient.shared.getMemories(limit: limit)
-
-            if memories.isEmpty {
-                return "No memories found."
-            }
-
-            // Format memories for the model
-            var lines: [String] = ["Found \(memories.count) fact(s) about the user:"]
-
-            for memory in memories.prefix(limit) {
-                lines.append("- \(memory.content)")
-            }
-
-            log("Tool get_memories returned \(memories.count) results")
-            return lines.joined(separator: "\n")
-
-        } catch {
-            logError("Tool get_memories failed", error: error)
-            return "Failed to fetch memories: \(error.localizedDescription)"
+    /// Execute a write (INSERT/UPDATE/DELETE) query
+    private static func executeWriteQuery(_ query: String, dbQueue: DatabaseQueue) async throws -> String {
+        let changes = try await dbQueue.write { db -> Int in
+            try db.execute(sql: query)
+            return db.changesCount
         }
+
+        log("Tool execute_sql write: \(changes) row(s) affected")
+        return "OK: \(changes) row(s) affected"
     }
 
-    /// Search screenshots using FTS + semantic vector search (Rewind)
-    private static func executeSearchScreenshots(_ args: [String: Any]) async -> String {
+    // MARK: - Semantic Search
+
+    /// Search screenshots using vector similarity
+    private static func executeSemanticSearch(_ args: [String: Any]) async -> String {
         guard let query = args["query"] as? String, !query.isEmpty else {
             return "Error: query is required"
         }
@@ -174,51 +182,34 @@ class ChatToolExecutor {
         let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) ?? endDate
 
         do {
-            // Run FTS and vector search — both non-fatal since natural language
-            // queries from AI often break FTS syntax, and vector search may lack embeddings
-            let ftsResults: [Screenshot] = (try? await RewindDatabase.shared.search(
-                query: query,
-                appFilter: appFilter,
-                startDate: startDate,
-                endDate: endDate,
-                limit: 20
-            )) ?? []
-
-            let vectorResults = (try? await OCREmbeddingService.shared.searchSimilar(
+            let vectorResults = try await OCREmbeddingService.shared.searchSimilar(
                 query: query,
                 startDate: startDate,
                 endDate: endDate,
                 appFilter: appFilter,
                 topK: 20
-            )) ?? []
+            )
 
-            log("Tool search_screenshots: FTS returned \(ftsResults.count), vector returned \(vectorResults.count)")
+            log("Tool semantic_search: vector returned \(vectorResults.count) results")
 
-            // Merge: FTS first, then add vector-only results above threshold
-            let ftsIds = Set(ftsResults.compactMap { $0.id })
-            var merged = ftsResults
-            for result in vectorResults where result.similarity > 0.5 && !ftsIds.contains(result.screenshotId) {
-                if let screenshot = try? await RewindDatabase.shared.getScreenshot(id: result.screenshotId) {
-                    merged.append(screenshot)
-                }
-            }
-
-            if merged.isEmpty {
-                return "No screenshots found matching \"\(query)\" in the last \(days) day(s)."
-            }
-
-            // Format results for the model
+            // Filter by similarity threshold and fetch screenshot details
             let dateFormatter = DateFormatter()
             dateFormatter.dateStyle = .medium
             dateFormatter.timeStyle = .short
 
-            var lines: [String] = ["Found \(merged.count) screenshot(s) matching \"\(query)\":"]
+            var lines: [String] = []
+            var count = 0
 
-            for (index, screenshot) in merged.prefix(15).enumerated() {
+            for result in vectorResults where result.similarity > 0.3 {
+                guard let screenshot = try? await RewindDatabase.shared.getScreenshot(id: result.screenshotId) else {
+                    continue
+                }
+
+                count += 1
                 let dateStr = dateFormatter.string(from: screenshot.timestamp)
                 let windowTitle = screenshot.windowTitle ?? ""
                 let titlePart = windowTitle.isEmpty ? "" : " - \(windowTitle)"
-                lines.append("\n\(index + 1). [\(dateStr)] \(screenshot.appName)\(titlePart)")
+                lines.append("\n\(count). [\(dateStr)] \(screenshot.appName)\(titlePart) (similarity: \(String(format: "%.2f", result.similarity)))")
 
                 // Include OCR text preview (truncated)
                 if let ocrText = screenshot.ocrText, !ocrText.isEmpty {
@@ -227,18 +218,22 @@ class ChatToolExecutor {
                         .trimmingCharacters(in: .whitespacesAndNewlines)
                     lines.append("   Content: \(preview)")
                 }
+
+                if count >= 15 { break }
             }
 
-            if merged.count > 15 {
-                lines.append("\n... and \(merged.count - 15) more results")
+            if lines.isEmpty {
+                return "No screenshots found matching \"\(query)\" in the last \(days) day(s)."
             }
 
-            log("Tool search_screenshots returned \(merged.count) results (FTS: \(ftsResults.count), vector: \(vectorResults.count))")
+            lines.insert("Found \(count) screenshot(s) matching \"\(query)\":", at: 0)
+
+            log("Tool semantic_search returned \(count) results")
             return lines.joined(separator: "\n")
 
         } catch {
-            logError("Tool search_screenshots failed", error: error)
-            return "Failed to search screenshots: \(error.localizedDescription)"
+            logError("Tool semantic_search failed", error: error)
+            return "Failed to search: \(error.localizedDescription)"
         }
     }
 }
