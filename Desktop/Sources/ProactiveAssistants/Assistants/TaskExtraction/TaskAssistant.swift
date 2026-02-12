@@ -642,7 +642,7 @@ actor TaskAssistant: ProactiveAssistant {
         }
 
         if !context.completedTasks.isEmpty {
-            prompt += "RECENTLY COMPLETED TASKS (user already handled these — they attracted user attention and seemed relevant enough to complete. Do not re-extract these or very similar tasks, but related follow-ups are okay):\n"
+            prompt += "RECENTLY COMPLETED TASKS (user engaged with these — this is the kind of task the user finds valuable. Extract similar types of tasks, just not exact duplicates of these specific ones):\n"
             for (i, task) in context.completedTasks.enumerated() {
                 prompt += "\(i + 1). \(task.description)\n"
             }
