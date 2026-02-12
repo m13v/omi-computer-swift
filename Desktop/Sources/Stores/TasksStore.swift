@@ -444,6 +444,18 @@ class TasksStore: ObservableObject {
             logError("TasksStore: Failed to load incomplete tasks from API", error: error)
         }
 
+        // If the allowlist is still empty after sync (e.g. fresh login where SQLite
+        // was empty when ensureAllowlistLoaded ran), reload it now that SQLite has scored tasks.
+        if visibleAITaskIds.isEmpty {
+            await TaskPrioritizationService.shared.reloadAllowlist()
+            visibleAITaskIds = await TaskPrioritizationService.shared.visibleAITaskIds
+            hasCompletedScoring = await TaskPrioritizationService.shared.hasCompletedScoring
+            if !visibleAITaskIds.isEmpty {
+                incompleteTasks = await mergeAllowlistedTasks(incompleteTasks)
+                log("TasksStore: Reloaded allowlist after sync — \(visibleAITaskIds.count) AI tasks now visible")
+            }
+        }
+
         isLoadingIncomplete = false
         NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
     }
