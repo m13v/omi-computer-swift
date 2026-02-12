@@ -37,15 +37,8 @@ struct OnboardingChatView: View {
     // Onboarding questions sequence
     private let questions: [OnboardingChatQuestion] = [
         OnboardingChatQuestion(
-            id: "welcome",
-            agentPrompt: "You are greeting a new user to Omi, an AI assistant that helps with focus and productivity. Give them a warm, brief welcome (2-3 sentences max) and ask what brings them to Omi today.",
-            quickReplies: nil,
-            allowFreeText: false,
-            saveKey: nil  // Don't save welcome message
-        ),
-        OnboardingChatQuestion(
             id: "motivation",
-            agentPrompt: "The user wants to try Omi. Ask them in a friendly, conversational way what their main goal is. Keep it brief (1-2 sentences).",
+            agentPrompt: "You are greeting a new user to Omi, an AI assistant that helps with focus and productivity. Give them a warm, brief welcome (2-3 sentences max) and ask what brings them to Omi today.",
             quickReplies: ["Stay focused", "Boost productivity", "Remember conversations", "Just exploring"],
             allowFreeText: true,
             saveKey: "motivation"
@@ -58,9 +51,23 @@ struct OnboardingChatView: View {
             saveKey: "use_case"
         ),
         OnboardingChatQuestion(
+            id: "job",
+            agentPrompt: "Great! Now ask them briefly (1-2 sentences) what their job or role is.",
+            quickReplies: ["Software Engineer", "Product Manager", "Designer", "Student", "Researcher", "Other"],
+            allowFreeText: true,
+            saveKey: "job"
+        ),
+        OnboardingChatQuestion(
+            id: "company",
+            agentPrompt: "Ask them briefly (1-2 sentences) what company they work for, if any. Let them know it's optional.",
+            quickReplies: ["Skip this question"],
+            allowFreeText: true,
+            saveKey: "company"
+        ),
+        OnboardingChatQuestion(
             id: "confirmation",
-            agentPrompt: "Acknowledge their answers warmly and briefly (2-3 sentences). Tell them you understand they want to use Omi for '{response_placeholder}' and you're excited to help. Ask if they're ready to finish setup.",
-            quickReplies: ["Yes, let's go!", "Tell me more first"],
+            agentPrompt: "Perfect! Acknowledge their answers warmly and briefly (2-3 sentences). Tell them you understand their background and you're excited to help them with their work. Ask if they're ready to finish setup.",
+            quickReplies: ["Yes, let's go!"],
             allowFreeText: false,
             saveKey: nil
         )
@@ -257,6 +264,9 @@ struct OnboardingChatView: View {
     }
 
     private func handleUserResponse(_ text: String) {
+        // Check if user chose to skip
+        let isSkip = text == "Skip this question"
+
         // Add user message
         let userMessage = ChatMessage(
             text: text,
@@ -265,10 +275,14 @@ struct OnboardingChatView: View {
         )
         messages.append(userMessage)
 
-        // Save response if this question has a save key
-        if let saveKey = currentQuestion?.saveKey {
+        // Save response if this question has a save key (but not if they skipped)
+        if let saveKey = currentQuestion?.saveKey, !isSkip {
             responses[saveKey] = text
             log("Saved onboarding response: \(saveKey) = \(text)")
+            // Also save to UserDefaults immediately for persistence
+            UserDefaults.standard.set(text, forKey: "onboarding_\(saveKey)")
+        } else if isSkip {
+            log("User skipped question: \(currentQuestion?.id ?? "unknown")")
         }
 
         // Move to next question
