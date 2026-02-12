@@ -14,18 +14,14 @@ struct OnboardingChatView: View {
     @State private var inputText: String = ""
     @State private var isProcessing: Bool = false
     @State private var hasStarted: Bool = false
+    @State private var suggestedReplies: [String] = []
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Skip button (top-right)
             HStack {
-                Text("Let's get to know you")
-                    .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(OmiColors.textPrimary)
-
                 Spacer()
-
                 Button(action: onSkip) {
                     Text("Skip")
                         .font(.system(size: 13))
@@ -34,10 +30,7 @@ struct OnboardingChatView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 24)
-            .padding(.vertical, 16)
-
-            Divider()
-                .background(OmiColors.backgroundTertiary)
+            .padding(.vertical, 12)
 
             // Chat messages
             ScrollViewReader { proxy in
@@ -125,32 +118,62 @@ struct OnboardingChatView: View {
                 Divider()
                     .background(OmiColors.backgroundTertiary)
 
-                // Input area
-                HStack(spacing: 12) {
-                    TextField("Type your message...", text: $inputText, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.textPrimary)
-                        .focused($isInputFocused)
-                        .padding(12)
-                        .lineLimit(1...3)
-                        .onSubmit {
-                            sendMessage()
+                VStack(spacing: 12) {
+                    // Suggested replies (if available)
+                    if !suggestedReplies.isEmpty && !isProcessing {
+                        VStack(spacing: 8) {
+                            ForEach(suggestedReplies, id: \.self) { suggestion in
+                                Button(action: {
+                                    sendSuggestion(suggestion)
+                                }) {
+                                    Text(suggestion)
+                                        .font(.system(size: 13, weight: .medium))
+                                        .foregroundColor(OmiColors.textPrimary)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .padding(.horizontal, 16)
+                                        .padding(.vertical, 10)
+                                }
+                                .buttonStyle(.plain)
+                                .background(OmiColors.backgroundSecondary)
+                                .cornerRadius(8)
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .stroke(OmiColors.backgroundTertiary, lineWidth: 1)
+                                )
+                            }
                         }
-                        .frame(maxWidth: .infinity)
-                        .background(OmiColors.backgroundSecondary)
-                        .cornerRadius(20)
-
-                    Button(action: sendMessage) {
-                        Image(systemName: "arrow.up.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(canSend ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        .padding(.horizontal, 20)
+                        .padding(.top, 12)
                     }
-                    .buttonStyle(.plain)
-                    .disabled(!canSend)
+
+                    // Text input area
+                    HStack(spacing: 12) {
+                        TextField("Type your message...", text: $inputText, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textPrimary)
+                            .focused($isInputFocused)
+                            .padding(12)
+                            .lineLimit(1...3)
+                            .onSubmit {
+                                sendMessage()
+                            }
+                            .frame(maxWidth: .infinity)
+                            .background(OmiColors.backgroundSecondary)
+                            .cornerRadius(20)
+
+                        Button(action: sendMessage) {
+                            Image(systemName: "arrow.up.circle.fill")
+                                .font(.system(size: 32))
+                                .foregroundColor(canSend ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!canSend)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 16)
                 }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
+                .padding(.top, suggestedReplies.isEmpty ? 16 : 0)
             }
         }
     }
@@ -179,6 +202,27 @@ struct OnboardingChatView: View {
 
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         inputText = ""
+        suggestedReplies = [] // Clear suggestions
+
+        // Add user message to UI
+        let userMessage = ChatMessage(
+            text: text,
+            sender: .user,
+            isStreaming: false
+        )
+        messages.append(userMessage)
+
+        // Add to conversation history
+        conversationHistory.append((role: "user", content: text))
+
+        // Get AI response
+        Task {
+            await getAIResponse()
+        }
+    }
+
+    private func sendSuggestion(_ text: String) {
+        suggestedReplies = [] // Clear suggestions
 
         // Add user message to UI
         let userMessage = ChatMessage(
@@ -223,16 +267,23 @@ struct OnboardingChatView: View {
             // Process tool calls
             var didCollectData = false
             var shouldComplete = false
+            var newSuggestions: [String] = []
 
             for toolCall in toolCalls {
                 switch toolCall.name {
                 case "save_field":
-                    if let field = toolCall.input["field"],
-                       let value = toolCall.input["value"] {
+                    if let field = toolCall.input.string("field"),
+                       let value = toolCall.input.string("value") {
                         collectedData[field] = value
                         UserDefaults.standard.set(value, forKey: "onboarding_\(field)")
                         log("Collected onboarding data: \(field) = \(value)")
                         didCollectData = true
+                    }
+
+                case "suggest_replies":
+                    if let suggestions = toolCall.input.stringArray("suggestions") {
+                        newSuggestions = suggestions
+                        log("AI suggested replies: \(suggestions)")
                     }
 
                 case "complete_onboarding":
@@ -243,6 +294,9 @@ struct OnboardingChatView: View {
                     break
                 }
             }
+
+            // Update suggested replies
+            suggestedReplies = newSuggestions
 
             // Add AI message to UI
             if !response.isEmpty {
