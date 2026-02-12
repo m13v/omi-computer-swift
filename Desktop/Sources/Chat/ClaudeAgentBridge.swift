@@ -325,6 +325,13 @@ actor ClaudeAgentBridge {
     // MARK: - Node.js Discovery
 
     private func findNodeBinary() -> String? {
+        // 1. Check bundled node binary in app resources (preferred — no external dependency)
+        if let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil),
+           FileManager.default.isExecutableFile(atPath: bundledNode) {
+            return bundledNode
+        }
+
+        // 2. Fall back to system-installed node
         let candidates = [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
@@ -337,7 +344,7 @@ actor ClaudeAgentBridge {
             }
         }
 
-        // Try `which node`
+        // 3. Try `which node`
         let whichProcess = Process()
         whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
         whichProcess.arguments = ["node"]
