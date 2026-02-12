@@ -1641,6 +1641,27 @@ actor RewindDatabase {
             print("[RewindDatabase] Migration: Cleared all embeddings for full Gemini backfill (no test limit)")
         }
 
+        migrator.registerMigration("createGoalsTable") { db in
+            try db.create(table: "goals") { t in
+                t.autoIncrementedPrimaryKey("id")
+                t.column("backendId", .text).unique()
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+                t.column("title", .text).notNull()
+                t.column("goalDescription", .text)
+                t.column("goalType", .text).notNull().defaults(to: "boolean")
+                t.column("targetValue", .double).notNull().defaults(to: 1.0)
+                t.column("currentValue", .double).notNull().defaults(to: 0.0)
+                t.column("minValue", .double).notNull().defaults(to: 0.0)
+                t.column("maxValue", .double).notNull().defaults(to: 100.0)
+                t.column("unit", .text)
+                t.column("isActive", .boolean).notNull().defaults(to: true)
+                t.column("completedAt", .datetime)
+                t.column("deleted", .boolean).notNull().defaults(to: false)
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
