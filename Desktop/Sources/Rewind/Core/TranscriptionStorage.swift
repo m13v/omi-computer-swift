@@ -11,6 +11,12 @@ actor TranscriptionStorage {
 
     private init() {}
 
+    /// Invalidate cached DB queue (called on user switch / sign-out)
+    func invalidateCache() {
+        _dbQueue = nil
+        isInitialized = false
+    }
+
     /// Ensure database is initialized before use
     private func ensureInitialized() async throws -> DatabaseQueue {
         if let db = _dbQueue {
