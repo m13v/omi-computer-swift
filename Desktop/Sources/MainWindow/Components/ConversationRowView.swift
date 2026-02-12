@@ -240,7 +240,7 @@ struct ConversationRowView: View {
                 } label: {
                     Image(systemName: conversation.folderId != nil ? "folder.fill" : "folder")
                         .font(.system(size: 11))
-                        .foregroundColor(conversation.folderId != nil ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                        .foregroundColor(conversation.folderId != nil ? .white : OmiColors.textTertiary)
                         .frame(width: 22, height: 22)
                         .background(Circle().fill(OmiColors.backgroundSecondary))
                 }
