@@ -189,6 +189,11 @@ final class ScreenCaptureService: Sendable {
     /// Reset screen capture permission and restart the app
     @MainActor
     static func resetScreenCapturePermissionAndRestart() {
+        if UpdaterViewModel.isUpdateInProgress {
+            log("Sparkle update in progress, skipping screen capture reset restart (Sparkle will handle relaunch)")
+            return
+        }
+
         // First ensure this app is the authoritative version in Launch Services
         // This fixes issues where tccutil resets permission for a stale app registration
         ensureLaunchServicesRegistration()
