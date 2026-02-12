@@ -112,6 +112,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
+        // Force macOS to refresh the app icon cache (needed after icon updates)
+        let appURL = Bundle.main.bundleURL
+        NSWorkspace.shared.setIcon(nil, forFile: appURL.path, options: [])
+        if let cfURL = appURL as CFURL? {
+            LSRegisterURL(cfURL, true)
+        }
+
         // Initialize NotificationService early to set up UNUserNotificationCenterDelegate
         // This ensures notifications display properly when app is in foreground
         _ = NotificationService.shared
