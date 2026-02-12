@@ -637,29 +637,34 @@ struct GeminiToolChatRequest: Encodable {
         let text: String?
         let functionCall: FunctionCallPart?
         let functionResponse: FunctionResponsePart?
+        let thoughtSignature: String?
 
         enum CodingKeys: String, CodingKey {
             case text
             case functionCall = "functionCall"
             case functionResponse = "functionResponse"
+            case thoughtSignature = "thought_signature"
         }
 
         init(text: String) {
             self.text = text
             self.functionCall = nil
             self.functionResponse = nil
+            self.thoughtSignature = nil
         }
 
         init(functionResponse: FunctionResponsePart) {
             self.text = nil
             self.functionCall = nil
             self.functionResponse = functionResponse
+            self.thoughtSignature = nil
         }
 
-        init(functionCall: FunctionCallPart) {
+        init(functionCall: FunctionCallPart, thoughtSignature: String? = nil) {
             self.text = nil
             self.functionCall = functionCall
             self.functionResponse = nil
+            self.thoughtSignature = thoughtSignature
         }
     }
 
@@ -862,7 +867,8 @@ extension GeminiClient {
                 functionCall: GeminiToolChatRequest.FunctionCallPart(
                     name: call.name,
                     args: call.arguments.mapValues { "\($0)" }
-                )
+                ),
+                thoughtSignature: call.thoughtSignature
             ))
         }
         contents.append(GeminiToolChatRequest.Content(role: "model", parts: functionCallParts))
