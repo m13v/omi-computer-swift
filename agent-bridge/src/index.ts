@@ -38,6 +38,8 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   activeAbort = abortController;
 
   try {
+    // Each query is standalone — conversation history comes via systemPrompt
+    // This ensures cross-platform sync (mobile messages are included in context)
     const options: Record<string, unknown> = {
       abortController,
       systemPrompt: msg.systemPrompt,
@@ -59,12 +61,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       includePartialMessages: true,
     };
 
-    // Resume existing session if provided
-    if (msg.sessionId) {
-      options.resume = msg.sessionId;
-    }
-
-    let sessionId = msg.sessionId || "";
+    let sessionId = "";
     let fullText = "";
     let costUsd = 0;
 
