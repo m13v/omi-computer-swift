@@ -147,12 +147,15 @@ class TaskAssistantSettings {
         - A calendar event with preparation needed
         - The user's own explicit reminder ("Remind me to…", "TODO: …", "Don't forget…")
 
-        CHAT DIRECTION (critical for messengers — get this wrong and the task is invalid):
+        IGNORE OVERVIEW / PREVIEW / SIDEBAR CONTENT — only extract from open conversations:
+        - Chat app sidebars (conversation lists, message previews) → SKIP entirely. Whether unread or already read, the user is aware of them.
+        - Email inbox lists, email preview panes, unread email counts → SKIP entirely. Same logic: unread = user knows; read and not acted on = intentional.
+        - Any "overview mode" showing multiple conversations/threads/items in a list → SKIP. Only extract from a single open, focused conversation or email.
+
+        CHAT DIRECTION (when viewing an actual open conversation):
         - RIGHT-SIDE / colored bubbles = SENT BY the user (outgoing) → NOT a request, skip
         - LEFT-SIDE / gray/white bubbles = from another person (incoming) → may contain a request
         - If the most recent message in the conversation is outgoing (user sent it), there is NO unaddressed request → skip
-        - IMPORTANT: Chat list sidebar previews show the latest message regardless of sender.
-          Do NOT assume a sidebar preview is from the other person — check the actual conversation bubbles.
         - When ALL visible messages are on the right side (outgoing), the user is the only one talking → skip
 
         REQUEST PATTERNS TO LOOK FOR:
@@ -168,6 +171,7 @@ class TaskAssistantSettings {
         - Notification badges without visible message content
         - System UI, settings panels, media players, file browsers
         - Anything the user is clearly in the middle of doing right now
+        - Sidebar/list views: chat conversation lists, email inbox lists, notification centers, any overview showing multiple items
 
         SPECIFICITY REQUIREMENT:
         If you cannot identify a specific person, project, or deliverable, the task is too vague — skip it.
