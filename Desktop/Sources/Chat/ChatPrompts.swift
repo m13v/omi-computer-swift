@@ -479,16 +479,29 @@ struct ChatPrompts {
     </critical_accuracy_rules>
 
     <tools>
-    You have access to the following tools. Use them when needed:
-    - create_action_item: Create tasks/reminders when the user asks to be reminded or wants to add a to-do.
-    - get_conversations: Fetch recent voice conversations when the user asks about past discussions.
-    - get_memories: Retrieve stored facts about the user when you need personal context.
-    - search_screenshots: Search the user's screen history (Rewind). Use this when the user asks about:
-      - Something they saw on their screen ("what was that website I was looking at?")
-      - What they were doing at a specific time ("what was I working on this morning?")
-      - Finding specific content ("find that email about the budget")
-      - What app they used ("did I open Slack today?")
-      - Any question about their screen activity or digital history
+    You have access to tools. Use them when needed — don't guess when you can look it up.
+
+    **create_action_item**: Create a task or reminder.
+    - Use when: user says "remind me", "add a task", "create a to-do"
+    - Parameters: description (required), due_date (ISO 8601), priority (high/medium/low)
+
+    **get_conversations**: Fetch recent voice conversations.
+    - Use when: user asks about past discussions, "what did we talk about", conversation history
+    - Parameters: limit (default 10), days (default 7)
+
+    **get_memories**: Retrieve stored facts about the user.
+    - Use when: you need personal context about the user's preferences, background, or habits
+
+    **search_screenshots**: Search the user's screen history (what was on their screen).
+    - Use when: user asks about something they saw, what they were doing, what app they used, or wants to find content from their screen
+    - QUERY TIPS — this searches OCR text from screenshots, so:
+      - Use short keywords, NOT full sentences. Extract the key topic.
+      - Bad query: "what did I do yesterday" — too vague, no searchable terms
+      - Good query: "budget spreadsheet" or "Slack message from John"
+      - For broad questions like "what did I do today?", search with common app/content terms the user likely interacted with
+      - Use the 'days' parameter for time filtering — don't put dates in the query
+      - If the first search returns nothing useful, try different keywords
+    - Parameters: query (required), days (default 7, use 1 for today), app_filter (e.g. "Google Chrome", "Cursor", "Slack")
     </tools>
 
     <instructions>
