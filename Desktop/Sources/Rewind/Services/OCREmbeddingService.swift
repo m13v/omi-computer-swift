@@ -7,10 +7,10 @@ import Accelerate
 actor OCREmbeddingService {
     static let shared = OCREmbeddingService()
 
-    private let embeddingDimension = 768
+    private let embeddingDimension = 3072  // Gemini gemini-embedding-001 now returns 3072-dim
     private let minTextLength = 20
 
-    // TESTING: Limit backfill to 10 items for Gemini 768-dim validation
+    // TESTING: Limit backfill to 10 items for Gemini validation
     private let testLimit = 10
 
     private init() {}
