@@ -171,6 +171,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         AnalyticsManager.shared.trackFirstLaunchIfNeeded()
 
+        // Set per-user database path before any async tasks can trigger DB initialization.
+        // This is synchronous and must happen before TierManager / TranscriptionRetryService.
+        let userId = UserDefaults.standard.string(forKey: "auth_userId")
+        RewindDatabase.currentUserId = (userId?.isEmpty == false) ? userId : "anonymous"
+
         // Start resource monitoring (memory, CPU, disk)
         ResourceMonitor.shared.start()
 
