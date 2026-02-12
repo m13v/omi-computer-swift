@@ -52,14 +52,14 @@ struct OnboardingChatView: View {
         ),
         OnboardingChatQuestion(
             id: "use_case",
-            agentPrompt: "Based on their goal: '\(response_placeholder)', ask them briefly (1-2 sentences) what kind of work or activities they'd like help with.",
+            agentPrompt: "Based on their goal: '{response_placeholder}', ask them briefly (1-2 sentences) what kind of work or activities they'd like help with.",
             quickReplies: ["Work meetings", "Deep focus time", "Learning & research", "Creative work"],
             allowFreeText: true,
             saveKey: "use_case"
         ),
         OnboardingChatQuestion(
             id: "confirmation",
-            agentPrompt: "Acknowledge their answers warmly and briefly (2-3 sentences). Tell them you understand they want to use Omi for '\(response_placeholder)' and you're excited to help. Ask if they're ready to finish setup.",
+            agentPrompt: "Acknowledge their answers warmly and briefly (2-3 sentences). Tell them you understand they want to use Omi for '{response_placeholder}' and you're excited to help. Ask if they're ready to finish setup.",
             quickReplies: ["Yes, let's go!", "Tell me more first"],
             allowFreeText: false,
             saveKey: nil
@@ -313,10 +313,10 @@ struct OnboardingChatView: View {
         do {
             // Build prompt with response placeholders
             var prompt = question.agentPrompt
-            if prompt.contains("\\(response_placeholder)") {
+            if prompt.contains("{response_placeholder}") {
                 // Replace with user's last meaningful response
-                let lastResponse = responses.values.last ?? "helping them"
-                prompt = prompt.replacingOccurrences(of: "\\(response_placeholder)", with: lastResponse)
+                let lastResponse = Array(responses.values).last ?? "helping them"
+                prompt = prompt.replacingOccurrences(of: "{response_placeholder}", with: lastResponse)
             }
 
             // Get agent response
@@ -352,10 +352,7 @@ struct OnboardingChatView: View {
 
     private func completeOnboarding() {
         log("OnboardingChat: Complete with \(responses.count) responses")
-        AnalyticsManager.shared.trackEvent("onboarding_chat_completed", properties: [
-            "question_count": questions.count,
-            "response_count": responses.count
-        ])
+        AnalyticsManager.shared.onboardingCompleted()
 
         // Call completion handler with collected data
         onComplete(responses)
@@ -433,68 +430,3 @@ struct QuickReplyButtons: View {
     }
 }
 
-// MARK: - Typing Indicator (Reused from ChatPage)
-
-struct TypingIndicator: View {
-    @State private var animationPhase = 0
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle()
-                    .fill(OmiColors.textTertiary)
-                    .frame(width: 8, height: 8)
-                    .scaleEffect(animationPhase == index ? 1.2 : 0.8)
-                    .animation(.easeInOut(duration: 0.4).repeatForever().delay(Double(index) * 0.15), value: animationPhase)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 12)
-        .background(OmiColors.backgroundSecondary)
-        .cornerRadius(18)
-        .onAppear {
-            animationPhase = 1
-        }
-    }
-}
-
-// MARK: - Markdown Themes (Reused from ChatPage)
-
-extension Theme {
-    static let userMessage = Theme()
-        .text {
-            ForegroundColor(.white)
-            FontSize(14)
-        }
-        .code {
-            FontFamilyVariant(.monospaced)
-            FontSize(13)
-            ForegroundColor(.white.opacity(0.9))
-            BackgroundColor(.white.opacity(0.15))
-        }
-        .strong {
-            FontWeight(.semibold)
-        }
-        .link {
-            ForegroundColor(.white.opacity(0.9))
-            UnderlineStyle(.single)
-        }
-
-    static let aiMessage = Theme()
-        .text {
-            ForegroundColor(OmiColors.textPrimary)
-            FontSize(14)
-        }
-        .code {
-            FontFamilyVariant(.monospaced)
-            FontSize(13)
-            ForegroundColor(OmiColors.textPrimary)
-            BackgroundColor(OmiColors.backgroundTertiary)
-        }
-        .strong {
-            FontWeight(.semibold)
-        }
-        .link {
-            ForegroundColor(OmiColors.purplePrimary)
-        }
-}
