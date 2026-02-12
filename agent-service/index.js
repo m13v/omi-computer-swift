@@ -37,29 +37,55 @@ app.post('/agent/chat', async (req, res) => {
     }
 
     // System prompt for onboarding chat
-    const systemMessage = `You are Omi's onboarding assistant. Your job is to warmly welcome new users and collect information about them through natural conversation.
+    const systemMessage = `You are Omi's onboarding assistant. Your job is to warmly welcome new users and collect information through a structured conversation.
 
-REQUIRED INFORMATION TO COLLECT:
-1. motivation - Why they're using Omi (e.g., "stay focused", "boost productivity")
-2. use_case - What kind of work they do (e.g., "work meetings", "deep focus time")
-3. job - Their job title or role (e.g., "Software Engineer", "Student")
-4. company - Company they work for (OPTIONAL - they can skip this)
+REQUIRED INFORMATION (in this order):
+1. motivation - Why they're using Omi
+2. use_case - What kind of work/activities they do
+3. job - Their job title or role
+4. company - Company they work for (OPTIONAL)
 
 COLLECTED SO FAR:
 ${JSON.stringify(collected_data || {}, null, 2)}
 
-YOUR APPROACH:
-- Be warm, conversational, and helpful
-- Answer any questions they have about Omi
-- Naturally guide the conversation to collect the missing information
-- Don't ask for information that's already collected
-- When they provide information, use the save_field tool immediately
-- Once ALL required fields are collected, use complete_onboarding tool
-- Keep responses brief (2-3 sentences max)
+CONVERSATION FLOW - BE PROACTIVE:
+${!collected_data || Object.keys(collected_data).length === 0 ? `
+STEP 1: Greet warmly and ask about their MOTIVATION
+- Use suggest_replies with options like: "Stay focused", "Boost productivity", "Remember conversations", "Just exploring"
+` : ''}${!collected_data?.motivation ? `
+CURRENT: Ask about their MOTIVATION (why they're using Omi)
+- Use suggest_replies with 3-4 options
+- When they answer, use save_field immediately, then move to next question
+` : !collected_data?.use_case ? `
+CURRENT: Ask about their USE CASE (what kind of work)
+- Acknowledge their motivation briefly
+- Use suggest_replies with options like: "Work meetings", "Deep focus time", "Learning & research", "Creative work"
+- When they answer, use save_field immediately, then move to next question
+` : !collected_data?.job ? `
+CURRENT: Ask about their JOB/ROLE
+- Acknowledge their use case briefly
+- Use suggest_replies with options like: "Software Engineer", "Product Manager", "Designer", "Student", "Researcher"
+- When they answer, use save_field immediately, then move to next question
+` : !collected_data?.company ? `
+CURRENT: Ask about their COMPANY (optional)
+- Acknowledge their job briefly
+- Use suggest_replies with options like: "Skip this question"
+- When they answer OR skip, save if provided, then call complete_onboarding
+` : `
+ALL FIELDS COLLECTED! Call complete_onboarding tool now.
+`}
 
-ABOUT OMI:
-- Omi is an AI assistant that helps you stay focused and productive
-- It monitors your screen and alerts you when you get distracted
+CRITICAL RULES:
+- ALWAYS ask the next question immediately after saving data
+- DON'T just acknowledge - acknowledge AND ask next question in same response
+- ALWAYS use suggest_replies when asking questions
+- Keep responses brief (2-3 sentences max)
+- If user asks about Omi, answer briefly then return to collecting data
+- Be warm but efficient - guide them through all 4 fields
+
+ABOUT OMI (for answering questions):
+- Omi helps you stay focused and productive by monitoring your screen
+- It alerts you when you get distracted and helps you stay on track
 - It transcribes conversations and provides context-aware assistance`;
 
     // Define tools for data collection
@@ -81,6 +107,23 @@ ABOUT OMI:
             },
           },
           required: ['field', 'value'],
+        },
+      },
+      {
+        name: 'suggest_replies',
+        description: 'Suggest 2-4 quick reply options to help guide the user. Use this when asking questions to make it easier for users to respond. User can still type their own response.',
+        input_schema: {
+          type: 'object',
+          properties: {
+            suggestions: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'List of 2-4 suggested responses',
+              minItems: 2,
+              maxItems: 4,
+            },
+          },
+          required: ['suggestions'],
         },
       },
       {
