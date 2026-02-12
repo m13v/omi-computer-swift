@@ -1154,6 +1154,11 @@ class TasksViewModel: ObservableObject {
             result[category, default: []].append(task)
         }
         categorizedTasks = result
+
+        // Debug logging
+        if sortOption == .dueDate {
+            log("TasksViewModel: Categorized \(displayTasks.count) tasks - Today: \(result[.today]?.count ?? 0), Tomorrow: \(result[.tomorrow]?.count ?? 0), Later: \(result[.later]?.count ?? 0), No Deadline: \(result[.noDeadline]?.count ?? 0)")
+        }
     }
 
     /// Load more filtered/search results (pagination within already-queried results)
