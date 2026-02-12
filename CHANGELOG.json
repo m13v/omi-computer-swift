@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.6.5",
+      "date": "2026-02-12",
+      "changes": [
+        "Folder tabs: browse and manage conversation folders inline",
+        "Folder creation and editing with descriptions",
+        "Fixed Node.js path resolution for AI chat agent",
+        "Cleaned up compiler warnings"
+      ]
+    },
+    {
       "version": "0.6.4",
       "date": "2026-02-12",
       "changes": [
