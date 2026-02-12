@@ -1,6 +1,20 @@
 {
   "releases": [
     {
+      "version": "0.6.1",
+      "date": "2026-02-11",
+      "changes": [
+        "AI onboarding chat: conversational setup that learns your name, job, and goals",
+        "Agent service with Anthropic-powered multi-turn tool execution",
+        "Screenshot search via chat: ask the AI to find past screenshots",
+        "Suggested replies in onboarding for faster setup",
+        "Multi-turn tool execution for smarter chat responses",
+        "Chat messages now sorted chronologically",
+        "Stronger agent prompts for reliable onboarding field saving",
+        "Search failures are now non-fatal to prevent chat disruptions"
+      ]
+    },
+    {
       "version": "0.6.0",
       "date": "2026-02-11",
       "changes": [
