@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "0.6.2",
+      "date": "2026-02-12",
+      "changes": [
+        "Switched AI chat to Claude for smarter, more reliable responses",
+        "Per-user data isolation: your data stays separate across accounts",
+        "Tool call visualization: see what the AI is doing in real time",
+        "New app icon",
+        "Simplified onboarding with streamlined name input step",
+        "Fixed race conditions in database initialization and user switching",
+        "Analytics tracking for chat queries and tool usage"
+      ]
+    },
+    {
       "version": "0.6.1",
       "date": "2026-02-11",
       "changes": [
