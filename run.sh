@@ -41,15 +41,10 @@ SIGN_IDENTITY="Developer ID Application: Matthew Diakonov (S6DP5HF77G)"
 BACKEND_DIR="$(dirname "$0")/Backend-Rust"
 BACKEND_PID=""
 TUNNEL_PID=""
-AGENT_PID=""
 TUNNEL_URL="https://omi-dev.m13v.com"
 
 # Cleanup function to stop backend and tunnel on exit
 cleanup() {
-    if [ -n "$AGENT_PID" ] && kill -0 "$AGENT_PID" 2>/dev/null; then
-        echo "Stopping agent service (PID: $AGENT_PID)..."
-        kill "$AGENT_PID" 2>/dev/null || true
-    fi
     if [ -n "$TUNNEL_PID" ] && kill -0 "$TUNNEL_PID" 2>/dev/null; then
         echo "Stopping tunnel (PID: $TUNNEL_PID)..."
         kill "$TUNNEL_PID" 2>/dev/null || true
@@ -72,7 +67,6 @@ auth_debug "BEFORE pkill: ALL_KEYS=$(defaults read "$BUNDLE_ID" 2>&1 | grep -E '
 pkill -f "$APP_NAME.app" 2>/dev/null || true
 pkill -f "cloudflared.*omi-computer-dev" 2>/dev/null || true
 lsof -ti:8080 | xargs kill -9 2>/dev/null || true
-lsof -ti:8081 | xargs kill -9 2>/dev/null || true
 sleep 0.5  # Let cfprefsd flush after process death
 auth_debug "AFTER pkill: auth_isSignedIn=$(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 auth_debug "AFTER pkill: ALL_KEYS=$(defaults read "$BUNDLE_ID" 2>&1 | grep -E 'auth_|hasCompleted|hasLaunched|currentTier|userShow' || true)"
@@ -139,40 +133,6 @@ for i in {1..30}; do
     fi
     if ! kill -0 "$BACKEND_PID" 2>/dev/null; then
         echo "Backend failed to start"
-        exit 1
-    fi
-    sleep 0.5
-done
-
-step "Starting Agent service..."
-cd agent-service
-
-# Load API key from .env
-if [ -f ".env" ]; then
-    export $(grep -v '^#' .env | xargs)
-fi
-
-# Use the bundled Node.js binary (will be created after first build)
-if [ -f "$APP_BUNDLE/Contents/Resources/Omi Computer_Omi Computer.bundle/node" ]; then
-    NODE_BIN="$APP_BUNDLE/Contents/Resources/Omi Computer_Omi Computer.bundle/node"
-else
-    # Fallback to system node for first run (before build)
-    NODE_BIN="node"
-fi
-
-"$NODE_BIN" index.js > /tmp/agent-service.log 2>&1 &
-AGENT_PID=$!
-substep "Agent service started (PID: $AGENT_PID)"
-cd - > /dev/null
-
-step "Waiting for agent service to start..."
-for i in {1..30}; do
-    if curl -s http://localhost:8081/health > /dev/null 2>&1; then
-        substep "Agent service is ready!"
-        break
-    fi
-    if ! kill -0 "$AGENT_PID" 2>/dev/null; then
-        echo "Agent service failed to start. Check /tmp/agent-service.log for errors."
         exit 1
     fi
     sleep 0.5
@@ -283,7 +243,6 @@ printf "  └─ done (%.2fs)\n" "$(echo "$NOW - $STEP_START_TIME" | bc)"
 echo ""
 echo "=== Services Running (total: ${TOTAL_TIME%.*}s) ==="
 echo "Backend:  http://localhost:8080 (PID: $BACKEND_PID)"
-echo "Agent:    http://localhost:8081 (PID: $AGENT_PID)"
 echo "Tunnel:   $TUNNEL_URL (PID: $TUNNEL_PID)"
 echo "App:      $APP_BUNDLE"
 echo "Using backend: $TUNNEL_URL"
