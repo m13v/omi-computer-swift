@@ -71,6 +71,12 @@ actor ClaudeAgentBridge {
         // Inherit environment (includes ANTHROPIC_API_KEY from .env)
         var env = ProcessInfo.processInfo.environment
         env["NODE_NO_WARNINGS"] = "1"
+        // Ensure the directory containing node is in PATH so child processes (e.g. claude-agent-sdk) can find it
+        let nodeDir = (nodePath as NSString).deletingLastPathComponent
+        let existingPath = env["PATH"] ?? "/usr/bin:/bin"
+        if !existingPath.contains(nodeDir) {
+            env["PATH"] = "\(nodeDir):\(existingPath)"
+        }
         proc.environment = env
 
         let stdin = Pipe()
