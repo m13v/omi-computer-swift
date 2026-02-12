@@ -192,15 +192,14 @@ struct OnboardingView: View {
         switch currentStep {
         case 0: return true // Video step - always valid
         case 2: return chatCompleted // Chat step - valid only when completed
-        case 3: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
-        case 4: return true // Language step - always valid (has default)
-        case 5: return appState.hasNotificationPermission
-        case 6: return appState.hasAutomationPermission
-        case 7: return appState.hasScreenRecordingPermission
-        case 8: return appState.hasMicrophonePermission
-        case 9: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
-        case 10: return appState.hasAccessibilityPermission
-        case 11: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied
+        case 3: return true // Language step - always valid (has default)
+        case 4: return appState.hasNotificationPermission
+        case 5: return appState.hasAutomationPermission
+        case 6: return appState.hasScreenRecordingPermission
+        case 7: return appState.hasMicrophonePermission
+        case 8: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
+        case 9: return appState.hasAccessibilityPermission
+        case 10: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied
         default: return true
         }
     }
@@ -328,16 +327,15 @@ struct OnboardingView: View {
         case 0: return true // Video - always "granted"
         case 1: return true // Welcome - always "granted"
         case 2: return chatCompleted // Chat - granted only when completed
-        case 3: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step
-        case 4: return true // Language step - always "granted" (has default)
-        case 5: return appState.hasNotificationPermission
-        case 6: return appState.hasAutomationPermission
-        case 7: return appState.hasScreenRecordingPermission
-        case 8: return appState.hasMicrophonePermission
-        case 9: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
-        case 10: return appState.hasAccessibilityPermission // Accessibility
-        case 11: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied // Bluetooth (allow skip if unsupported/denied)
-        case 12: return true // Done - always "granted"
+        case 3: return true // Language step - always "granted" (has default)
+        case 4: return appState.hasNotificationPermission
+        case 5: return appState.hasAutomationPermission
+        case 6: return appState.hasScreenRecordingPermission
+        case 7: return appState.hasMicrophonePermission
+        case 8: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // System Audio
+        case 9: return appState.hasAccessibilityPermission // Accessibility
+        case 10: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied // Bluetooth (allow skip if unsupported/denied)
+        case 11: return true // Done - always "granted"
         default: return false
         }
     }
@@ -366,12 +364,10 @@ struct OnboardingView: View {
                 }
             )
         case 3:
-            nameStepView
-        case 4:
             languageStepView
-        case 5:
+        case 4:
             notificationStepView
-        case 6:
+        case 5:
             stepView(
                 icon: appState.hasAutomationPermission ? "checkmark.circle.fill" : "gearshape.2",
                 iconColor: appState.hasAutomationPermission ? .white : OmiColors.purplePrimary,
@@ -380,17 +376,17 @@ struct OnboardingView: View {
                     ? "Automation permission granted! Omi can now detect which app you're using."
                     : "Omi needs Automation permission to detect which app you're using.\n\nClick below to grant permission, then return to this window."
             )
-        case 7:
+        case 6:
             screenRecordingStepView
-        case 8:
+        case 7:
             microphoneStepView
-        case 9:
+        case 8:
             systemAudioStepView
-        case 10:
+        case 9:
             accessibilityStepView
-        case 11:
+        case 10:
             bluetoothStepView
-        case 12:
+        case 11:
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
@@ -645,22 +641,20 @@ struct OnboardingView: View {
         case 2:
             return "" // Chat step - no main button (handled within chat view)
         case 3:
-            return "Continue"
-        case 4:
             return "Continue"  // Language step
-        case 5:
+        case 4:
             return appState.hasNotificationPermission ? "Continue" : "Enable Notifications"
-        case 6:
+        case 4:
             return appState.hasAutomationPermission ? "Continue" : "Grant Automation Access"
-        case 7:
+        case 5:
             return appState.hasScreenRecordingPermission ? "Continue" : "Grant Screen Recording"
-        case 8:
+        case 6:
             return appState.hasMicrophonePermission ? "Continue" : "Enable Microphone"
-        case 9:
+        case 7:
             return systemAudioButtonTitle
-        case 10:
+        case 8:
             return appState.hasAccessibilityPermission ? "Continue" : "Grant Accessibility"
-        case 11:
+        case 9:
             if appState.hasBluetoothPermission {
                 return "Continue"
             } else if isBluetoothUnsupported || isBluetoothPermissionDenied {
@@ -668,7 +662,7 @@ struct OnboardingView: View {
             } else {
                 return "Grant Bluetooth Access"
             }
-        case 12:
+        case 10:
             return "Start Using Omi"
         default:
             return "Continue"
@@ -1287,20 +1281,6 @@ struct OnboardingView: View {
             // Chat step - handled by OnboardingChatView (onComplete/onSkip)
             break
         case 3:
-            // Name step - validate and save
-            let trimmedName = nameInput.trimmingCharacters(in: .whitespaces)
-            if trimmedName.count < 2 {
-                nameError = "Please enter at least 2 characters"
-                return
-            }
-            nameError = ""
-            // Save the name
-            Task {
-                await AuthService.shared.updateGivenName(trimmedName)
-            }
-            AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Name")
-            currentStep += 1
-        case 4:
             // Language step - save settings
             AssistantSettings.shared.transcriptionLanguage = selectedLanguage
             AssistantSettings.shared.transcriptionAutoDetect = autoDetectEnabled
@@ -1312,13 +1292,13 @@ struct OnboardingView: View {
                     vocabulary: nil
                 )
             }
-            AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Language")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Language")
             AnalyticsManager.shared.languageChanged(language: selectedLanguage)
             currentStep += 1
-        case 5:
+        case 4:
             if appState.hasNotificationPermission {
                 // Permission already granted - advance
-                AnalyticsManager.shared.onboardingStepCompleted(step: 5, stepName: "Notifications")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Notifications")
                 AnalyticsManager.shared.permissionGranted(permission: "notifications")
                 currentStep += 1
             } else {
@@ -1326,9 +1306,9 @@ struct OnboardingView: View {
                 hasTriggeredNotification = true
                 appState.requestNotificationPermission()
             }
-        case 6:
+        case 5:
             if appState.hasAutomationPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 6, stepName: "Automation")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 5, stepName: "Automation")
                 AnalyticsManager.shared.permissionGranted(permission: "automation")
                 currentStep += 1
             } else {
@@ -1336,9 +1316,9 @@ struct OnboardingView: View {
                 hasTriggeredAutomation = true
                 appState.triggerAutomationPermission()
             }
-        case 7:
+        case 6:
             if appState.hasScreenRecordingPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "Screen Recording")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 6, stepName: "Screen Recording")
                 AnalyticsManager.shared.permissionGranted(permission: "screen_recording")
                 // Trigger proactive monitoring to surface any additional ScreenCaptureKit permission dialogs
                 // (e.g., "allow app to bypass standard screen recording" on macOS Sequoia)
@@ -1349,9 +1329,9 @@ struct OnboardingView: View {
                 hasTriggeredScreenRecording = true
                 appState.triggerScreenRecordingPermission()
             }
-        case 8:
+        case 7:
             if appState.hasMicrophonePermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 8, stepName: "Microphone")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 7, stepName: "Microphone")
                 AnalyticsManager.shared.permissionGranted(permission: "microphone")
                 currentStep += 1
             } else {
@@ -1360,14 +1340,14 @@ struct OnboardingView: View {
                 hasTriggeredMicrophone = true
                 appState.requestMicrophonePermission()
             }
-        case 9:
+        case 8:
             // System Audio step
             if !appState.isSystemAudioSupported {
                 // Not supported on this macOS version - just continue
-                AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "System Audio")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 8, stepName: "System Audio")
                 currentStep += 1
             } else if appState.hasSystemAudioPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "System Audio")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 8, stepName: "System Audio")
                 AnalyticsManager.shared.permissionGranted(permission: "system_audio")
                 currentStep += 1
             } else {
@@ -1375,10 +1355,10 @@ struct OnboardingView: View {
                 hasTriggeredSystemAudio = true
                 appState.triggerSystemAudioPermission()
             }
-        case 10:
+        case 9:
             // Accessibility step
             if appState.hasAccessibilityPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 10, stepName: "Accessibility")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 9, stepName: "Accessibility")
                 AnalyticsManager.shared.permissionGranted(permission: "accessibility")
                 currentStep += 1
             } else {
@@ -1386,13 +1366,13 @@ struct OnboardingView: View {
                 hasTriggeredAccessibility = true
                 appState.triggerAccessibilityPermission()
             }
-        case 11:
+        case 10:
             // Bluetooth step
             // Initialize Bluetooth if not already done
             appState.initializeBluetoothIfNeeded()
 
             if appState.hasBluetoothPermission {
-                AnalyticsManager.shared.onboardingStepCompleted(step: 11, stepName: "Bluetooth")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 10, stepName: "Bluetooth")
                 AnalyticsManager.shared.permissionGranted(permission: "bluetooth", extraProperties: [
                     "bluetooth_state": BluetoothManager.shared.bluetoothStateDescription,
                     "bluetooth_state_raw": BluetoothManager.shared.bluetoothState.rawValue
@@ -1400,7 +1380,7 @@ struct OnboardingView: View {
                 currentStep += 1
             } else if isBluetoothUnsupported || isBluetoothPermissionDenied {
                 // Allow skipping when Bluetooth is unsupported or denied
-                AnalyticsManager.shared.onboardingStepCompleted(step: 11, stepName: "Bluetooth")
+                AnalyticsManager.shared.onboardingStepCompleted(step: 10, stepName: "Bluetooth")
                 AnalyticsManager.shared.permissionSkipped(permission: "bluetooth", extraProperties: [
                     "bluetooth_state": BluetoothManager.shared.bluetoothStateDescription,
                     "bluetooth_state_raw": BluetoothManager.shared.bluetoothState.rawValue,
@@ -1415,9 +1395,9 @@ struct OnboardingView: View {
                 hasTriggeredBluetooth = true
                 appState.triggerBluetoothPermission()
             }
-        case 12:
+        case 11:
             log("OnboardingView: Step 12 - Completing onboarding")
-            AnalyticsManager.shared.onboardingStepCompleted(step: 12, stepName: "Done")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 11, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
             // Enable launch at login by default for new users
