@@ -238,6 +238,28 @@ struct OnboardingView: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if currentStep == 2 {
+                // Full-window chat with overlaid progress indicators
+                ZStack {
+                    OmiColors.backgroundPrimary
+                        .ignoresSafeArea()
+
+                    VStack(spacing: 0) {
+                        // Progress indicators at top
+                        HStack(spacing: 12) {
+                            ForEach(0..<steps.count, id: \.self) { index in
+                                progressIndicator(for: index)
+                            }
+                        }
+                        .padding(.top, 20)
+                        .padding(.horizontal, 20)
+                        .padding(.bottom, 16)
+
+                        // Chat view (fills remaining space)
+                        stepContent
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Standard card layout for all other steps
                 VStack(spacing: 24) {
@@ -261,8 +283,8 @@ struct OnboardingView: View {
 
                         buttonSection
                     }
-                    .frame(width: currentStep == 2 ? 600 : (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 500 : 420)
-                    .frame(height: currentStep == 2 ? 600 : (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 520 : 420)
+                    .frame(width: (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 500 : 420)
+                    .frame(height: (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 520 : 420)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
                             .fill(OmiColors.backgroundSecondary)
