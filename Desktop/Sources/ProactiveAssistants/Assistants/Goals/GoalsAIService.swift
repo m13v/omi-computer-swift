@@ -153,6 +153,9 @@ actor GoalsAIService {
             maxValue: suggestion.suggestedMax
         )
 
+        // Sync to local storage
+        try? await GoalStorage.shared.syncServerGoal(goal)
+
         log("GoalsAI: Auto-created goal '\(goal.title)' (id: \(goal.id))")
 
         // Link suggested tasks to the goal
