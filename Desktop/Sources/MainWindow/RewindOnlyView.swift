@@ -293,7 +293,7 @@ struct RewindSettingsView: View {
                         .font(.system(size: 13))
                         .foregroundColor(.white.opacity(0.7))
 
-                    Text("~/Library/Application Support/Omi/")
+                    Text("~/Library/Application Support/Omi/users/\(UserDefaults.standard.string(forKey: "auth_userId") ?? "")/")
                         .font(.system(size: 11, design: .monospaced))
                         .foregroundColor(.white.opacity(0.4))
                 }
