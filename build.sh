@@ -55,34 +55,6 @@ else
     echo "Warning: Resource bundle not found at $SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle"
 fi
 
-# Bundle agent-service
-echo "Bundling agent service..."
-mkdir -p "$APP_BUNDLE/Contents/Resources/agent-service"
-cp agent-service/index.js "$APP_BUNDLE/Contents/Resources/agent-service/"
-cp agent-service/package.json "$APP_BUNDLE/Contents/Resources/agent-service/"
-
-# Install production dependencies using bundled Node.js
-if [ -f "$APP_BUNDLE/Contents/Resources/Omi Computer_Omi Computer.bundle/node" ]; then
-    echo "Installing agent service dependencies..."
-    cd "$APP_BUNDLE/Contents/Resources/agent-service"
-    # Install npm first (it's not bundled with just the node binary)
-    # For now, use system npm - we'll need to bundle npm or use a different approach
-    npm install --production
-    cd - > /dev/null
-    echo "Agent service dependencies installed"
-else
-    echo "Warning: Node.js binary not found in bundle. Agent service will not work."
-fi
-
-# Embed API key in release .env
-if [ -n "$ANTHROPIC_API_KEY" ]; then
-    echo "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" > "$APP_BUNDLE/Contents/Resources/agent-service/.env"
-    echo "AGENT_SERVICE_PORT=8081" >> "$APP_BUNDLE/Contents/Resources/agent-service/.env"
-    echo "Embedded Anthropic API key in agent service .env"
-else
-    echo "Warning: ANTHROPIC_API_KEY not set. Agent service will not work in release build."
-fi
-
 # Copy .env.app file (app runtime secrets only)
 if [ -f ".env.app" ]; then
     cp ".env.app" "$APP_BUNDLE/Contents/Resources/.env"
