@@ -3065,14 +3065,15 @@ extension APIClient {
     }
 
     /// Updates user profile (onboarding data)
-    func updateUserProfile(motivation: String?, useCase: String?, job: String?, company: String?) async throws {
+    func updateUserProfile(name: String? = nil, motivation: String? = nil, useCase: String? = nil, job: String? = nil, company: String? = nil) async throws {
         struct UpdateRequest: Encodable {
+            let name: String?
             let motivation: String?
             let use_case: String?
             let job: String?
             let company: String?
         }
-        let body = UpdateRequest(motivation: motivation, use_case: useCase, job: job, company: company)
+        let body = UpdateRequest(name: name, motivation: motivation, use_case: useCase, job: job, company: company)
         let _: UserProfileResponse = try await patch("v1/users/profile", body: body)
     }
 
