@@ -35,8 +35,15 @@ actor RewindDatabase {
     }
 
     /// Configure the database for a specific user. Must be called before initialize().
+    /// If the DB is already initialized for a different user, closes it so the next
+    /// initialize() call opens the correct per-user database.
     func configure(userId: String?) {
         let resolvedId = (userId?.isEmpty == false) ? userId! : "anonymous"
+        // If already initialized for a different user, close so re-init targets the right path
+        if let previous = configuredUserId, previous != resolvedId, dbQueue != nil {
+            log("RewindDatabase: User changed (\(previous) -> \(resolvedId)), closing current DB")
+            close()
+        }
         configuredUserId = resolvedId
         RewindDatabase.currentUserId = resolvedId
         log("RewindDatabase: Configured for user \(resolvedId)")
@@ -201,36 +208,48 @@ actor RewindDatabase {
 
     // MARK: - Legacy Migration
 
-    /// Migrate data from the legacy shared path (Omi/) to the per-user path (Omi/users/{userId}/).
-    /// Only runs if the legacy DB exists and the per-user DB does not yet exist.
+    /// Migrate data from the legacy shared path (Omi/) or from the anonymous fallback
+    /// (Omi/users/anonymous/) to the per-user path (Omi/users/{userId}/).
+    /// Only runs if the source exists and the per-user DB does not yet exist.
     private func migrateFromLegacyPathIfNeeded(to userDir: URL) {
         let fileManager = FileManager.default
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let legacyDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
-        let legacyDB = legacyDir.appendingPathComponent("omi.db")
+        let omiDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
         let userDB = userDir.appendingPathComponent("omi.db")
 
-        // Only migrate if legacy DB exists and per-user DB does not
-        guard fileManager.fileExists(atPath: legacyDB.path),
-              !fileManager.fileExists(atPath: userDB.path) else {
-            return
+        // Already have a per-user DB — nothing to migrate
+        guard !fileManager.fileExists(atPath: userDB.path) else { return }
+
+        // Determine migration source: prefer legacy root (Omi/omi.db), fall back to anonymous dir.
+        // The anonymous fallback covers the case where TierManager or another early caller
+        // triggered initialize() before configure(userId:) was called, causing data to land
+        // in users/anonymous/ instead of the real user's directory.
+        let legacyDB = omiDir.appendingPathComponent("omi.db")
+        let anonymousDir = omiDir
+            .appendingPathComponent("users", isDirectory: true)
+            .appendingPathComponent("anonymous", isDirectory: true)
+        let anonymousDB = anonymousDir.appendingPathComponent("omi.db")
+
+        let sourceDir: URL
+        if fileManager.fileExists(atPath: legacyDB.path) {
+            sourceDir = omiDir
+        } else if configuredUserId != "anonymous",
+                  fileManager.fileExists(atPath: anonymousDB.path) {
+            sourceDir = anonymousDir
+        } else {
+            return // Nothing to migrate
         }
 
-        log("RewindDatabase: Migrating legacy data from \(legacyDir.path) to \(userDir.path)")
+        log("RewindDatabase: Migrating data from \(sourceDir.path) to \(userDir.path)")
 
         // Items to migrate: omi.db (+ WAL/SHM), Screenshots/, Videos/, .omi_running, backups/
-        let itemsToMove: [(String, Bool)] = [  // (name, isDirectory)
-            ("omi.db", false),
-            ("omi.db-wal", false),
-            ("omi.db-shm", false),
-            (".omi_running", false),
-            ("Screenshots", true),
-            ("Videos", true),
-            ("backups", true),
+        let itemsToMove = [
+            "omi.db", "omi.db-wal", "omi.db-shm",
+            ".omi_running", "Screenshots", "Videos", "backups",
         ]
 
-        for (name, _) in itemsToMove {
-            let source = legacyDir.appendingPathComponent(name)
+        for name in itemsToMove {
+            let source = sourceDir.appendingPathComponent(name)
             let dest = userDir.appendingPathComponent(name)
             guard fileManager.fileExists(atPath: source.path) else { continue }
             do {
