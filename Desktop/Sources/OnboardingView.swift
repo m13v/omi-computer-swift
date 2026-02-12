@@ -373,36 +373,40 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            VStack(alignment: .leading, spacing: 8) {
-                TextField("Enter your name", text: $nameInput)
-                    .textFieldStyle(.roundedBorder)
-                    .font(.body)
-                    .frame(maxWidth: 280)
-                    .focused($isNameFieldFocused)
-                    .onSubmit {
-                        if isNameValid {
-                            handleMainAction()
+            HStack {
+                Spacer()
+                VStack(alignment: .leading, spacing: 8) {
+                    TextField("Enter your name", text: $nameInput)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.body)
+                        .frame(width: 280)
+                        .focused($isNameFieldFocused)
+                        .onSubmit {
+                            if isNameValid {
+                                handleMainAction()
+                            }
                         }
+
+                    if !nameError.isEmpty {
+                        HStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.circle")
+                                .font(.caption)
+                            Text(nameError)
+                                .font(.caption)
+                        }
+                        .foregroundColor(.red)
                     }
 
-                if !nameError.isEmpty {
-                    HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.circle")
+                    if !nameInput.isEmpty {
+                        Text("\(nameInput.count) characters")
                             .font(.caption)
-                        Text(nameError)
-                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                     }
-                    .foregroundColor(.red)
                 }
-
-                if !nameInput.isEmpty {
-                    Text("\(nameInput.count) characters")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
+                .frame(width: 280)
+                Spacer()
             }
-            .padding(.horizontal, 40)
             .padding(.top, 8)
         }
         .onAppear {
@@ -479,34 +483,29 @@ struct OnboardingView: View {
 
     @ViewBuilder
     private var buttonSection: some View {
-        // Name step (step 1) handles its own buttons internally
-        if currentStep == 1 {
-            EmptyView()
-        } else {
-            HStack(spacing: 16) {
-                // Back button (not shown on first step or name step)
-                if currentStep > 0 && currentStep != 1 {
-                    Button(action: { currentStep -= 1 }) {
-                        Text("Back")
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                }
-
-                // Main action / Continue button
-                Button(action: handleMainAction) {
-                    Text(mainButtonTitle)
+        HStack(spacing: 16) {
+            // Back button (not shown on first step or name step)
+            if currentStep > 0 && currentStep != 1 {
+                Button(action: { currentStep -= 1 }) {
+                    Text("Back")
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
                 .controlSize(.large)
             }
-            .padding(.horizontal, 40)
-            .padding(.bottom, 20)
+
+            // Main action / Continue button
+            Button(action: handleMainAction) {
+                Text(mainButtonTitle)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
         }
+        .padding(.horizontal, 40)
+        .padding(.bottom, 20)
     }
 
     private var mainButtonTitle: String {
