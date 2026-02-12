@@ -29,21 +29,24 @@ struct StoredAdvice: Codable, Identifiable {
         self.isDismissed = isDismissed
     }
 
-    /// Convert from server model
-    init(from serverAdvice: ServerAdvice) {
-        self.id = serverAdvice.id
+    /// Convert from server memory model (advice is stored as memories with "tips" tag)
+    init(from memory: ServerMemory) {
+        self.id = memory.id
+        // Extract category from tags: ["tips", "productivity"] → .productivity
+        let categoryTag = memory.tags.first(where: { $0 != "tips" })
+        let category = AdviceCategory(rawValue: categoryTag ?? "other") ?? .other
         self.advice = ExtractedAdvice(
-            advice: serverAdvice.content,
-            reasoning: serverAdvice.reasoning,
-            category: serverAdvice.category.toLocal,
-            sourceApp: serverAdvice.sourceApp ?? "Unknown",
-            confidence: serverAdvice.confidence
+            advice: memory.content,
+            reasoning: memory.reasoning,
+            category: category,
+            sourceApp: memory.sourceApp ?? "Unknown",
+            confidence: memory.confidence ?? 0.5
         )
-        self.contextSummary = serverAdvice.contextSummary ?? ""
-        self.currentActivity = serverAdvice.currentActivity ?? ""
-        self.createdAt = serverAdvice.createdAt
-        self.isRead = serverAdvice.isRead
-        self.isDismissed = serverAdvice.isDismissed
+        self.contextSummary = memory.contextSummary ?? ""
+        self.currentActivity = memory.currentActivity ?? ""
+        self.createdAt = memory.createdAt
+        self.isRead = memory.isRead
+        self.isDismissed = memory.isDismissed
     }
 
     func withRead(_ read: Bool) -> StoredAdvice {
@@ -194,13 +197,15 @@ class AdviceStorage: ObservableObject {
         lastSyncError = nil
 
         do {
-            let serverAdvice = try await APIClient.shared.getAdvice(
+            // Advice is stored as memories with "tips" tag
+            let serverMemories = try await APIClient.shared.getMemories(
                 limit: maxLocalAdvice,
+                tags: ["tips"],
                 includeDismissed: true
             )
 
             // Convert to local model
-            let localAdvice = serverAdvice.map { StoredAdvice(from: $0) }
+            let localAdvice = serverMemories.map { StoredAdvice(from: $0) }
 
             // Update local cache
             await MainActor.run {
@@ -209,7 +214,7 @@ class AdviceStorage: ObservableObject {
                 self.isLoading = false
             }
 
-            log("Advice: Synced \(localAdvice.count) items from backend")
+            log("Advice: Synced \(localAdvice.count) items from backend (via memories)")
         } catch {
             await MainActor.run {
                 self.lastSyncError = error.localizedDescription
@@ -223,7 +228,7 @@ class AdviceStorage: ObservableObject {
 
     private func updateAdviceOnBackend(id: String, isRead: Bool?, isDismissed: Bool?) async {
         do {
-            _ = try await APIClient.shared.updateAdvice(id: id, isRead: isRead, isDismissed: isDismissed)
+            _ = try await APIClient.shared.updateMemoryReadStatus(id: id, isRead: isRead, isDismissed: isDismissed)
             log("Advice: Updated on backend (id=\(id), isRead=\(String(describing: isRead)), isDismissed=\(String(describing: isDismissed)))")
         } catch {
             logError("Advice: Failed to update on backend", error: error)
@@ -232,7 +237,7 @@ class AdviceStorage: ObservableObject {
 
     private func deleteAdviceOnBackend(id: String) async {
         do {
-            try await APIClient.shared.deleteAdvice(id: id)
+            try await APIClient.shared.deleteMemory(id: id)
             log("Advice: Deleted from backend (id=\(id))")
         } catch {
             logError("Advice: Failed to delete from backend", error: error)
@@ -241,7 +246,7 @@ class AdviceStorage: ObservableObject {
 
     private func markAllReadOnBackend() async {
         do {
-            try await APIClient.shared.markAllAdviceAsRead()
+            try await APIClient.shared.markAllMemoriesRead()
             log("Advice: Marked all as read on backend")
         } catch {
             logError("Advice: Failed to mark all as read on backend", error: error)
