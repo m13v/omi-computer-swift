@@ -19,6 +19,9 @@ class ChatToolExecutor {
         case "get_memories":
             return await executeGetMemories(toolCall.arguments)
 
+        case "search_screenshots":
+            return await executeSearchScreenshots(toolCall.arguments)
+
         default:
             return "Unknown tool: \(toolCall.name)"
         }
@@ -154,6 +157,88 @@ class ChatToolExecutor {
         } catch {
             logError("Tool get_memories failed", error: error)
             return "Failed to fetch memories: \(error.localizedDescription)"
+        }
+    }
+
+    /// Search screenshots using FTS + semantic vector search (Rewind)
+    private static func executeSearchScreenshots(_ args: [String: Any]) async -> String {
+        guard let query = args["query"] as? String, !query.isEmpty else {
+            return "Error: query is required"
+        }
+
+        let days = (args["days"] as? Int) ?? 7
+        let appFilter = args["app_filter"] as? String
+
+        let calendar = Calendar.current
+        let endDate = Date()
+        let startDate = calendar.date(byAdding: .day, value: -days, to: endDate) ?? endDate
+
+        do {
+            // Run FTS and vector search in parallel (same pattern as RewindViewModel)
+            async let ftsTask = RewindDatabase.shared.search(
+                query: query,
+                appFilter: appFilter,
+                startDate: startDate,
+                endDate: endDate,
+                limit: 20
+            )
+            async let vectorTask = OCREmbeddingService.shared.searchSimilar(
+                query: query,
+                startDate: startDate,
+                endDate: endDate,
+                appFilter: appFilter,
+                topK: 20
+            )
+
+            let ftsResults = try await ftsTask
+            // Vector search failures are non-fatal
+            let vectorResults = (try? await vectorTask) ?? []
+
+            // Merge: FTS first, then add vector-only results above threshold
+            let ftsIds = Set(ftsResults.compactMap { $0.id })
+            var merged = ftsResults
+            for result in vectorResults where result.similarity > 0.5 && !ftsIds.contains(result.screenshotId) {
+                if let screenshot = try? await RewindDatabase.shared.getScreenshot(id: result.screenshotId) {
+                    merged.append(screenshot)
+                }
+            }
+
+            if merged.isEmpty {
+                return "No screenshots found matching \"\(query)\" in the last \(days) day(s)."
+            }
+
+            // Format results for the model
+            let dateFormatter = DateFormatter()
+            dateFormatter.dateStyle = .medium
+            dateFormatter.timeStyle = .short
+
+            var lines: [String] = ["Found \(merged.count) screenshot(s) matching \"\(query)\":"]
+
+            for (index, screenshot) in merged.prefix(15).enumerated() {
+                let dateStr = dateFormatter.string(from: screenshot.timestamp)
+                let windowTitle = screenshot.windowTitle ?? ""
+                let titlePart = windowTitle.isEmpty ? "" : " - \(windowTitle)"
+                lines.append("\n\(index + 1). [\(dateStr)] \(screenshot.appName)\(titlePart)")
+
+                // Include OCR text preview (truncated)
+                if let ocrText = screenshot.ocrText, !ocrText.isEmpty {
+                    let preview = String(ocrText.prefix(300))
+                        .replacingOccurrences(of: "\n", with: " ")
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                    lines.append("   Content: \(preview)")
+                }
+            }
+
+            if merged.count > 15 {
+                lines.append("\n... and \(merged.count - 15) more results")
+            }
+
+            log("Tool search_screenshots returned \(merged.count) results (FTS: \(ftsResults.count), vector: \(vectorResults.count))")
+            return lines.joined(separator: "\n")
+
+        } catch {
+            logError("Tool search_screenshots failed", error: error)
+            return "Failed to search screenshots: \(error.localizedDescription)"
         }
     }
 }
