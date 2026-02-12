@@ -11,6 +11,7 @@ struct OnboardingChatView: View {
     @State private var messages: [ChatMessage] = []
     @State private var conversationHistory: [(role: String, content: String)] = []
     @State private var collectedData: [String: String] = [:]
+    @State private var existingName: String = "" // Pre-filled from Firebase Auth
     @State private var inputText: String = ""
     @State private var isProcessing: Bool = false
     @State private var hasStarted: Bool = false
@@ -214,6 +215,12 @@ struct OnboardingChatView: View {
         hasStarted = true
         isInputFocused = true
 
+        // Get existing name from Firebase if available (for AI to suggest)
+        existingName = AuthService.shared.displayName
+        if !existingName.isEmpty {
+            log("Found existing name from Firebase Auth: \(existingName)")
+        }
+
         // Add initial user message to start the conversation
         conversationHistory.append((role: "user", content: "Hi! I'm starting the onboarding."))
 
@@ -291,7 +298,6 @@ struct OnboardingChatView: View {
             conversationHistory.append((role: "assistant", content: response))
 
             // Process tool calls
-            var didCollectData = false
             var shouldComplete = false
             var newSuggestions: [String] = []
 
@@ -303,7 +309,6 @@ struct OnboardingChatView: View {
                         collectedData[field] = value
                         UserDefaults.standard.set(value, forKey: "onboarding_\(field)")
                         log("Collected onboarding data: \(field) = \(value)")
-                        didCollectData = true
                     }
 
                 case "suggest_replies":
