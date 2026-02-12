@@ -475,109 +475,28 @@ struct OnboardingView: View {
                 .font(.system(size: 48))
                 .foregroundColor(OmiColors.purplePrimary)
 
-            Text("Language Mode")
+            Text("Language")
                 .font(.title2)
                 .fontWeight(.semibold)
 
-            Text("Choose how Omi transcribes your conversations.")
+            Text("Choose the language you speak.")
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            VStack(spacing: 12) {
-                // Auto-Detect option
-                Button(action: {
-                    autoDetectEnabled = true
-                }) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: autoDetectEnabled ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(autoDetectEnabled ? OmiColors.purplePrimary : .secondary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Auto-Detect (Multi-Language)")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.primary)
-
-                            Text("English, Spanish, French, German, Hindi, Russian, Portuguese, Japanese, Italian, Dutch")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.3) : Color.secondary.opacity(0.3), lineWidth: 1)
-                            )
-                    )
+            Picker("", selection: $selectedLanguage) {
+                ForEach(AssistantSettings.supportedLanguages, id: \.code) { language in
+                    Text(language.name).tag(language.code)
                 }
-                .buttonStyle(.plain)
-
-                // Single Language option
-                Button(action: {
-                    autoDetectEnabled = false
-                }) {
-                    HStack(alignment: .top, spacing: 12) {
-                        Image(systemName: !autoDetectEnabled ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 20))
-                            .foregroundColor(!autoDetectEnabled ? OmiColors.purplePrimary : .secondary)
-
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Single Language (Better Accuracy)")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(.primary)
-
-                            Text("Best for speaking in one language. Supports 42 languages including Ukrainian.")
-                                .font(.system(size: 11))
-                                .foregroundColor(.secondary)
-
-                            // Language picker (only shown when single language is selected)
-                            if !autoDetectEnabled {
-                                HStack {
-                                    Text("Language:")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(.secondary)
-
-                                    Picker("", selection: $selectedLanguage) {
-                                        ForEach(AssistantSettings.supportedLanguages, id: \.code) { language in
-                                            Text(language.name).tag(language.code)
-                                        }
-                                    }
-                                    .pickerStyle(.menu)
-                                    .frame(width: 160)
-                                }
-                                .padding(.top, 4)
-                            }
-                        }
-
-                        Spacer()
-                    }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(!autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.1) : Color.clear)
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(!autoDetectEnabled ? OmiColors.purplePrimary.opacity(0.3) : Color.secondary.opacity(0.3), lineWidth: 1)
-                            )
-                    )
-                }
-                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 40)
+            .pickerStyle(.menu)
+            .frame(width: 220)
             .padding(.top, 8)
         }
         .onAppear {
-            // Load existing settings
             selectedLanguage = AssistantSettings.shared.transcriptionLanguage
-            autoDetectEnabled = AssistantSettings.shared.transcriptionAutoDetect
+            autoDetectEnabled = false
         }
     }
 
@@ -1281,14 +1200,14 @@ struct OnboardingView: View {
             // Chat step - handled by OnboardingChatView (onComplete/onSkip)
             break
         case 3:
-            // Language step - save settings
+            // Language step - save settings (single language mode)
             AssistantSettings.shared.transcriptionLanguage = selectedLanguage
-            AssistantSettings.shared.transcriptionAutoDetect = autoDetectEnabled
+            AssistantSettings.shared.transcriptionAutoDetect = false
             // Also update backend
             Task {
                 _ = try? await APIClient.shared.updateUserLanguage(selectedLanguage)
                 _ = try? await APIClient.shared.updateTranscriptionPreferences(
-                    singleLanguageMode: !autoDetectEnabled,
+                    singleLanguageMode: true,
                     vocabulary: nil
                 )
             }
