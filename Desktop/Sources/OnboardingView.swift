@@ -21,7 +21,7 @@ struct OnboardingView: View {
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Video", "Welcome", "Chat", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
+    let steps = ["Video", "Welcome", "Chat", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -1450,11 +1450,19 @@ struct OnboardingView: View {
             UserDefaults.standard.set(value, forKey: "onboarding_\(key)")
         }
 
+        // Save name to AuthService (like the old Name step)
+        if let name = responses["name"] {
+            Task {
+                await AuthService.shared.updateGivenName(name)
+            }
+        }
+
         // Log analytics
         AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Chat")
 
         // Log collected data for verification
         log("Collected onboarding data:")
+        log("  - name: \(responses["name"] ?? "not provided")")
         log("  - motivation: \(responses["motivation"] ?? "not provided")")
         log("  - use_case: \(responses["use_case"] ?? "not provided")")
         log("  - job: \(responses["job"] ?? "not provided")")
@@ -1464,6 +1472,7 @@ struct OnboardingView: View {
         Task {
             do {
                 try await APIClient.shared.updateUserProfile(
+                    name: responses["name"],
                     motivation: responses["motivation"],
                     useCase: responses["use_case"],
                     job: responses["job"],
