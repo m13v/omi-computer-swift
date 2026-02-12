@@ -743,12 +743,18 @@ class ChatProvider: ObservableObject {
         // Fall back to just memories if context is empty
         let contextSection = contextString.isEmpty ? formatMemoriesSection() : contextString
 
+        // Build individual sections
+        let goalSection = formatGoalSection()
+        let aiProfileSection = formatAIProfileSection()
+        let historyMessages = messages.filter { !$0.text.isEmpty && !$0.isStreaming }
+        let historyCount = min(historyMessages.count, 20)
+
         // Build base prompt with goals, AI profile, and dynamic schema
         var prompt = ChatPromptBuilder.buildDesktopChat(
             userName: userName,
             memoriesSection: contextSection,
-            goalSection: formatGoalSection(),
-            aiProfileSection: formatAIProfileSection(),
+            goalSection: goalSection,
+            aiProfileSection: aiProfileSection,
             databaseSchema: cachedDatabaseSchema
         )
 
@@ -757,6 +763,10 @@ class ChatProvider: ObservableObject {
         if !history.isEmpty {
             prompt += "\n\n<conversation_history>\n\(history)\n</conversation_history>"
         }
+
+        // Log prompt context summary
+        let activeGoalCount = cachedGoals.filter { $0.isActive }.count
+        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyCount) msgs, prompt_length: \(prompt.count) chars")
 
         return prompt
     }
