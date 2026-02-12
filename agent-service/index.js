@@ -205,10 +205,26 @@ ABOUT OMI (for answering questions):
           content: message.content,
         });
 
-        // Add correction prompt
+        // Build tool results for any tool calls (required by Anthropic API)
+        const toolResultContent = [];
+
+        for (const toolUse of toolUses) {
+          toolResultContent.push({
+            type: 'tool_result',
+            tool_use_id: toolUse.id,
+            content: 'Acknowledged', // Simple acknowledgment
+          });
+        }
+
+        // Add correction prompt with tool results
+        toolResultContent.push({
+          type: 'text',
+          content: correctionPrompt,
+        });
+
         currentMessages.push({
           role: 'user',
-          content: correctionPrompt,
+          content: toolResultContent,
         });
 
         // Loop will retry
