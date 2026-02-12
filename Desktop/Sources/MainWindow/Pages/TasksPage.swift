@@ -435,7 +435,11 @@ class TasksViewModel: ObservableObject {
     }
     @Published var sortOption: TaskSortOption = .relevance {
         didSet {
-            recomputeDisplayCaches()
+            if sortOption == .dueDate && !selectedTags.contains(.last7Days) {
+                selectedTags.insert(.last7Days)  // triggers its own recompute
+            } else {
+                recomputeDisplayCaches()
+            }
         }
     }
 
@@ -1146,10 +1150,6 @@ class TasksViewModel: ObservableObject {
             result[category] = []
         }
         for task in displayTasks {
-            // When in date view, filter out old tasks invisibly (like Flutter app)
-            if sortOption == .dueDate && !shouldShowInDateView(task) {
-                continue
-            }
             let category = categoryFor(task: task)
             result[category, default: []].append(task)
         }
@@ -1179,10 +1179,6 @@ class TasksViewModel: ObservableObject {
             result[category] = []
         }
         for task in displayTasks {
-            // When in date view, filter out old tasks invisibly (like Flutter app)
-            if sortOption == .dueDate && !shouldShowInDateView(task) {
-                continue
-            }
             let category = categoryFor(task: task)
             result[category, default: []].append(task)
         }
@@ -1235,29 +1231,6 @@ class TasksViewModel: ObservableObject {
     }
 
     // MARK: - Category Helpers
-
-    /// Check if a task should be shown in date view (filters out old tasks invisibly, like Flutter app)
-    private func shouldShowInDateView(_ task: TaskActionItem) -> Bool {
-        // When not viewing completed, filter out old tasks (> 7 days)
-        // This matches the Flutter app's behavior
-        if !showCompleted {
-            let sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-
-            if let dueAt = task.dueAt {
-                // Task with due date: filter out if overdue by more than 7 days
-                if dueAt < sevenDaysAgo {
-                    return false
-                }
-            } else {
-                // Task with no due date: filter out if created more than 7 days ago
-                // (null created_at means pass through, matching Flutter behavior)
-                if task.createdAt < sevenDaysAgo {
-                    return false
-                }
-            }
-        }
-        return true
-    }
 
     private func categoryFor(task: TaskActionItem) -> TaskCategory {
         guard let dueAt = task.dueAt else {
