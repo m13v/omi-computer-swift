@@ -238,15 +238,11 @@ actor RewindDatabase {
 
     /// Migrate data from the legacy shared path (Omi/) or from the anonymous fallback
     /// (Omi/users/anonymous/) to the per-user path (Omi/users/{userId}/).
-    /// Only runs if the source exists and the per-user DB does not yet exist.
+    /// Handles both first-time migration (DB move) and partial re-runs (directory merges).
     private func migrateFromLegacyPathIfNeeded(to userDir: URL) {
         let fileManager = FileManager.default
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         let omiDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
-        let userDB = userDir.appendingPathComponent("omi.db")
-
-        // Already have a per-user DB — nothing to migrate
-        guard !fileManager.fileExists(atPath: userDB.path) else { return }
 
         // Determine migration source: prefer legacy root (Omi/omi.db), fall back to anonymous dir.
         // The anonymous fallback covers the case where TierManager or another early caller
@@ -256,13 +252,17 @@ actor RewindDatabase {
         let anonymousDir = omiDir
             .appendingPathComponent("users", isDirectory: true)
             .appendingPathComponent("anonymous", isDirectory: true)
-        let anonymousDB = anonymousDir.appendingPathComponent("omi.db")
 
         let sourceDir: URL
         if fileManager.fileExists(atPath: legacyDB.path) {
             sourceDir = omiDir
         } else if configuredUserId != "anonymous",
-                  fileManager.fileExists(atPath: anonymousDB.path) {
+                  fileManager.fileExists(atPath: anonymousDir.path) {
+            // Check if anonymous dir has anything worth migrating (DB, Videos, Screenshots, backups)
+            let hasContent = ["omi.db", "Screenshots", "Videos", "backups"].contains {
+                fileManager.fileExists(atPath: anonymousDir.appendingPathComponent($0).path)
+            }
+            guard hasContent else { return }
             sourceDir = anonymousDir
         } else {
             return // Nothing to migrate
@@ -280,21 +280,46 @@ actor RewindDatabase {
             let source = sourceDir.appendingPathComponent(name)
             let dest = userDir.appendingPathComponent(name)
             guard fileManager.fileExists(atPath: source.path) else { continue }
+
+            var isDir: ObjCBool = false
+            fileManager.fileExists(atPath: source.path, isDirectory: &isDir)
+
             do {
-                // Remove empty placeholder dirs at dest (created by earlier partial runs)
-                if fileManager.fileExists(atPath: dest.path) {
-                    let contents = try? fileManager.contentsOfDirectory(atPath: dest.path)
-                    if contents?.isEmpty == true {
-                        try fileManager.removeItem(at: dest)
-                    } else {
-                        log("RewindDatabase: Skipping \(name) — non-empty dest already exists")
-                        continue
+                if isDir.boolValue && fileManager.fileExists(atPath: dest.path) {
+                    // Both source and dest dirs exist — merge contents (move each child item)
+                    let children = try fileManager.contentsOfDirectory(atPath: source.path)
+                    var moved = 0
+                    for child in children {
+                        let childSrc = source.appendingPathComponent(child)
+                        let childDst = dest.appendingPathComponent(child)
+                        if fileManager.fileExists(atPath: childDst.path) { continue }
+                        try fileManager.moveItem(at: childSrc, to: childDst)
+                        moved += 1
                     }
+                    // Remove source dir if now empty
+                    let remaining = try? fileManager.contentsOfDirectory(atPath: source.path)
+                    if remaining?.isEmpty == true {
+                        try? fileManager.removeItem(at: source)
+                    }
+                    log("RewindDatabase: Merged \(name) (\(moved) items moved)")
+                } else if fileManager.fileExists(atPath: dest.path) {
+                    // File already exists at dest (e.g. omi.db) — skip
+                    log("RewindDatabase: Skipping \(name) — already exists at dest")
+                } else {
+                    try fileManager.moveItem(at: source, to: dest)
+                    log("RewindDatabase: Migrated \(name)")
                 }
-                try fileManager.moveItem(at: source, to: dest)
-                log("RewindDatabase: Migrated \(name)")
             } catch {
                 log("RewindDatabase: Failed to migrate \(name): \(error.localizedDescription)")
+            }
+        }
+
+        // Clean up source dir if it's now empty (don't leave empty anonymous/ dirs around)
+        if sourceDir != omiDir {
+            let remaining = try? fileManager.contentsOfDirectory(atPath: sourceDir.path)
+            if remaining?.isEmpty == true {
+                try? fileManager.removeItem(at: sourceDir)
+                log("RewindDatabase: Removed empty source dir \(sourceDir.lastPathComponent)")
             }
         }
 
