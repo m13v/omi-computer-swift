@@ -3064,6 +3064,18 @@ extension APIClient {
         return try await get("v1/users/profile")
     }
 
+    /// Updates user profile (onboarding data)
+    func updateUserProfile(motivation: String?, useCase: String?, job: String?, company: String?) async throws {
+        struct UpdateRequest: Encodable {
+            let motivation: String?
+            let use_case: String?
+            let job: String?
+            let company: String?
+        }
+        let body = UpdateRequest(motivation: motivation, use_case: useCase, job: job, company: company)
+        let _: UserProfileResponse = try await patch("v1/users/profile", body: body)
+    }
+
     // MARK: - Assistant Settings API
 
     /// Fetches assistant settings from the backend
@@ -3250,11 +3262,16 @@ struct UserProfileResponse: Codable {
     let name: String?
     let timeZone: String?
     let createdAt: String?
+    let motivation: String?
+    let useCase: String?
+    let job: String?
+    let company: String?
 
     enum CodingKeys: String, CodingKey {
-        case uid, email, name
+        case uid, email, name, motivation, job, company
         case timeZone = "time_zone"
         case createdAt = "created_at"
+        case useCase = "use_case"
     }
 
     init(from decoder: Decoder) throws {
@@ -3264,6 +3281,10 @@ struct UserProfileResponse: Codable {
         name = try container.decodeIfPresent(String.self, forKey: .name)
         timeZone = try container.decodeIfPresent(String.self, forKey: .timeZone)
         createdAt = try container.decodeIfPresent(String.self, forKey: .createdAt)
+        motivation = try container.decodeIfPresent(String.self, forKey: .motivation)
+        useCase = try container.decodeIfPresent(String.self, forKey: .useCase)
+        job = try container.decodeIfPresent(String.self, forKey: .job)
+        company = try container.decodeIfPresent(String.self, forKey: .company)
     }
 }
 
