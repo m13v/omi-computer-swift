@@ -10,8 +10,8 @@ actor OCREmbeddingService {
     private let embeddingDimension = 3072  // Gemini gemini-embedding-001 now returns 3072-dim
     private let minTextLength = 20
 
-    // TESTING: Limit backfill to 10 items for Gemini validation
-    private let testLimit = 10
+    // TESTING: Limit backfill to 1000 items for diversity testing
+    private let testLimit = 1000
 
     private init() {}
 
