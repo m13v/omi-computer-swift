@@ -89,6 +89,21 @@ enum ChatSender {
     case ai
 }
 
+extension ChatMessage {
+    /// Convert a backend message to a local ChatMessage
+    init(from db: ChatMessageDB) {
+        self.init(
+            id: db.id,
+            text: db.text,
+            createdAt: db.createdAt,
+            sender: db.sender == "human" ? .user : .ai,
+            isStreaming: false,
+            rating: db.rating,
+            isSynced: true
+        )
+    }
+}
+
 // MARK: - Citation Model
 
 /// A citation referencing a source conversation or memory
@@ -317,17 +332,8 @@ class ChatProvider: ObservableObject {
                 sessionId: session.id,
                 limit: messagesPageSize
             )
-            messages = persistedMessages.map { dbMessage in
-                ChatMessage(
-                    id: dbMessage.id,
-                    text: dbMessage.text,
-                    createdAt: dbMessage.createdAt,
-                    sender: dbMessage.sender == "human" ? .user : .ai,
-                    isStreaming: false,
-                    rating: dbMessage.rating,
-                    isSynced: true  // Messages from backend have valid server IDs
-                )
-            }.sorted(by: { $0.createdAt < $1.createdAt })
+            messages = persistedMessages.map(ChatMessage.init(from:))
+                .sorted(by: { $0.createdAt < $1.createdAt })
             // If we got a full page, there might be more messages
             hasMoreMessages = persistedMessages.count == messagesPageSize
             log("ChatProvider loaded \(messages.count) messages for session \(session.id), hasMore: \(hasMoreMessages)")
@@ -355,17 +361,7 @@ class ChatProvider: ObservableObject {
                 offset: offset
             )
 
-            let newMessages = olderMessages.map { dbMessage in
-                ChatMessage(
-                    id: dbMessage.id,
-                    text: dbMessage.text,
-                    createdAt: dbMessage.createdAt,
-                    sender: dbMessage.sender == "human" ? .user : .ai,
-                    isStreaming: false,
-                    rating: dbMessage.rating,
-                    isSynced: true  // Messages from backend have valid server IDs
-                )
-            }
+            let newMessages = olderMessages.map(ChatMessage.init(from:))
 
             // Append older messages and re-sort to ensure correct chronological order
             messages.append(contentsOf: newMessages)
@@ -530,11 +526,19 @@ class ChatProvider: ObservableObject {
         // Fall back to just memories if context is empty
         let contextSection = contextString.isEmpty ? formatMemoriesSection() : contextString
 
-        // Use ChatPromptBuilder to build the prompt with all variables
-        return ChatPromptBuilder.buildDesktopChat(
+        // Build base prompt
+        var prompt = ChatPromptBuilder.buildDesktopChat(
             userName: userName,
             memoriesSection: contextSection
         )
+
+        // Append conversation history from Firestore (source of truth for cross-platform sync)
+        let history = buildConversationHistory()
+        if !history.isEmpty {
+            prompt += "\n\n<conversation_history>\n\(history)\n</conversation_history>"
+        }
+
+        return prompt
     }
 
     /// Builds system prompt using cached memories only (for simple messages)
@@ -546,6 +550,26 @@ class ChatProvider: ObservableObject {
             userName: userName,
             memoriesSection: memoriesSection
         )
+    }
+
+    /// Build conversation history from messages (loaded from Firestore)
+    /// This ensures cross-platform sync: messages from mobile appear in context
+    private func buildConversationHistory() -> String {
+        // Take recent messages, excluding the current user message (last one) and any empty streaming placeholders
+        let historyMessages = messages.filter { msg in
+            !msg.text.isEmpty && !msg.isStreaming
+        }
+
+        // Skip if no history
+        guard !historyMessages.isEmpty else { return "" }
+
+        // Limit to last 20 messages to avoid excessive prompt size
+        let recent = historyMessages.suffix(20)
+
+        return recent.map { msg in
+            let role = msg.sender == .user ? "human" : "assistant"
+            return "\(role): \(msg.text)"
+        }.joined(separator: "\n")
     }
 
     // MARK: - Citation Extraction
@@ -585,45 +609,6 @@ class ChatProvider: ObservableObject {
     /// - Returns: Cleaned text without citation markers
     private func stripCitationMarkers(from text: String) -> String {
         text.replacingOccurrences(of: "\\[\\d+\\]", with: "", options: .regularExpression)
-    }
-
-    // MARK: - Fetch Messages
-
-    /// Fetch chat messages from backend and load context
-    /// This is called when no session is selected (legacy mode) or for initial load
-    func fetchMessages() async {
-        isLoading = true
-        errorMessage = nil
-
-        // If we have a current session, load its messages
-        if let session = currentSession {
-            await selectSession(session)
-        } else {
-            // Legacy mode: load messages without session
-            do {
-                let persistedMessages = try await APIClient.shared.getMessages(appId: selectedAppId, limit: 100)
-                messages = persistedMessages.map { dbMessage in
-                    ChatMessage(
-                        id: dbMessage.id,
-                        text: dbMessage.text,
-                        createdAt: dbMessage.createdAt,
-                        sender: dbMessage.sender == "human" ? .user : .ai,
-                        isStreaming: false,
-                        rating: dbMessage.rating,
-                        isSynced: true  // Messages from backend have valid server IDs
-                    )
-                }
-                log("ChatProvider loaded \(messages.count) persisted messages")
-            } catch {
-                logError("Failed to load persisted messages", error: error)
-                messages.removeAll()
-            }
-        }
-
-        // Load memories for context (non-blocking, best-effort)
-        await loadMemoriesIfNeeded()
-
-        isLoading = false
     }
 
     /// Initialize chat: fetch sessions and load messages
@@ -669,17 +654,8 @@ class ChatProvider: ObservableObject {
                 appId: selectedAppId,
                 limit: messagesPageSize
             )
-            messages = persistedMessages.map { dbMessage in
-                ChatMessage(
-                    id: dbMessage.id,
-                    text: dbMessage.text,
-                    createdAt: dbMessage.createdAt,
-                    sender: dbMessage.sender == "human" ? .user : .ai,
-                    isStreaming: false,
-                    rating: dbMessage.rating,
-                    isSynced: true
-                )
-            }.sorted(by: { $0.createdAt < $1.createdAt })
+            messages = persistedMessages.map(ChatMessage.init(from:))
+                .sorted(by: { $0.createdAt < $1.createdAt })
             hasMoreMessages = persistedMessages.count == messagesPageSize
             log("ChatProvider loaded \(messages.count) default chat messages, hasMore: \(hasMoreMessages)")
         } catch {
@@ -775,7 +751,9 @@ class ChatProvider: ObservableObject {
             let systemPrompt = buildSystemPrompt(contextString: contextString)
 
             // Query the Claude Agent SDK bridge with streaming
-            let result = try await claudeBridge.query(
+            // Each query is standalone — conversation history is in the system prompt
+            // This ensures cross-platform sync (mobile messages appear in context)
+            let finalResponse = try await claudeBridge.query(
                 prompt: trimmedText,
                 systemPrompt: systemPrompt,
                 onTextDelta: { [weak self] delta in
@@ -791,8 +769,6 @@ class ChatProvider: ObservableObject {
                     return result
                 }
             )
-
-            let finalResponse = result.text
 
             // Extract citations from the response and strip markers for display
             let citationSources = cachedContext?.citationSources ?? []
