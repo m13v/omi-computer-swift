@@ -16,8 +16,14 @@ actor RewindDatabase {
     /// Path to the running flag file (used to detect unclean shutdown)
     private var runningFlagPath: String?
 
-    /// The user ID this database is configured for
+    /// The user ID this database is configured for (nil = not yet configured → "anonymous")
     private var configuredUserId: String?
+
+    /// The user ID that was actually used to open the current database
+    private var openedForUserId: String?
+
+    /// Generation counter — incremented on close() so stale task completions don't corrupt state
+    private var initGeneration: Int = 0
 
     /// Static user ID for nonisolated markCleanShutdown (set by configure(userId:))
     nonisolated(unsafe) static var currentUserId: String?
@@ -34,16 +40,11 @@ actor RewindDatabase {
         return dbQueue
     }
 
-    /// Configure the database for a specific user. Must be called before initialize().
-    /// If the DB is already initialized for a different user, closes it so the next
-    /// initialize() call opens the correct per-user database.
+    /// Configure the database for a specific user.
+    /// Does NOT close or reopen the database — call initialize() after this.
+    /// initialize() will detect the user mismatch and reopen if needed.
     func configure(userId: String?) {
         let resolvedId = (userId?.isEmpty == false) ? userId! : "anonymous"
-        // If already initialized for a different user, close so re-init targets the right path
-        if let previous = configuredUserId, previous != resolvedId, dbQueue != nil {
-            log("RewindDatabase: User changed (\(previous) -> \(resolvedId)), closing current DB")
-            close()
-        }
         configuredUserId = resolvedId
         RewindDatabase.currentUserId = resolvedId
         log("RewindDatabase: Configured for user \(resolvedId)")
@@ -54,7 +55,9 @@ actor RewindDatabase {
         dbQueue = nil
         initializationTask = nil
         runningFlagPath = nil
-        log("RewindDatabase: Closed database")
+        openedForUserId = nil
+        initGeneration += 1
+        log("RewindDatabase: Closed database (generation \(initGeneration))")
     }
 
     /// Switch to a different user's database.
@@ -94,18 +97,39 @@ actor RewindDatabase {
         log("RewindDatabase: Clean shutdown flagged")
     }
 
-    /// Initialize the database with migrations
-    /// Uses a shared task to prevent concurrent initialization attempts during recovery
+    /// Initialize the database with migrations.
+    /// If the DB is already open for the correct user, returns immediately.
+    /// If the DB is open for a different user (e.g., "anonymous" before configure was called),
+    /// closes it and reopens for the configured user.
     func initialize() async throws {
-        // Already initialized
-        guard dbQueue == nil else { return }
+        let targetUser = configuredUserId ?? "anonymous"
 
-        // If initialization is in progress, wait for it
-        if let task = initializationTask {
-            return try await task.value
+        // Already initialized for the correct user
+        if dbQueue != nil && openedForUserId == targetUser {
+            return
+        }
+
+        // Initialized for wrong user — close and reopen
+        if dbQueue != nil {
+            log("RewindDatabase: Re-initializing for user \(targetUser) (was \(openedForUserId ?? "nil"))")
+            close()
+        }
+
+        // If initialization is in progress, wait for it then re-check
+        if let existingTask = initializationTask {
+            _ = try? await existingTask.value
+            // After waiting, check if the result is for the right user
+            if dbQueue != nil && openedForUserId == targetUser {
+                return
+            }
+            // Wrong user or failed — close and proceed
+            if dbQueue != nil {
+                close()
+            }
         }
 
         // Start initialization
+        let myGeneration = initGeneration
         let task = Task {
             try await performInitialization()
         }
@@ -113,11 +137,14 @@ actor RewindDatabase {
 
         do {
             try await task.value
-            // Clear task on success to release the Task object
-            initializationTask = nil
+            // Only clear if no close() happened since we started (generation unchanged)
+            if initGeneration == myGeneration {
+                initializationTask = nil
+            }
         } catch {
-            // Clear task on failure so retry is possible
-            initializationTask = nil
+            if initGeneration == myGeneration {
+                initializationTask = nil
+            }
             throw error
         }
     }
@@ -185,6 +212,7 @@ actor RewindDatabase {
             queue = try DatabaseQueue(path: dbPath, configuration: config)
         }
         dbQueue = queue
+        openedForUserId = configuredUserId ?? "anonymous"
 
         try migrate(queue)
 
