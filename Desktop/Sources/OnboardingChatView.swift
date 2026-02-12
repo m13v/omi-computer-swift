@@ -1,24 +1,6 @@
 import SwiftUI
 import MarkdownUI
 
-// MARK: - Onboarding Chat Question
-
-struct OnboardingChatQuestion {
-    let id: String
-    let agentPrompt: String  // What to send to the agent
-    let quickReplies: [String]?  // Optional quick reply buttons
-    let allowFreeText: Bool  // Allow typing custom response
-    let saveKey: String?  // Key to save response under (nil = don't save)
-
-    init(id: String, agentPrompt: String, quickReplies: [String]? = nil, allowFreeText: Bool = true, saveKey: String? = nil) {
-        self.id = id
-        self.agentPrompt = agentPrompt
-        self.quickReplies = quickReplies
-        self.allowFreeText = allowFreeText
-        self.saveKey = saveKey
-    }
-}
-
 // MARK: - Onboarding Chat View
 
 struct OnboardingChatView: View {
@@ -27,65 +9,42 @@ struct OnboardingChatView: View {
 
     @ObservedObject private var agentService = AgentSDKService.shared
     @State private var messages: [ChatMessage] = []
-    @State private var currentQuestionIndex = 0
-    @State private var responses: [String: String] = [:]
-    @State private var isProcessing = false
-    @State private var inputText = ""
-    @State private var hasStarted = false
+    @State private var conversationHistory: [(role: String, content: String)] = []
+    @State private var collectedData: [String: String] = [:]
+    @State private var inputText: String = ""
+    @State private var isProcessing: Bool = false
+    @State private var hasStarted: Bool = false
     @FocusState private var isInputFocused: Bool
-
-    // Onboarding questions sequence
-    private let questions: [OnboardingChatQuestion] = [
-        OnboardingChatQuestion(
-            id: "motivation",
-            agentPrompt: "You are greeting a new user to Omi, an AI assistant that helps with focus and productivity. Give them a warm, brief welcome (2-3 sentences max) and ask what brings them to Omi today.",
-            quickReplies: ["Stay focused", "Boost productivity", "Remember conversations", "Just exploring"],
-            allowFreeText: true,
-            saveKey: "motivation"
-        ),
-        OnboardingChatQuestion(
-            id: "use_case",
-            agentPrompt: "Based on their goal: '{response_placeholder}', ask them briefly (1-2 sentences) what kind of work or activities they'd like help with.",
-            quickReplies: ["Work meetings", "Deep focus time", "Learning & research", "Creative work"],
-            allowFreeText: true,
-            saveKey: "use_case"
-        ),
-        OnboardingChatQuestion(
-            id: "job",
-            agentPrompt: "Great! Now ask them briefly (1-2 sentences) what their job or role is.",
-            quickReplies: ["Software Engineer", "Product Manager", "Designer", "Student", "Researcher", "Other"],
-            allowFreeText: true,
-            saveKey: "job"
-        ),
-        OnboardingChatQuestion(
-            id: "company",
-            agentPrompt: "Ask them briefly (1-2 sentences) what company they work for, if any. Let them know it's optional.",
-            quickReplies: ["Skip this question"],
-            allowFreeText: true,
-            saveKey: "company"
-        ),
-        OnboardingChatQuestion(
-            id: "confirmation",
-            agentPrompt: "Perfect! Acknowledge their answers warmly and briefly (2-3 sentences). Tell them you understand their background and you're excited to help them with their work. Ask if they're ready to finish setup.",
-            quickReplies: ["Yes, let's go!"],
-            allowFreeText: false,
-            saveKey: nil
-        )
-    ]
-
-    var currentQuestion: OnboardingChatQuestion? {
-        guard currentQuestionIndex < questions.count else { return nil }
-        return questions[currentQuestionIndex]
-    }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Messages area
+            // Header
+            HStack {
+                Text("Let's get to know you")
+                    .font(.system(size: 18, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                Button(action: onSkip) {
+                    Text("Skip")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Chat messages
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(spacing: 16) {
-                        if messages.isEmpty {
-                            // Empty state before chat starts
+                        if !hasStarted {
+                            // Welcome screen
                             VStack(spacing: 16) {
                                 if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
                                    let logoImage = NSImage(contentsOf: logoURL) {
@@ -95,110 +54,80 @@ struct OnboardingChatView: View {
                                         .frame(width: 48, height: 48)
                                 }
 
-                                Text("Let's get to know each other")
-                                    .font(.system(size: 18, weight: .semibold))
+                                Text("Hi! I'm your Omi assistant")
+                                    .font(.system(size: 16, weight: .medium))
                                     .foregroundColor(OmiColors.textPrimary)
 
-                                Text("I'll ask you a few quick questions to personalize your experience")
-                                    .font(.system(size: 13))
+                                Text("I'd love to learn about you to personalize your experience.\n\nFeel free to ask me anything!")
+                                    .font(.system(size: 14))
                                     .foregroundColor(OmiColors.textSecondary)
                                     .multilineTextAlignment(.center)
-                                    .padding(.horizontal, 40)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(.top, 40)
-                        } else {
-                            LazyVStack(spacing: 16) {
-                                ForEach(messages) { message in
-                                    OnboardingChatBubble(message: message)
-                                        .id(message.id)
+                                    .fixedSize(horizontal: false, vertical: true)
+
+                                Button(action: startChat) {
+                                    Text("Start Chat")
+                                        .font(.system(size: 14, weight: .medium))
+                                        .frame(maxWidth: 200)
+                                        .padding(.vertical, 10)
                                 }
-
-                                // Typing indicator
-                                if isProcessing {
-                                    HStack(alignment: .top, spacing: 12) {
-                                        // Omi logo
-                                        if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
-                                           let logoImage = NSImage(contentsOf: logoURL) {
-                                            Image(nsImage: logoImage)
-                                                .resizable()
-                                                .scaledToFit()
-                                                .frame(width: 20, height: 20)
-                                                .frame(width: 32, height: 32)
-                                                .background(OmiColors.backgroundTertiary)
-                                                .clipShape(Circle())
-                                        }
-
-                                        TypingIndicator()
-                                    }
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                }
+                                .buttonStyle(.borderedProminent)
+                                .controlSize(.large)
                             }
-                            .padding()
-                        }
-                    }
-                    .onChange(of: messages.count) { _, _ in
-                        // Auto-scroll to bottom when messages change
-                        if let lastMessage = messages.last {
-                            withAnimation {
-                                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-                            }
-                        }
-                    }
-                }
-                .frame(maxHeight: .infinity)
-            }
-
-            Divider()
-                .background(OmiColors.backgroundTertiary)
-
-            // Input area
-            if hasStarted {
-                inputArea
-                    .padding()
-            } else {
-                // Start button
-                VStack(spacing: 12) {
-                    Button(action: startChat) {
-                        Text("Start Chat")
+                            .padding(.vertical, 40)
                             .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
+                        } else {
+                            // Chat messages
+                            ForEach(messages) { message in
+                                OnboardingChatBubble(message: message)
+                                    .id(message.id)
+                            }
+
+                            // Typing indicator
+                            if isProcessing {
+                                HStack(spacing: 12) {
+                                    if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                                       let logoImage = NSImage(contentsOf: logoURL) {
+                                        Image(nsImage: logoImage)
+                                            .resizable()
+                                            .scaledToFit()
+                                            .frame(width: 20, height: 20)
+                                            .frame(width: 32, height: 32)
+                                            .background(OmiColors.backgroundTertiary)
+                                            .clipShape(Circle())
+                                    }
+
+                                    TypingIndicator()
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id("typing")
+                            }
+                        }
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-
-                    Button(action: onSkip) {
-                        Text("Skip this step")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
+                    .padding(20)
+                }
+                .onChange(of: messages.count) { _, _ in
+                    if let lastMessage = messages.last {
+                        withAnimation {
+                            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+                        }
                     }
-                    .buttonStyle(.plain)
                 }
-                .padding()
-            }
-        }
-        .background(OmiColors.backgroundPrimary)
-        .onAppear {
-            log("OnboardingChatView appeared, agent healthy: \(agentService.isHealthy)")
-        }
-    }
-
-    // MARK: - Input Area
-
-    @ViewBuilder
-    private var inputArea: some View {
-        VStack(spacing: 12) {
-            // Quick reply buttons (if current question has them)
-            if let quickReplies = currentQuestion?.quickReplies, !quickReplies.isEmpty {
-                QuickReplyButtons(options: quickReplies) { reply in
-                    handleUserResponse(reply)
+                .onChange(of: isProcessing) { _, processing in
+                    if processing {
+                        withAnimation {
+                            proxy.scrollTo("typing", anchor: .bottom)
+                        }
+                    }
                 }
             }
 
-            // Text input (if current question allows free text)
-            if currentQuestion?.allowFreeText == true {
+            if hasStarted {
+                Divider()
+                    .background(OmiColors.backgroundTertiary)
+
+                // Input area
                 HStack(spacing: 12) {
-                    TextField("Type your answer...", text: $inputText, axis: .vertical)
+                    TextField("Type your message...", text: $inputText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .font(.system(size: 14))
                         .foregroundColor(OmiColors.textPrimary)
@@ -206,13 +135,13 @@ struct OnboardingChatView: View {
                         .padding(12)
                         .lineLimit(1...3)
                         .onSubmit {
-                            sendTextResponse()
+                            sendMessage()
                         }
                         .frame(maxWidth: .infinity)
                         .background(OmiColors.backgroundSecondary)
                         .cornerRadius(20)
 
-                    Button(action: sendTextResponse) {
+                    Button(action: sendMessage) {
                         Image(systemName: "arrow.up.circle.fill")
                             .font(.system(size: 32))
                             .foregroundColor(canSend ? OmiColors.purplePrimary : OmiColors.textTertiary)
@@ -220,16 +149,8 @@ struct OnboardingChatView: View {
                     .buttonStyle(.plain)
                     .disabled(!canSend)
                 }
-            }
-
-            // Skip button for optional questions
-            if currentQuestion?.saveKey != nil {
-                Button(action: skipQuestion) {
-                    Text("Skip")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                .buttonStyle(.plain)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
             }
         }
     }
@@ -242,32 +163,21 @@ struct OnboardingChatView: View {
 
     private func startChat() {
         hasStarted = true
-        // Send first question
+        isInputFocused = true
+
+        // Send initial greeting from AI
         Task {
-            await askNextQuestion()
+            await getAIResponse()
         }
     }
 
-    private func sendTextResponse() {
+    private func sendMessage() {
         guard canSend else { return }
+
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
         inputText = ""
-        handleUserResponse(text)
-    }
 
-    private func skipQuestion() {
-        // Move to next question without saving response
-        currentQuestionIndex += 1
-        Task {
-            await askNextQuestion()
-        }
-    }
-
-    private func handleUserResponse(_ text: String) {
-        // Check if user chose to skip
-        let isSkip = text == "Skip this question"
-
-        // Add user message
+        // Add user message to UI
         let userMessage = ChatMessage(
             text: text,
             sender: .user,
@@ -275,101 +185,96 @@ struct OnboardingChatView: View {
         )
         messages.append(userMessage)
 
-        // Save response if this question has a save key (but not if they skipped)
-        if let saveKey = currentQuestion?.saveKey, !isSkip {
-            responses[saveKey] = text
-            log("Saved onboarding response: \(saveKey) = \(text)")
-            // Also save to UserDefaults immediately for persistence
-            UserDefaults.standard.set(text, forKey: "onboarding_\(saveKey)")
-        } else if isSkip {
-            log("User skipped question: \(currentQuestion?.id ?? "unknown")")
-        }
+        // Add to conversation history
+        conversationHistory.append((role: "user", content: text))
 
-        // Move to next question
-        currentQuestionIndex += 1
-
-        // Check if we're done
-        if currentQuestionIndex >= questions.count {
-            // Chat complete
-            completeOnboarding()
-        } else {
-            // Ask next question
-            Task {
-                await askNextQuestion()
-            }
+        // Get AI response
+        Task {
+            await getAIResponse()
         }
     }
 
-    private func askNextQuestion() async {
-        guard let question = currentQuestion else {
-            completeOnboarding()
-            return
-        }
-
+    private func getAIResponse() async {
         guard agentService.isHealthy else {
-            // Agent service not available, show error
             let errorMessage = ChatMessage(
-                text: "I'm having trouble connecting. Let's continue with the setup.",
+                text: "I'm having trouble connecting. Please try again.",
                 sender: .ai,
                 isStreaming: false
             )
             messages.append(errorMessage)
-
-            // Auto-advance after error
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                completeOnboarding()
-            }
             return
         }
 
         isProcessing = true
 
         do {
-            // Build prompt with response placeholders
-            var prompt = question.agentPrompt
-            if prompt.contains("{response_placeholder}") {
-                // Replace with user's last meaningful response
-                let lastResponse = Array(responses.values).last ?? "helping them"
-                prompt = prompt.replacingOccurrences(of: "{response_placeholder}", with: lastResponse)
+            // Call agent with conversation history
+            let (response, toolCalls) = try await agentService.chat(
+                messages: conversationHistory,
+                collectedData: collectedData
+            )
+
+            // Add AI response to conversation history
+            conversationHistory.append((role: "assistant", content: response))
+
+            // Process tool calls
+            var didCollectData = false
+            var shouldComplete = false
+
+            for toolCall in toolCalls {
+                switch toolCall.name {
+                case "save_field":
+                    if let field = toolCall.input["field"],
+                       let value = toolCall.input["value"] {
+                        collectedData[field] = value
+                        UserDefaults.standard.set(value, forKey: "onboarding_\(field)")
+                        log("Collected onboarding data: \(field) = \(value)")
+                        didCollectData = true
+                    }
+
+                case "complete_onboarding":
+                    shouldComplete = true
+                    log("AI signaled onboarding complete")
+
+                default:
+                    break
+                }
             }
 
-            // Get agent response
-            let response = try await agentService.runAgent(
-                prompt: prompt,
-                context: responses
-            )
+            // Add AI message to UI
+            if !response.isEmpty {
+                let aiMessage = ChatMessage(
+                    text: response,
+                    sender: .ai,
+                    isStreaming: false
+                )
+                messages.append(aiMessage)
+            }
 
-            // Add AI message
-            let aiMessage = ChatMessage(
-                text: response,
-                sender: .ai,
-                isStreaming: false
-            )
-            messages.append(aiMessage)
-
-            log("OnboardingChat: Question \(question.id) answered")
+            // Complete onboarding if signaled
+            if shouldComplete {
+                // Small delay so user can read the final message
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+                completeOnboarding()
+            }
 
         } catch {
-            logError("OnboardingChat: Failed to get agent response", error: error)
+            logError("OnboardingChat: Failed to get AI response", error: error)
 
-            // Fallback message
-            let fallbackMessage = ChatMessage(
-                text: "Let's continue with the setup!",
+            let errorMessage = ChatMessage(
+                text: "Sorry, I had trouble processing that. Could you try again?",
                 sender: .ai,
                 isStreaming: false
             )
-            messages.append(fallbackMessage)
+            messages.append(errorMessage)
         }
 
         isProcessing = false
     }
 
     private func completeOnboarding() {
-        log("OnboardingChat: Complete with \(responses.count) responses")
-        AnalyticsManager.shared.onboardingCompleted()
-
-        // Call completion handler with collected data
-        onComplete(responses)
+        log("OnboardingChat: Complete with collected data: \(collectedData)")
+        onComplete(collectedData)
     }
 }
 
@@ -421,26 +326,3 @@ struct OnboardingChatBubble: View {
         .frame(maxWidth: .infinity, alignment: message.sender == .user ? .trailing : .leading)
     }
 }
-
-// MARK: - Quick Reply Buttons
-
-struct QuickReplyButtons: View {
-    let options: [String]
-    let onSelect: (String) -> Void
-
-    var body: some View {
-        VStack(spacing: 8) {
-            ForEach(options, id: \.self) { option in
-                Button(action: { onSelect(option) }) {
-                    Text(option)
-                        .font(.system(size: 13, weight: .medium))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
-            }
-        }
-    }
-}
-
