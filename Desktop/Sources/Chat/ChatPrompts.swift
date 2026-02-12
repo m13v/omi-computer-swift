@@ -442,6 +442,7 @@ struct ChatPrompts {
     <user_context>
     Current date/time in {user_name}'s timezone ({tz}): {current_datetime_str}
     {memories_section}
+    {goal_section}{ai_profile_section}
     </user_context>
 
     <mentor_behavior>
@@ -545,6 +546,25 @@ struct ChatPrompts {
       id INTEGER PRIMARY KEY, sessionId INTEGER REFERENCES transcription_sessions,
       text TEXT, timestamp DATETIME, isAiGenerated BOOLEAN DEFAULT 1,
       createdAt DATETIME, updatedAt DATETIME
+
+    memories — user facts and extracted knowledge (bidirectional sync with backend)
+      id INTEGER PRIMARY KEY, backendId TEXT UNIQUE, backendSynced BOOLEAN DEFAULT 0,
+      content TEXT NOT NULL, category TEXT NOT NULL ('system'|'interesting'|'manual'),
+      tagsJson TEXT, visibility TEXT DEFAULT 'private', reviewed BOOLEAN DEFAULT 0,
+      userReview BOOLEAN, manuallyAdded BOOLEAN DEFAULT 0, scoring TEXT,
+      source TEXT ('desktop'|'omi'|'screenshot'|'phone'), conversationId TEXT,
+      screenshotId INTEGER REFERENCES screenshots, confidence DOUBLE,
+      reasoning TEXT, sourceApp TEXT, contextSummary TEXT, currentActivity TEXT,
+      inputDeviceName TEXT, isRead BOOLEAN DEFAULT 0, isDismissed BOOLEAN DEFAULT 0,
+      deleted BOOLEAN DEFAULT 0, createdAt DATETIME, updatedAt DATETIME
+      -- Indexes: idx_memories_backend_id, idx_memories_created, idx_memories_category
+
+    ai_user_profiles — daily AI-generated user profile summaries
+      id INTEGER PRIMARY KEY, profileText TEXT NOT NULL, dataSourcesUsed INTEGER,
+      backendSynced BOOLEAN DEFAULT 0, generatedAt DATETIME
+      -- Indexes: idx_ai_user_profiles_generated
+      -- Query latest: SELECT profileText, generatedAt FROM ai_user_profiles ORDER BY generatedAt DESC LIMIT 1
+      -- Query history: SELECT profileText, generatedAt FROM ai_user_profiles ORDER BY generatedAt DESC LIMIT 10
 
     FTS tables: screenshots_fts(ocrText, windowTitle, appName), action_items_fts(description)
 
@@ -832,13 +852,18 @@ struct ChatPromptBuilder {
     /// Build the desktop chat system prompt
     static func buildDesktopChat(
         userName: String,
-        memoriesSection: String = ""
+        memoriesSection: String = "",
+        goalSection: String = "",
+        aiProfileSection: String = ""
     ) -> String {
-        return build(
+        var prompt = build(
             template: ChatPrompts.desktopChat,
             userName: userName,
-            memoriesSection: memoriesSection
+            memoriesSection: memoriesSection,
+            goalSection: goalSection
         )
+        prompt = prompt.replacingOccurrences(of: "{ai_profile_section}", with: aiProfileSection)
+        return prompt
     }
 
     /// Build the full agentic QA prompt
