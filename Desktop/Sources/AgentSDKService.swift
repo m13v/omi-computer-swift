@@ -137,10 +137,12 @@ class AgentSDKService: ObservableObject {
     struct ChatRequest: Codable {
         let messages: [ChatMessage]
         let collected_data: [String: String]?
+        let existing_name: String?
 
         enum CodingKeys: String, CodingKey {
             case messages
             case collected_data = "collected_data"
+            case existing_name = "existing_name"
         }
     }
 
@@ -158,7 +160,7 @@ class AgentSDKService: ObservableObject {
         }
     }
 
-    func chat(messages: [(role: String, content: String)], collectedData: [String: String]? = nil) async throws -> (response: String, toolCalls: [ToolCall]) {
+    func chat(messages: [(role: String, content: String)], collectedData: [String: String]? = nil, existingName: String? = nil) async throws -> (response: String, toolCalls: [ToolCall]) {
         guard isHealthy else {
             throw AgentSDKError.serviceUnavailable
         }
@@ -169,7 +171,7 @@ class AgentSDKService: ObservableObject {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         let chatMessages = messages.map { ChatMessage(role: $0.role, content: $0.content) }
-        let body = ChatRequest(messages: chatMessages, collected_data: collectedData)
+        let body = ChatRequest(messages: chatMessages, collected_data: collectedData, existing_name: existingName)
         request.httpBody = try JSONEncoder().encode(body)
 
         let (data, response) = try await session.data(for: request)
