@@ -345,11 +345,22 @@ struct OnboardingView: View {
         case 9:
             bluetoothStepView
         case 10:
-            stepView(
-                icon: "checkmark.circle",
-                title: "You're All Set!",
-                description: "Just use Omi in the background for 2 days and you'll start getting useful feedback after!"
-            )
+            VStack(spacing: 16) {
+                Image(systemName: "checkmark.circle")
+                    .font(.system(size: 48))
+                    .foregroundColor(OmiColors.purplePrimary)
+
+                Text("You're All Set!")
+                    .font(.title)
+                    .fontWeight(.semibold)
+
+                Text("Just use Omi in the background for 2 days and you'll start getting useful feedback after!")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 32)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         default:
             EmptyView()
         }
