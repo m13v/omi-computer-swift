@@ -25,10 +25,23 @@ actor RewindStorage {
         frameCache.totalCostLimit = 100 * 1024 * 1024 // ~100MB
     }
 
+    /// Reset storage state (called on user switch / sign-out)
+    func reset() {
+        screenshotsDirectory = nil
+        videosDirectory = nil
+        frameCache.removeAllObjects()
+        corruptedChunks.removeAll()
+        log("RewindStorage: Reset for user switch")
+    }
+
     /// Initialize the storage directories
     func initialize() async throws {
         let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let omiDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
+        let userId = RewindDatabase.currentUserId ?? "anonymous"
+        let omiDir = appSupport
+            .appendingPathComponent("Omi", isDirectory: true)
+            .appendingPathComponent("users", isDirectory: true)
+            .appendingPathComponent(userId, isDirectory: true)
 
         // Screenshots directory (legacy JPEG storage)
         screenshotsDirectory = omiDir.appendingPathComponent("Screenshots", isDirectory: true)
