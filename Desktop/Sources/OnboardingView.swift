@@ -373,40 +373,36 @@ struct OnboardingView: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
 
-            HStack {
-                Spacer()
-                VStack(alignment: .leading, spacing: 8) {
-                    TextField("Enter your name", text: $nameInput)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.body)
-                        .frame(width: 280)
-                        .focused($isNameFieldFocused)
-                        .onSubmit {
-                            if isNameValid {
-                                handleMainAction()
-                            }
+            VStack(alignment: .leading, spacing: 8) {
+                TextField("Enter your name", text: $nameInput)
+                    .textFieldStyle(.roundedBorder)
+                    .font(.body)
+                    .frame(maxWidth: 280)
+                    .focused($isNameFieldFocused)
+                    .onSubmit {
+                        if isNameValid {
+                            handleMainAction()
                         }
-
-                    if !nameError.isEmpty {
-                        HStack(spacing: 4) {
-                            Image(systemName: "exclamationmark.circle")
-                                .font(.caption)
-                            Text(nameError)
-                                .font(.caption)
-                        }
-                        .foregroundColor(.red)
                     }
 
-                    if !nameInput.isEmpty {
-                        Text("\(nameInput.count) characters")
+                if !nameError.isEmpty {
+                    HStack(spacing: 4) {
+                        Image(systemName: "exclamationmark.circle")
                             .font(.caption)
-                            .foregroundColor(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        Text(nameError)
+                            .font(.caption)
                     }
+                    .foregroundColor(.red)
                 }
-                .frame(width: 280)
-                Spacer()
+
+                if !nameInput.isEmpty {
+                    Text("\(nameInput.count) characters")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .trailing)
+                }
             }
+            .padding(.horizontal, 40)
             .padding(.top, 8)
         }
         .onAppear {
