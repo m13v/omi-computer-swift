@@ -2134,7 +2134,7 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         guard let source = source else { return "Task" }
         switch source {
         case "screenshot": return "Screen"
-        case "transcription:omi": return "OMI"
+        case "transcription:omi": return "omi"
         case "transcription:desktop": return "Desktop"
         case "transcription:phone": return "Phone"
         case "manual": return "Manual"
