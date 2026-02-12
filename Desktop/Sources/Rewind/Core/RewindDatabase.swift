@@ -214,7 +214,7 @@ actor RewindDatabase {
             queue = try DatabaseQueue(path: dbPath, configuration: config)
         }
         dbQueue = queue
-        openedForUserId = configuredUserId ?? "anonymous"
+        openedForUserId = configuredUserId ?? RewindDatabase.currentUserId ?? "anonymous"
 
         try migrate(queue)
 
