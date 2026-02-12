@@ -51,7 +51,7 @@ pub use user_settings::{
     DailySummarySettings, NotificationSettings, PrivateCloudSync, RecordingPermission,
     AIUserProfile, TranscriptionPreferences, UpdateAIUserProfileRequest, UpdateDailySummaryRequest,
     UpdateLanguageRequest, UpdateNotificationSettingsRequest, UpdateTranscriptionPreferencesRequest,
-    UserLanguage, UserProfile, UserSettingsStatusResponse,
+    UpdateUserProfileRequest, UserLanguage, UserProfile, UserSettingsStatusResponse,
     AssistantSettingsData, SharedAssistantSettingsData, FocusSettingsData, TaskSettingsData,
     AdviceSettingsData, MemorySettingsData,
 };
