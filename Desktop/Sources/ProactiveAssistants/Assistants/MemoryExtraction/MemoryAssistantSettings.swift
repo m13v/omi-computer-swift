@@ -19,7 +19,7 @@ class MemoryAssistantSettings {
     private let defaultEnabled = true
     private let defaultExtractionInterval: TimeInterval = 600.0 // 10 minutes
     private let defaultMinConfidence: Double = 0.7
-    private let defaultNotificationsEnabled = true
+    private let defaultNotificationsEnabled = false
 
     /// Default system prompt for memory extraction from screenshots
     /// Adapted from the backend MEMORIES_PROMPT for visual/screenshot context
