@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import AVKit
 
 struct OnboardingView: View {
     @ObservedObject var appState: AppState
@@ -20,7 +21,7 @@ struct OnboardingView: View {
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Welcome", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
+    let steps = ["Video", "Welcome", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -90,7 +91,7 @@ struct OnboardingView: View {
         // Bring app to front when the CURRENT step's permission is granted
         // Only bring to front if we're on the step that requires this permission
         .onChange(of: appState.hasNotificationPermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Notification permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -98,7 +99,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasAutomationPermission) { _, granted in
-            if granted && currentStep == 4 {
+            if granted && currentStep == 5 {
                 log("Automation permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -106,7 +107,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
-            if granted && currentStep == 5 {
+            if granted && currentStep == 6 {
                 log("Screen recording permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -114,7 +115,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
-            if granted && currentStep == 6 {
+            if granted && currentStep == 7 {
                 log("Microphone permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -122,7 +123,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasSystemAudioPermission) { _, granted in
-            if granted && currentStep == 7 {
+            if granted && currentStep == 8 {
                 log("System audio permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -130,7 +131,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasAccessibilityPermission) { _, granted in
-            if granted && currentStep == 8 {
+            if granted && currentStep == 9 {
                 log("Accessibility permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -138,7 +139,7 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasBluetoothPermission) { _, granted in
-            if granted && currentStep == 9 {
+            if granted && currentStep == 10 {
                 log("Bluetooth permission granted (current step), bringing to front")
                 bringToFront()
             } else if granted {
@@ -146,8 +147,8 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: currentStep) { _, newStep in
-            // Initialize Bluetooth when reaching step 9 so the state is shown correctly
-            if newStep == 9 {
+            // Initialize Bluetooth when reaching step 10 so the state is shown correctly
+            if newStep == 10 {
                 log("Reached Bluetooth step, initializing Bluetooth manager")
                 appState.initializeBluetoothIfNeeded()
             }
@@ -187,15 +188,16 @@ struct OnboardingView: View {
     /// Check if current step's permission is granted
     private var currentPermissionGranted: Bool {
         switch currentStep {
-        case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
-        case 2: return true // Language step - always valid (has default)
-        case 3: return appState.hasNotificationPermission
-        case 4: return appState.hasAutomationPermission
-        case 5: return appState.hasScreenRecordingPermission
-        case 6: return appState.hasMicrophonePermission
-        case 7: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
-        case 8: return appState.hasAccessibilityPermission
-        case 9: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied
+        case 0: return true // Video step - always valid
+        case 2: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
+        case 3: return true // Language step - always valid (has default)
+        case 4: return appState.hasNotificationPermission
+        case 5: return appState.hasAutomationPermission
+        case 6: return appState.hasScreenRecordingPermission
+        case 7: return appState.hasMicrophonePermission
+        case 8: return !appState.isSystemAudioSupported || appState.hasSystemAudioPermission // Skip if not supported
+        case 9: return appState.hasAccessibilityPermission
+        case 10: return appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied
         default: return true
         }
     }
@@ -226,8 +228,8 @@ struct OnboardingView: View {
                 // Buttons
                 buttonSection
             }
-            .frame(width: (currentStep == 3 && !appState.hasNotificationPermission) || (currentStep == 5 && !appState.hasScreenRecordingPermission) ? 500 : 420)
-            .frame(height: (currentStep == 3 && !appState.hasNotificationPermission) || (currentStep == 5 && !appState.hasScreenRecordingPermission) ? 520 : 420)
+            .frame(width: currentStep == 0 ? 600 : (currentStep == 4 && !appState.hasNotificationPermission) || (currentStep == 6 && !appState.hasScreenRecordingPermission) ? 500 : 420)
+            .frame(height: currentStep == 0 ? 450 : (currentStep == 4 && !appState.hasNotificationPermission) || (currentStep == 6 && !appState.hasScreenRecordingPermission) ? 520 : 420)
             .background(
                 RoundedRectangle(cornerRadius: 16)
                     .fill(OmiColors.backgroundSecondary)
