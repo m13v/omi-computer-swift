@@ -68,9 +68,11 @@ actor RewindDatabase {
     }
 
     /// Returns the per-user base directory: ~/Library/Application Support/Omi/users/{userId}/
+    /// Falls back to the static currentUserId (set synchronously at app start) when
+    /// configure() hasn't been called yet (e.g., TierManager triggers init early).
     private func userBaseDirectory() -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let userId = configuredUserId ?? "anonymous"
+        let userId = configuredUserId ?? RewindDatabase.currentUserId ?? "anonymous"
         return appSupport
             .appendingPathComponent("Omi", isDirectory: true)
             .appendingPathComponent("users", isDirectory: true)
@@ -253,10 +255,11 @@ actor RewindDatabase {
             .appendingPathComponent("users", isDirectory: true)
             .appendingPathComponent("anonymous", isDirectory: true)
 
+        let effectiveUserId = configuredUserId ?? RewindDatabase.currentUserId ?? "anonymous"
         let sourceDir: URL
         if fileManager.fileExists(atPath: legacyDB.path) {
             sourceDir = omiDir
-        } else if configuredUserId != "anonymous",
+        } else if effectiveUserId != "anonymous",
                   fileManager.fileExists(atPath: anonymousDir.path) {
             // Check if anonymous dir has anything worth migrating (DB, Videos, Screenshots, backups)
             let hasContent = ["omi.db", "Screenshots", "Videos", "backups"].contains {
@@ -267,6 +270,9 @@ actor RewindDatabase {
         } else {
             return // Nothing to migrate
         }
+
+        // Don't migrate to ourselves
+        guard sourceDir.path != userDir.path else { return }
 
         log("RewindDatabase: Migrating data from \(sourceDir.path) to \(userDir.path)")
 
@@ -303,8 +309,9 @@ actor RewindDatabase {
                     }
                     log("RewindDatabase: Merged \(name) (\(moved) items moved)")
                 } else if fileManager.fileExists(atPath: dest.path) {
-                    // File already exists at dest (e.g. omi.db) — skip
-                    log("RewindDatabase: Skipping \(name) — already exists at dest")
+                    // File already exists at dest — remove stale source copy
+                    try? fileManager.removeItem(at: source)
+                    log("RewindDatabase: Removed stale \(name) from source (already at dest)")
                 } else {
                     try fileManager.moveItem(at: source, to: dest)
                     log("RewindDatabase: Migrated \(name)")
