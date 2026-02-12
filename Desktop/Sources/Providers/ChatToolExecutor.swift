@@ -116,30 +116,28 @@ class ChatToolExecutor {
         }
 
         // Get column names from first row
-        let columns = rows[0].columnNames
+        let columns = Array(rows[0].columnNames)
         var lines: [String] = []
 
         // Header
         lines.append(columns.joined(separator: " | "))
         lines.append(String(repeating: "-", count: min(columns.count * 20, 120)))
 
-        // Rows (max 200)
+        // Rows (max 200) — Row is RandomAccessCollection of (String, DatabaseValue)
         for row in rows.prefix(200) {
-            let values = columns.map { col -> String in
-                guard let idx = row.index(forColumn: col) else { return "NULL" }
-                if row.hasNull(atIndex: idx) { return "NULL" }
-
+            let values = row.map { (_, dbValue) -> String in
                 let value: String
-                if let str: String = try? row[col] as String {
-                    value = str
-                } else if let int: Int64 = try? row[col] as Int64 {
-                    value = String(int)
-                } else if let dbl: Double = try? row[col] as Double {
-                    value = String(dbl)
-                } else if let data: Data = try? row[col] as Data {
+                switch dbValue.storage {
+                case .null:
+                    value = "NULL"
+                case .int64(let i):
+                    value = String(i)
+                case .double(let d):
+                    value = String(d)
+                case .string(let s):
+                    value = s
+                case .blob(let data):
                     value = "<\(data.count) bytes>"
-                } else {
-                    value = String(describing: row[col] as (any DatabaseValueConvertible)?)
                 }
                 // Truncate long cell values
                 if value.count > 500 {
