@@ -1099,7 +1099,7 @@ class TasksViewModel: ObservableObject {
         // Date filters (like last7Days) are applied in-memory, not via SQLite
         let hasSQLiteFilters = selectedTags.contains(where: { $0.group != .status && $0.group != .date })
         let hasDateFilters = selectedTags.contains(where: { $0.group == .date })
-        let filteredTasks: [TaskActionItem]
+        var filteredTasks: [TaskActionItem]
         if !searchText.isEmpty {
             filteredTasks = applyNonStatusTagFilters(sourceTasks)
         } else if hasSQLiteFilters {
@@ -1109,6 +1109,16 @@ class TasksViewModel: ObservableObject {
             filteredTasks = hasDateFilters ? applyDateFilters(statusFiltered) : statusFiltered
         } else {
             filteredTasks = applyTagFilters(sourceTasks)
+        }
+
+        // Ensure allowlisted tasks survive date filters — they were carefully
+        // selected by prioritization and should always be visible regardless of date.
+        if hasDateFilters && store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
+            let filteredIds = Set(filteredTasks.map { $0.id })
+            let missingAllowlisted = sourceTasks.filter {
+                store.visibleAITaskIds.contains($0.id) && !filteredIds.contains($0.id)
+            }
+            filteredTasks.append(contentsOf: missingAllowlisted)
         }
 
         // Sort
@@ -2229,8 +2239,8 @@ struct TaskCategorySection: View {
 
     /// Tasks visible in current view (allowlist filtering for AI tasks)
     private var visibleTasks: [TaskActionItem] {
-        // Show all if user expanded, or if scoring hasn't completed yet
-        if showAllTasks || !hasCompletedScoring {
+        // Show all if user expanded, scoring hasn't completed, or allowlist is empty
+        if showAllTasks || !hasCompletedScoring || visibleAITaskIds.isEmpty {
             return orderedTasks
         }
         return orderedTasks.filter { task in
