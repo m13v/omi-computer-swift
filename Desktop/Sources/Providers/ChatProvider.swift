@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import GRDB
 
 // MARK: - UserDefaults Extension for KVO
 
@@ -237,6 +238,8 @@ class ChatProvider: ObservableObject {
     private var goalsLoaded = false
     private var cachedAIProfile: String = ""
     private var aiProfileLoaded = false
+    private var cachedDatabaseSchema: String = ""
+    private var schemaLoaded = false
 
     // MARK: - Current Session ID
     var currentSessionId: String? {
@@ -589,6 +592,112 @@ class ChatProvider: ObservableObject {
         return "\n<ai_user_profile>\n\(cachedAIProfile)\n</ai_user_profile>"
     }
 
+    // MARK: - Load Database Schema
+
+    /// Queries sqlite_master to build an up-to-date schema description for the prompt
+    private func loadSchemaIfNeeded() async {
+        guard !schemaLoaded else { return }
+
+        guard let dbQueue = await RewindDatabase.shared.getDatabaseQueue() else {
+            log("ChatProvider: database not available for schema introspection")
+            schemaLoaded = true
+            return
+        }
+
+        do {
+            let tables = try await dbQueue.read { db -> [(name: String, sql: String)] in
+                let rows = try Row.fetchAll(db, sql: """
+                    SELECT name, sql FROM sqlite_master
+                    WHERE type='table' AND sql IS NOT NULL
+                    ORDER BY name
+                """)
+                return rows.compactMap { row -> (name: String, sql: String)? in
+                    guard let name: String = row["name"],
+                          let sql: String = row["sql"] else { return nil }
+                    return (name: name, sql: sql)
+                }
+            }
+
+            cachedDatabaseSchema = formatSchema(tables: tables)
+            schemaLoaded = true
+            log("ChatProvider loaded schema for \(tables.count) tables")
+        } catch {
+            logError("Failed to load database schema", error: error)
+            schemaLoaded = true
+        }
+    }
+
+    /// Formats raw DDL into a compact, LLM-friendly schema block
+    private func formatSchema(tables: [(name: String, sql: String)]) -> String {
+        var lines: [String] = ["**Database schema (omi.db):**", ""]
+
+        for (name, sql) in tables {
+            // Skip internal/FTS tables
+            if ChatPrompts.excludedTables.contains(name) { continue }
+            if ChatPrompts.excludedTablePrefixes.contains(where: { name.hasPrefix($0) }) { continue }
+
+            // Extract columns from CREATE TABLE statement
+            let columns = extractColumns(from: sql)
+            guard !columns.isEmpty else { continue }
+
+            // Table header with annotation
+            let annotation = ChatPrompts.tableAnnotations[name] ?? ""
+            let header = annotation.isEmpty ? name : "\(name) — \(annotation)"
+            lines.append(header)
+
+            // Columns as compact one-liner
+            lines.append("  \(columns.joined(separator: ", "))")
+            lines.append("")
+        }
+
+        // Append FTS table note
+        lines.append(ChatPrompts.schemaFooter)
+
+        return lines.joined(separator: "\n")
+    }
+
+    /// Extracts column definitions from a CREATE TABLE SQL statement
+    /// Produces compact representations like: "id INTEGER PRIMARY KEY", "name TEXT NOT NULL"
+    private func extractColumns(from sql: String) -> [String] {
+        // Find content between first ( and last )
+        guard let openParen = sql.firstIndex(of: "("),
+              let closeParen = sql.lastIndex(of: ")") else { return [] }
+
+        let body = String(sql[sql.index(after: openParen)..<closeParen])
+
+        // Split by commas, but respect parentheses (for REFERENCES(...) etc.)
+        var columns: [String] = []
+        var current = ""
+        var depth = 0
+        for char in body {
+            if char == "(" { depth += 1 }
+            else if char == ")" { depth -= 1 }
+
+            if char == "," && depth == 0 {
+                let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty { columns.append(trimmed) }
+                current = ""
+            } else {
+                current.append(char)
+            }
+        }
+        let trimmed = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty { columns.append(trimmed) }
+
+        // Filter out table constraints (UNIQUE, CHECK, FOREIGN KEY, etc.) — keep only column defs
+        return columns.filter { col in
+            let upper = col.uppercased().trimmingCharacters(in: .whitespaces)
+            return !upper.hasPrefix("UNIQUE") && !upper.hasPrefix("CHECK") &&
+                   !upper.hasPrefix("FOREIGN") && !upper.hasPrefix("CONSTRAINT") &&
+                   !upper.hasPrefix("PRIMARY KEY")
+        }.map { col in
+            // Normalize whitespace
+            col.components(separatedBy: .whitespacesAndNewlines)
+                .filter { !$0.isEmpty }
+                .joined(separator: " ")
+        }
+    }
+
     // MARK: - Fetch Context from Backend
 
     /// Fetches rich context (conversations + memories) from backend using LLM-based retrieval
@@ -634,12 +743,13 @@ class ChatProvider: ObservableObject {
         // Fall back to just memories if context is empty
         let contextSection = contextString.isEmpty ? formatMemoriesSection() : contextString
 
-        // Build base prompt with goals and AI profile
+        // Build base prompt with goals, AI profile, and dynamic schema
         var prompt = ChatPromptBuilder.buildDesktopChat(
             userName: userName,
             memoriesSection: contextSection,
             goalSection: formatGoalSection(),
-            aiProfileSection: formatAIProfileSection()
+            aiProfileSection: formatAIProfileSection(),
+            databaseSchema: cachedDatabaseSchema
         )
 
         // Append conversation history from Firestore (source of truth for cross-platform sync)
@@ -736,6 +846,7 @@ class ChatProvider: ObservableObject {
         await loadMemoriesIfNeeded()
         await loadGoalsIfNeeded()
         await loadAIProfileIfNeeded()
+        await loadSchemaIfNeeded()
     }
 
     /// Reinitialize after settings change
