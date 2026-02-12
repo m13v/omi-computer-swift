@@ -48,7 +48,7 @@ cp "$BINARY_PATH" "$APP_BUNDLE/Contents/MacOS/$BINARY_NAME"
 cp Desktop/Info.plist "$APP_BUNDLE/Contents/Info.plist"
 
 # Copy app icon
-cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+cp omi_icon.icns "$APP_BUNDLE/Contents/Resources/OmiIcon.icns"
 
 # Update Info.plist with actual values
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
