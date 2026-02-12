@@ -12,11 +12,15 @@ actor ClaudeAgentBridge {
     /// Callback for OMI tool calls that need Swift execution
     typealias ToolCallHandler = @Sendable (String, String, [String: Any]) async -> String
 
+    /// Callback for tool activity events (name, status: "started"/"completed")
+    typealias ToolActivityHandler = @Sendable (String, String) -> Void
+
     /// Inbound message types (Bridge → Swift, read from stdout)
     private enum InboundMessage {
         case `init`(sessionId: String)
         case textDelta(text: String)
         case toolUse(callId: String, name: String, input: [String: Any])
+        case toolActivity(name: String, status: String)
         case result(text: String, sessionId: String, costUsd: Double?)
         case error(message: String)
     }
@@ -141,7 +145,8 @@ actor ClaudeAgentBridge {
         prompt: String,
         systemPrompt: String,
         onTextDelta: @escaping TextDeltaHandler,
-        onToolCall: @escaping ToolCallHandler
+        onToolCall: @escaping ToolCallHandler,
+        onToolActivity: @escaping ToolActivityHandler
     ) async throws -> String {
         guard isRunning else {
             throw BridgeError.notRunning
@@ -186,6 +191,9 @@ actor ClaudeAgentBridge {
                 if let resultString = String(data: resultData, encoding: .utf8) {
                     sendLine(resultString)
                 }
+
+            case .toolActivity(let name, let status):
+                onToolActivity(name, status)
 
             case .result(let text, _, _):
                 return text
@@ -261,6 +269,11 @@ actor ClaudeAgentBridge {
             let name = dict["name"] as? String ?? ""
             let input = dict["input"] as? [String: Any] ?? [:]
             return .toolUse(callId: callId, name: name, input: input)
+
+        case "tool_activity":
+            let name = dict["name"] as? String ?? ""
+            let status = dict["status"] as? String ?? "started"
+            return .toolActivity(name: name, status: status)
 
         case "result":
             let text = dict["text"] as? String ?? ""
