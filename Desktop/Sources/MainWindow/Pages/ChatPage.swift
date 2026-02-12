@@ -633,10 +633,38 @@ struct ChatBubble: View {
             }
 
             VStack(alignment: message.sender == .user ? .trailing : .leading, spacing: 4) {
-                if message.isStreaming && message.text.isEmpty {
+                if message.isStreaming && message.text.isEmpty && message.contentBlocks.isEmpty {
                     // Show typing indicator for empty streaming message
                     TypingIndicator()
+                } else if message.sender == .ai && !message.contentBlocks.isEmpty {
+                    // Render structured content blocks (text interspersed with tool calls)
+                    ForEach(message.contentBlocks) { block in
+                        switch block {
+                        case .text(_, let text):
+                            if !text.isEmpty {
+                                Markdown(text)
+                                    .markdownTheme(.aiMessage)
+                                    .textSelection(.enabled)
+                                    .if_available_writingToolsNone()
+                                    .padding(.horizontal, 14)
+                                    .padding(.vertical, 10)
+                                    .background(OmiColors.backgroundSecondary)
+                                    .cornerRadius(18)
+                            }
+                        case .toolCall(_, let name, let status):
+                            ToolCallIndicator(name: name, status: status)
+                        }
+                    }
+                    // Show typing indicator at end if still streaming
+                    if message.isStreaming {
+                        if case .toolCall(_, _, .running) = message.contentBlocks.last {
+                            // Tool is running — indicator already shows spinner
+                        } else if case .text(_, let lastText) = message.contentBlocks.last, lastText.isEmpty {
+                            TypingIndicator()
+                        }
+                    }
                 } else {
+                    // User messages or AI messages without content blocks (loaded from Firestore)
                     Markdown(message.text)
                         .markdownTheme(message.sender == .user ? .userMessage : .aiMessage)
                         .textSelection(.enabled)
@@ -714,6 +742,35 @@ struct ChatBubble: View {
             .buttonStyle(.plain)
             .help("Not helpful")
         }
+    }
+}
+
+// MARK: - Tool Call Indicator
+
+struct ToolCallIndicator: View {
+    let name: String
+    let status: ToolCallStatus
+
+    var body: some View {
+        HStack(spacing: 6) {
+            if status == .running {
+                ProgressView()
+                    .controlSize(.mini)
+                    .frame(width: 12, height: 12)
+            } else {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundColor(.green)
+            }
+
+            Text(ChatContentBlock.displayName(for: name))
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundColor(OmiColors.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(OmiColors.backgroundTertiary.opacity(0.5))
+        .cornerRadius(8)
     }
 }
 
