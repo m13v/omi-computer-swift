@@ -196,6 +196,18 @@ ABOUT OMI (for answering questions):
         // All data collected but didn't call complete_onboarding
         needsCorrection = true;
         correctionPrompt = 'SYSTEM: All required fields are collected (name, motivation, use_case, job). You MUST call complete_onboarding tool now with a welcome message.';
+      } else if (hasSaveField && !allRequiredCollected && !hasSuggestReplies && isUserResponse) {
+        // Saved data but didn't ask the next question - this is the current bug!
+        needsCorrection = true;
+        if (needsMotivation) {
+          correctionPrompt = 'SYSTEM: You called save_field for name. Good! Now you MUST ask for MOTIVATION with suggest_replies. Don\'t just acknowledge - ask the question with suggestions.';
+        } else if (needsUseCase) {
+          correctionPrompt = 'SYSTEM: You called save_field for motivation. Good! Now you MUST ask for USE_CASE with suggest_replies. Don\'t just acknowledge - ask the question with suggestions.';
+        } else if (needsJob) {
+          correctionPrompt = 'SYSTEM: You called save_field for use_case. Good! Now you MUST ask for JOB with suggest_replies. Don\'t just acknowledge - ask the question with suggestions.';
+        } else if (needsCompany) {
+          correctionPrompt = 'SYSTEM: You called save_field for job. Good! Now you MUST ask for COMPANY with suggest_replies (include "Skip" option). Don\'t just acknowledge - ask the question with suggestions.';
+        }
       } else if (isUserResponse && !allRequiredCollected && !hasSaveField && !isAskingQuestion && !hasCompleteOnboarding) {
         // User responded but we didn't save the data and didn't ask a follow-up question
         needsCorrection = true;
