@@ -92,7 +92,12 @@ final class UpdaterViewModel: ObservableObject {
     @Published private(set) var canCheckForUpdates: Bool = true
 
     /// Whether Sparkle has an active update session (downloading, installing, etc.)
-    @Published private(set) var updateSessionInProgress: Bool = false
+    @Published private(set) var updateSessionInProgress: Bool = false {
+        didSet { UpdaterViewModel._isUpdateInProgress = updateSessionInProgress }
+    }
+
+    /// Nonisolated snapshot for cross-actor reads
+    private nonisolated(unsafe) static var _isUpdateInProgress: Bool = false
 
     /// Whether a new update is available (set by delegate callbacks)
     @Published var updateAvailable: Bool = false
@@ -133,8 +138,8 @@ final class UpdaterViewModel: ObservableObject {
     }
 
     /// Quick check if Sparkle is mid-update (safe to call from anywhere)
-    static var isUpdateInProgress: Bool {
-        shared.updateSessionInProgress
+    nonisolated static var isUpdateInProgress: Bool {
+        _isUpdateInProgress
     }
 
     /// Manually check for updates
