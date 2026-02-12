@@ -16,6 +16,12 @@ actor RewindDatabase {
     /// Path to the running flag file (used to detect unclean shutdown)
     private var runningFlagPath: String?
 
+    /// The user ID this database is configured for
+    private var configuredUserId: String?
+
+    /// Static user ID for nonisolated markCleanShutdown (set by configure(userId:))
+    nonisolated(unsafe) static var currentUserId: String?
+
     // MARK: - Initialization
 
     private init() {}
@@ -28,12 +34,55 @@ actor RewindDatabase {
         return dbQueue
     }
 
+    /// Configure the database for a specific user. Must be called before initialize().
+    func configure(userId: String?) {
+        let resolvedId = (userId?.isEmpty == false) ? userId! : "anonymous"
+        configuredUserId = resolvedId
+        RewindDatabase.currentUserId = resolvedId
+        log("RewindDatabase: Configured for user \(resolvedId)")
+    }
+
+    /// Close the database, allowing re-initialization for a different user.
+    func close() {
+        dbQueue = nil
+        initializationTask = nil
+        runningFlagPath = nil
+        log("RewindDatabase: Closed database")
+    }
+
+    /// Switch to a different user's database.
+    func switchUser(to userId: String?) async throws {
+        close()
+        configure(userId: userId)
+        try await initialize()
+    }
+
+    /// Returns the per-user base directory: ~/Library/Application Support/Omi/users/{userId}/
+    private func userBaseDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let userId = configuredUserId ?? "anonymous"
+        return appSupport
+            .appendingPathComponent("Omi", isDirectory: true)
+            .appendingPathComponent("users", isDirectory: true)
+            .appendingPathComponent(userId, isDirectory: true)
+    }
+
+    /// Static version of userBaseDirectory for nonisolated markCleanShutdown
+    private static func staticUserBaseDirectory() -> URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let userId = currentUserId ?? "anonymous"
+        return appSupport
+            .appendingPathComponent("Omi", isDirectory: true)
+            .appendingPathComponent("users", isDirectory: true)
+            .appendingPathComponent(userId, isDirectory: true)
+    }
+
     /// Mark a clean shutdown by removing the running flag file.
     /// Call from applicationWillTerminate to avoid unnecessary integrity checks on next launch.
     /// This is nonisolated so it can be called synchronously from the main thread during termination.
     nonisolated static func markCleanShutdown() {
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let flagPath = appSupport.appendingPathComponent("Omi", isDirectory: true).appendingPathComponent(".omi_running").path
+        let userDir = staticUserBaseDirectory()
+        let flagPath = userDir.appendingPathComponent(".omi_running").path
         try? FileManager.default.removeItem(atPath: flagPath)
         log("RewindDatabase: Clean shutdown flagged")
     }
@@ -70,11 +119,13 @@ actor RewindDatabase {
     private func performInitialization() async throws {
         guard dbQueue == nil else { return }
 
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let omiDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
+        let omiDir = userBaseDirectory()
 
-        // Create directory if needed
+        // Create directory if needed (withIntermediateDirectories creates parents too)
         try FileManager.default.createDirectory(at: omiDir, withIntermediateDirectories: true)
+
+        // Migrate data from legacy path if this is first launch with per-user paths
+        migrateFromLegacyPathIfNeeded(to: omiDir)
 
         let dbPath = omiDir.appendingPathComponent("omi.db").path
         let flagPath = omiDir.appendingPathComponent(".omi_running").path
@@ -146,6 +197,51 @@ actor RewindDatabase {
         FileManager.default.createFile(atPath: flagPath, contents: nil)
 
         log("RewindDatabase: Initialized successfully")
+    }
+
+    // MARK: - Legacy Migration
+
+    /// Migrate data from the legacy shared path (Omi/) to the per-user path (Omi/users/{userId}/).
+    /// Only runs if the legacy DB exists and the per-user DB does not yet exist.
+    private func migrateFromLegacyPathIfNeeded(to userDir: URL) {
+        let fileManager = FileManager.default
+        let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let legacyDir = appSupport.appendingPathComponent("Omi", isDirectory: true)
+        let legacyDB = legacyDir.appendingPathComponent("omi.db")
+        let userDB = userDir.appendingPathComponent("omi.db")
+
+        // Only migrate if legacy DB exists and per-user DB does not
+        guard fileManager.fileExists(atPath: legacyDB.path),
+              !fileManager.fileExists(atPath: userDB.path) else {
+            return
+        }
+
+        log("RewindDatabase: Migrating legacy data from \(legacyDir.path) to \(userDir.path)")
+
+        // Items to migrate: omi.db (+ WAL/SHM), Screenshots/, Videos/, .omi_running, backups/
+        let itemsToMove: [(String, Bool)] = [  // (name, isDirectory)
+            ("omi.db", false),
+            ("omi.db-wal", false),
+            ("omi.db-shm", false),
+            (".omi_running", false),
+            ("Screenshots", true),
+            ("Videos", true),
+            ("backups", true),
+        ]
+
+        for (name, _) in itemsToMove {
+            let source = legacyDir.appendingPathComponent(name)
+            let dest = userDir.appendingPathComponent(name)
+            guard fileManager.fileExists(atPath: source.path) else { continue }
+            do {
+                try fileManager.moveItem(at: source, to: dest)
+                log("RewindDatabase: Migrated \(name)")
+            } catch {
+                log("RewindDatabase: Failed to migrate \(name): \(error.localizedDescription)")
+            }
+        }
+
+        log("RewindDatabase: Legacy migration complete")
     }
 
     // MARK: - Corruption Detection & Recovery
