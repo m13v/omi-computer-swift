@@ -65,6 +65,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     let fullText = "";
     let costUsd = 0;
 
+    // Track pending tool calls so we can mark them completed when new text arrives
+    const pendingTools: string[] = [];
+
     const q = query({ prompt: msg.prompt, options: options as any });
 
     for await (const message of q) {
@@ -80,10 +83,28 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 
         case "stream_event": {
           const event = (message as any).event;
+
+          // Detect tool_use start from streaming (before assistant message)
+          if (
+            event?.type === "content_block_start" &&
+            event.content_block?.type === "tool_use"
+          ) {
+            const name = event.content_block.name as string;
+            pendingTools.push(name);
+            send({ type: "tool_activity", name, status: "started" });
+          }
+
+          // Text deltas — if tools were pending, they're now complete
           if (
             event?.type === "content_block_delta" &&
             event.delta?.type === "text_delta"
           ) {
+            if (pendingTools.length > 0) {
+              for (const name of pendingTools) {
+                send({ type: "tool_activity", name, status: "completed" });
+              }
+              pendingTools.length = 0;
+            }
             const text = event.delta.text as string;
             fullText += text;
             send({ type: "text_delta", text });
@@ -109,6 +130,12 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         }
 
         case "result": {
+          // Mark any remaining pending tools as completed
+          for (const name of pendingTools) {
+            send({ type: "tool_activity", name, status: "completed" });
+          }
+          pendingTools.length = 0;
+
           const result = message as any;
           if (result.subtype === "success") {
             costUsd = result.total_cost_usd || 0;
