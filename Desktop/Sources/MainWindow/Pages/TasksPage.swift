@@ -1137,7 +1137,8 @@ class TasksViewModel: ObservableObject {
             displayTasks = sorted
         }
 
-        // Compute categorizedTasks for category view
+        // Deduplicate and compute categorizedTasks for category view
+        displayTasks = deduplicateById(displayTasks)
         var result: [TaskCategory: [TaskActionItem]] = [:]
         for category in TaskCategory.allCases {
             result[category] = []
@@ -1163,7 +1164,7 @@ class TasksViewModel: ObservableObject {
             capped.append(contentsOf: missingAllowlisted)
         }
 
-        displayTasks = capped
+        displayTasks = deduplicateById(capped)
         hasMoreFilteredResults = allFilteredDisplayTasks.count > displayLimit
 
         // Recompute categorized tasks
@@ -1176,6 +1177,12 @@ class TasksViewModel: ObservableObject {
             result[category, default: []].append(task)
         }
         categorizedTasks = result
+    }
+
+    /// Remove duplicate tasks by ID, keeping the first occurrence
+    private func deduplicateById(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+        var seen = Set<String>()
+        return tasks.filter { seen.insert($0.id).inserted }
     }
 
     /// Apply only status filters (todo/done/deleted)
