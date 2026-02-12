@@ -32,6 +32,8 @@ struct OnboardingView: View {
     @State private var selectedLanguage: String = "en"
     @State private var autoDetectEnabled: Bool = false
 
+    // State for chat onboarding completion
+    @State private var chatCompleted: Bool = false
 
     var body: some View {
         ZStack {
@@ -189,7 +191,7 @@ struct OnboardingView: View {
     private var currentPermissionGranted: Bool {
         switch currentStep {
         case 0: return true // Video step - always valid
-        case 2: return true // Chat step - always valid (has skip option)
+        case 2: return chatCompleted // Chat step - valid only when completed
         case 3: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
         case 4: return true // Language step - always valid (has default)
         case 5: return appState.hasNotificationPermission
@@ -271,7 +273,7 @@ struct OnboardingView: View {
         switch step {
         case 0: return true // Video - always "granted"
         case 1: return true // Welcome - always "granted"
-        case 2: return true // Chat - always "granted" (has skip option)
+        case 2: return chatCompleted // Chat - granted only when completed
         case 3: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step
         case 4: return true // Language step - always "granted" (has default)
         case 5: return appState.hasNotificationPermission
@@ -303,6 +305,9 @@ struct OnboardingView: View {
                     handleChatComplete(responses)
                 },
                 onSkip: {
+                    log("OnboardingView: User skipped chat onboarding")
+                    chatCompleted = true
+                    AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Chat")
                     currentStep += 1
                 }
             )
@@ -1397,12 +1402,24 @@ struct OnboardingView: View {
 
     private func handleChatComplete(_ responses: [String: String]) {
         log("OnboardingView: Chat completed with \(responses.count) responses")
-        AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Chat")
+
+        // Mark chat as completed (for checkpoint tracking)
+        chatCompleted = true
 
         // Store chat responses for future use (e.g., personalization)
         for (key, value) in responses {
             UserDefaults.standard.set(value, forKey: "onboarding_\(key)")
         }
+
+        // Log analytics
+        AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Chat")
+
+        // Log collected data for verification
+        log("Collected onboarding data:")
+        log("  - motivation: \(responses["motivation"] ?? "not provided")")
+        log("  - use_case: \(responses["use_case"] ?? "not provided")")
+        log("  - job: \(responses["job"] ?? "not provided")")
+        log("  - company: \(responses["company"] ?? "not provided")")
 
         currentStep += 1
     }
