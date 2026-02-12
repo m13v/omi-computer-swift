@@ -108,7 +108,7 @@ echo "OMI_API_URL=$TUNNEL_URL" >> "$APP_BUNDLE/Contents/Resources/.env"
 echo "Using backend: $TUNNEL_URL"
 
 # Copy app icon
-cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/AppIcon.icns"
+cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/OmiIcon.icns"
 
 # Create PkgInfo
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
