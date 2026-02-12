@@ -137,28 +137,110 @@ ABOUT OMI (for answering questions):
     ];
 
     // Call Anthropic API with conversation history
-    const message = await anthropic.messages.create({
-      model: 'claude-opus-4-6',
-      max_tokens: 1024,
-      system: systemMessage,
-      messages: messages,
-      tools: tools,
-    });
+    let currentMessages = [...messages];
+    let attempts = 0;
+    const maxAttempts = 3;
+    let finalResponse = null;
 
-    // Extract response text and tool calls
-    const textBlocks = message.content.filter(block => block.type === 'text');
-    const toolUses = message.content.filter(block => block.type === 'tool_use');
+    while (attempts < maxAttempts) {
+      attempts++;
 
-    const responseText = textBlocks.map(block => block.text).join('\n');
+      const message = await anthropic.messages.create({
+        model: 'claude-opus-4-6',
+        max_tokens: 1024,
+        system: systemMessage,
+        messages: currentMessages,
+        tools: tools,
+      });
+
+      // Extract response text and tool calls
+      const textBlocks = message.content.filter(block => block.type === 'text');
+      const toolUses = message.content.filter(block => block.type === 'tool_use');
+      const responseText = textBlocks.map(block => block.text).join('\n');
+
+      // Check what data is still needed
+      const needsMotivation = !collected_data?.motivation;
+      const needsUseCase = !collected_data?.use_case;
+      const needsJob = !collected_data?.job;
+      const needsCompany = !collected_data?.company;
+      const allRequiredCollected = collected_data?.motivation && collected_data?.use_case && collected_data?.job;
+
+      // Verify Claude is doing the right thing
+      const hasSaveField = toolUses.some(t => t.name === 'save_field');
+      const hasSuggestReplies = toolUses.some(t => t.name === 'suggest_replies');
+      const hasCompleteOnboarding = toolUses.some(t => t.name === 'complete_onboarding');
+
+      // Check if response is appropriate for current state
+      let needsCorrection = false;
+      let correctionPrompt = '';
+
+      if (allRequiredCollected && !hasCompleteOnboarding) {
+        // All data collected but didn't call complete_onboarding
+        needsCorrection = true;
+        correctionPrompt = 'SYSTEM: All required fields are collected (motivation, use_case, job). You MUST call complete_onboarding tool now.';
+      } else if (!allRequiredCollected && !hasSuggestReplies && currentMessages.length > 1) {
+        // Didn't provide suggestions when asking a question (only check after first message)
+        needsCorrection = true;
+        correctionPrompt = 'SYSTEM: When asking questions to collect data, you MUST use suggest_replies tool to provide options. Ask the next question with suggestions.';
+      } else if (currentMessages.length > 1 && !responseText.includes('?') && !hasSaveField && !hasCompleteOnboarding) {
+        // Didn't ask a question or save data or complete - just acknowledged
+        needsCorrection = true;
+        if (needsMotivation) {
+          correctionPrompt = 'SYSTEM: You must ask about their MOTIVATION (why they\'re using Omi) with suggest_replies. Don\'t just acknowledge - ask the question.';
+        } else if (needsUseCase) {
+          correctionPrompt = 'SYSTEM: You must ask about their USE CASE (what kind of work) with suggest_replies. Don\'t just acknowledge - ask the next question.';
+        } else if (needsJob) {
+          correctionPrompt = 'SYSTEM: You must ask about their JOB/ROLE with suggest_replies. Don\'t just acknowledge - ask the next question.';
+        } else if (needsCompany) {
+          correctionPrompt = 'SYSTEM: You must ask about their COMPANY with suggest_replies (include "Skip" option). Don\'t just acknowledge - ask the next question.';
+        }
+      }
+
+      if (needsCorrection && attempts < maxAttempts) {
+        console.log(`Attempt ${attempts}: Response needs correction. Re-prompting...`);
+
+        // Add assistant's response to conversation
+        currentMessages.push({
+          role: 'assistant',
+          content: message.content,
+        });
+
+        // Add correction prompt
+        currentMessages.push({
+          role: 'user',
+          content: correctionPrompt,
+        });
+
+        // Loop will retry
+        continue;
+      } else {
+        // Response is good or we've hit max attempts
+        finalResponse = {
+          responseText,
+          toolUses,
+          stopReason: message.stop_reason,
+        };
+        break;
+      }
+    }
+
+    if (!finalResponse) {
+      // Shouldn't happen, but fallback
+      finalResponse = {
+        responseText: 'Let me help you get started with Omi!',
+        toolUses: [],
+        stopReason: 'end_turn',
+      };
+    }
 
     res.json({
       success: true,
-      response: responseText,
-      tool_calls: toolUses.map(tool => ({
+      response: finalResponse.responseText,
+      tool_calls: finalResponse.toolUses.map(tool => ({
         name: tool.name,
         input: tool.input,
       })),
-      stop_reason: message.stop_reason,
+      stop_reason: finalResponse.stopReason,
     });
   } catch (error) {
     console.error('Agent chat error:', error);
