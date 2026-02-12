@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.6.3",
+      "date": "2026-02-12",
+      "changes": [
+        "Smarter chat: your goals, AI profile, and memories now included in context",
+        "Better task extraction: ignores messaging sidebars and list views",
+        "Task suggestions now based on your completed task patterns",
+        "Fixed task allowlist not loading on fresh login"
+      ]
+    },
+    {
       "version": "0.6.2",
       "date": "2026-02-12",
       "changes": [
