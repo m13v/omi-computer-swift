@@ -6,6 +6,12 @@ actor ClaudeAgentBridge {
 
     // MARK: - Types
 
+    /// Result from a query
+    struct QueryResult {
+        let text: String
+        let costUsd: Double
+    }
+
     /// Callback for streaming text deltas
     typealias TextDeltaHandler = @Sendable (String) -> Void
 
@@ -140,14 +146,14 @@ actor ClaudeAgentBridge {
     ///   - systemPrompt: System prompt with context and conversation history
     ///   - onTextDelta: Called for each streaming text chunk
     ///   - onToolCall: Called when an OMI tool needs Swift execution
-    /// - Returns: Final complete response text
+    /// - Returns: Query result with response text and cost
     func query(
         prompt: String,
         systemPrompt: String,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler,
         onToolActivity: @escaping ToolActivityHandler
-    ) async throws -> String {
+    ) async throws -> QueryResult {
         guard isRunning else {
             throw BridgeError.notRunning
         }
@@ -195,8 +201,8 @@ actor ClaudeAgentBridge {
             case .toolActivity(let name, let status):
                 onToolActivity(name, status)
 
-            case .result(let text, _, _):
-                return text
+            case .result(let text, _, let costUsd):
+                return QueryResult(text: text, costUsd: costUsd ?? 0)
 
             case .error(let message):
                 throw BridgeError.agentError(message)
