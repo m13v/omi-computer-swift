@@ -447,6 +447,50 @@ class AnalyticsManager {
         PostHogManager.shared.track("session_renamed", properties: [:])
     }
 
+    // MARK: - Claude Agent Events
+
+    /// Track when a Claude agent query completes (one full send → response cycle)
+    func chatAgentQueryCompleted(
+        durationMs: Int,
+        toolCallCount: Int,
+        toolNames: [String],
+        costUsd: Double,
+        messageLength: Int
+    ) {
+        let props: [String: Any] = [
+            "duration_ms": durationMs,
+            "tool_call_count": toolCallCount,
+            "tool_names": toolNames.joined(separator: ","),
+            "cost_usd": costUsd,
+            "response_length": messageLength
+        ]
+        MixpanelManager.shared.track("Chat Agent Query Completed", properties: props.compactMapValues { $0 as? MixpanelType })
+        PostHogManager.shared.track("chat_agent_query_completed", properties: props)
+    }
+
+    /// Track individual tool calls made by the Claude agent
+    func chatToolCallCompleted(toolName: String, durationMs: Int) {
+        let cleanName: String
+        if toolName.hasPrefix("mcp__") {
+            cleanName = String(toolName.split(separator: "__").last ?? Substring(toolName))
+        } else {
+            cleanName = toolName
+        }
+        let props: [String: Any] = [
+            "tool_name": cleanName,
+            "duration_ms": durationMs
+        ]
+        MixpanelManager.shared.track("Chat Tool Call Completed", properties: props.compactMapValues { $0 as? MixpanelType })
+        PostHogManager.shared.track("chat_tool_call_completed", properties: props)
+    }
+
+    /// Track when the Claude agent bridge fails to start or errors
+    func chatAgentError(error: String) {
+        let props: [String: Any] = ["error": error]
+        MixpanelManager.shared.track("Chat Agent Error", properties: props.compactMapValues { $0 as? MixpanelType })
+        PostHogManager.shared.track("chat_agent_error", properties: props)
+    }
+
     // MARK: - Conversation Events (Additional)
 
     func conversationReprocessed(conversationId: String, appId: String) {
