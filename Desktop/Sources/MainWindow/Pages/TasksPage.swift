@@ -183,6 +183,10 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
             } else {
                 return task.createdAt >= sevenDaysAgo
             }
+        case .topScoredOnly:
+            // Filter to manual tasks OR tasks in the allowlist
+            // Note: This requires accessing TasksStore.shared - may need refactoring
+            return task.source == "manual" || TasksStore.shared.visibleAITaskIds.contains(task.id)
         case .personal: return task.tags.contains("personal")
         case .work: return task.tags.contains("work")
         case .feature: return task.tags.contains("feature")
@@ -452,10 +456,20 @@ class TasksViewModel: ObservableObject {
 
 
     // Filter tags (Memories-style dropdown)
-    @Published var selectedTags: Set<TaskFilterTag> = [.todo] {
+    // Default to .todo and .topScoredOnly to match store.showAllTasks = false
+    @Published var selectedTags: Set<TaskFilterTag> = [.todo, .topScoredOnly] {
         didSet {
             // Reset display limit when filters change
             displayLimit = 100
+
+            // Sync topScoredOnly filter with store.showAllTasks
+            let hasTopScoredFilter = selectedTags.contains(.topScoredOnly)
+            if hasTopScoredFilter != !store.showAllTasks {
+                // When topScoredOnly is selected, showAllTasks should be false
+                // When topScoredOnly is not selected, showAllTasks should be true
+                store.showAllTasks = !hasTopScoredFilter
+            }
+
             // Map status tags to showCompleted for server-side loading
             let hasStatusFilter = selectedTags.contains(where: { $0.group == .status })
             if hasStatusFilter {
@@ -1114,9 +1128,10 @@ class TasksViewModel: ObservableObject {
             filteredTasks = applyTagFilters(sourceTasks)
         }
 
-        // Ensure allowlisted tasks survive date filters — they were carefully
-        // selected by prioritization and should always be visible regardless of date.
-        if hasDateFilters && store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
+        // Ensure allowlisted tasks survive date filters — EXCEPT for .last7Days filter,
+        // which is an explicit user choice to see only recent tasks.
+        let hasLast7DaysFilter = selectedTags.contains(.last7Days)
+        if hasDateFilters && !hasLast7DaysFilter && store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
             let filteredIds = Set(filteredTasks.map { $0.id })
             let missingAllowlisted = sourceTasks.filter {
                 store.visibleAITaskIds.contains($0.id) && !filteredIds.contains($0.id)
