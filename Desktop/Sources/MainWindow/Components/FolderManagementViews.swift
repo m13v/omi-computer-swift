@@ -34,8 +34,7 @@ struct FolderTabsStrip: View {
                 folderTab(
                     label: "All",
                     icon: "tray.2",
-                    isSelected: appState.selectedFolderId == nil && !appState.showStarredOnly,
-                    color: nil
+                    isSelected: appState.selectedFolderId == nil && !appState.showStarredOnly
                 ) {
                     Task {
                         isFilteringFolder = true
@@ -51,8 +50,7 @@ struct FolderTabsStrip: View {
                 folderTab(
                     label: "Starred",
                     icon: appState.showStarredOnly ? "star.fill" : "star",
-                    isSelected: appState.showStarredOnly,
-                    color: appState.showStarredOnly ? OmiColors.amber : nil
+                    isSelected: appState.showStarredOnly
                 ) {
                     Task {
                         isFilteringFolder = true
@@ -67,8 +65,7 @@ struct FolderTabsStrip: View {
                     folderTab(
                         label: folder.name,
                         icon: nil,
-                        isSelected: isSelected,
-                        color: Color(hex: folder.color) ?? OmiColors.textTertiary
+                        isSelected: isSelected
                     ) {
                         Task {
                             isFilteringFolder = true
@@ -117,7 +114,6 @@ struct FolderTabsStrip: View {
         label: String,
         icon: String?,
         isSelected: Bool,
-        color: Color?,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
@@ -125,25 +121,21 @@ struct FolderTabsStrip: View {
                 if let icon = icon {
                     Image(systemName: icon)
                         .font(.system(size: 11))
-                } else if let color = color {
-                    Circle()
-                        .fill(color)
-                        .frame(width: 8, height: 8)
                 }
                 Text(label)
                     .font(.system(size: 12, weight: .medium))
                     .lineLimit(1)
             }
-            .foregroundColor(isSelected ? (color ?? OmiColors.textPrimary) : OmiColors.textSecondary)
+            .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? (color ?? OmiColors.textPrimary).opacity(0.12) : OmiColors.backgroundTertiary.opacity(0.6))
+                    .fill(isSelected ? OmiColors.textPrimary.opacity(0.12) : OmiColors.backgroundTertiary.opacity(0.6))
             )
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
-                    .stroke(isSelected ? (color ?? OmiColors.textPrimary).opacity(0.3) : Color.clear, lineWidth: 1)
+                    .stroke(isSelected ? OmiColors.textPrimary.opacity(0.3) : Color.clear, lineWidth: 1)
             )
         }
         .buttonStyle(.plain)
