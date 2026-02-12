@@ -1599,6 +1599,11 @@ class AppState: ObservableObject {
 
     /// Restart the app by launching a new instance and terminating the current one
     nonisolated func restartApp() {
+        if UpdaterViewModel.isUpdateInProgress {
+            log("Sparkle update in progress, skipping independent restart (Sparkle will handle relaunch)")
+            return
+        }
+
         log("Restarting app...")
 
         guard let bundleURL = Bundle.main.bundleURL as URL? else {
