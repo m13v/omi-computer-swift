@@ -56,6 +56,51 @@ struct ChatSession: Identifiable, Codable, Equatable {
     }
 }
 
+// MARK: - Content Block Model
+
+/// A block of content within an AI message (text or tool call indicator)
+enum ChatContentBlock: Identifiable {
+    case text(id: String, text: String)
+    case toolCall(id: String, name: String, status: ToolCallStatus)
+
+    var id: String {
+        switch self {
+        case .text(let id, _): return id
+        case .toolCall(let id, _, _): return id
+        }
+    }
+
+    /// Human-friendly display name for a tool
+    static func displayName(for toolName: String) -> String {
+        // Strip MCP prefix (e.g., "mcp__omi-tools__execute_sql" → "execute_sql")
+        let cleanName: String
+        if toolName.hasPrefix("mcp__") {
+            cleanName = String(toolName.split(separator: "__").last ?? Substring(toolName))
+        } else {
+            cleanName = toolName
+        }
+
+        switch cleanName {
+        case "execute_sql": return "Querying database"
+        case "semantic_search": return "Searching conversations"
+        case "Read": return "Reading file"
+        case "Write": return "Writing file"
+        case "Edit": return "Editing file"
+        case "Bash": return "Running command"
+        case "Grep": return "Searching code"
+        case "Glob": return "Finding files"
+        case "WebSearch": return "Searching the web"
+        case "WebFetch": return "Fetching page"
+        default: return "Using \(cleanName)"
+        }
+    }
+}
+
+enum ToolCallStatus {
+    case running
+    case completed
+}
+
 // MARK: - Chat Message Model
 
 /// A single chat message
@@ -71,8 +116,10 @@ struct ChatMessage: Identifiable {
     var isSynced: Bool
     /// Citations extracted from the AI response
     var citations: [Citation]
+    /// Structured content blocks for AI messages (text interspersed with tool calls)
+    var contentBlocks: [ChatContentBlock]
 
-    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil, isSynced: Bool = false, citations: [Citation] = []) {
+    init(id: String = UUID().uuidString, text: String, createdAt: Date = Date(), sender: ChatSender, isStreaming: Bool = false, rating: Int? = nil, isSynced: Bool = false, citations: [Citation] = [], contentBlocks: [ChatContentBlock] = []) {
         self.id = id
         self.text = text
         self.createdAt = createdAt
@@ -81,6 +128,7 @@ struct ChatMessage: Identifiable {
         self.rating = rating
         self.isSynced = isSynced
         self.citations = citations
+        self.contentBlocks = contentBlocks
     }
 }
 
@@ -767,6 +815,15 @@ class ChatProvider: ObservableObject {
                     let result = await ChatToolExecutor.execute(toolCall)
                     log("OMI tool \(name) executed for callId=\(callId)")
                     return result
+                },
+                onToolActivity: { [weak self] name, status in
+                    Task { @MainActor [weak self] in
+                        self?.addToolActivity(
+                            messageId: aiMessageId,
+                            toolName: name,
+                            status: status == "started" ? .running : .completed
+                        )
+                    }
                 }
             )
 
@@ -876,10 +933,37 @@ class ChatProvider: ObservableObject {
         }
     }
 
-    /// Append text to a streaming message
+    /// Append text to a streaming message, updating content blocks for visual separation
     private func appendToMessage(id: String, text: String) {
-        if let index = messages.firstIndex(where: { $0.id == id }) {
-            messages[index].text += text
+        guard let index = messages.firstIndex(where: { $0.id == id }) else { return }
+        messages[index].text += text
+
+        // Update content blocks: append to last text block, or create new one after tool calls
+        if let lastBlockIndex = messages[index].contentBlocks.indices.last,
+           case .text(let blockId, let existing) = messages[index].contentBlocks[lastBlockIndex] {
+            messages[index].contentBlocks[lastBlockIndex] = .text(id: blockId, text: existing + text)
+        } else {
+            messages[index].contentBlocks.append(.text(id: UUID().uuidString, text: text))
+        }
+    }
+
+    /// Add a tool call indicator to a streaming message
+    private func addToolActivity(messageId: String, toolName: String, status: ToolCallStatus) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+
+        if status == .running {
+            messages[index].contentBlocks.append(
+                .toolCall(id: UUID().uuidString, name: toolName, status: .running)
+            )
+        } else {
+            // Find and update the most recent tool call with this name
+            for i in stride(from: messages[index].contentBlocks.count - 1, through: 0, by: -1) {
+                if case .toolCall(let id, let name, .running) = messages[index].contentBlocks[i],
+                   name == toolName {
+                    messages[index].contentBlocks[i] = .toolCall(id: id, name: name, status: .completed)
+                    break
+                }
+            }
         }
     }
 
