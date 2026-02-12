@@ -655,6 +655,12 @@ struct GeminiToolChatRequest: Encodable {
             self.functionCall = nil
             self.functionResponse = functionResponse
         }
+
+        init(functionCall: FunctionCallPart) {
+            self.text = nil
+            self.functionCall = functionCall
+            self.functionResponse = nil
+        }
     }
 
     struct FunctionCallPart: Encodable {
@@ -695,6 +701,8 @@ struct ToolChatResult {
     let text: String
     let toolCalls: [ToolCall]
     let requiresToolExecution: Bool
+    /// Accumulated conversation contents for multi-turn tool loops
+    var contents: [GeminiToolChatRequest.Content]?
 }
 
 /// A function call from the model
@@ -831,24 +839,33 @@ extension GeminiClient {
         return ToolChatResult(
             text: textResponse,
             toolCalls: toolCalls,
-            requiresToolExecution: !toolCalls.isEmpty
+            requiresToolExecution: !toolCalls.isEmpty,
+            contents: contents
         )
     }
 
     /// Continue a conversation after executing tools
+    /// Returns ToolChatResult so the caller can check if more tool calls are needed (multi-turn loop)
     func continueWithToolResults(
-        originalMessages: [ChatMessage],
+        previousContents: [GeminiToolChatRequest.Content],
         toolCalls: [ToolCall],
         toolResults: [String: String],
-        systemPrompt: String
-    ) async throws -> String {
-        // Build contents with original messages
-        var contents = originalMessages.map { message in
-            GeminiToolChatRequest.Content(
-                role: message.role,
-                parts: [GeminiToolChatRequest.Part(text: message.text)]
-            )
+        systemPrompt: String,
+        tools: [GeminiTool]? = nil
+    ) async throws -> ToolChatResult {
+        var contents = previousContents
+
+        // Add the model's function call as a model turn
+        var functionCallParts: [GeminiToolChatRequest.Part] = []
+        for call in toolCalls {
+            functionCallParts.append(GeminiToolChatRequest.Part(
+                functionCall: GeminiToolChatRequest.FunctionCallPart(
+                    name: call.name,
+                    args: call.arguments.mapValues { "\($0)" }
+                )
+            ))
         }
+        contents.append(GeminiToolChatRequest.Content(role: "model", parts: functionCallParts))
 
         // Add function responses
         for call in toolCalls {
@@ -873,7 +890,7 @@ extension GeminiClient {
                 temperature: 0.7,
                 maxOutputTokens: 8192
             ),
-            tools: nil  // No tools for continuation
+            tools: tools
         )
 
         let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
@@ -891,11 +908,31 @@ extension GeminiClient {
             throw GeminiClientError.apiError(error.message)
         }
 
-        guard let text = response.candidates?.first?.content?.parts?.first?.text else {
+        guard let candidate = response.candidates?.first,
+              let parts = candidate.content?.parts else {
             throw GeminiClientError.invalidResponse
         }
 
-        return text
+        // Check for more function calls or text
+        var newToolCalls: [ToolCall] = []
+        var textResponse = ""
+
+        for part in parts {
+            if let functionCall = part.functionCall {
+                let args = functionCall.args?.mapValues { $0.value } ?? [:]
+                newToolCalls.append(ToolCall(name: functionCall.name, arguments: args, thoughtSignature: part.thoughtSignature))
+            }
+            if let text = part.text {
+                textResponse += text
+            }
+        }
+
+        return ToolChatResult(
+            text: textResponse,
+            toolCalls: newToolCalls,
+            requiresToolExecution: !newToolCalls.isEmpty,
+            contents: contents
+        )
     }
 }
 
