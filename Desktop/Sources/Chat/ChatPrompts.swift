@@ -500,73 +500,7 @@ struct ChatPrompts {
     - "what are my tasks?" → execute_sql (SELECT FROM action_items)
     - "show my conversations" → execute_sql (SELECT FROM transcription_sessions)
 
-    **Database schema (omi.db):**
-
-    screenshots — captured screen frames with OCR text
-      id INTEGER PRIMARY KEY, timestamp DATETIME, appName TEXT, windowTitle TEXT,
-      imagePath TEXT, videoChunkPath TEXT, frameOffset INTEGER, ocrText TEXT,
-      isIndexed INTEGER DEFAULT 0, focusStatus TEXT, embedding BLOB
-      -- Indexes: idx_screenshots_timestamp, idx_screenshots_appName
-
-    action_items — tasks (bidirectional sync with backend)
-      id INTEGER PRIMARY KEY, backendId TEXT UNIQUE, backendSynced BOOLEAN DEFAULT 0,
-      description TEXT NOT NULL, completed BOOLEAN DEFAULT 0, deleted BOOLEAN DEFAULT 0,
-      source TEXT, conversationId TEXT, priority TEXT, category TEXT, dueAt DATETIME,
-      screenshotId INTEGER REFERENCES screenshots, confidence DOUBLE, sourceApp TEXT,
-      contextSummary TEXT, createdAt DATETIME, updatedAt DATETIME
-      -- Indexes: idx_action_items_completed, idx_action_items_due, idx_action_items_deleted
-
-    transcription_sessions — voice recordings / conversations
-      id INTEGER PRIMARY KEY, startedAt DATETIME, finishedAt DATETIME, source TEXT,
-      language TEXT DEFAULT 'en', timezone TEXT DEFAULT 'UTC', inputDeviceName TEXT,
-      status TEXT DEFAULT 'recording', backendId TEXT, backendSynced BOOLEAN DEFAULT 0,
-      title TEXT, overview TEXT, emoji TEXT, category TEXT, actionItemsJson TEXT,
-      conversationStatus TEXT DEFAULT 'in_progress', discarded BOOLEAN DEFAULT 0,
-      deleted BOOLEAN DEFAULT 0, starred BOOLEAN DEFAULT 0,
-      createdAt DATETIME, updatedAt DATETIME
-
-    transcription_segments — transcript text with speaker/timing
-      id INTEGER PRIMARY KEY, sessionId INTEGER REFERENCES transcription_sessions,
-      speaker INTEGER, text TEXT, startTime DOUBLE, endTime DOUBLE,
-      segmentOrder INTEGER, createdAt DATETIME
-
-    proactive_extractions — memories, advice, tasks extracted from screenshots
-      id INTEGER PRIMARY KEY, screenshotId INTEGER REFERENCES screenshots,
-      type TEXT ('memory'|'task'|'advice'), content TEXT, category TEXT,
-      confidence DOUBLE, reasoning TEXT, sourceApp TEXT, contextSummary TEXT,
-      priority TEXT, isRead BOOLEAN DEFAULT 0, isDismissed BOOLEAN DEFAULT 0,
-      createdAt DATETIME, updatedAt DATETIME
-
-    focus_sessions — focus tracking
-      id INTEGER PRIMARY KEY, screenshotId INTEGER REFERENCES screenshots,
-      status TEXT ('focused'|'distracted'), appOrSite TEXT, description TEXT,
-      message TEXT, durationSeconds INTEGER, createdAt DATETIME
-
-    live_notes — AI-generated notes during recording
-      id INTEGER PRIMARY KEY, sessionId INTEGER REFERENCES transcription_sessions,
-      text TEXT, timestamp DATETIME, isAiGenerated BOOLEAN DEFAULT 1,
-      createdAt DATETIME, updatedAt DATETIME
-
-    memories — user facts and extracted knowledge (bidirectional sync with backend)
-      id INTEGER PRIMARY KEY, backendId TEXT UNIQUE, backendSynced BOOLEAN DEFAULT 0,
-      content TEXT NOT NULL, category TEXT NOT NULL ('system'|'interesting'|'manual'),
-      tagsJson TEXT, visibility TEXT DEFAULT 'private', reviewed BOOLEAN DEFAULT 0,
-      userReview BOOLEAN, manuallyAdded BOOLEAN DEFAULT 0, scoring TEXT,
-      source TEXT ('desktop'|'omi'|'screenshot'|'phone'), conversationId TEXT,
-      screenshotId INTEGER REFERENCES screenshots, confidence DOUBLE,
-      reasoning TEXT, sourceApp TEXT, contextSummary TEXT, currentActivity TEXT,
-      inputDeviceName TEXT, isRead BOOLEAN DEFAULT 0, isDismissed BOOLEAN DEFAULT 0,
-      deleted BOOLEAN DEFAULT 0, createdAt DATETIME, updatedAt DATETIME
-      -- Indexes: idx_memories_backend_id, idx_memories_created, idx_memories_category
-
-    ai_user_profiles — daily AI-generated user profile summaries
-      id INTEGER PRIMARY KEY, profileText TEXT NOT NULL, dataSourcesUsed INTEGER,
-      backendSynced BOOLEAN DEFAULT 0, generatedAt DATETIME
-      -- Indexes: idx_ai_user_profiles_generated
-      -- Query latest: SELECT profileText, generatedAt FROM ai_user_profiles ORDER BY generatedAt DESC LIMIT 1
-      -- Query history: SELECT profileText, generatedAt FROM ai_user_profiles ORDER BY generatedAt DESC LIMIT 10
-
-    FTS tables: screenshots_fts(ocrText, windowTitle, appName), action_items_fts(description)
+    {database_schema}
 
     **Common SQL patterns:**
     -- What did I do today (app breakdown):
@@ -610,6 +544,33 @@ struct ChatPrompts {
     - If you don't know, say so honestly in 1-2 lines.
     - When searching screen history, summarize findings naturally — don't dump raw data.
     </instructions>
+    """
+
+    // MARK: - Database Schema Annotations
+
+    /// Human-friendly descriptions for database tables.
+    /// Used alongside dynamically-queried sqlite_master DDL to build the schema section.
+    /// Key = table name, value = short description for the prompt.
+    static let tableAnnotations: [String: String] = [
+        "screenshots": "captured screen frames with OCR text",
+        "action_items": "tasks (bidirectional sync with backend)",
+        "transcription_sessions": "voice recordings / conversations",
+        "transcription_segments": "transcript text with speaker/timing",
+        "proactive_extractions": "memories, advice, tasks extracted from screenshots",
+        "focus_sessions": "focus tracking",
+        "live_notes": "AI-generated notes during recording",
+        "memories": "user facts and extracted knowledge (bidirectional sync with backend)",
+        "ai_user_profiles": "daily AI-generated user profile summaries",
+    ]
+
+    /// Tables to exclude from the schema prompt (internal/GRDB tables)
+    static let excludedTablePrefixes = ["sqlite_", "grdb_"]
+    static let excludedTables: Set<String> = ["screenshots_fts", "screenshots_fts_content", "screenshots_fts_segments", "screenshots_fts_segdir",
+                                               "action_items_fts", "action_items_fts_content", "action_items_fts_segments", "action_items_fts_segdir"]
+
+    /// Static suffix appended after the dynamic schema (FTS tables + common patterns)
+    static let schemaFooter = """
+    FTS tables: screenshots_fts(ocrText, windowTitle, appName), action_items_fts(description)
     """
 
     // MARK: - Helper Prompts
@@ -854,7 +815,8 @@ struct ChatPromptBuilder {
         userName: String,
         memoriesSection: String = "",
         goalSection: String = "",
-        aiProfileSection: String = ""
+        aiProfileSection: String = "",
+        databaseSchema: String = ""
     ) -> String {
         var prompt = build(
             template: ChatPrompts.desktopChat,
@@ -863,6 +825,7 @@ struct ChatPromptBuilder {
             goalSection: goalSection
         )
         prompt = prompt.replacingOccurrences(of: "{ai_profile_section}", with: aiProfileSection)
+        prompt = prompt.replacingOccurrences(of: "{database_schema}", with: databaseSchema)
         return prompt
     }
 
