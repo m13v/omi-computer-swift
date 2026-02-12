@@ -27,7 +27,7 @@ app.get('/health', (req, res) => {
 // Onboarding chat endpoint with conversation history and tool use
 app.post('/agent/chat', async (req, res) => {
   try {
-    const { messages, collected_data } = req.body;
+    const { messages, collected_data, existing_name } = req.body;
 
     if (!messages || !Array.isArray(messages)) {
       return res.status(400).json({
@@ -46,18 +46,23 @@ REQUIRED INFORMATION (in this order):
 4. job - Their job title or role
 5. company - Company they work for (OPTIONAL)
 
+${existing_name ? `USER'S EXISTING NAME: "${existing_name}" (from their account)
+- When asking for name, suggest this as the FIRST option
+- Also offer "I'll type it" as an alternative
+` : ''}
 COLLECTED SO FAR:
 ${JSON.stringify(collected_data || {}, null, 2)}
 
 CONVERSATION FLOW - BE PROACTIVE:
 ${!collected_data || Object.keys(collected_data).length === 0 ? `
 STEP 1: Greet warmly and ask for their NAME
-- Use suggest_replies with common names or "I'll type it"
+- Use suggest_replies (include "I'll type it" option)
 - Make it friendly and casual
 ` : ''}${!collected_data?.name ? `
 CURRENT: Ask for their NAME (how they'd like to be addressed)
 - Keep it warm and friendly
-- Use suggest_replies with a few common names and "I'll type it" option
+- IMPORTANT: If user's name is already in collected_data, suggest it as the first option!
+- Use suggest_replies (include "I'll type it" option)
 - When they answer, use save_field immediately, then move to next question
 ` : !collected_data?.motivation ? `
 CURRENT: Ask about their MOTIVATION (why they're using Omi)
@@ -182,28 +187,33 @@ ABOUT OMI (for answering questions):
       let needsCorrection = false;
       let correctionPrompt = '';
 
+      // Critical check: After user responds (messages > 2), we should be saving data
+      // If we're missing required fields and not asking a question, we should save_field
+      const isUserResponse = currentMessages.length > 2; // More than initial greeting + first AI question
+      const isAskingQuestion = hasSuggestReplies || responseText.includes('?');
+
       if (allRequiredCollected && !hasCompleteOnboarding) {
         // All data collected but didn't call complete_onboarding
         needsCorrection = true;
-        correctionPrompt = 'SYSTEM: All required fields are collected (motivation, use_case, job). You MUST call complete_onboarding tool now.';
-      } else if (!allRequiredCollected && !hasSuggestReplies && currentMessages.length > 1) {
-        // Didn't provide suggestions when asking a question (only check after first message)
-        needsCorrection = true;
-        correctionPrompt = 'SYSTEM: When asking questions to collect data, you MUST use suggest_replies tool to provide options. Ask the next question with suggestions.';
-      } else if (currentMessages.length > 1 && !responseText.includes('?') && !hasSaveField && !hasCompleteOnboarding) {
-        // Didn't ask a question or save data or complete - just acknowledged
+        correctionPrompt = 'SYSTEM: All required fields are collected (name, motivation, use_case, job). You MUST call complete_onboarding tool now with a welcome message.';
+      } else if (isUserResponse && !allRequiredCollected && !hasSaveField && !isAskingQuestion && !hasCompleteOnboarding) {
+        // User responded but we didn't save the data and didn't ask a follow-up question
         needsCorrection = true;
         if (needsName) {
-          correctionPrompt = 'SYSTEM: You must ask for their NAME with suggest_replies. Don\'t just acknowledge - ask the question.';
+          correctionPrompt = 'SYSTEM: User just provided their name. Call save_field with field="name" and the value they provided, then ask for MOTIVATION with suggest_replies.';
         } else if (needsMotivation) {
-          correctionPrompt = 'SYSTEM: You must ask about their MOTIVATION (why they\'re using Omi) with suggest_replies. Don\'t just acknowledge - ask the question.';
+          correctionPrompt = 'SYSTEM: User just provided their motivation. Call save_field with field="motivation" and the value they provided, then ask for USE_CASE with suggest_replies.';
         } else if (needsUseCase) {
-          correctionPrompt = 'SYSTEM: You must ask about their USE CASE (what kind of work) with suggest_replies. Don\'t just acknowledge - ask the next question.';
+          correctionPrompt = 'SYSTEM: User just provided their use case. Call save_field with field="use_case" and the value they provided, then ask for JOB with suggest_replies.';
         } else if (needsJob) {
-          correctionPrompt = 'SYSTEM: You must ask about their JOB/ROLE with suggest_replies. Don\'t just acknowledge - ask the next question.';
+          correctionPrompt = 'SYSTEM: User just provided their job. Call save_field with field="job" and the value they provided, then ask for COMPANY with suggest_replies (include "Skip" option).';
         } else if (needsCompany) {
-          correctionPrompt = 'SYSTEM: You must ask about their COMPANY with suggest_replies (include "Skip" option). Don\'t just acknowledge - ask the next question.';
+          correctionPrompt = 'SYSTEM: User responded about company. If they provided a company name, call save_field with field="company". Then call complete_onboarding with a welcome message.';
         }
+      } else if (!allRequiredCollected && !hasSuggestReplies && currentMessages.length > 1 && responseText.includes('?')) {
+        // Asking a question but didn't provide suggestions
+        needsCorrection = true;
+        correctionPrompt = 'SYSTEM: When asking questions to collect data, you MUST use suggest_replies tool to provide options. Ask the question again with suggestions.';
       }
 
       if (needsCorrection && attempts < maxAttempts) {
@@ -257,6 +267,13 @@ ABOUT OMI (for answering questions):
         toolUses: [],
         stopReason: 'end_turn',
       };
+    }
+
+    // Log tool calls for debugging
+    console.log('Returning response with', finalResponse.toolUses.length, 'tool calls:',
+      finalResponse.toolUses.map(t => t.name).join(', '));
+    if (finalResponse.toolUses.length > 0) {
+      console.log('Tool details:', JSON.stringify(finalResponse.toolUses, null, 2));
     }
 
     res.json({
