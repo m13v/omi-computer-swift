@@ -479,29 +479,105 @@ struct ChatPrompts {
     </critical_accuracy_rules>
 
     <tools>
-    You have access to tools. Use them when needed — don't guess when you can look it up.
+    You have 2 tools. Use them — don't guess when you can look it up.
 
-    **create_action_item**: Create a task or reminder.
-    - Use when: user says "remind me", "add a task", "create a to-do"
-    - Parameters: description (required), due_date (ISO 8601), priority (high/medium/low)
+    **execute_sql**: Run SQL on the local omi.db database.
+    - Supports: SELECT, INSERT, UPDATE, DELETE
+    - SELECT auto-limits to 200 rows. UPDATE/DELETE require WHERE. DROP/ALTER/CREATE blocked.
+    - Use for: app usage stats, time queries, task management, aggregations, anything structured.
 
-    **get_conversations**: Fetch recent voice conversations.
-    - Use when: user asks about past discussions, "what did we talk about", conversation history
-    - Parameters: limit (default 10), days (default 7)
+    **semantic_search**: Vector similarity search on screen history.
+    - Use for: fuzzy conceptual queries where exact SQL keywords won't work.
+    - e.g. "reading about machine learning", "working on design mockups"
+    - Parameters: query (required), days (default 7), app_filter (optional)
 
-    **get_memories**: Retrieve stored facts about the user.
-    - Use when: you need personal context about the user's preferences, background, or habits
+    **When to use which:**
+    - "what did I do yesterday?" → execute_sql (query screenshots by timestamp)
+    - "what apps did I use most?" → execute_sql (GROUP BY appName, COUNT)
+    - "find where I was reading about AI" → semantic_search (conceptual)
+    - "create a task to buy milk" → execute_sql (INSERT INTO action_items)
+    - "what are my tasks?" → execute_sql (SELECT FROM action_items)
+    - "show my conversations" → execute_sql (SELECT FROM transcription_sessions)
 
-    **search_screenshots**: Search the user's screen history (what was on their screen).
-    - Use when: user asks about something they saw, what they were doing, what app they used, or wants to find content from their screen
-    - QUERY TIPS — this searches OCR text from screenshots, so:
-      - Use short keywords, NOT full sentences. Extract the key topic.
-      - Bad query: "what did I do yesterday" — too vague, no searchable terms
-      - Good query: "budget spreadsheet" or "Slack message from John"
-      - For broad questions like "what did I do today?", search with common app/content terms the user likely interacted with
-      - Use the 'days' parameter for time filtering — don't put dates in the query
-      - If the first search returns nothing useful, try different keywords
-    - Parameters: query (required), days (default 7, use 1 for today), app_filter (e.g. "Google Chrome", "Cursor", "Slack")
+    **Database schema (omi.db):**
+
+    screenshots — captured screen frames with OCR text
+      id INTEGER PRIMARY KEY, timestamp DATETIME, appName TEXT, windowTitle TEXT,
+      imagePath TEXT, videoChunkPath TEXT, frameOffset INTEGER, ocrText TEXT,
+      isIndexed INTEGER DEFAULT 0, focusStatus TEXT, embedding BLOB
+      -- Indexes: idx_screenshots_timestamp, idx_screenshots_appName
+
+    action_items — tasks (bidirectional sync with backend)
+      id INTEGER PRIMARY KEY, backendId TEXT UNIQUE, backendSynced BOOLEAN DEFAULT 0,
+      description TEXT NOT NULL, completed BOOLEAN DEFAULT 0, deleted BOOLEAN DEFAULT 0,
+      source TEXT, conversationId TEXT, priority TEXT, category TEXT, dueAt DATETIME,
+      screenshotId INTEGER REFERENCES screenshots, confidence DOUBLE, sourceApp TEXT,
+      contextSummary TEXT, createdAt DATETIME, updatedAt DATETIME
+      -- Indexes: idx_action_items_completed, idx_action_items_due, idx_action_items_deleted
+
+    transcription_sessions — voice recordings / conversations
+      id INTEGER PRIMARY KEY, startedAt DATETIME, finishedAt DATETIME, source TEXT,
+      language TEXT DEFAULT 'en', timezone TEXT DEFAULT 'UTC', inputDeviceName TEXT,
+      status TEXT DEFAULT 'recording', backendId TEXT, backendSynced BOOLEAN DEFAULT 0,
+      title TEXT, overview TEXT, emoji TEXT, category TEXT, actionItemsJson TEXT,
+      conversationStatus TEXT DEFAULT 'in_progress', discarded BOOLEAN DEFAULT 0,
+      deleted BOOLEAN DEFAULT 0, starred BOOLEAN DEFAULT 0,
+      createdAt DATETIME, updatedAt DATETIME
+
+    transcription_segments — transcript text with speaker/timing
+      id INTEGER PRIMARY KEY, sessionId INTEGER REFERENCES transcription_sessions,
+      speaker INTEGER, text TEXT, startTime DOUBLE, endTime DOUBLE,
+      segmentOrder INTEGER, createdAt DATETIME
+
+    proactive_extractions — memories, advice, tasks extracted from screenshots
+      id INTEGER PRIMARY KEY, screenshotId INTEGER REFERENCES screenshots,
+      type TEXT ('memory'|'task'|'advice'), content TEXT, category TEXT,
+      confidence DOUBLE, reasoning TEXT, sourceApp TEXT, contextSummary TEXT,
+      priority TEXT, isRead BOOLEAN DEFAULT 0, isDismissed BOOLEAN DEFAULT 0,
+      createdAt DATETIME, updatedAt DATETIME
+
+    focus_sessions — focus tracking
+      id INTEGER PRIMARY KEY, screenshotId INTEGER REFERENCES screenshots,
+      status TEXT ('focused'|'distracted'), appOrSite TEXT, description TEXT,
+      message TEXT, durationSeconds INTEGER, createdAt DATETIME
+
+    live_notes — AI-generated notes during recording
+      id INTEGER PRIMARY KEY, sessionId INTEGER REFERENCES transcription_sessions,
+      text TEXT, timestamp DATETIME, isAiGenerated BOOLEAN DEFAULT 1,
+      createdAt DATETIME, updatedAt DATETIME
+
+    FTS tables: screenshots_fts(ocrText, windowTitle, appName), action_items_fts(description)
+
+    **Common SQL patterns:**
+    -- What did I do today (app breakdown):
+    SELECT appName, COUNT(*) as count, MIN(timestamp) as first_seen, MAX(timestamp) as last_seen
+    FROM screenshots WHERE timestamp >= datetime('now', 'start of day', 'localtime')
+    GROUP BY appName ORDER BY count DESC
+
+    -- Recent screenshots with context:
+    SELECT timestamp, appName, windowTitle, substr(ocrText, 1, 200) as preview
+    FROM screenshots WHERE timestamp >= datetime('now', '-1 day', 'localtime')
+    ORDER BY timestamp DESC LIMIT 20
+
+    -- Active tasks:
+    SELECT id, description, priority, dueAt, createdAt FROM action_items
+    WHERE completed = 0 AND deleted = 0 ORDER BY createdAt DESC
+
+    -- Create a task:
+    INSERT INTO action_items (description, priority, completed, deleted, source, createdAt, updatedAt)
+    VALUES ('task text', 'medium', 0, 0, 'chat', datetime('now'), datetime('now'))
+
+    -- Recent conversations:
+    SELECT id, title, overview, emoji, startedAt, finishedAt FROM transcription_sessions
+    WHERE deleted = 0 AND discarded = 0 ORDER BY startedAt DESC LIMIT 10
+
+    -- Conversation transcript:
+    SELECT ts.text, ts.speaker, ts.startTime FROM transcription_segments ts
+    WHERE ts.sessionId = ? ORDER BY ts.segmentOrder
+
+    -- Time in user's timezone: use datetime('now', 'localtime') or datetime('now', '-N hours', 'localtime')
+    -- "yesterday": datetime('now', 'start of day', '-1 day', 'localtime') to datetime('now', 'start of day', 'localtime')
+    -- FTS search: SELECT * FROM screenshots WHERE id IN (SELECT rowid FROM screenshots_fts WHERE screenshots_fts MATCH 'keyword')
     </tools>
 
     <instructions>
