@@ -216,10 +216,10 @@ ABOUT OMI (for answering questions):
           });
         }
 
-        // Add correction prompt with tool results
+        // Add correction prompt with tool results (text blocks use 'text' field, not 'content')
         toolResultContent.push({
           type: 'text',
-          content: correctionPrompt,
+          text: correctionPrompt,
         });
 
         currentMessages.push({
