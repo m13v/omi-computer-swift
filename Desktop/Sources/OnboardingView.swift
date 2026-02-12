@@ -1438,6 +1438,21 @@ struct OnboardingView: View {
         log("  - job: \(responses["job"] ?? "not provided")")
         log("  - company: \(responses["company"] ?? "not provided")")
 
+        // Sync onboarding data to backend
+        Task {
+            do {
+                try await APIClient.shared.updateUserProfile(
+                    motivation: responses["motivation"],
+                    useCase: responses["use_case"],
+                    job: responses["job"],
+                    company: responses["company"]
+                )
+                log("OnboardingView: Synced onboarding data to backend")
+            } catch {
+                log("OnboardingView: Failed to sync onboarding data: \(error.localizedDescription)")
+            }
+        }
+
         currentStep += 1
     }
 }
@@ -1475,8 +1490,8 @@ struct OnboardingVideoView: NSViewRepresentable {
         var player: AVPlayer?
 
         @objc func playerDidFinishPlaying(_ notification: Notification) {
-            // Seek back to start so the user can replay
             player?.seek(to: .zero)
+            player?.play()
         }
     }
 }
