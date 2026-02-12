@@ -7,7 +7,6 @@ export interface QueryMessage {
   id: string;
   prompt: string;
   systemPrompt: string;
-  sessionId?: string; // Resume existing session
 }
 
 export interface ToolResultMessage {
