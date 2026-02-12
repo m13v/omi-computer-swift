@@ -428,9 +428,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             } else if let iconURL = Bundle.resourceBundle.url(forResource: "app_launcher_icon", withExtension: "png"),
                       let icon = NSImage(contentsOf: iconURL) {
-                icon.isTemplate = true
-                let aspectRatio = icon.size.width / icon.size.height
-                icon.size = NSSize(width: 18 * aspectRatio, height: 18)
+                icon.isTemplate = false
+                icon.size = NSSize(width: 18, height: 18)
                 button.image = icon
                 log("AppDelegate: [MENUBAR] Custom app_launcher_icon set successfully")
             } else {
