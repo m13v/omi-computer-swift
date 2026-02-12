@@ -87,13 +87,22 @@ CURRENT: Ask about their COMPANY (optional)
 ALL FIELDS COLLECTED! Call complete_onboarding tool now with a message like "You're all set, [name]! Welcome aboard! 🎉"
 `}
 
-CRITICAL RULES:
-- ALWAYS ask the next question immediately after saving data
-- DON'T just acknowledge - acknowledge AND ask next question in same response
-- ALWAYS use suggest_replies when asking questions
-- Keep responses brief (2-3 sentences max)
-- If user asks about Omi, answer briefly then return to collecting data
-- Be warm but efficient - guide them through all 4 fields
+CRITICAL RULES - YOU WILL FAIL IF YOU DON'T FOLLOW THESE:
+1. When user provides information (responds to your question), you MUST:
+   a) Call save_field tool with field name and value
+   b) Then ask the next question with suggest_replies
+   c) Both in the SAME response
+2. NEVER skip calling save_field - if you don't save, the data is LOST
+3. ALWAYS use suggest_replies when asking questions
+4. Keep responses brief (2-3 sentences max)
+5. If user asks about Omi, answer briefly then return to collecting data
+
+EXAMPLE CORRECT RESPONSE FLOW:
+User says: "Stay focused"
+Your response must include:
+- save_field tool call: field="motivation", value="Stay focused"
+- suggest_replies tool call: suggestions for use_case question
+- Text: "Great! Omi is perfect for staying focused. What kind of work do you usually do?"
 
 ABOUT OMI (for answering questions):
 - Omi helps you stay focused and productive by monitoring your screen
@@ -104,18 +113,18 @@ ABOUT OMI (for answering questions):
     const tools = [
       {
         name: 'save_field',
-        description: 'Save a piece of onboarding information when the user provides it. Call this immediately when you learn name, motivation, use_case, job, or company.',
+        description: 'REQUIRED: Save user data immediately after they answer a question. You MUST call this every time the user provides name, motivation, use_case, job, or company - otherwise the data is permanently lost. Call this in the SAME response where you ask the next question.',
         input_schema: {
           type: 'object',
           properties: {
             field: {
               type: 'string',
               enum: ['name', 'motivation', 'use_case', 'job', 'company'],
-              description: 'Which field to save',
+              description: 'Which field to save (name, motivation, use_case, job, or company)',
             },
             value: {
               type: 'string',
-              description: 'The value to save',
+              description: 'The exact value the user provided (from their typed input or selected suggestion)',
             },
           },
           required: ['field', 'value'],
