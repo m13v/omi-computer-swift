@@ -33,6 +33,7 @@ enum TaskCategory: String, CaseIterable {
 enum TaskFilterGroup: String, CaseIterable {
     case status = "Status"
     case date = "Date Range"
+    case display = "Display"
     case category = "Category"
     case source = "Source"
     case priority = "Priority"
@@ -73,6 +74,9 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     // Date Range
     case last7Days
 
+    // Display
+    case topScoredOnly
+
     // Origin (source classification)
     case originDirectRequest
     case originSelfGenerated
@@ -87,6 +91,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo, .done, .removedByAI, .removedByMe: return .status
         case .last7Days: return .date
+        case .topScoredOnly: return .display
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
         case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual, .sourceOmiAnalytics: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
@@ -101,6 +106,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .removedByAI: return "Removed by AI"
         case .removedByMe: return "Removed by me"
         case .last7Days: return "Last 7 days"
+        case .topScoredOnly: return "Top Scored Only"
         case .personal: return "Personal"
         case .work: return "Work"
         case .feature: return "Feature"
@@ -135,6 +141,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .removedByAI: return "trash.slash"
         case .removedByMe: return "trash"
         case .last7Days: return "clock.arrow.circlepath"
+        case .topScoredOnly: return "star.fill"
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
         case .feature: return "sparkles"
