@@ -389,15 +389,11 @@ enum UnifiedFilterTag: Identifiable, Hashable {
 enum TaskSortOption: String, CaseIterable {
     case dueDate = "Due Date"
     case relevance = "Relevance"
-    case createdDate = "Created Date"
-    case priority = "Priority"
 
     var icon: String {
         switch self {
         case .dueDate: return "calendar"
         case .relevance: return "sparkles"
-        case .createdDate: return "clock"
-        case .priority: return "flag"
         }
     }
 }
@@ -1278,18 +1274,6 @@ class TasksViewModel: ObservableObject {
                     return aDate < bDate
                 }
             }
-        case .createdDate:
-            return tasks.sorted { $0.createdAt > $1.createdAt }
-        case .priority:
-            let priorityOrder = ["high": 0, "medium": 1, "low": 2]
-            return tasks.sorted { a, b in
-                let aPriority = a.priority.flatMap { priorityOrder[$0] } ?? 3
-                let bPriority = b.priority.flatMap { priorityOrder[$0] } ?? 3
-                if aPriority != bPriority {
-                    return aPriority < bPriority
-                }
-                return a.createdAt > b.createdAt
-            }
         case .relevance:
             return tasks.sorted { a, b in
                 // Lower relevance score = higher priority (1 is most important)
@@ -2062,11 +2046,6 @@ struct TasksPage: View {
                                 category: category,
                                 orderedTasks: orderedTasks,
                                 isMultiSelectMode: viewModel.isMultiSelectMode,
-                                showAllTasks: store.showAllTasks,
-                                visibleAITaskIds: store.visibleAITaskIds,
-                                hasCompletedScoring: store.hasCompletedScoring,
-                                onShowAll: { store.showAllTasks = true },
-                                onShowLess: { store.showAllTasks = false },
                                 indentLevelFor: { viewModel.getIndentLevel(for: $0) },
                                 isSelectedFor: { viewModel.selectedTaskIds.contains($0) },
                                 onToggle: { await viewModel.toggleTask($0) },
@@ -2219,13 +2198,6 @@ struct TaskCategorySection: View {
     let orderedTasks: [TaskActionItem]
     var isMultiSelectMode: Bool = false
 
-    // Prioritization: allowlist-based filtering for AI tasks
-    var showAllTasks: Bool = true
-    var visibleAITaskIds: Set<String> = []
-    var hasCompletedScoring: Bool = false
-    var onShowAll: (() -> Void)?
-    var onShowLess: (() -> Void)?
-
     // Callbacks for row data and actions (passed through to TaskRow)
     var indentLevelFor: ((String) -> Int)?
     var isSelectedFor: ((String) -> Bool)?
@@ -2237,21 +2209,9 @@ struct TaskCategorySection: View {
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
 
-    /// Tasks visible in current view (allowlist filtering for AI tasks)
+    /// Tasks visible in current view — category view (due date sort) shows all tasks, no allowlist filtering
     private var visibleTasks: [TaskActionItem] {
-        // Show all if user expanded, scoring hasn't completed, or allowlist is empty
-        if showAllTasks || !hasCompletedScoring || visibleAITaskIds.isEmpty {
-            return orderedTasks
-        }
-        return orderedTasks.filter { task in
-            // Manual tasks are always visible
-            task.source == "manual" || visibleAITaskIds.contains(task.id)
-        }
-    }
-
-    /// Number of tasks hidden by prioritization in this category
-    private var hiddenCount: Int {
-        orderedTasks.count - visibleTasks.count
+        orderedTasks
     }
 
     var body: some View {
@@ -2319,45 +2279,6 @@ struct TaskCategorySection: View {
                             ))
                     }
 
-                    // "Show N more" button when tasks are hidden by prioritization
-                    if hiddenCount > 0 {
-                        Button {
-                            onShowAll?()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.down")
-                                Text("Show \(hiddenCount) more")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(OmiColors.backgroundTertiary.opacity(0.5))
-                            .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    // "Show less" button when expanded and there are tasks that would be hidden
-                    if showAllTasks && hasCompletedScoring && !visibleAITaskIds.isEmpty {
-                        Button {
-                            onShowLess?()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.up")
-                                Text("Show less")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(OmiColors.backgroundTertiary.opacity(0.5))
-                            .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                    }
                 }
             }
         }
