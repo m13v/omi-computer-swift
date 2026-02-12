@@ -269,7 +269,7 @@ struct SidebarView: View {
                     }
 
                     // Get Omi promo widget (dismissible sales link)
-                    if showGetOmiWidget && deviceProvider.pairedDevice == nil {
+                    if showGetOmiWidget {
                         Spacer().frame(height: 12)
                         getOmiWidget
                     }
@@ -544,12 +544,11 @@ struct SidebarView: View {
 
     // MARK: - Get Omi Widget (Sales link to omi.me)
     private var getOmiWidget: some View {
-        HStack(spacing: 0) {
-            Button(action: {
-                if let url = URL(string: "https://www.omi.me") {
-                    NSWorkspace.shared.open(url)
-                }
-            }) {
+        Button(action: {
+            if let url = URL(string: "https://www.omi.me") {
+                NSWorkspace.shared.open(url)
+            }
+        }) {
             HStack(spacing: 12) {
                 // Omi device image
                 if let deviceUrl = Bundle.resourceBundle.url(forResource: "omi-with-rope-no-padding", withExtension: "webp"),
@@ -580,9 +579,18 @@ struct SidebarView: View {
 
                     Spacer()
 
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
+                    Button(action: {
+                        withAnimation {
+                            showGetOmiWidget = false
+                        }
+                    }) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .padding(6)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Dismiss")
                 }
             }
             .padding(.horizontal, 12)
@@ -595,26 +603,9 @@ struct SidebarView: View {
                             .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
                     )
             )
-            }
-            .buttonStyle(.plain)
-            .help(isCollapsed ? "Get Omi Device" : "")
-
-            // Dismiss button
-            if !isCollapsed {
-                Button(action: {
-                    withAnimation {
-                        showGetOmiWidget = false
-                    }
-                }) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .padding(6)
-                }
-                .buttonStyle(.plain)
-                .help("Dismiss")
-            }
         }
+        .buttonStyle(.plain)
+        .help(isCollapsed ? "Get Omi Device" : "")
     }
 
     // MARK: - Update Available Widget
