@@ -4395,7 +4395,52 @@ impl FirestoreService {
             time_zone: self.parse_string(fields, "time_zone"),
             created_at: self.parse_timestamp_optional(fields, "created_at")
                 .map(|dt| dt.to_rfc3339()),
+            motivation: self.parse_string(fields, "motivation"),
+            use_case: self.parse_string(fields, "use_case"),
+            job: self.parse_string(fields, "job"),
+            company: self.parse_string(fields, "company"),
         })
+    }
+
+    /// Update user profile fields (onboarding data)
+    pub async fn update_user_profile(
+        &self,
+        uid: &str,
+        name: Option<String>,
+        motivation: Option<String>,
+        use_case: Option<String>,
+        job: Option<String>,
+        company: Option<String>,
+    ) -> Result<UserProfile, Box<dyn std::error::Error + Send + Sync>> {
+        let mut fields = json!({});
+        let mut mask: Vec<&str> = Vec::new();
+
+        if let Some(ref v) = name {
+            fields["name"] = json!({"stringValue": v});
+            mask.push("name");
+        }
+        if let Some(ref v) = motivation {
+            fields["motivation"] = json!({"stringValue": v});
+            mask.push("motivation");
+        }
+        if let Some(ref v) = use_case {
+            fields["use_case"] = json!({"stringValue": v});
+            mask.push("use_case");
+        }
+        if let Some(ref v) = job {
+            fields["job"] = json!({"stringValue": v});
+            mask.push("job");
+        }
+        if let Some(ref v) = company {
+            fields["company"] = json!({"stringValue": v});
+            mask.push("company");
+        }
+
+        if !mask.is_empty() {
+            self.update_user_fields(uid, fields, &mask).await?;
+        }
+
+        self.get_user_profile(uid).await
     }
 
     // =========================================================================
