@@ -223,7 +223,7 @@ async fn create_conversation_from_segments(
     // Create conversation object
     let conversation = Conversation {
         id: conversation_id.clone(),
-        created_at: Utc::now(),
+        created_at: request.started_at,
         started_at: request.started_at,
         finished_at: request.finished_at,
         source: ConversationSource::Desktop,
