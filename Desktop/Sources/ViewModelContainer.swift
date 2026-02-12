@@ -28,6 +28,10 @@ class ViewModelContainer: ObservableObject {
         let timer = PerfTimer("ViewModelContainer.loadAllData", logCPU: true)
         logPerf("DATA LOAD: Starting eager data load for all pages", cpu: true)
 
+        // Configure database for the current user before initialization
+        let userId = UserDefaults.standard.string(forKey: "auth_userId")
+        await RewindDatabase.shared.configure(userId: userId)
+
         // Pre-initialize database so local SQLite reads are instant
         do {
             try await RewindDatabase.shared.initialize()
@@ -91,6 +95,10 @@ class ViewModelContainer: ObservableObject {
     func retryDatabaseInit() async {
         guard databaseInitFailed else { return }
         log("ViewModelContainer: Retrying database initialization...")
+
+        // Re-configure userId in case it changed (e.g. sign-in completed since first attempt)
+        let userId = UserDefaults.standard.string(forKey: "auth_userId")
+        await RewindDatabase.shared.configure(userId: userId)
 
         do {
             try await RewindDatabase.shared.initialize()
