@@ -104,7 +104,7 @@ actor RewindDatabase {
     /// If the DB is open for a different user (e.g., "anonymous" before configure was called),
     /// closes it and reopens for the configured user.
     func initialize() async throws {
-        let targetUser = configuredUserId ?? "anonymous"
+        let targetUser = configuredUserId ?? RewindDatabase.currentUserId ?? "anonymous"
 
         // Already initialized for the correct user
         if dbQueue != nil && openedForUserId == targetUser {
