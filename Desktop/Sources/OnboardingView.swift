@@ -21,7 +21,7 @@ struct OnboardingView: View {
     // Timer to periodically check permission status (only for triggered permissions)
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Video", "Welcome", "Chat", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
+    let steps = ["Video", "Welcome", "Name", "Language", "Notifications", "Automation", "Screen Recording", "Microphone", "System Audio", "Accessibility", "Bluetooth", "Done"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -31,9 +31,6 @@ struct OnboardingView: View {
     // State for language selection
     @State private var selectedLanguage: String = "en"
     @State private var autoDetectEnabled: Bool = false
-
-    // State for chat onboarding completion
-    @State private var chatCompleted: Bool = false
 
     var body: some View {
         ZStack {
@@ -191,7 +188,7 @@ struct OnboardingView: View {
     private var currentPermissionGranted: Bool {
         switch currentStep {
         case 0: return true // Video step - always valid
-        case 2: return chatCompleted // Chat step - valid only when completed
+        case 2: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
         case 3: return true // Language step - always valid (has default)
         case 4: return appState.hasNotificationPermission
         case 5: return appState.hasAutomationPermission
@@ -326,7 +323,7 @@ struct OnboardingView: View {
         switch step {
         case 0: return true // Video - always "granted"
         case 1: return true // Welcome - always "granted"
-        case 2: return chatCompleted // Chat - granted only when completed
+        case 2: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step
         case 3: return true // Language step - always "granted" (has default)
         case 4: return appState.hasNotificationPermission
         case 5: return appState.hasAutomationPermission
@@ -352,17 +349,7 @@ struct OnboardingView: View {
                 description: "Omi helps you stay focused by monitoring your screen and alerting you when you get distracted.\n\nLet's set up a few permissions to get started."
             )
         case 2:
-            OnboardingChatView(
-                onComplete: { responses in
-                    handleChatComplete(responses)
-                },
-                onSkip: {
-                    log("OnboardingView: User skipped chat onboarding")
-                    chatCompleted = true
-                    AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Chat")
-                    currentStep += 1
-                }
-            )
+            nameStepView
         case 3:
             languageStepView
         case 4:
@@ -558,7 +545,7 @@ struct OnboardingView: View {
         case 1:
             return "Get Started"
         case 2:
-            return "" // Chat step - no main button (handled within chat view)
+            return "Continue"  // Name step
         case 3:
             return "Continue"  // Language step
         case 4:
@@ -1197,8 +1184,19 @@ struct OnboardingView: View {
             AnalyticsManager.shared.onboardingStepCompleted(step: 1, stepName: "Welcome")
             currentStep += 1
         case 2:
-            // Chat step - handled by OnboardingChatView (onComplete/onSkip)
-            break
+            // Name step - validate and save
+            let trimmedName = nameInput.trimmingCharacters(in: .whitespaces)
+            if trimmedName.count < 2 {
+                nameError = "Please enter at least 2 characters"
+                return
+            }
+            nameError = ""
+            // Save the name
+            Task {
+                await AuthService.shared.updateGivenName(trimmedName)
+            }
+            AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Name")
+            currentStep += 1
         case 3:
             // Language step - save settings (single language mode)
             AssistantSettings.shared.transcriptionLanguage = selectedLanguage
@@ -1336,54 +1334,6 @@ struct OnboardingView: View {
         default:
             break
         }
-    }
-
-    private func handleChatComplete(_ responses: [String: String]) {
-        log("OnboardingView: Chat completed with \(responses.count) responses")
-
-        // Mark chat as completed (for checkpoint tracking)
-        chatCompleted = true
-
-        // Store chat responses for future use (e.g., personalization)
-        for (key, value) in responses {
-            UserDefaults.standard.set(value, forKey: "onboarding_\(key)")
-        }
-
-        // Save name to AuthService (like the old Name step)
-        if let name = responses["name"] {
-            Task {
-                await AuthService.shared.updateGivenName(name)
-            }
-        }
-
-        // Log analytics
-        AnalyticsManager.shared.onboardingStepCompleted(step: 2, stepName: "Chat")
-
-        // Log collected data for verification
-        log("Collected onboarding data:")
-        log("  - name: \(responses["name"] ?? "not provided")")
-        log("  - motivation: \(responses["motivation"] ?? "not provided")")
-        log("  - use_case: \(responses["use_case"] ?? "not provided")")
-        log("  - job: \(responses["job"] ?? "not provided")")
-        log("  - company: \(responses["company"] ?? "not provided")")
-
-        // Sync onboarding data to backend
-        Task {
-            do {
-                try await APIClient.shared.updateUserProfile(
-                    name: responses["name"],
-                    motivation: responses["motivation"],
-                    useCase: responses["use_case"],
-                    job: responses["job"],
-                    company: responses["company"]
-                )
-                log("OnboardingView: Synced onboarding data to backend")
-            } catch {
-                log("OnboardingView: Failed to sync onboarding data: \(error.localizedDescription)")
-            }
-        }
-
-        currentStep += 1
     }
 }
 
