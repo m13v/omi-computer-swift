@@ -40,21 +40,28 @@ app.post('/agent/chat', async (req, res) => {
     const systemMessage = `You are Omi's onboarding assistant. Your job is to warmly welcome new users and collect information through a structured conversation.
 
 REQUIRED INFORMATION (in this order):
-1. motivation - Why they're using Omi
-2. use_case - What kind of work/activities they do
-3. job - Their job title or role
-4. company - Company they work for (OPTIONAL)
+1. name - Their name (how they'd like to be addressed)
+2. motivation - Why they're using Omi
+3. use_case - What kind of work/activities they do
+4. job - Their job title or role
+5. company - Company they work for (OPTIONAL)
 
 COLLECTED SO FAR:
 ${JSON.stringify(collected_data || {}, null, 2)}
 
 CONVERSATION FLOW - BE PROACTIVE:
 ${!collected_data || Object.keys(collected_data).length === 0 ? `
-STEP 1: Greet warmly and ask about their MOTIVATION
-- Use suggest_replies with options like: "Stay focused", "Boost productivity", "Remember conversations", "Just exploring"
-` : ''}${!collected_data?.motivation ? `
+STEP 1: Greet warmly and ask for their NAME
+- Use suggest_replies with common names or "I'll type it"
+- Make it friendly and casual
+` : ''}${!collected_data?.name ? `
+CURRENT: Ask for their NAME (how they'd like to be addressed)
+- Keep it warm and friendly
+- Use suggest_replies with a few common names and "I'll type it" option
+- When they answer, use save_field immediately, then move to next question
+` : !collected_data?.motivation ? `
 CURRENT: Ask about their MOTIVATION (why they're using Omi)
-- Use suggest_replies with 3-4 options
+- Use suggest_replies with options like: "Stay focused", "Boost productivity", "Remember conversations", "Just exploring"
 - When they answer, use save_field immediately, then move to next question
 ` : !collected_data?.use_case ? `
 CURRENT: Ask about their USE CASE (what kind of work)
@@ -70,9 +77,9 @@ CURRENT: Ask about their JOB/ROLE
 CURRENT: Ask about their COMPANY (optional)
 - Acknowledge their job briefly
 - Use suggest_replies with options like: "Skip this question"
-- When they answer OR skip, save if provided, then call complete_onboarding
+- When they answer OR skip, save if provided, then call complete_onboarding with a warm welcome message
 ` : `
-ALL FIELDS COLLECTED! Call complete_onboarding tool now.
+ALL FIELDS COLLECTED! Call complete_onboarding tool now with a message like "You're all set, [name]! Welcome aboard! 🎉"
 `}
 
 CRITICAL RULES:
@@ -92,13 +99,13 @@ ABOUT OMI (for answering questions):
     const tools = [
       {
         name: 'save_field',
-        description: 'Save a piece of onboarding information when the user provides it. Call this immediately when you learn motivation, use_case, job, or company.',
+        description: 'Save a piece of onboarding information when the user provides it. Call this immediately when you learn name, motivation, use_case, job, or company.',
         input_schema: {
           type: 'object',
           properties: {
             field: {
               type: 'string',
-              enum: ['motivation', 'use_case', 'job', 'company'],
+              enum: ['name', 'motivation', 'use_case', 'job', 'company'],
               description: 'Which field to save',
             },
             value: {
@@ -128,7 +135,7 @@ ABOUT OMI (for answering questions):
       },
       {
         name: 'complete_onboarding',
-        description: 'Call this when all required fields (motivation, use_case, job) are collected. Company is optional.',
+        description: 'Call this when all required fields (name, motivation, use_case, job) are collected. Company is optional. Include a warm welcome message for the user.',
         input_schema: {
           type: 'object',
           properties: {},
@@ -159,11 +166,12 @@ ABOUT OMI (for answering questions):
       const responseText = textBlocks.map(block => block.text).join('\n');
 
       // Check what data is still needed
+      const needsName = !collected_data?.name;
       const needsMotivation = !collected_data?.motivation;
       const needsUseCase = !collected_data?.use_case;
       const needsJob = !collected_data?.job;
       const needsCompany = !collected_data?.company;
-      const allRequiredCollected = collected_data?.motivation && collected_data?.use_case && collected_data?.job;
+      const allRequiredCollected = collected_data?.name && collected_data?.motivation && collected_data?.use_case && collected_data?.job;
 
       // Verify Claude is doing the right thing
       const hasSaveField = toolUses.some(t => t.name === 'save_field');
@@ -185,7 +193,9 @@ ABOUT OMI (for answering questions):
       } else if (currentMessages.length > 1 && !responseText.includes('?') && !hasSaveField && !hasCompleteOnboarding) {
         // Didn't ask a question or save data or complete - just acknowledged
         needsCorrection = true;
-        if (needsMotivation) {
+        if (needsName) {
+          correctionPrompt = 'SYSTEM: You must ask for their NAME with suggest_replies. Don\'t just acknowledge - ask the question.';
+        } else if (needsMotivation) {
           correctionPrompt = 'SYSTEM: You must ask about their MOTIVATION (why they\'re using Omi) with suggest_replies. Don\'t just acknowledge - ask the question.';
         } else if (needsUseCase) {
           correctionPrompt = 'SYSTEM: You must ask about their USE CASE (what kind of work) with suggest_replies. Don\'t just acknowledge - ask the next question.';
