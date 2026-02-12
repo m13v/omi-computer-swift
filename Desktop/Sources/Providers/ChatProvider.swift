@@ -317,7 +317,7 @@ class ChatProvider: ObservableObject {
                     rating: dbMessage.rating,
                     isSynced: true  // Messages from backend have valid server IDs
                 )
-            }
+            }.sorted(by: { $0.createdAt < $1.createdAt })
             // If we got a full page, there might be more messages
             hasMoreMessages = persistedMessages.count == messagesPageSize
             log("ChatProvider loaded \(messages.count) messages for session \(session.id), hasMore: \(hasMoreMessages)")
@@ -357,8 +357,9 @@ class ChatProvider: ObservableObject {
                 )
             }
 
-            // Append older messages (they come in ascending order, so append at end)
+            // Append older messages and re-sort to ensure correct chronological order
             messages.append(contentsOf: newMessages)
+            messages.sort(by: { $0.createdAt < $1.createdAt })
 
             // Check if there are more
             hasMoreMessages = olderMessages.count == messagesPageSize
@@ -668,7 +669,7 @@ class ChatProvider: ObservableObject {
                     rating: dbMessage.rating,
                     isSynced: true
                 )
-            }
+            }.sorted(by: { $0.createdAt < $1.createdAt })
             hasMoreMessages = persistedMessages.count == messagesPageSize
             log("ChatProvider loaded \(messages.count) default chat messages, hasMore: \(hasMoreMessages)")
         } catch {
