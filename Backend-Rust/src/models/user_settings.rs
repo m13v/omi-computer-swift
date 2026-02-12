@@ -123,6 +123,18 @@ pub struct UserProfile {
     /// When the user was created
     #[serde(default)]
     pub created_at: Option<String>,
+    /// Onboarding: user's motivation for using OMI
+    #[serde(default)]
+    pub motivation: Option<String>,
+    /// Onboarding: user's primary use case
+    #[serde(default)]
+    pub use_case: Option<String>,
+    /// Onboarding: user's job title
+    #[serde(default)]
+    pub job: Option<String>,
+    /// Onboarding: user's company
+    #[serde(default)]
+    pub company: Option<String>,
 }
 
 /// Complete user settings response (aggregated)
@@ -156,6 +168,16 @@ pub struct UpdateAIUserProfileRequest {
     pub profile_text: String,
     pub generated_at: String,
     pub data_sources_used: i32,
+}
+
+/// Request to update user profile (onboarding data)
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateUserProfileRequest {
+    pub name: Option<String>,
+    pub motivation: Option<String>,
+    pub use_case: Option<String>,
+    pub job: Option<String>,
+    pub company: Option<String>,
 }
 
 // MARK: - Assistant Settings (synced to Firestore)
