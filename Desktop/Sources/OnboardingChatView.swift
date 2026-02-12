@@ -291,7 +291,8 @@ struct OnboardingChatView: View {
             // Call agent with conversation history
             let (response, toolCalls) = try await agentService.chat(
                 messages: conversationHistory,
-                collectedData: collectedData
+                collectedData: collectedData,
+                existingName: existingName.isEmpty ? nil : existingName
             )
 
             // Add AI response to conversation history
