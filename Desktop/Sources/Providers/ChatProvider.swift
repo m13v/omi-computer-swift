@@ -115,8 +115,8 @@ struct Citation: Identifiable {
     }
 }
 
-/// State management for chat functionality with client-side Gemini
-/// Uses hybrid architecture: Swift → Gemini for streaming, Backend for persistence + context
+/// State management for chat functionality with Claude Agent SDK
+/// Uses hybrid architecture: Swift → Claude Agent (via Node.js bridge) for AI, Backend for persistence + context
 @MainActor
 class ChatProvider: ObservableObject {
     // MARK: - Published State
@@ -140,7 +140,8 @@ class ChatProvider: ObservableObject {
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
 
-    private var geminiClient: GeminiClient?
+    private let claudeBridge = ClaudeAgentBridge()
+    private var bridgeStarted = false
     private let messagesPageSize = 50
     private var multiChatObserver: AnyCancellable?
 
@@ -177,20 +178,14 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Current Model
     var currentModel: String {
-        "Gemini 3 Pro"
+        "Claude"
     }
 
     // MARK: - System Prompt
     // Prompts are defined in ChatPrompts.swift (converted from Python backend)
 
     init() {
-        do {
-            self.geminiClient = try GeminiClient(model: "gemini-3-pro-preview")
-            log("ChatProvider initialized with Gemini client")
-        } catch {
-            logError("Failed to initialize Gemini client", error: error)
-            self.errorMessage = "AI not available: \(error.localizedDescription)"
-        }
+        log("ChatProvider initialized, will start Claude bridge on first use")
 
         // Observe changes to multiChatEnabled setting
         multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
@@ -201,6 +196,21 @@ class ChatProvider: ObservableObject {
                     await self?.reinitialize()
                 }
             }
+    }
+
+    /// Ensure the Claude Agent bridge is started
+    private func ensureBridgeStarted() async -> Bool {
+        guard !bridgeStarted else { return true }
+        do {
+            try await claudeBridge.start()
+            bridgeStarted = true
+            log("ChatProvider: Claude bridge started successfully")
+            return true
+        } catch {
+            logError("Failed to start Claude bridge", error: error)
+            errorMessage = "AI not available: \(error.localizedDescription)"
+            return false
+        }
     }
 
     // MARK: - Session Management
@@ -682,13 +692,14 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Send Message
 
-    /// Send a message and get AI response with tool calling support
+    /// Send a message and get AI response via Claude Agent SDK bridge
     /// Persists both user and AI messages to backend
     func sendMessage(_ text: String) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
-        guard let client = geminiClient else {
+        // Ensure bridge is running
+        guard await ensureBridgeStarted() else {
             errorMessage = "AI not available"
             return
         }
@@ -760,43 +771,26 @@ class ChatProvider: ObservableObject {
             // Fetch context from backend (LLM determines if context is needed)
             let contextString = await fetchContext(for: trimmedText)
 
-            // Build chat history for Gemini
-            let chatHistory = buildChatHistory()
-
             // Build system prompt with fetched context
             let systemPrompt = buildSystemPrompt(contextString: contextString)
 
-            // First, try tool-enabled request to see if tools are needed
-            var result = try await client.sendToolChatRequest(
-                messages: chatHistory,
+            // Query the Claude Agent SDK bridge with streaming
+            let result = try await claudeBridge.query(
+                prompt: trimmedText,
                 systemPrompt: systemPrompt,
-                tools: GeminiClient.chatTools
+                onTextDelta: { [weak self] delta in
+                    Task { @MainActor [weak self] in
+                        self?.appendToMessage(id: aiMessageId, text: delta)
+                    }
+                },
+                onToolCall: { callId, name, input in
+                    // Route OMI tool calls (execute_sql, semantic_search) through ChatToolExecutor
+                    let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
+                    let result = await ChatToolExecutor.execute(toolCall)
+                    log("OMI tool \(name) executed for callId=\(callId)")
+                    return result
+                }
             )
-
-            // Multi-turn tool loop: keep executing tools until Gemini returns text (max 5 rounds)
-            let maxToolRounds = 5
-            var toolRound = 0
-
-            while result.requiresToolExecution && !result.toolCalls.isEmpty && toolRound < maxToolRounds {
-                toolRound += 1
-                log("Tool round \(toolRound): executing \(result.toolCalls.count) tool call(s)")
-                updateMessage(id: aiMessageId, text: toolRound == 1 ? "Using tools..." : "Searching more...")
-
-                let toolResults = await ChatToolExecutor.executeAll(result.toolCalls)
-
-                // Continue with tool results — pass tools so Gemini can make more calls if needed
-                result = try await client.continueWithToolResults(
-                    previousContents: result.contents ?? [],
-                    toolCalls: result.toolCalls,
-                    toolResults: toolResults,
-                    systemPrompt: systemPrompt,
-                    tools: GeminiClient.chatTools
-                )
-            }
-
-            if toolRound > 0 {
-                log("Tool loop completed after \(toolRound) round(s)")
-            }
 
             let finalResponse = result.text
 
@@ -807,7 +801,10 @@ class ChatProvider: ObservableObject {
 
             // Update AI message with cleaned text and citations
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                messages[index].text = displayText
+                // If streaming populated the text, use displayText stripped of citations;
+                // otherwise use the final response
+                let messageText = messages[index].text.isEmpty ? displayText : stripCitationMarkers(from: messages[index].text)
+                messages[index].text = messageText
                 messages[index].citations = citations
                 messages[index].isStreaming = false
 
@@ -815,17 +812,16 @@ class ChatProvider: ObservableObject {
                     log("Extracted \(citations.count) citation(s) from response")
                 }
 
-                // Save AI response to backend and sync ID (awaited, not fire-and-forget)
-                // Save the original response with markers for backend storage
-                if !finalResponse.isEmpty {
+                // Save AI response to backend and sync ID
+                let textToSave = finalResponse.isEmpty ? messageText : finalResponse
+                if !textToSave.isEmpty {
                     do {
                         let response = try await APIClient.shared.saveMessage(
-                            text: finalResponse,  // Save original with citation markers
+                            text: textToSave,
                             sender: "ai",
                             appId: selectedAppId,
                             sessionId: capturedSessionId
                         )
-                        // Sync local message with server response (like Flutter does)
                         if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
                             messages[syncIndex].id = response.id
                             messages[syncIndex].isSynced = true
@@ -833,13 +829,11 @@ class ChatProvider: ObservableObject {
                         log("Saved and synced AI response: \(response.id)")
                     } catch {
                         logError("Failed to persist AI response", error: error)
-                        // Message remains unsynced - rating will be disabled
                     }
                 }
             }
 
             // Auto-generate title after first exchange (user message + AI response)
-            // Only for session mode, not default chat
             if isFirstMessage, let sid = capturedSessionId {
                 await generateSessionTitle(sessionId: sid)
             }
@@ -910,20 +904,6 @@ class ChatProvider: ObservableObject {
     private func appendToMessage(id: String, text: String) {
         if let index = messages.firstIndex(where: { $0.id == id }) {
             messages[index].text += text
-        }
-    }
-
-    /// Build chat history in Gemini format
-    private func buildChatHistory() -> [GeminiClient.ChatMessage] {
-        return messages.compactMap { message in
-            // Skip empty AI messages (streaming placeholder)
-            if message.sender == .ai && message.text.isEmpty {
-                return nil
-            }
-            return GeminiClient.ChatMessage(
-                role: message.sender == .user ? "user" : "model",
-                text: message.text
-            )
         }
     }
 
