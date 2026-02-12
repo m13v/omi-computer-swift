@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "0.6.4",
+      "date": "2026-02-12",
+      "changes": [
+        "Goal tracking: persistent local goal storage with cloud sync",
+        "Stale goals are now auto-completed",
+        "Advice system migrated to memory API for better recommendations",
+        "Fixed app icon not displaying correctly in builds",
+        "Added agent-bridge to release builds"
+      ]
+    },
+    {
       "version": "0.6.3",
       "date": "2026-02-12",
       "changes": [
