@@ -112,11 +112,17 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
-        // Force macOS to refresh the app icon cache (needed after icon updates)
-        let appURL = Bundle.main.bundleURL
-        NSWorkspace.shared.setIcon(nil, forFile: appURL.path, options: [])
-        if let cfURL = appURL as CFURL? {
-            LSRegisterURL(cfURL, true)
+        // Force macOS to use the correct app icon (bypasses icon cache)
+        if let iconURL = Bundle.main.url(forResource: "OmiIcon", withExtension: "icns"),
+           let icon = NSImage(contentsOf: iconURL) {
+            NSApp.applicationIconImage = icon
+            // Also update the on-disk registration
+            let appURL = Bundle.main.bundleURL
+            NSWorkspace.shared.setIcon(icon, forFile: appURL.path, options: [])
+            if let cfURL = appURL as CFURL? {
+                LSRegisterURL(cfURL, true)
+            }
+            log("AppDelegate: Set application icon from OmiIcon.icns")
         }
 
         // Initialize NotificationService early to set up UNUserNotificationCenterDelegate
