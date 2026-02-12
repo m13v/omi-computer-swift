@@ -206,45 +206,77 @@ struct OnboardingView: View {
     }
 
     private var onboardingContent: some View {
-        VStack(spacing: 24) {
-            Spacer()
+        Group {
+            if currentStep == 0 {
+                // Full-window video with overlaid controls
+                ZStack {
+                    OnboardingVideoView()
+                        .ignoresSafeArea()
 
-            // Centered card
-            VStack(spacing: 24) {
-                // Progress indicators with checkmarks for granted permissions
-                HStack(spacing: 12) {
-                    ForEach(0..<steps.count, id: \.self) { index in
-                        progressIndicator(for: index)
+                    // Overlay progress indicators and button
+                    VStack {
+                        // Progress indicators at top
+                        HStack(spacing: 12) {
+                            ForEach(0..<steps.count, id: \.self) { index in
+                                progressIndicator(for: index)
+                            }
+                        }
+                        .padding(.top, 20)
+                        .padding(.horizontal, 20)
+
+                        Spacer()
+
+                        // Continue button at bottom
+                        Button(action: handleMainAction) {
+                            Text("Continue")
+                                .frame(maxWidth: 200)
+                                .padding(.vertical, 8)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .padding(.bottom, 24)
                     }
                 }
-                .padding(.top, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Standard card layout for all other steps
+                VStack(spacing: 24) {
+                    Spacer()
 
-                Spacer()
-                    .frame(height: 20)
+                    VStack(spacing: 24) {
+                        HStack(spacing: 12) {
+                            ForEach(0..<steps.count, id: \.self) { index in
+                                progressIndicator(for: index)
+                            }
+                        }
+                        .padding(.top, 20)
 
-                // Step content
-                stepContent
+                        Spacer()
+                            .frame(height: 20)
 
-                Spacer()
-                    .frame(height: 20)
+                        stepContent
 
-                // Buttons
-                buttonSection
-            }
-            .frame(width: currentStep == 0 ? 600 : currentStep == 2 ? 600 : (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 500 : 420)
-            .frame(height: currentStep == 0 ? 450 : currentStep == 2 ? 600 : (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 520 : 420)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(OmiColors.backgroundSecondary)
-                    .overlay(
+                        Spacer()
+                            .frame(height: 20)
+
+                        buttonSection
+                    }
+                    .frame(width: currentStep == 2 ? 600 : (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 500 : 420)
+                    .frame(height: currentStep == 2 ? 600 : (currentStep == 5 && !appState.hasNotificationPermission) || (currentStep == 7 && !appState.hasScreenRecordingPermission) ? 520 : 420)
+                    .background(
                         RoundedRectangle(cornerRadius: 16)
-                            .stroke(OmiColors.backgroundTertiary.opacity(0.5), lineWidth: 1)
+                            .fill(OmiColors.backgroundSecondary)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(OmiColors.backgroundTertiary.opacity(0.5), lineWidth: 1)
+                            )
                     )
-            )
 
-            Spacer()
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
@@ -292,7 +324,7 @@ struct OnboardingView: View {
     private var stepContent: some View {
         switch currentStep {
         case 0:
-            videoStepView
+            EmptyView() // Video step uses full-window layout, not stepContent
         case 1:
             stepView(
                 icon: "brain.head.profile",
@@ -344,21 +376,6 @@ struct OnboardingView: View {
             )
         default:
             EmptyView()
-        }
-    }
-
-    // MARK: - Video Step View
-
-    private var videoStepView: some View {
-        VStack(spacing: 16) {
-            Text("See what Omi can do")
-                .font(.title2)
-                .fontWeight(.semibold)
-
-            OnboardingVideoView()
-                .frame(maxWidth: 560, maxHeight: 315)
-                .cornerRadius(8)
-                .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
         }
     }
 
