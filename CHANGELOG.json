@@ -11,6 +11,7 @@
         "Advanced settings subsections with sidebar navigation",
         "Smarter task extraction: ignores past deadlines and due dates",
         "Optimized focus session storage to reduce unnecessary UI re-renders",
+        "Screenshot semantic search with Gemini embeddings (full backfill migration)",
         "Fixed CPU spike caused by macOS writing tools on 15.1+",
         "Fixed actor isolation and memory sync issues",
         "Fixed auth validation edge case during backfill"
