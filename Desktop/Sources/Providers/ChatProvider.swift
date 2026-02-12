@@ -791,6 +791,11 @@ class ChatProvider: ObservableObject {
         )
         messages.append(aiMessage)
 
+        // Analytics: track timing and tool usage
+        let queryStartTime = Date()
+        var toolNames: [String] = []
+        var toolStartTimes: [String: Date] = [:]
+
         do {
             // Fetch context from backend (LLM determines if context is needed)
             let contextString = await fetchContext(for: trimmedText)
@@ -801,7 +806,7 @@ class ChatProvider: ObservableObject {
             // Query the Claude Agent SDK bridge with streaming
             // Each query is standalone — conversation history is in the system prompt
             // This ensures cross-platform sync (mobile messages appear in context)
-            let finalResponse = try await claudeBridge.query(
+            let queryResult = try await claudeBridge.query(
                 prompt: trimmedText,
                 systemPrompt: systemPrompt,
                 onTextDelta: { [weak self] delta in
@@ -823,14 +828,22 @@ class ChatProvider: ObservableObject {
                             toolName: name,
                             status: status == "started" ? .running : .completed
                         )
+                        // Track tool timing
+                        if status == "started" {
+                            toolNames.append(name)
+                            toolStartTimes[name] = Date()
+                        } else if status == "completed", let startTime = toolStartTimes.removeValue(forKey: name) {
+                            let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+                            AnalyticsManager.shared.chatToolCallCompleted(toolName: name, durationMs: durationMs)
+                        }
                     }
                 }
             )
 
             // Extract citations from the response and strip markers for display
             let citationSources = cachedContext?.citationSources ?? []
-            let citations = extractCitations(from: finalResponse, sources: citationSources)
-            let displayText = stripCitationMarkers(from: finalResponse)
+            let citations = extractCitations(from: queryResult.text, sources: citationSources)
+            let displayText = stripCitationMarkers(from: queryResult.text)
 
             // Update AI message with cleaned text and citations
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
@@ -846,7 +859,7 @@ class ChatProvider: ObservableObject {
                 }
 
                 // Save AI response to backend and sync ID
-                let textToSave = finalResponse.isEmpty ? messageText : finalResponse
+                let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
                 if !textToSave.isEmpty {
                     do {
                         let response = try await APIClient.shared.saveMessage(
@@ -873,6 +886,17 @@ class ChatProvider: ObservableObject {
 
             log("Chat response complete")
 
+            // Analytics: track query completion
+            let durationMs = Int(Date().timeIntervalSince(queryStartTime) * 1000)
+            let responseLength = messages.first(where: { $0.id == aiMessageId })?.text.count ?? 0
+            AnalyticsManager.shared.chatAgentQueryCompleted(
+                durationMs: durationMs,
+                toolCallCount: toolNames.count,
+                toolNames: toolNames,
+                costUsd: queryResult.costUsd,
+                messageLength: responseLength
+            )
+
             // Fire-and-forget: check if user's message mentions goal progress
             let chatText = trimmedText
             Task.detached(priority: .background) {
@@ -884,6 +908,7 @@ class ChatProvider: ObservableObject {
 
             logError("Failed to get AI response", error: error)
             errorMessage = "Failed to get response: \(error.localizedDescription)"
+            AnalyticsManager.shared.chatAgentError(error: error.localizedDescription)
         }
 
         isSending = false
