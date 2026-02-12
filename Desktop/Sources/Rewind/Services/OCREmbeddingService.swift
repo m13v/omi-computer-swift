@@ -10,9 +10,6 @@ actor OCREmbeddingService {
     private let embeddingDimension = 3072  // Gemini gemini-embedding-001 now returns 3072-dim
     private let minTextLength = 20
 
-    // TESTING: Limit backfill to 1000 items for diversity testing
-    private let testLimit = 1000
-
     private init() {}
 
     // MARK: - Text Formatting
@@ -63,17 +60,10 @@ actor OCREmbeddingService {
             var hitError = false
 
             while true {
-                // TESTING: Stop after testLimit items
-                if totalProcessed >= testLimit {
-                    log("OCREmbeddingService: Test limit reached (\(testLimit) items), stopping backfill")
-                    break
-                }
-
                 let items = try await RewindDatabase.shared.getScreenshotsMissingEmbeddings(limit: batchSize)
                 if items.isEmpty { break }
 
-                // TESTING: Limit to remaining items needed
-                let itemsToProcess = Array(items.prefix(testLimit - totalProcessed))
+                let itemsToProcess = items
 
                 let texts = itemsToProcess.map { Self.formatForEmbedding(ocrText: $0.ocrText, appName: $0.appName, windowTitle: $0.windowTitle) }
                 let embeddings: [[Float]]
