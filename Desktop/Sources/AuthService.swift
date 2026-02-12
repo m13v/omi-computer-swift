@@ -825,6 +825,19 @@ class AuthService {
         saveAuthState(isSignedIn: false, email: nil, userId: nil)
         clearTokens()
 
+        // Close database and invalidate all storage caches so the next sign-in
+        // opens a fresh per-user database
+        Task {
+            await RewindDatabase.shared.close()
+            await RewindStorage.shared.reset()
+            await TranscriptionStorage.shared.invalidateCache()
+            await MemoryStorage.shared.invalidateCache()
+            await ActionItemStorage.shared.invalidateCache()
+            await ProactiveStorage.shared.invalidateCache()
+            await NoteStorage.shared.invalidateCache()
+            await AIUserProfileService.shared.invalidateCache()
+        }
+
         // Clear onboarding step/trigger flags but keep hasCompletedOnboarding
         // Permissions are per-app on macOS, so no need to re-show onboarding after logout
         UserDefaults.standard.removeObject(forKey: "onboardingStep")
