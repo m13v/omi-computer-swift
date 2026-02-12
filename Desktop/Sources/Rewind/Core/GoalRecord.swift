@@ -100,7 +100,7 @@ extension GoalRecord {
         ]
 
         guard let data = try? JSONSerialization.data(withJSONObject: json),
-              let decoder = try? {
+              let decoder: JSONDecoder = {
                   let d = JSONDecoder()
                   d.dateDecodingStrategy = .iso8601
                   return d
