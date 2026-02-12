@@ -66,3 +66,13 @@ linkedin-*.md
 /*.docx
 /*.doc
 /*.pdf
+
+# IDE directories
+.cursor/
+.windsurf/
+
+# Session logs / transcripts
+/*.txt
+
+# Skills (user-local)
+skills/
