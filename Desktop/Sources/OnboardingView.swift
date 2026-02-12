@@ -348,7 +348,7 @@ struct OnboardingView: View {
             stepView(
                 icon: "checkmark.circle",
                 title: "You're All Set!",
-                description: "Omi is ready to help you stay focused.\n\nClick the Omi menu bar icon to start monitoring."
+                description: "Just use Omi in the background for 2 days and you'll start getting useful feedback after!"
             )
         default:
             EmptyView()
