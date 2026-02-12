@@ -36,6 +36,11 @@ actor AIUserProfileService {
     /// Cached database queue
     private var _dbQueue: DatabaseQueue?
 
+    /// Invalidate cached DB queue (called on user switch / sign-out)
+    func invalidateCache() {
+        _dbQueue = nil
+    }
+
     // MARK: - Database Access
 
     private func ensureDB() async throws -> DatabaseQueue {
