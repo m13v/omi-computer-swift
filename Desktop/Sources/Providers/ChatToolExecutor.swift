@@ -107,8 +107,9 @@ class ChatToolExecutor {
             finalQuery += " LIMIT 200"
         }
 
+        let query = finalQuery
         let rows = try await dbQueue.read { db in
-            try Row.fetchAll(db, sql: finalQuery)
+            try Row.fetchAll(db, sql: query)
         }
 
         if rows.isEmpty {
