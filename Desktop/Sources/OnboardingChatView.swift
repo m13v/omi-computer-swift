@@ -165,7 +165,10 @@ struct OnboardingChatView: View {
         hasStarted = true
         isInputFocused = true
 
-        // Send initial greeting from AI
+        // Add initial user message to start the conversation
+        conversationHistory.append((role: "user", content: "Hi! I'm starting the onboarding."))
+
+        // Get AI's greeting
         Task {
             await getAIResponse()
         }
