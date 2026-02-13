@@ -1,10 +1,9 @@
 import Foundation
 
-/// Service that re-ranks AI-generated tasks by relevance to the user's profile,
-/// goals, and task engagement history. Once daily, sends ALL active tasks to Gemini
-/// and receives back ONLY the tasks that need re-ranking with their new positions.
-/// Those tasks are inserted at their new positions; all others shift to accommodate.
-/// Scores are persisted to SQLite. Manual tasks are always shown.
+/// Service that re-ranks staged tasks by relevance to the user's profile,
+/// goals, and task engagement history. Runs every hour, sends ALL staged tasks
+/// to Gemini and receives back ONLY the tasks that need re-ranking.
+/// Scores are persisted to SQLite staged_tasks table, then synced to backend.
 actor TaskPrioritizationService {
     static let shared = TaskPrioritizationService()
 
@@ -21,17 +20,10 @@ actor TaskPrioritizationService {
     }
 
     // Configuration
-    private let fullRescoreInterval: TimeInterval = 86400   // 24 hours — daily re-rank
+    private let fullRescoreInterval: TimeInterval = 3600   // 1 hour
     private let startupDelaySeconds: TimeInterval = 90
     private let checkIntervalSeconds: TimeInterval = 300    // Check every 5 minutes
     private let minimumTaskCount = 2
-    private let defaultVisibleAICount = 5
-
-    /// AI task IDs that are allowed to be visible (top N by score)
-    private(set) var visibleAITaskIds: Set<String> = []
-
-    /// Whether prioritization has completed at least once
-    private(set) var hasCompletedScoring = false
 
     private init() {
         // Restore persisted timestamps
@@ -87,41 +79,15 @@ actor TaskPrioritizationService {
         }
     }
 
-    /// Force a full re-scoring (e.g. from settings button). Clears all existing scores first.
+    /// Force a full re-scoring (e.g. from settings button).
     func forceFullRescore() async {
-        do {
-            try await ActionItemStorage.shared.clearAllRelevanceScores()
-        } catch {
-            log("TaskPrioritize: Failed to clear scores: \(error)")
-        }
         lastFullRunTime = nil
         await runFullRescore()
     }
 
-    /// Load the allowlist from SQLite without triggering a full rescore.
-    /// Called early in task loading so the filter is active before the first render.
-    func ensureAllowlistLoaded() async {
-        guard !hasCompletedScoring else { return }
-        await loadAllowlistFromSQLite()
-    }
+    // MARK: - Full Rescore (Hourly)
 
-    /// Called when user opens Tasks tab — load allowlist immediately, trigger run if needed
-    func runIfNeeded() async {
-        // Always load allowlist from SQLite for instant display
-        if !hasCompletedScoring {
-            await loadAllowlistFromSQLite()
-        }
-
-        let now = Date()
-        let timeSinceFull = lastFullRunTime.map { now.timeIntervalSince($0) } ?? .infinity
-        if timeSinceFull >= fullRescoreInterval {
-            await runFullRescore()
-        }
-    }
-
-    // MARK: - Full Rescore (Daily)
-
-    /// Send ALL active AI tasks to Gemini, get back only the ones that need re-ranking
+    /// Send ALL staged tasks to Gemini, get back only the ones that need re-ranking
     private func runFullRescore() async {
         guard !isScoringInProgress else {
             log("TaskPrioritize: [FULL] Skipping — scoring already in progress")
@@ -135,25 +101,21 @@ actor TaskPrioritizationService {
         isScoringInProgress = true
         defer { isScoringInProgress = false }
 
-        log("TaskPrioritize: [FULL] Starting daily rescore")
-        await notifyStoreStarted()
+        log("TaskPrioritize: [FULL] Starting hourly rescore of staged tasks")
 
-        // Get ALL AI tasks
+        // Get ALL staged tasks (not action_items)
         let allTasks: [TaskActionItem]
         do {
-            allTasks = try await ActionItemStorage.shared.getAllAITasks(limit: 10000)
+            allTasks = try await StagedTaskStorage.shared.getAllStagedTasks(limit: 10000)
         } catch {
-            log("TaskPrioritize: [FULL] Failed to fetch tasks: \(error)")
-            await notifyStoreUpdated()
+            log("TaskPrioritize: [FULL] Failed to fetch staged tasks: \(error)")
             return
         }
 
-        log("TaskPrioritize: [FULL] Found \(allTasks.count) AI tasks")
+        log("TaskPrioritize: [FULL] Found \(allTasks.count) staged tasks")
 
         guard allTasks.count >= minimumTaskCount else {
-            log("TaskPrioritize: [FULL] Only \(allTasks.count) tasks, skipping")
-            await loadAllowlistFromSQLite()
-            await notifyStoreUpdated()
+            log("TaskPrioritize: [FULL] Only \(allTasks.count) staged tasks, skipping")
             lastFullRunTime = Date()
             return
         }
@@ -162,7 +124,6 @@ actor TaskPrioritizationService {
         let (referenceContext, profile, goals) = await fetchContext()
 
         // Build the current ranking: tasks ordered by relevanceScore ASC (1 = top)
-        // Tasks without scores go at the end
         let sortedTasks = allTasks.sorted { a, b in
             let scoreA = a.relevanceScore ?? Int.max
             let scoreB = b.relevanceScore ?? Int.max
@@ -208,7 +169,7 @@ actor TaskPrioritizationService {
         let contextSection = contextParts.isEmpty ? "" : contextParts.joined(separator: "\n\n") + "\n\n"
 
         let prompt = """
-        Review the user's task list (ranked 1 = most important, \(sortedTasks.count) = least important).
+        Review the user's staged task list (ranked 1 = most important, \(sortedTasks.count) = least important).
 
         Identify tasks that are MISRANKED — tasks whose current position doesn't match their actual importance.
         Only return tasks that need to move. Do NOT return tasks that are already well-positioned.
@@ -254,7 +215,7 @@ actor TaskPrioritizationService {
             required: ["reranked_tasks", "reasoning"]
         )
 
-        log("TaskPrioritize: [FULL] Sending \(sortedTasks.count) tasks to Gemini")
+        log("TaskPrioritize: [FULL] Sending \(sortedTasks.count) staged tasks to Gemini")
 
         let responseText: String
         do {
@@ -265,17 +226,14 @@ actor TaskPrioritizationService {
             )
         } catch {
             log("TaskPrioritize: [FULL] Gemini request failed: \(error)")
-            await notifyStoreUpdated()
             return
         }
 
-        // Log truncated response for debugging
         let truncated = responseText.prefix(500)
         log("TaskPrioritize: [FULL] Gemini response (\(responseText.count) chars): \(truncated)\(responseText.count > 500 ? "..." : "")")
 
         guard let data = responseText.data(using: .utf8) else {
             log("TaskPrioritize: [FULL] Failed to convert response to data")
-            await notifyStoreUpdated()
             return
         }
 
@@ -284,7 +242,6 @@ actor TaskPrioritizationService {
             result = try JSONDecoder().decode(ReRankingResponse.self, from: data)
         } catch {
             log("TaskPrioritize: [FULL] Failed to parse re-ranking response: \(error)")
-            await notifyStoreUpdated()
             return
         }
 
@@ -304,8 +261,8 @@ actor TaskPrioritizationService {
         if !validReranks.isEmpty {
             let reranks = validReranks.map { (backendId: $0.taskId, newPosition: $0.newPosition) }
             do {
-                try await ActionItemStorage.shared.applySelectiveReranking(reranks)
-                log("TaskPrioritize: [FULL] Applied selective re-ranking for \(validReranks.count) tasks")
+                try await StagedTaskStorage.shared.applySelectiveReranking(reranks)
+                log("TaskPrioritize: [FULL] Applied selective re-ranking for \(validReranks.count) staged tasks")
             } catch {
                 log("TaskPrioritize: [FULL] Failed to apply re-ranking: \(error)")
             }
@@ -315,27 +272,21 @@ actor TaskPrioritizationService {
 
         lastFullRunTime = Date()
 
-        // Sync all scores to backend after re-ranking
+        // Sync all staged scores to backend
         await syncAllScoresToBackend()
 
-        await loadAllowlistFromSQLite()
-        log("TaskPrioritize: [FULL] Done. Top \(visibleAITaskIds.count) visible.")
-        await notifyStoreUpdated()
+        log("TaskPrioritize: [FULL] Done.")
     }
 
-    /// Sync all scored tasks to the backend after Gemini re-ranking
+    /// Sync all scored staged tasks to the backend
     private func syncAllScoresToBackend() async {
         do {
-            let tasks = try await ActionItemStorage.shared.getAllScoredTasks()
-            let scores = tasks.compactMap { t -> (id: String, score: Int)? in
-                guard let s = t.relevanceScore, !t.id.hasPrefix("local_") else { return nil }
-                return (id: t.id, score: s)
-            }
+            let scores = try await StagedTaskStorage.shared.getAllScoredTasks()
             guard !scores.isEmpty else { return }
-            try await APIClient.shared.batchUpdateScores(scores)
-            log("TaskPrioritize: Synced \(scores.count) scores to backend")
+            try await APIClient.shared.batchUpdateStagedScores(scores)
+            log("TaskPrioritize: Synced \(scores.count) staged scores to backend")
         } catch {
-            logError("TaskPrioritize: Failed to sync scores to backend", error: error)
+            logError("TaskPrioritize: Failed to sync staged scores to backend", error: error)
         }
     }
 
@@ -367,39 +318,8 @@ actor TaskPrioritizationService {
         return (referenceContext, userProfile?.profileText, goals)
     }
 
-    // MARK: - Allowlist from SQLite
-
-    /// Reload the allowlist from SQLite. Call after completing/deleting a task
-    /// so a new task can fill the vacated slot.
-    func reloadAllowlist() async {
-        await loadAllowlistFromSQLite()
-    }
-
-    private func loadAllowlistFromSQLite() async {
-        do {
-            // Top 5 globally — no date filter. The store will ensure these are loaded.
-            let topTasks = try await ActionItemStorage.shared.getScoredAITasks(
-                limit: defaultVisibleAICount
-            )
-            var ids = Set(topTasks.map { $0.id })
-
-            // Ensure at least one no-deadline task is visible (so the section renders)
-            if let noDeadlineTask = try await ActionItemStorage.shared.getTopScoredNoDeadlineTask(),
-               !ids.contains(noDeadlineTask.id) {
-                ids.insert(noDeadlineTask.id)
-            }
-
-            visibleAITaskIds = ids
-            hasCompletedScoring = true
-            log("TaskPrioritize: Loaded allowlist from SQLite — \(visibleAITaskIds.count) AI tasks visible")
-        } catch {
-            log("TaskPrioritize: Failed to load allowlist from SQLite: \(error)")
-        }
-    }
-
     // MARK: - Context Builders
 
-    /// Build a context string from completed tasks showing what the user engages with
     private func buildReferenceContext(_ tasks: [TaskActionItem]) -> String {
         guard !tasks.isEmpty else { return "" }
 
@@ -412,27 +332,6 @@ actor TaskPrioritizationService {
 
         return "TASKS THE USER HAS COMPLETED (for reference — do NOT rank these):\n\(lines)"
     }
-
-    // MARK: - Notifications
-
-    private func notifyStoreStarted() async {
-        await MainActor.run {
-            NotificationCenter.default.post(name: .taskPrioritizationDidStart, object: nil)
-        }
-    }
-
-    private func notifyStoreUpdated() async {
-        await MainActor.run {
-            NotificationCenter.default.post(name: .taskPrioritizationDidUpdate, object: nil)
-        }
-    }
-}
-
-// MARK: - Notification Name
-
-extension Notification.Name {
-    static let taskPrioritizationDidStart = Notification.Name("taskPrioritizationDidStart")
-    static let taskPrioritizationDidUpdate = Notification.Name("taskPrioritizationDidUpdate")
 }
 
 // MARK: - Response Models
