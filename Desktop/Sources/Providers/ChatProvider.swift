@@ -923,6 +923,58 @@ class ChatProvider: ObservableObject {
         isLoading = false
     }
 
+    // MARK: - Stop / Follow-Up
+
+    /// Stop the running agent, keeping partial response
+    func stopAgent() {
+        guard isSending else { return }
+        Task {
+            await claudeBridge.interrupt()
+        }
+        // Result flows back normally through the bridge with partial text
+    }
+
+    /// Send a follow-up message while the agent is still running
+    func sendFollowUp(_ text: String) async {
+        let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedText.isEmpty, isSending else { return }
+
+        // Add as user message in UI
+        let userMessageId = UUID().uuidString
+        let userMessage = ChatMessage(
+            id: userMessageId,
+            text: trimmedText,
+            sender: .user
+        )
+        messages.append(userMessage)
+
+        // Persist to backend (fire-and-forget)
+        let capturedSessionId = isInDefaultChat ? nil : currentSessionId
+        let capturedAppId = overrideAppId ?? selectedAppId
+        Task { [weak self] in
+            do {
+                let response = try await APIClient.shared.saveMessage(
+                    text: trimmedText,
+                    sender: "human",
+                    appId: capturedAppId,
+                    sessionId: capturedSessionId
+                )
+                await MainActor.run {
+                    if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
+                        self?.messages[index].id = response.id
+                        self?.messages[index].isSynced = true
+                    }
+                }
+            } catch {
+                logError("Failed to persist follow-up message", error: error)
+            }
+        }
+
+        // Send to bridge
+        await claudeBridge.sendFollowUp(text: trimmedText)
+        log("ChatProvider: follow-up sent to bridge")
+    }
+
     // MARK: - Send Message
 
     /// Send a message and get AI response via Claude Agent SDK bridge
