@@ -62,6 +62,7 @@ pub const CHAT_SESSIONS_SUBCOLLECTION: &str = "chat_sessions";
 pub const GOALS_SUBCOLLECTION: &str = "goals";
 pub const KG_NODES_SUBCOLLECTION: &str = "kg_nodes";
 pub const KG_EDGES_SUBCOLLECTION: &str = "kg_edges";
+pub const STAGED_TASKS_SUBCOLLECTION: &str = "staged_tasks";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -2430,6 +2431,329 @@ impl FirestoreService {
             uid
         );
         Ok(())
+    }
+
+    // =========================================================================
+    // STAGED TASKS
+    // =========================================================================
+
+    /// Create a staged task in the staged_tasks subcollection.
+    /// Same schema as action_items but stored separately for promotion workflow.
+    pub async fn create_staged_task(
+        &self,
+        uid: &str,
+        description: &str,
+        due_at: Option<DateTime<Utc>>,
+        source: Option<&str>,
+        priority: Option<&str>,
+        metadata: Option<&str>,
+        category: Option<&str>,
+        relevance_score: Option<i32>,
+    ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
+        let item_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            STAGED_TASKS_SUBCOLLECTION,
+            item_id
+        );
+
+        let mut fields = json!({
+            "description": {"stringValue": description},
+            "completed": {"booleanValue": false},
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "updated_at": {"timestampValue": now.to_rfc3339()}
+        });
+
+        if let Some(due) = due_at {
+            fields["due_at"] = json!({"timestampValue": due.to_rfc3339()});
+        }
+        if let Some(src) = source {
+            fields["source"] = json!({"stringValue": src});
+        }
+        if let Some(pri) = priority {
+            fields["priority"] = json!({"stringValue": pri});
+        }
+        if let Some(meta) = metadata {
+            fields["metadata"] = json!({"stringValue": meta});
+        }
+        if let Some(cat) = category {
+            fields["category"] = json!({"stringValue": cat});
+        }
+        if let Some(score) = relevance_score {
+            fields["relevance_score"] = json!({"integerValue": score.to_string()});
+        }
+
+        let doc = json!({"fields": fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &url)
+            .await?
+            .json(&doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore create staged task error: {}", error_text).into());
+        }
+
+        let created_doc: Value = response.json().await?;
+        let item = self.parse_action_item(&created_doc)?;
+
+        tracing::info!(
+            "Created staged task {} for user {} with source={:?}",
+            item_id,
+            uid,
+            source
+        );
+        Ok(item)
+    }
+
+    /// Get staged tasks ordered by relevance_score ASC (best ranked first).
+    /// Filters out deleted and completed tasks.
+    pub async fn get_staged_tasks(
+        &self,
+        uid: &str,
+        limit: usize,
+        offset: usize,
+    ) -> Result<Vec<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        // Query non-completed staged tasks ordered by relevance_score ASC
+        let filters = vec![
+            json!({
+                "fieldFilter": {
+                    "field": {"fieldPath": "completed"},
+                    "op": "EQUAL",
+                    "value": {"booleanValue": false}
+                }
+            }),
+        ];
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": STAGED_TASKS_SUBCOLLECTION}],
+                "where": {
+                    "compositeFilter": {
+                        "op": "AND",
+                        "filters": filters
+                    }
+                },
+                "orderBy": [
+                    {"field": {"fieldPath": "relevance_score"}, "direction": "ASCENDING"},
+                    {"field": {"fieldPath": "created_at"}, "direction": "DESCENDING"}
+                ],
+                "limit": limit + offset
+            }
+        });
+
+        let query_url = format!("{}:runQuery", parent);
+        let response = self
+            .build_request(reqwest::Method::POST, &query_url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query staged tasks error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let items: Vec<ActionItemDB> = results
+            .iter()
+            .filter_map(|r| r.get("document"))
+            .filter_map(|doc| self.parse_action_item(doc).ok())
+            .filter(|item| item.deleted != Some(true))
+            .skip(offset)
+            .collect();
+
+        Ok(items)
+    }
+
+    /// Hard-delete a staged task (permanently remove from Firestore).
+    pub async fn delete_staged_task(
+        &self,
+        uid: &str,
+        item_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            STAGED_TASKS_SUBCOLLECTION,
+            item_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::DELETE, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() && response.status() != reqwest::StatusCode::NOT_FOUND {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore delete staged task error: {}", error_text).into());
+        }
+
+        tracing::info!("Deleted staged task {} for user {}", item_id, uid);
+        Ok(())
+    }
+
+    /// Batch update relevance scores for staged tasks.
+    pub async fn batch_update_staged_scores(
+        &self,
+        uid: &str,
+        scores: &[(String, i32)],
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let now = Utc::now();
+
+        for chunk in scores.chunks(500) {
+            let writes: Vec<Value> = chunk
+                .iter()
+                .map(|(item_id, score)| {
+                    let doc_name = format!(
+                        "projects/{}/databases/(default)/documents/{}/{}/{}/{}",
+                        self.project_id, USERS_COLLECTION, uid, STAGED_TASKS_SUBCOLLECTION, item_id
+                    );
+                    json!({
+                        "update": {
+                            "name": doc_name,
+                            "fields": {
+                                "relevance_score": {"integerValue": score.to_string()},
+                                "updated_at": {"timestampValue": now.to_rfc3339()}
+                            }
+                        },
+                        "updateMask": {
+                            "fieldPaths": ["relevance_score", "updated_at"]
+                        }
+                    })
+                })
+                .collect();
+
+            let commit_url = format!(
+                "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:commit",
+                self.project_id
+            );
+
+            let body = json!({ "writes": writes });
+
+            let response = self
+                .build_request(reqwest::Method::POST, &commit_url)
+                .await?
+                .json(&body)
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                return Err(format!("Firestore batch commit staged scores error: {}", error_text).into());
+            }
+        }
+
+        tracing::info!(
+            "Batch updated {} staged task scores for user {}",
+            scores.len(),
+            uid
+        );
+        Ok(())
+    }
+
+    /// Count active AI action items (source contains "screenshot", not completed, not deleted).
+    /// Used by the promotion system to determine if more tasks should be promoted.
+    pub async fn count_active_ai_action_items(
+        &self,
+        uid: &str,
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        // Query action_items where completed=false
+        // We filter source and deleted in Rust since Firestore can't reliably filter
+        // on fields that may not exist on all documents
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "completed"},
+                        "op": "EQUAL",
+                        "value": {"booleanValue": false}
+                    }
+                },
+                "limit": 500
+            }
+        });
+
+        let query_url = format!("{}:runQuery", parent);
+        let response = self
+            .build_request(reqwest::Method::POST, &query_url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore count AI items error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let count = results
+            .iter()
+            .filter_map(|r| r.get("document"))
+            .filter_map(|doc| self.parse_action_item(doc).ok())
+            .filter(|item| {
+                item.deleted != Some(true)
+                    && item
+                        .source
+                        .as_ref()
+                        .map_or(false, |s| s.contains("screenshot"))
+            })
+            .count();
+
+        Ok(count)
+    }
+
+    /// Get a single staged task by ID.
+    pub async fn get_staged_task_by_id(
+        &self,
+        uid: &str,
+        item_id: &str,
+    ) -> Result<Option<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            STAGED_TASKS_SUBCOLLECTION,
+            item_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if response.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore get staged task error: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        let item = self.parse_action_item(&doc)?;
+        Ok(Some(item))
     }
 
     // =========================================================================
