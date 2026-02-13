@@ -175,8 +175,10 @@ class TasksStore: ObservableObject {
                 completed: false
             )
 
-            // Sync API results to local cache
+            // Sync API results to local cache, clean up phantom tasks
             try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+            let apiIds = Set(response.items.map { $0.id })
+            try await ActionItemStorage.shared.markAbsentTasksAsStaged(apiIds: apiIds)
 
             // Reload from local cache (respects local changes like completions/deletions)
             let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
@@ -332,9 +334,12 @@ class TasksStore: ObservableObject {
             hasLoadedIncomplete = true
             log("TasksStore: Fetched \(response.items.count) incomplete tasks from API")
 
-            // Sync API data to local cache
+            // Sync API data to local cache, then clean up phantom tasks
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+                // Mark tasks that the API no longer returns as staged
+                let apiIds = Set(response.items.map { $0.id })
+                try await ActionItemStorage.shared.markAbsentTasksAsStaged(apiIds: apiIds)
             } catch {
                 logError("TasksStore: Failed to sync incomplete tasks to local cache", error: error)
             }
