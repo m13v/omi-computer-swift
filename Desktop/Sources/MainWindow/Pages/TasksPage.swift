@@ -472,6 +472,8 @@ class TasksViewModel: ObservableObject {
     }
     @Published var sortOption: TaskSortOption = .relevance {
         didSet {
+            // Hide stale task list until store finishes reloading
+            isSwitchingSortMode = true
             if sortOption == .dueDate {
                 selectedTags.insert(.last7Days)
                 selectedTags.remove(.topScoredOnly)
@@ -624,6 +626,9 @@ class TasksViewModel: ObservableObject {
 
     /// Throttle flag for loadMoreIfNeeded to prevent task storms during fast scroll
     private var isLoadingMoreGuard = false
+
+    /// True while switching between sort modes (hides stale list until fresh data arrives)
+    @Published private(set) var isSwitchingSortMode = false
 
     // MARK: - Cached Properties (avoid recomputation on every render)
 
@@ -874,6 +879,11 @@ class TasksViewModel: ObservableObject {
 
         // Recompute display caches (reads @Published state, must stay on main but is now cheaper with cached dates)
         recomputeDisplayCaches()
+
+        // Fresh data has arrived from the store — clear the mode-switching spinner
+        if isSwitchingSortMode {
+            isSwitchingSortMode = false
+        }
 
         // Load true counts from SQLite asynchronously
         Task {
@@ -1526,6 +1536,12 @@ class TasksViewModel: ObservableObject {
 struct TasksPage: View {
     @ObservedObject var viewModel: TasksViewModel
     @ObservedObject private var store = TasksStore.shared
+    var chatProvider: ChatProvider?
+
+    // Chat panel state
+    @StateObject private var chatCoordinator: TaskChatCoordinator
+    @State private var showChatPanel = false
+    @AppStorage("tasksChatPanelRatio") private var chatPanelRatio: Double = 0.55
 
     // Filter popover state
     @State private var showFilterPopover = false
@@ -1533,7 +1549,93 @@ struct TasksPage: View {
     @State private var pendingSelectedDynamicTags: Set<DynamicFilterTag> = []
     @State private var filterSearchText = ""
 
+    init(viewModel: TasksViewModel, chatProvider: ChatProvider? = nil) {
+        self.viewModel = viewModel
+        self.chatProvider = chatProvider
+        let provider = chatProvider ?? ChatProvider()
+        _chatCoordinator = StateObject(wrappedValue: TaskChatCoordinator(chatProvider: provider))
+    }
+
     var body: some View {
+        GeometryReader { geometry in
+            let totalWidth = geometry.size.width
+            let minPanelWidth: CGFloat = 250
+            let isChatVisible = showChatPanel && chatCoordinator.activeTaskId != nil && chatProvider != nil
+            let tasksWidth = isChatVisible
+                ? max(minPanelWidth, totalWidth * chatPanelRatio)
+                : totalWidth
+            let chatWidth = isChatVisible
+                ? max(minPanelWidth, totalWidth - tasksWidth - 1)
+                : 0
+
+            HStack(spacing: 0) {
+                // Left panel: Tasks content
+                tasksContent
+                    .frame(width: tasksWidth)
+
+                if isChatVisible {
+                    // Draggable divider
+                    TaskChatDivider(
+                        panelRatio: $chatPanelRatio,
+                        totalWidth: totalWidth,
+                        minRatio: minPanelWidth / totalWidth,
+                        maxRatio: 1.0 - (minPanelWidth / totalWidth)
+                    )
+
+                    // Right panel: Task chat
+                    TaskChatPanel(
+                        chatProvider: chatProvider!,
+                        coordinator: chatCoordinator,
+                        task: activeTask,
+                        onClose: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                showChatPanel = false
+                            }
+                            Task { await chatCoordinator.closeChat() }
+                        }
+                    )
+                    .frame(width: chatWidth)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.clear)
+        .dismissableSheet(isPresented: $viewModel.showingCreateTask) {
+            TaskCreateSheet(
+                viewModel: viewModel,
+                onDismiss: { viewModel.showingCreateTask = false }
+            )
+        }
+        .onAppear {
+            // If tasks are already loaded, notify sidebar to clear loading indicator
+            if !viewModel.isLoading {
+                NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
+            }
+            // Trigger prioritization scoring if needed (e.g. first time opening tasks tab)
+            Task { await TaskPrioritizationService.shared.runIfNeeded() }
+        }
+    }
+
+    /// The currently active task for the chat panel
+    private var activeTask: TaskActionItem? {
+        guard let taskId = chatCoordinator.activeTaskId else { return nil }
+        return store.incompleteTasks.first(where: { $0.id == taskId })
+            ?? store.completedTasks.first(where: { $0.id == taskId })
+    }
+
+    /// Open chat for a task
+    private func openChatForTask(_ task: TaskActionItem) {
+        Task {
+            await chatCoordinator.openChat(for: task)
+            withAnimation(.easeInOut(duration: 0.2)) {
+                showChatPanel = true
+            }
+        }
+    }
+
+    // MARK: - Tasks Content
+
+    private var tasksContent: some View {
         VStack(spacing: 0) {
             // Header with filter toggle and sort
             headerView
@@ -1554,7 +1656,9 @@ struct TasksPage: View {
             }
 
             // Content
-            if viewModel.isLoading && viewModel.tasks.isEmpty {
+            if viewModel.isSwitchingSortMode {
+                loadingView
+            } else if viewModel.isLoading && viewModel.tasks.isEmpty {
                 loadingView
             } else if let error = viewModel.error, viewModel.tasks.isEmpty {
                 errorView(error)
@@ -1563,22 +1667,6 @@ struct TasksPage: View {
             } else {
                 tasksListView
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.clear)
-        .dismissableSheet(isPresented: $viewModel.showingCreateTask) {
-            TaskCreateSheet(
-                viewModel: viewModel,
-                onDismiss: { viewModel.showingCreateTask = false }
-            )
-        }
-        .onAppear {
-            // If tasks are already loaded, notify sidebar to clear loading indicator
-            if !viewModel.isLoading {
-                NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
-            }
-            // Trigger prioritization scoring if needed (e.g. first time opening tasks tab)
-            Task { await TaskPrioritizationService.shared.runIfNeeded() }
         }
     }
 
@@ -1632,6 +1720,11 @@ struct TasksPage: View {
                 modeToggle
                 addTaskButton
                 taskSettingsButton
+
+                // Chat panel toggle (only when chatProvider is available)
+                if chatProvider != nil {
+                    chatToggleButton
+                }
             }
         }
         .padding(.horizontal, 16)
@@ -2078,6 +2171,30 @@ struct TasksPage: View {
         .help("Task Settings")
     }
 
+    private var chatToggleButton: some View {
+        Button {
+            if showChatPanel {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showChatPanel = false
+                }
+                Task { await chatCoordinator.closeChat() }
+            } else if let firstTask = viewModel.displayTasks.first {
+                openChatForTask(firstTask)
+            }
+        } label: {
+            Image(systemName: showChatPanel ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
+                .font(.system(size: 12))
+                .foregroundColor(showChatPanel ? OmiColors.purplePrimary : OmiColors.textSecondary)
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(showChatPanel ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundSecondary)
+                )
+        }
+        .buttonStyle(.plain)
+        .help(showChatPanel ? "Close chat panel" : "Open task chat")
+    }
+
     // MARK: - Loading View
 
     private var loadingView: some View {
@@ -2180,7 +2297,8 @@ struct TasksPage: View {
                                 },
                                 onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                 onDecrementIndent: { viewModel.decrementIndent(for: $0) },
-                                onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) }
+                                onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
+                                onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil
                             )
                         }
                     }
@@ -2206,7 +2324,8 @@ struct TasksPage: View {
                                 await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
                             },
                             onIncrementIndent: { viewModel.incrementIndent(for: $0) },
-                            onDecrementIndent: { viewModel.decrementIndent(for: $0) }
+                            onDecrementIndent: { viewModel.decrementIndent(for: $0) },
+                            onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil
                         )
                             .onAppear {
                                 Task {
@@ -2332,6 +2451,7 @@ struct TaskCategorySection: View {
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
+    var onOpenChat: ((TaskActionItem) -> Void)?
 
     /// Tasks visible in current view — category view (due date sort) shows all tasks, no allowlist filtering
     private var visibleTasks: [TaskActionItem] {
@@ -2379,7 +2499,8 @@ struct TaskCategorySection: View {
                             onToggleSelection: onToggleSelection,
                             onUpdateDetails: onUpdateDetails,
                             onIncrementIndent: onIncrementIndent,
-                            onDecrementIndent: onDecrementIndent
+                            onDecrementIndent: onDecrementIndent,
+                            onOpenChat: onOpenChat
                         )
                             .draggable(task.id) {
                                 // Drag preview
@@ -2454,6 +2575,7 @@ struct TaskRow: View {
     var onUpdateDetails: ((TaskActionItem, String?, Date?, String?) async -> Void)?
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
+    var onOpenChat: ((TaskActionItem) -> Void)?
 
     @State private var isHovering = false
     @State private var showDeleteConfirmation = false
@@ -2824,6 +2946,20 @@ struct TaskRow: View {
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                     if TaskAgentSettings.shared.isEnabled {
                         AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail)
+                    }
+
+                    // Chat button (shown on hover when onOpenChat is available)
+                    if isHovering && onOpenChat != nil && !task.completed {
+                        Button {
+                            onOpenChat?(task)
+                        } label: {
+                            Image(systemName: "bubble.left")
+                                .font(.system(size: 10))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 20, height: 20)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Chat about this task")
                     }
 
                     // Task detail button for tasks with rich metadata
@@ -3478,6 +3614,43 @@ struct TaskCreateSheet: View {
         await viewModel.createTask(description: trimmed, dueAt: hasDueDate ? dueDate : nil, priority: priority, tags: tags)
         isSaving = false
         dismissSheet()
+    }
+}
+
+// MARK: - Task Chat Divider
+
+/// Draggable divider between tasks list and chat panel
+private struct TaskChatDivider: View {
+    @Binding var panelRatio: Double
+    let totalWidth: CGFloat
+    let minRatio: Double
+    let maxRatio: Double
+
+    @State private var isDragging = false
+
+    var body: some View {
+        Rectangle()
+            .fill(isDragging ? OmiColors.textSecondary : OmiColors.border)
+            .frame(width: 1)
+            .contentShape(Rectangle().inset(by: -4))
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.resizeLeftRight.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+            .gesture(
+                DragGesture()
+                    .onChanged { value in
+                        isDragging = true
+                        let newRatio = Double(value.location.x / totalWidth)
+                        panelRatio = min(maxRatio, max(minRatio, newRatio))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                    }
+            )
     }
 }
 
