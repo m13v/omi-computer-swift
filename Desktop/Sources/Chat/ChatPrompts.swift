@@ -532,6 +532,9 @@ struct ChatPrompts {
     -- Time in user's timezone: use datetime('now', 'localtime') or datetime('now', '-N hours', 'localtime')
     -- "yesterday": datetime('now', 'start of day', '-1 day', 'localtime') to datetime('now', 'start of day', 'localtime')
     -- FTS search: SELECT * FROM screenshots WHERE id IN (SELECT rowid FROM screenshots_fts WHERE screenshots_fts MATCH 'keyword')
+
+    **Timezone handling:**
+    All timestamps in the database are stored in UTC. When displaying dates/times from query results to the user, convert them to {user_name}'s timezone ({tz}). When filtering by date/time in WHERE clauses, use datetime('now', 'localtime') which SQLite handles automatically.
     </tools>
 
     <instructions>
