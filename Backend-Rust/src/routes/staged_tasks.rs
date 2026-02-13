@@ -269,7 +269,7 @@ async fn promote_staged_task(
 
 /// POST /v1/staged-tasks/migrate - One-time migration of existing AI tasks
 ///
-/// Moves excess AI tasks from action_items to staged_tasks.
+/// Moves excess AI tasks from action_items to staged_tasks using batch commits.
 /// Keeps top 5 in action_items, prefixes with [screen].
 async fn migrate_ai_tasks(
     State(state): State<AppState>,
@@ -336,6 +336,12 @@ async fn migrate_ai_tasks(
         user.uid
     );
 
+    if ai_tasks.is_empty() {
+        return Ok(Json(ActionItemStatusResponse {
+            status: "ok".to_string(),
+        }));
+    }
+
     // Sort by relevance_score ASC (best first)
     ai_tasks.sort_by(|a, b| {
         let score_a = a.relevance_score.unwrap_or(i32::MAX);
@@ -343,65 +349,52 @@ async fn migrate_ai_tasks(
         score_a.cmp(&score_b)
     });
 
-    let mut migrated_count = 0;
-
-    for (i, task) in ai_tasks.iter().enumerate() {
-        if i < 5 {
-            // Keep top 5 in action_items, prefix with [screen] if needed
-            if !task.description.starts_with("[screen] ") {
-                let prefixed = format!("[screen] {}", task.description);
-                if let Err(e) = state
-                    .firestore
-                    .update_action_item(
-                        &user.uid,
-                        &task.id,
-                        None,
-                        Some(&prefixed),
-                        None,
-                        None,
-                        None,
-                        None,
-                        None,
-                    )
-                    .await
-                {
-                    tracing::error!("Failed to prefix task {}: {}", task.id, e);
-                }
-            }
-        } else {
-            // Move to staged_tasks: create + delete from action_items
-            match state
+    // Prefix top 5 with [screen] (small number, do individually)
+    for task in ai_tasks.iter().take(5) {
+        if !task.description.starts_with("[screen] ") {
+            let prefixed = format!("[screen] {}", task.description);
+            if let Err(e) = state
                 .firestore
-                .create_staged_task(
+                .update_action_item(
                     &user.uid,
-                    &task.description,
-                    task.due_at,
-                    task.source.as_deref(),
-                    task.priority.as_deref(),
-                    task.metadata.as_deref(),
-                    task.category.as_deref(),
-                    task.relevance_score,
+                    &task.id,
+                    None,
+                    Some(&prefixed),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
                 )
                 .await
             {
-                Ok(_) => {
-                    // Hard-delete from action_items
-                    if let Err(e) = state
-                        .firestore
-                        .delete_action_item(&user.uid, &task.id)
-                        .await
-                    {
-                        tracing::error!("Failed to delete migrated task {}: {}", task.id, e);
-                    } else {
-                        migrated_count += 1;
-                    }
-                }
-                Err(e) => {
-                    tracing::error!("Failed to create staged task during migration: {}", e);
-                }
+                tracing::error!("Failed to prefix task {}: {}", task.id, e);
             }
         }
     }
+
+    // Move the rest via batch commits: create in staged_tasks + delete from action_items
+    let tasks_to_move: Vec<ActionItemDB> = ai_tasks.into_iter().skip(5).collect();
+    if tasks_to_move.is_empty() {
+        tracing::info!("Migration: only 5 or fewer AI tasks, nothing to move");
+        return Ok(Json(ActionItemStatusResponse {
+            status: "ok".to_string(),
+        }));
+    }
+
+    tracing::info!("Migration: moving {} AI tasks via batch commits", tasks_to_move.len());
+
+    let migrated_count = match state
+        .firestore
+        .batch_migrate_to_staged(&user.uid, &tasks_to_move)
+        .await
+    {
+        Ok(count) => count,
+        Err(e) => {
+            tracing::error!("Migration batch commit failed: {}", e);
+            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    };
 
     tracing::info!(
         "Migration complete: {} AI tasks moved to staged_tasks for user {}",
