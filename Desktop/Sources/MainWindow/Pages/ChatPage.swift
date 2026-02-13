@@ -403,6 +403,12 @@ struct ChatPage: View {
                 AnalyticsManager.shared.chatMessageSent(messageLength: text.count, hasContext: selectedApp != nil)
                 Task { await chatProvider.sendMessage(text) }
             },
+            onFollowUp: { text in
+                Task { await chatProvider.sendFollowUp(text) }
+            },
+            onStop: {
+                chatProvider.stopAgent()
+            },
             isSending: chatProvider.isSending
         )
     }
