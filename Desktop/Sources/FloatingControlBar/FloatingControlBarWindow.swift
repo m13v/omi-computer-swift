@@ -549,9 +549,9 @@ class FloatingControlBarManager {
             show()
         }
 
-        // Set up state for immediate response view
+        // Set up state — go straight to response view (skip input view to avoid resize flicker)
         window.state.showingAIConversation = true
-        window.state.showingAIResponse = false
+        window.state.showingAIResponse = true
         window.state.isAILoading = true
         window.state.aiInputText = query
         window.state.displayedQuery = query
