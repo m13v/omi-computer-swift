@@ -311,7 +311,7 @@ actor TaskAssistant: ProactiveAssistant {
             previousTasks.removeLast()
         }
 
-        // Save to SQLite + generate embedding
+        // Save to staged_tasks SQLite + generate embedding
         let extractionRecord = await saveTaskToSQLite(
             task: task,
             screenshotId: screenshotId,
@@ -319,18 +319,18 @@ actor TaskAssistant: ProactiveAssistant {
             windowTitle: windowTitle
         )
 
-        // Generate embedding for new task in background
+        // Generate embedding for new staged task in background
         if let recordId = extractionRecord?.id {
             Task {
                 await self.generateEmbeddingForTask(id: recordId, text: task.title)
             }
         }
 
-        // Sync to backend
+        // Sync to backend (staged_tasks)
         if let backendId = await syncTaskToBackend(task: task, taskResult: taskResult, windowTitle: windowTitle) {
             if let recordId = extractionRecord?.id {
                 do {
-                    try await ActionItemStorage.shared.markSynced(id: recordId, backendId: backendId)
+                    try await StagedTaskStorage.shared.markSynced(id: recordId, backendId: backendId)
                 } catch {
                     logError("Task: Failed to update sync status", error: error)
                 }
@@ -356,26 +356,26 @@ actor TaskAssistant: ProactiveAssistant {
         ])
     }
 
-    /// Generate embedding for a newly saved task and store it
+    /// Generate embedding for a newly saved staged task and store it
     private func generateEmbeddingForTask(id: Int64, text: String) async {
         do {
             let embedding = try await EmbeddingService.shared.embed(text: text)
             let data = await EmbeddingService.shared.floatsToData(embedding)
-            try await ActionItemStorage.shared.updateEmbedding(id: id, embedding: data)
+            try await StagedTaskStorage.shared.updateEmbedding(id: id, embedding: data)
             await EmbeddingService.shared.addToIndex(id: id, embedding: embedding)
-            log("Task: Generated embedding for task \(id)")
+            log("Task: Generated embedding for staged task \(id)")
         } catch {
-            logError("Task: Failed to generate embedding for task \(id)", error: error)
+            logError("Task: Failed to generate embedding for staged task \(id)", error: error)
         }
     }
 
-    /// Save extracted task to SQLite using ActionItemStorage
+    /// Save extracted task to staged_tasks SQLite table
     private func saveTaskToSQLite(
         task: ExtractedTask,
         screenshotId: Int64?,
         contextSummary: String,
         windowTitle: String? = nil
-    ) async -> ActionItemRecord? {
+    ) async -> StagedTaskRecord? {
         var metadata: [String: Any] = [
             "tags": task.tags,
             "context_summary": contextSummary,
@@ -410,7 +410,7 @@ actor TaskAssistant: ProactiveAssistant {
 
         let dueAt = parseDueDate(from: task.inferredDeadline)
 
-        let record = ActionItemRecord(
+        let record = StagedTaskRecord(
             backendSynced: false,
             description: task.title,
             source: "screenshot",
@@ -429,17 +429,16 @@ actor TaskAssistant: ProactiveAssistant {
         )
 
         do {
-            let inserted: ActionItemRecord
+            let inserted: StagedTaskRecord
             if task.relevanceScore != nil {
-                // Use shift-and-insert to maintain unique scores
-                inserted = try await ActionItemStorage.shared.insertWithScoreShift(record)
+                inserted = try await StagedTaskStorage.shared.insertWithScoreShift(record)
             } else {
-                inserted = try await ActionItemStorage.shared.insertLocalActionItem(record)
+                inserted = try await StagedTaskStorage.shared.insertLocalStagedTask(record)
             }
-            log("Task: Saved to SQLite (id: \(inserted.id ?? -1), score: \(task.relevanceScore.map { String($0) } ?? "nil"))")
+            log("Task: Saved to staged_tasks (id: \(inserted.id ?? -1), score: \(task.relevanceScore.map { String($0) } ?? "nil"))")
             return inserted
         } catch {
-            logError("Task: Failed to save to SQLite", error: error)
+            logError("Task: Failed to save to staged_tasks", error: error)
             return nil
         }
     }
@@ -471,7 +470,7 @@ actor TaskAssistant: ProactiveAssistant {
 
             let dueAt = parseDueDate(from: task.inferredDeadline)
 
-            let response = try await APIClient.shared.createActionItem(
+            let response = try await APIClient.shared.createStagedTask(
                 description: task.title,
                 dueAt: dueAt,
                 source: "screenshot",
@@ -481,7 +480,7 @@ actor TaskAssistant: ProactiveAssistant {
                 relevanceScore: task.relevanceScore
             )
 
-            log("Task: Synced to backend (id: \(response.id))")
+            log("Task: Synced to staged_tasks backend (id: \(response.id))")
             return response.id
         } catch {
             logError("Task: Failed to sync to backend", error: error)
@@ -1014,6 +1013,7 @@ actor TaskAssistant: ProactiveAssistant {
         var completedTasks: [(id: Int64, description: String)] = []
         var deletedTasks: [(id: Int64, description: String)] = []
 
+        // Query both action_items (promoted + manual) and staged_tasks for full context
         do {
             topRelevanceTasks = try await ActionItemStorage.shared.getTopRelevanceTasks(limit: 30)
         } catch {
@@ -1024,6 +1024,17 @@ actor TaskAssistant: ProactiveAssistant {
             recentTasks = try await ActionItemStorage.shared.getRecentActiveTasks(limit: 30)
         } catch {
             logError("Task: Failed to load recent tasks", error: error)
+        }
+
+        // Also include staged tasks for dedup context
+        do {
+            let stagedTasks = try await StagedTaskStorage.shared.getAllStagedTasks(limit: 30)
+            let stagedAsTuples = stagedTasks.map { task in
+                (id: Int64(0), description: task.description, priority: task.priority, relevanceScore: task.relevanceScore)
+            }
+            recentTasks.append(contentsOf: stagedAsTuples)
+        } catch {
+            logError("Task: Failed to load staged tasks for context", error: error)
         }
 
         // Merge: top relevance tasks first, then recent ones not already included
@@ -1094,7 +1105,7 @@ actor TaskAssistant: ProactiveAssistant {
         return results.sorted { ($0.similarity ?? 0) > ($1.similarity ?? 0) }
     }
 
-    /// Execute FTS5 keyword search
+    /// Execute FTS5 keyword search (searches both action_items and staged_tasks)
     private func executeKeywordSearch(query: String) async -> [TaskSearchResult] {
         var results: [TaskSearchResult] = []
 
@@ -1103,6 +1114,7 @@ actor TaskAssistant: ProactiveAssistant {
             let ftsQuery = words.map { "\($0)*" }.joined(separator: " OR ")
 
             if !ftsQuery.isEmpty {
+                // Search action_items (promoted + manual)
                 let ftsResults = try await ActionItemStorage.shared.searchFTS(
                     query: ftsQuery,
                     limit: 10,
@@ -1120,6 +1132,22 @@ actor TaskAssistant: ProactiveAssistant {
                         id: result.id,
                         description: result.description,
                         status: status,
+                        similarity: nil,
+                        matchType: "fts",
+                        relevanceScore: result.relevanceScore
+                    ))
+                }
+
+                // Also search staged_tasks
+                let stagedResults = try await StagedTaskStorage.shared.searchFTS(
+                    query: ftsQuery,
+                    limit: 10
+                )
+                for result in stagedResults {
+                    results.append(TaskSearchResult(
+                        id: result.id,
+                        description: result.description,
+                        status: "active",
                         similarity: nil,
                         matchType: "fts",
                         relevanceScore: result.relevanceScore
