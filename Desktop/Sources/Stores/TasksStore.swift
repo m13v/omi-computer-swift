@@ -544,8 +544,12 @@ class TasksStore: ObservableObject {
         }
     }
 
+    /// In-memory guard to prevent duplicate migration calls within the same app session
+    private static var isMigrating = false
+
     /// One-time migration: tell backend to move excess AI tasks to staged_tasks subcollection.
     /// The SQLite migration handles local data; this handles Firestore.
+    /// Sets the flag optimistically before the request to avoid retry loops on timeout.
     private func migrateAITasksToStagedIfNeeded() async {
         let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
         let migrationKey = "stagedTasksMigrationCompleted_v4_\(userId)"
@@ -555,15 +559,26 @@ class TasksStore: ObservableObject {
             return
         }
 
+        // In-memory guard: loadTasks() can be called from multiple pages
+        guard !Self.isMigrating else {
+            log("TasksStore: Staged tasks migration already in progress, skipping")
+            return
+        }
+        Self.isMigrating = true
+
+        // Set flag optimistically — the migration is idempotent and safe to skip on re-run.
+        // This prevents infinite retry loops when the backend succeeds but the client times out.
+        UserDefaults.standard.set(true, forKey: migrationKey)
+
         log("TasksStore: Starting staged tasks backend migration for user \(userId)")
 
         do {
             try await APIClient.shared.migrateStagedTasks()
-            UserDefaults.standard.set(true, forKey: migrationKey)
             log("TasksStore: Staged tasks backend migration completed")
         } catch {
-            logError("TasksStore: Staged tasks backend migration failed (will retry next launch)", error: error)
+            log("TasksStore: Staged tasks backend migration fired (may complete in background): \(error.localizedDescription)")
         }
+        Self.isMigrating = false
     }
 
     /// Retry syncing locally-created tasks that failed to push to the backend.
