@@ -4158,4 +4158,19 @@ extension APIClient {
 
         let _: AIUserProfileResponse = try await patch("v1/users/ai-profile", body: body)
     }
+
+    // MARK: - Agent VM
+
+    struct AgentProvisionResponse: Decodable {
+        let status: String
+        let vmName: String
+        let ip: String?
+        let authToken: String
+        let agentStatus: String
+    }
+
+    /// Provision a cloud agent VM for the current user (fire-and-forget)
+    func provisionAgentVM() async throws -> AgentProvisionResponse {
+        return try await post("v2/agent/provision")
+    }
 }
