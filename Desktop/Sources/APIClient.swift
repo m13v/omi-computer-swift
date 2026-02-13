@@ -1929,6 +1929,9 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
     var agentStartedAt: Date?      // When agent was launched
     var agentCompletedAt: Date?    // When agent finished
 
+    // Chat session for task-scoped AI chat (stored locally, not synced to backend)
+    var chatSessionId: String?
+
     /// Custom Equatable: compares only display-relevant fields.
     /// Skips `metadata` (JSON key ordering is non-deterministic after SQLite round-trip),
     /// `updatedAt` (set to Date() when nil on sync), and fields lost through SQLite.
@@ -1987,7 +1990,8 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         agentPlan: String? = nil,
         agentSessionId: String? = nil,
         agentStartedAt: Date? = nil,
-        agentCompletedAt: Date? = nil
+        agentCompletedAt: Date? = nil,
+        chatSessionId: String? = nil
     ) {
         self.id = id
         self.description = description
@@ -2014,6 +2018,7 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         self.agentSessionId = agentSessionId
         self.agentStartedAt = agentStartedAt
         self.agentCompletedAt = agentCompletedAt
+        self.chatSessionId = chatSessionId
     }
 
     init(from decoder: Decoder) throws {
