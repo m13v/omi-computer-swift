@@ -158,6 +158,16 @@ pub struct AcceptTasksResponse {
     pub count: usize,
 }
 
+/// Response for staged task promotion
+#[derive(Debug, Clone, Serialize)]
+pub struct PromoteResponse {
+    pub promoted: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub promoted_task: Option<ActionItemDB>,
+}
+
 /// Request body for batch updating relevance scores
 #[derive(Debug, Clone, Deserialize)]
 pub struct BatchUpdateScoresRequest {
