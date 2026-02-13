@@ -403,6 +403,263 @@ extension ActionItemRecord {
     }
 }
 
+// MARK: - Staged Task Record
+
+/// Database record for staged tasks awaiting promotion to action_items.
+/// Same schema as ActionItemRecord but without agent fields, stored in "staged_tasks" table.
+struct StagedTaskRecord: Codable, FetchableRecord, PersistableRecord, Identifiable {
+    var id: Int64?
+
+    // Backend sync fields
+    var backendId: String?
+    var backendSynced: Bool
+
+    // Core fields
+    var description: String
+    var completed: Bool
+    var deleted: Bool
+    var source: String?
+    var conversationId: String?
+    var priority: String?
+    var category: String?
+    var tagsJson: String?
+    var deletedBy: String?
+    var dueAt: Date?
+
+    // Desktop extraction fields
+    var screenshotId: Int64?
+    var confidence: Double?
+    var sourceApp: String?
+    var windowTitle: String?
+    var contextSummary: String?
+    var currentActivity: String?
+    var metadataJson: String?
+    var embedding: Data?
+
+    // Prioritization
+    var relevanceScore: Int?
+    var scoredAt: Date?
+
+    // Timestamps
+    var createdAt: Date
+    var updatedAt: Date
+
+    static let databaseTableName = "staged_tasks"
+
+    init(
+        id: Int64? = nil,
+        backendId: String? = nil,
+        backendSynced: Bool = false,
+        description: String,
+        completed: Bool = false,
+        deleted: Bool = false,
+        source: String? = nil,
+        conversationId: String? = nil,
+        priority: String? = nil,
+        category: String? = nil,
+        tagsJson: String? = nil,
+        deletedBy: String? = nil,
+        dueAt: Date? = nil,
+        screenshotId: Int64? = nil,
+        confidence: Double? = nil,
+        sourceApp: String? = nil,
+        windowTitle: String? = nil,
+        contextSummary: String? = nil,
+        currentActivity: String? = nil,
+        metadataJson: String? = nil,
+        embedding: Data? = nil,
+        relevanceScore: Int? = nil,
+        scoredAt: Date? = nil,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.backendId = backendId
+        self.backendSynced = backendSynced
+        self.description = description
+        self.completed = completed
+        self.deleted = deleted
+        self.source = source
+        self.conversationId = conversationId
+        self.priority = priority
+        self.category = category
+        self.tagsJson = tagsJson
+        self.deletedBy = deletedBy
+        self.dueAt = dueAt
+        self.screenshotId = screenshotId
+        self.confidence = confidence
+        self.sourceApp = sourceApp
+        self.windowTitle = windowTitle
+        self.contextSummary = contextSummary
+        self.currentActivity = currentActivity
+        self.metadataJson = metadataJson
+        self.embedding = embedding
+        self.relevanceScore = relevanceScore
+        self.scoredAt = scoredAt
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    mutating func didInsert(_ inserted: InsertionSuccess) {
+        id = inserted.rowID
+    }
+
+    // MARK: - Metadata Helpers
+
+    var metadata: [String: Any]? {
+        guard let json = metadataJson,
+              let data = json.data(using: .utf8),
+              let dict = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        return dict
+    }
+
+    mutating func setMetadata(_ metadata: [String: Any]?) {
+        guard let metadata = metadata,
+              let data = try? JSONSerialization.data(withJSONObject: metadata),
+              let json = String(data: data, encoding: .utf8)
+        else {
+            metadataJson = nil
+            return
+        }
+        metadataJson = json
+    }
+
+    // MARK: - Tag Helpers
+
+    var tags: [String] {
+        guard let json = tagsJson,
+              let data = json.data(using: .utf8),
+              let array = try? JSONDecoder().decode([String].self, from: data)
+        else { return [] }
+        return array
+    }
+
+    mutating func setTags(_ tags: [String]) {
+        if tags.isEmpty {
+            tagsJson = nil
+        } else if let data = try? JSONEncoder().encode(tags),
+                  let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        }
+    }
+
+    // MARK: - Conversions
+
+    /// Convert to TaskActionItem for UI/API use
+    func toTaskActionItem() -> TaskActionItem {
+        let taskId = backendId ?? "staged_\(id ?? 0)"
+
+        var finalMetadata = metadataJson
+        let recordTags = tags
+        if !recordTags.isEmpty || windowTitle != nil {
+            var metaDict = self.metadata ?? [:]
+            if !recordTags.isEmpty { metaDict["tags"] = recordTags }
+            if let wt = windowTitle { metaDict["window_title"] = wt }
+            if let data = try? JSONSerialization.data(withJSONObject: metaDict),
+               let json = String(data: data, encoding: .utf8) {
+                finalMetadata = json
+            }
+        }
+
+        return TaskActionItem(
+            id: taskId,
+            description: description,
+            completed: completed,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            dueAt: dueAt,
+            completedAt: nil,
+            conversationId: conversationId,
+            source: source,
+            priority: priority,
+            metadata: finalMetadata,
+            category: category,
+            deleted: deleted,
+            deletedBy: deletedBy,
+            deletedAt: nil,
+            deletedReason: nil,
+            keptTaskId: nil,
+            relevanceScore: relevanceScore,
+            agentStatus: nil,
+            agentPrompt: nil,
+            agentPlan: nil,
+            agentSessionId: nil,
+            agentStartedAt: nil,
+            agentCompletedAt: nil,
+            chatSessionId: nil
+        )
+    }
+
+    /// Create from ActionItemRecord (for migration)
+    static func from(_ record: ActionItemRecord) -> StagedTaskRecord {
+        return StagedTaskRecord(
+            backendId: nil,  // Will get new backendId when synced to staged_tasks
+            backendSynced: false,
+            description: record.description,
+            completed: record.completed,
+            deleted: record.deleted,
+            source: record.source,
+            conversationId: record.conversationId,
+            priority: record.priority,
+            category: record.category,
+            tagsJson: record.tagsJson,
+            deletedBy: record.deletedBy,
+            dueAt: record.dueAt,
+            screenshotId: record.screenshotId,
+            confidence: record.confidence,
+            sourceApp: record.sourceApp,
+            windowTitle: record.windowTitle,
+            contextSummary: record.contextSummary,
+            currentActivity: record.currentActivity,
+            metadataJson: record.metadataJson,
+            embedding: record.embedding,
+            relevanceScore: record.relevanceScore,
+            scoredAt: record.scoredAt,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt
+        )
+    }
+
+    /// Create from a TaskActionItem (for caching API responses)
+    static func from(_ item: TaskActionItem) -> StagedTaskRecord {
+        let tagsJson: String?
+        let itemTags = item.tags
+        if !itemTags.isEmpty,
+           let data = try? JSONEncoder().encode(itemTags),
+           let json = String(data: data, encoding: .utf8) {
+            tagsJson = json
+        } else {
+            tagsJson = nil
+        }
+
+        return StagedTaskRecord(
+            backendId: item.id,
+            backendSynced: true,
+            description: item.description,
+            completed: item.completed,
+            deleted: item.deleted ?? false,
+            source: item.source,
+            conversationId: item.conversationId,
+            priority: item.priority,
+            category: item.category,
+            tagsJson: tagsJson,
+            deletedBy: item.deletedBy,
+            dueAt: item.dueAt,
+            screenshotId: nil,
+            confidence: nil,
+            sourceApp: item.sourceApp,
+            windowTitle: item.windowTitle,
+            contextSummary: nil,
+            currentActivity: nil,
+            metadataJson: item.metadata,
+            relevanceScore: item.relevanceScore,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt ?? item.createdAt
+        )
+    }
+}
+
 // MARK: - Action Item Storage Error
 
 enum ActionItemStorageError: LocalizedError {
