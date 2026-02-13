@@ -547,6 +547,16 @@ class TasksViewModel: ObservableObject {
 
     // Create/Edit task state
     @Published var showingCreateTask = false
+
+    // Undo stack for deleted tasks
+    struct UndoableAction {
+        let task: TaskActionItem
+        let timestamp: Date
+    }
+    @Published var undoStack: [UndoableAction] = []  // max 10
+    @Published var showUndoToast = false
+    var undoToastDismissTask: Task<Void, Never>?
+
     // Multi-select state
     @Published var isMultiSelectMode = false
     @Published var selectedTaskIds: Set<String> = []
@@ -1341,6 +1351,67 @@ class TasksViewModel: ObservableObject {
         await store.deleteTask(task)
     }
 
+    /// Delete with undo: saves to undo stack, shows toast, auto-dismisses after 5s
+    func deleteTaskWithUndo(_ task: TaskActionItem) async {
+        // Save to undo stack (cap at 10)
+        undoStack.append(UndoableAction(task: task, timestamp: Date()))
+        if undoStack.count > 10 {
+            undoStack.removeFirst(undoStack.count - 10)
+        }
+
+        // Delete the task
+        removeFromDisplay(task.id)
+        await store.deleteTask(task)
+
+        // Show toast and schedule auto-dismiss
+        showUndoToast = true
+        undoToastDismissTask?.cancel()
+        undoToastDismissTask = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            if !Task.isCancelled {
+                withAnimation(.easeOut(duration: 0.3)) {
+                    showUndoToast = false
+                    undoStack.removeAll()
+                }
+            }
+        }
+    }
+
+    /// Undo the last delete: pops from stack, restores task
+    func undoLastDelete() async {
+        guard let lastAction = undoStack.popLast() else { return }
+
+        await store.restoreTask(lastAction.task)
+
+        // Re-insert into display
+        displayTasks.insert(lastAction.task, at: 0)
+        let cat = TaskCategory.today // Default; will be recategorized on next recompute
+        if categorizedTasks[cat] != nil {
+            categorizedTasks[cat]?.insert(lastAction.task, at: 0)
+        }
+        objectWillChange.send()
+
+        // Hide toast if stack is now empty
+        if undoStack.isEmpty {
+            undoToastDismissTask?.cancel()
+            withAnimation(.easeOut(duration: 0.3)) {
+                showUndoToast = false
+            }
+        } else {
+            // Reset auto-dismiss timer
+            undoToastDismissTask?.cancel()
+            undoToastDismissTask = Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                if !Task.isCancelled {
+                    withAnimation(.easeOut(duration: 0.3)) {
+                        showUndoToast = false
+                        undoStack.removeAll()
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Surgical Display Updates
 
     /// Remove a single task from displayTasks without full recompute
@@ -1422,6 +1493,9 @@ struct TasksPage: View {
     @StateObject private var chatCoordinator: TaskChatCoordinator
     @State private var showChatPanel = false
     @AppStorage("tasksChatPanelWidth") private var chatPanelWidth: Double = 400
+
+    // Hover tracking for keyboard shortcuts
+    @State private var hoveredTaskId: String?
 
     // Filter popover state
     @State private var showFilterPopover = false
@@ -2138,7 +2212,7 @@ struct TasksPage: View {
                                 indentLevelFor: { viewModel.getIndentLevel(for: $0) },
                                 isSelectedFor: { viewModel.selectedTaskIds.contains($0) },
                                 onToggle: { await viewModel.toggleTask($0) },
-                                onDelete: { await viewModel.deleteTask($0) },
+                                onDelete: { await viewModel.deleteTaskWithUndo($0) },
                                 onToggleSelection: { viewModel.toggleTaskSelection($0) },
                                 onUpdateDetails: { task, desc, date, priority in
                                     await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
@@ -2146,7 +2220,8 @@ struct TasksPage: View {
                                 onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                 onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                 onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
-                                onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil
+                                onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                onHover: { hoveredTaskId = $0 }
                             )
                         }
                     }
@@ -2159,14 +2234,15 @@ struct TasksPage: View {
                             isMultiSelectMode: viewModel.isMultiSelectMode,
                             isSelected: viewModel.selectedTaskIds.contains(task.id),
                             onToggle: { await viewModel.toggleTask($0) },
-                            onDelete: { await viewModel.deleteTask($0) },
+                            onDelete: { await viewModel.deleteTaskWithUndo($0) },
                             onToggleSelection: { viewModel.toggleTaskSelection($0) },
                             onUpdateDetails: { task, desc, date, priority in
                                 await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
                             },
                             onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                             onDecrementIndent: { viewModel.decrementIndent(for: $0) },
-                            onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil
+                            onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                            onHover: { hoveredTaskId = $0 }
                         )
                             .onAppear {
                                 Task {
@@ -2255,6 +2331,7 @@ struct TaskCategorySection: View {
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
+    var onHover: ((String?) -> Void)?
 
     private var visibleTasks: [TaskActionItem] {
         orderedTasks
@@ -2302,7 +2379,8 @@ struct TaskCategorySection: View {
                             onUpdateDetails: onUpdateDetails,
                             onIncrementIndent: onIncrementIndent,
                             onDecrementIndent: onDecrementIndent,
-                            onOpenChat: onOpenChat
+                            onOpenChat: onOpenChat,
+                            onHover: onHover
                         )
                             .draggable(task.id) {
                                 // Drag preview
@@ -2378,9 +2456,9 @@ struct TaskRow: View {
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
+    var onHover: ((String?) -> Void)?
 
     @State private var isHovering = false
-    @State private var showDeleteConfirmation = false
     @State private var isCompletingAnimation = false
     @State private var checkmarkScale: CGFloat = 1.0
     @State private var rowOpacity: Double = 1.0
@@ -2422,20 +2500,6 @@ struct TaskRow: View {
 
     var body: some View {
         swipeableContent
-            .confirmationDialog(
-                "Delete Task",
-                isPresented: $showDeleteConfirmation,
-                titleVisibility: .visible
-            ) {
-                Button("Delete", role: .destructive) {
-                    Task {
-                        await onDelete?(task)
-                    }
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Are you sure you want to delete this task? This action cannot be undone.")
-            }
             .sheet(isPresented: $showAgentDetail) {
                 TaskAgentDetailView(
                     task: task,
@@ -2871,7 +2935,7 @@ struct TaskRow: View {
 
                     // Delete button
                     Button {
-                        showDeleteConfirmation = true
+                        Task { await onDelete?(task) }
                     } label: {
                         Image(systemName: "trash")
                             .font(.system(size: 14))
@@ -2923,6 +2987,7 @@ struct TaskRow: View {
         }
         .onHover { hovering in
             isHovering = hovering
+            onHover?(hovering ? task.id : nil)
             if hovering {
                 NSCursor.pointingHand.push()
             } else {
