@@ -94,6 +94,7 @@ private struct LiveSegmentView: View {
             Text(segment.text)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
+                .textSelection(.enabled)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
                 .background(
