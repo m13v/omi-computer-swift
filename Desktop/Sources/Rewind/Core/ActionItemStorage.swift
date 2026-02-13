@@ -536,6 +536,39 @@ actor ActionItemStorage {
     }
 
 
+    /// Mark incomplete tasks NOT present in the API response as staged (soft-deleted).
+    /// This cleans up tasks that were moved to staged_tasks on the backend
+    /// but still linger in local SQLite, preventing phantom entries in the task list.
+    func markAbsentTasksAsStaged(apiIds: Set<String>) async throws {
+        let db = try await ensureInitialized()
+
+        let marked = try await db.write { database -> Int in
+            // Find recent incomplete, non-deleted tasks whose backendId is NOT in the API set
+            let records = try ActionItemRecord
+                .filter(Column("completed") == false)
+                .filter(Column("deleted") == false)
+                .filter(Column("backendId") != nil)
+                .fetchAll(database)
+
+            var count = 0
+            for var record in records {
+                guard let backendId = record.backendId, !backendId.isEmpty else { continue }
+                if !apiIds.contains(backendId) {
+                    record.deleted = true
+                    record.deletedBy = "staged"
+                    record.updatedAt = Date()
+                    try record.update(database)
+                    count += 1
+                }
+            }
+            return count
+        }
+
+        if marked > 0 {
+            log("ActionItemStorage: Marked \(marked) absent tasks as staged")
+        }
+    }
+
     /// Returns all active scored tasks for batch-syncing scores to backend
     func getAllScoredTasks() async throws -> [TaskActionItem] {
         let db = try await ensureInitialized()
