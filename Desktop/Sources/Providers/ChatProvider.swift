@@ -272,8 +272,16 @@ class ChatProvider: ObservableObject {
             }
     }
 
-    /// Ensure the Claude Agent bridge is started
+    /// Ensure the Claude Agent bridge is started (restarts if the process died)
     private func ensureBridgeStarted() async -> Bool {
+        // If we thought the bridge was started but the process died, reset so we restart
+        if bridgeStarted {
+            let alive = await claudeBridge.isAlive
+            if !alive {
+                log("ChatProvider: Bridge process died, will restart")
+                bridgeStarted = false
+            }
+        }
         guard !bridgeStarted else { return true }
         do {
             try await claudeBridge.start()
