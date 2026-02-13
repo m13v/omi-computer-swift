@@ -16,36 +16,50 @@ struct TaskChatPanel: View {
             Divider()
                 .background(OmiColors.backgroundTertiary)
 
-            // Messages area
-            ChatMessagesView(
-                messages: chatProvider.messages,
-                isSending: chatProvider.isSending,
-                hasMoreMessages: chatProvider.hasMoreMessages,
-                isLoadingMoreMessages: chatProvider.isLoadingMoreMessages,
-                isLoadingInitial: chatProvider.isLoading,
-                app: nil,
-                onLoadMore: { await chatProvider.loadMoreMessages() },
-                onRate: { messageId, rating in
-                    Task { await chatProvider.rateMessage(messageId, rating: rating) }
-                },
-                welcomeContent: { taskWelcome }
-            )
+            if coordinator.isOpening {
+                // Loading state while session is being created
+                VStack(spacing: 12) {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Setting up chat...")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Messages area
+                ChatMessagesView(
+                    messages: chatProvider.messages,
+                    isSending: chatProvider.isSending,
+                    hasMoreMessages: chatProvider.hasMoreMessages,
+                    isLoadingMoreMessages: chatProvider.isLoadingMoreMessages,
+                    isLoadingInitial: chatProvider.isLoading,
+                    app: nil,
+                    onLoadMore: { await chatProvider.loadMoreMessages() },
+                    onRate: { messageId, rating in
+                        Task { await chatProvider.rateMessage(messageId, rating: rating) }
+                    },
+                    welcomeContent: { taskWelcome }
+                )
 
-            // Input area
-            ChatInputView(
-                onSend: { text in
-                    Task { await chatProvider.sendMessage(text) }
-                },
-                onFollowUp: { text in
-                    Task { await chatProvider.sendFollowUp(text) }
-                },
-                onStop: {
-                    chatProvider.stopAgent()
-                },
-                isSending: chatProvider.isSending,
-                placeholder: "Ask about this task..."
-            )
-            .padding(12)
+                // Input area
+                ChatInputView(
+                    onSend: { text in
+                        Task { await chatProvider.sendMessage(text) }
+                    },
+                    onFollowUp: { text in
+                        Task { await chatProvider.sendFollowUp(text) }
+                    },
+                    onStop: {
+                        chatProvider.stopAgent()
+                    },
+                    isSending: chatProvider.isSending,
+                    placeholder: "Ask about this task..."
+                )
+                .padding(12)
+            }
         }
         .background(OmiColors.backgroundPrimary)
     }
