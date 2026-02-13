@@ -7,8 +7,7 @@ struct DesktopHomeView: View {
     @State private var selectedIndex: Int = {
         if OMIApp.launchMode == .rewind { return SidebarNavItem.rewind.rawValue }
         let tier = UserDefaults.standard.integer(forKey: "currentTierLevel")
-        if tier == 0 || tier >= 5 { return SidebarNavItem.dashboard.rawValue }
-        return SidebarNavItem.conversations.rawValue
+        return SidebarNavItem.dashboard.rawValue
     }()
     @State private var isSidebarCollapsed: Bool = false
     @AppStorage("currentTierLevel") private var currentTierLevel = 0
@@ -52,10 +51,17 @@ struct DesktopHomeView: View {
                     }
             } else if !appState.hasCompletedOnboarding {
                 // State 2: Signed in but onboarding not complete
-                OnboardingView(appState: appState, onComplete: nil)
-                    .onAppear {
-                        log("DesktopHomeView: Showing OnboardingView (signed in, not onboarded)")
+                if shouldSkipOnboarding() {
+                    Color.clear.onAppear {
+                        log("DesktopHomeView: --skip-onboarding flag detected, skipping onboarding")
+                        appState.hasCompletedOnboarding = true
                     }
+                } else {
+                    OnboardingView(appState: appState, onComplete: nil)
+                        .onAppear {
+                            log("DesktopHomeView: Showing OnboardingView (signed in, not onboarded)")
+                        }
+                }
             } else {
                 // State 3: Signed in and onboarded - show main content
                 ZStack {
@@ -87,6 +93,15 @@ struct DesktopHomeView: View {
                                 }
                             } else {
                                 log("DesktopHomeView: Screen analysis disabled in settings, skipping auto-start")
+                            }
+
+                            // Set up and show floating control bar
+                            FloatingControlBarManager.shared.setup(appState: appState)
+                            FloatingControlBarManager.shared.show()
+
+                            // Set up push-to-talk voice input
+                            if let barState = FloatingControlBarManager.shared.barState {
+                                PushToTalkManager.shared.setup(barState: barState)
                             }
                         }
                         .task {
@@ -160,14 +175,13 @@ struct DesktopHomeView: View {
         let nonMainPages: Set<Int> = [SidebarNavItem.settings.rawValue, SidebarNavItem.permissions.rawValue, SidebarNavItem.device.rawValue, SidebarNavItem.help.rawValue]
         guard !nonMainPages.contains(selectedIndex) else { return }
 
-        var visibleRawValues: Set<Int> = [SidebarNavItem.conversations.rawValue, SidebarNavItem.rewind.rawValue]
+        var visibleRawValues: Set<Int> = [SidebarNavItem.dashboard.rawValue, SidebarNavItem.rewind.rawValue]
         if currentTierLevel >= 2 { visibleRawValues.insert(SidebarNavItem.memories.rawValue) }
         if currentTierLevel >= 3 { visibleRawValues.insert(SidebarNavItem.tasks.rawValue) }
         if currentTierLevel >= 4 { visibleRawValues.insert(SidebarNavItem.chat.rawValue) }
-        if currentTierLevel >= 5 { visibleRawValues.insert(SidebarNavItem.dashboard.rawValue) }
 
         if !visibleRawValues.contains(selectedIndex) {
-            selectedIndex = SidebarNavItem.conversations.rawValue
+            selectedIndex = SidebarNavItem.dashboard.rawValue
         }
     }
 
@@ -224,7 +238,8 @@ struct DesktopHomeView: View {
                     case 0:
                         DashboardPage(viewModel: viewModelContainer.dashboardViewModel, appState: appState, selectedIndex: $selectedIndex)
                     case 1:
-                        ConversationsPage(appState: appState)
+                        // Conversations moved into Dashboard — redirect
+                        DashboardPage(viewModel: viewModelContainer.dashboardViewModel, appState: appState, selectedIndex: $selectedIndex)
                     case 2:
                         ChatPage(appProvider: viewModelContainer.appProvider, chatProvider: viewModelContainer.chatProvider)
                     case 3:
@@ -236,7 +251,7 @@ struct DesktopHomeView: View {
                     case 6:
                         AdvicePage()
                     case 7:
-                        RewindPage()
+                        RewindPage(appState: appState)
                     case 8:
                         AppsPage(appProvider: viewModelContainer.appProvider)
                     case 9:
