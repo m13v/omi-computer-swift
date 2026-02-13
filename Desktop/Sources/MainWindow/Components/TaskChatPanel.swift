@@ -36,6 +36,12 @@ struct TaskChatPanel: View {
                 onSend: { text in
                     Task { await chatProvider.sendMessage(text) }
                 },
+                onFollowUp: { text in
+                    Task { await chatProvider.sendFollowUp(text) }
+                },
+                onStop: {
+                    chatProvider.stopAgent()
+                },
                 isSending: chatProvider.isSending,
                 placeholder: "Ask about this task..."
             )
