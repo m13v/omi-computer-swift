@@ -1662,6 +1662,12 @@ actor RewindDatabase {
             }
         }
 
+        migrator.registerMigration("addActionItemChatSessionId") { db in
+            try db.alter(table: "action_items") { t in
+                t.add(column: "chatSessionId", .text)
+            }
+        }
+
         try migrator.migrate(queue)
     }
 
