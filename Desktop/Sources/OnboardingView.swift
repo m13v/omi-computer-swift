@@ -117,6 +117,20 @@ struct OnboardingView: View {
                 hasInitializedBluetoothForPermissions = true
             }
         }
+        .onAppear {
+            // Handle relaunch case: if app restarts on step 3 (e.g., after Screen Recording quit & reopen),
+            // immediately initialize Bluetooth and check all permissions.
+            // onChange(of: currentStep) won't fire since the value didn't change.
+            if currentStep == 3 {
+                if !hasInitializedBluetoothForPermissions {
+                    log("OnboardingView onAppear: on permissions step, initializing Bluetooth")
+                    appState.initializeBluetoothIfNeeded()
+                    hasInitializedBluetoothForPermissions = true
+                }
+                log("OnboardingView onAppear: on permissions step, checking all permissions immediately")
+                appState.checkAllPermissions()
+            }
+        }
     }
 
     private func bringToFront() {
@@ -776,14 +790,9 @@ struct OnboardingView: View {
             AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
-            // Provision cloud agent VM (fire-and-forget)
+            // Start cloud agent VM pipeline (provision → poll → upload DB)
             Task {
-                do {
-                    let response = try await APIClient.shared.provisionAgentVM()
-                    log("OnboardingView: Agent VM provisioning started — \(response.vmName) (\(response.status))")
-                } catch {
-                    log("OnboardingView: Agent VM provisioning failed (non-blocking) — \(error.localizedDescription)")
-                }
+                await AgentVMService.shared.startPipeline()
             }
             // Enable launch at login by default for new users
             if LaunchAtLoginManager.shared.setEnabled(true) {
