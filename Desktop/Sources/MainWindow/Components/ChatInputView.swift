@@ -25,7 +25,7 @@ struct ChatInputView: View {
         HStack(spacing: 12) {
             TextField(placeholder, text: $inputText, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundColor(OmiColors.textPrimary)
                 .focused($isInputFocused)
                 .padding(12)
@@ -48,7 +48,7 @@ struct ChatInputView: View {
                 // Stop button — visible when agent is running and input is empty
                 Button(action: { onStop?() }) {
                     Image(systemName: "stop.circle.fill")
-                        .font(.system(size: 32))
+                        .scaledFont(size: 32)
                         .foregroundColor(.red.opacity(0.8))
                 }
                 .buttonStyle(.plain)
@@ -56,7 +56,7 @@ struct ChatInputView: View {
                 // Send / follow-up button
                 Button(action: handleSubmit) {
                     Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 32))
+                        .scaledFont(size: 32)
                         .foregroundColor(hasText ? OmiColors.purplePrimary : OmiColors.textTertiary)
                 }
                 .buttonStyle(.plain)
