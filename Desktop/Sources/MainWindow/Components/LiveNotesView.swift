@@ -245,10 +245,8 @@ private struct NoteRowView: View {
                     Text(note.text)
                         .font(.system(size: 13))
                         .foregroundColor(OmiColors.textPrimary)
+                        .textSelection(.enabled)
                         .lineLimit(nil)
-                        .onTapGesture(count: 2) {
-                            onStartEdit()
-                        }
                 }
 
                 // Timestamp
