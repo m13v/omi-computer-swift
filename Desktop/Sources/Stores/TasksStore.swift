@@ -280,11 +280,13 @@ class TasksStore: ObservableObject {
             let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
             await backfillRelevanceScoresIfNeeded(userId: userId)
         }
-        // Ensure minimum promoted tasks on startup
+        // Ensure minimum promoted tasks on startup — insert directly, no full reload
         Task {
-            await TaskPromotionService.shared.ensureMinimumOnStartup()
-            // Reload after promotion to show newly promoted tasks
-            await self.loadIncompleteTasks()
+            let promoted = await TaskPromotionService.shared.ensureMinimumOnStartup()
+            if !promoted.isEmpty {
+                self.incompleteTasks.append(contentsOf: promoted)
+                log("TasksStore: Inserted \(promoted.count) promoted tasks on startup")
+            }
         }
     }
 
@@ -802,8 +804,11 @@ class TasksStore: ObservableObject {
                 // Promote a staged task to fill the vacated slot
                 if task.source?.contains("screenshot") == true {
                     Task {
-                        await TaskPromotionService.shared.promoteIfNeeded()
-                        await self.loadIncompleteTasks()
+                        let promoted = await TaskPromotionService.shared.promoteIfNeeded()
+                        if !promoted.isEmpty {
+                            self.incompleteTasks.append(contentsOf: promoted)
+                            log("TasksStore: Inserted \(promoted.count) promoted tasks after completion")
+                        }
                     }
                 }
             } else {
@@ -868,8 +873,11 @@ class TasksStore: ObservableObject {
         // Promote a staged task to fill the vacated slot
         if task.source?.contains("screenshot") == true {
             Task {
-                await TaskPromotionService.shared.promoteIfNeeded()
-                await self.loadIncompleteTasks()
+                let promoted = await TaskPromotionService.shared.promoteIfNeeded()
+                if !promoted.isEmpty {
+                    self.incompleteTasks.append(contentsOf: promoted)
+                    log("TasksStore: Inserted \(promoted.count) promoted tasks after deletion")
+                }
             }
         }
 
