@@ -525,7 +525,7 @@ class TasksStore: ObservableObject {
                     completed: false
                 )
                 if response.items.isEmpty { break }
-                try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+                try await ActionItemStorage.shared.syncTaskActionItems(response.items, overrideStagedDeletions: true)
                 allIncompleteApiIds.formUnion(response.items.map { $0.id })
                 totalSynced += response.items.count
                 offset += response.items.count
