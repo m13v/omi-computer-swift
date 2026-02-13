@@ -116,6 +116,10 @@ class TaskChatCoordinator: ObservableObject {
         var parts: [String] = []
         parts.append("I'd like help with this task: \(task.description)")
 
+        // Task metadata
+        if let category = task.category {
+            parts.append("Category: \(category)")
+        }
         if !task.tags.isEmpty {
             parts.append("Tags: \(task.tags.joined(separator: ", "))")
         }
@@ -128,10 +132,52 @@ class TaskChatCoordinator: ObservableObject {
             parts.append("Due: \(formatter.string(from: dueAt))")
         }
 
-        // Include agent output if available
+        // Source/origin context
+        if let source = task.source {
+            parts.append("Source: \(task.sourceLabel) (\(source))")
+        }
+        if let sourceApp = task.sourceApp {
+            parts.append("Source app: \(sourceApp)")
+        }
+        if let windowTitle = task.windowTitle {
+            parts.append("Window title: \(windowTitle)")
+        }
+
+        // Screen context at extraction time
+        if let context = task.contextSummary, !context.isEmpty {
+            parts.append("Context when detected: \(context)")
+        }
+        if let activity = task.currentActivity, !activity.isEmpty {
+            parts.append("User activity: \(activity)")
+        }
+
+        // Timestamps
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+        parts.append("Created: \(formatter.string(from: task.createdAt))")
+
+        // Goal linkage
+        if let goalId = task.goalId {
+            parts.append("Linked to goal: \(goalId)")
+        }
+
+        // Previous agent work
+        if let status = task.agentStatus {
+            parts.append("\nAgent status: \(status)")
+        }
+        if let plan = task.agentPlan, !plan.isEmpty {
+            let truncated = String(plan.prefix(2000))
+            parts.append("Agent plan:\n\(truncated)")
+        }
+        if let files = task.agentEditedFiles, !files.isEmpty {
+            parts.append("Files edited by agent: \(files.joined(separator: ", "))")
+        }
+
+        // Live agent output (from running/completed session)
         if let session = TaskAgentManager.shared.getSession(for: task.id),
            let output = session.output, !output.isEmpty {
-            let truncated = output.prefix(2000)
+            let truncated = String(output.prefix(2000))
             parts.append("\nAgent output so far:\n\(truncated)")
         }
 
