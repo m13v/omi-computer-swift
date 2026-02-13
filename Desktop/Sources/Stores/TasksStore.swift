@@ -269,16 +269,16 @@ class TasksStore: ObservableObject {
     /// Load incomplete tasks if not already loaded (call this on app launch)
     func loadTasksIfNeeded() async {
         guard !hasLoadedIncomplete else { return }
-        await loadIncompleteTasks(showAll: false)
+        await loadIncompleteTasks(showAll: true)
         // Also load deleted tasks in background so the filter count is ready
         if !hasLoadedDeleted {
             await loadDeletedTasks()
         }
     }
 
-    /// Legacy method - loads incomplete tasks with recent filter
+    /// Legacy method - loads incomplete tasks
     func loadTasks() async {
-        await loadIncompleteTasks(showAll: isShowingAllIncompleteTasks)
+        await loadIncompleteTasks(showAll: true)
         // Also load deleted tasks so the "Removed by AI" filter count is ready
         if !hasLoadedDeleted {
             await loadDeletedTasks()
@@ -299,7 +299,7 @@ class TasksStore: ObservableObject {
         Task {
             await TaskPromotionService.shared.ensureMinimumOnStartup()
             // Reload after promotion to show newly promoted tasks
-            await self.loadIncompleteTasks(showAll: self.isShowingAllIncompleteTasks)
+            await self.loadIncompleteTasks(showAll: true)
         }
     }
 
@@ -892,7 +892,7 @@ class TasksStore: ObservableObject {
                 if task.source?.contains("screenshot") == true {
                     Task {
                         await TaskPromotionService.shared.promoteIfNeeded()
-                        await self.loadIncompleteTasks(showAll: self.isShowingAllIncompleteTasks)
+                        await self.loadIncompleteTasks(showAll: true)
                     }
                 }
             } else {
@@ -958,7 +958,7 @@ class TasksStore: ObservableObject {
         if task.source?.contains("screenshot") == true {
             Task {
                 await TaskPromotionService.shared.promoteIfNeeded()
-                await self.loadIncompleteTasks(showAll: self.isShowingAllIncompleteTasks)
+                await self.loadIncompleteTasks(showAll: true)
             }
         }
 
