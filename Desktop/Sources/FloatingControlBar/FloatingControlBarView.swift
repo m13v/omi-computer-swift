@@ -39,35 +39,28 @@ struct FloatingControlBarView: View {
     }
 
     private var controlBarView: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 12) {
-                Spacer()
-
-                if state.isVoiceListening {
-                    voiceListeningView
-                } else {
-                    commandButton(title: "Ask omi", keys: ["\u{2318}", "\u{21A9}\u{FE0E}"]) {
-                        onAskAI()
-                    }
+        VStack(spacing: 2) {
+            if state.isVoiceListening {
+                voiceListeningView
+            } else {
+                commandButton(title: "Ask omi", keys: ["\u{2318}", "\u{21A9}\u{FE0E}"]) {
+                    onAskAI()
                 }
-
-                Spacer()
             }
 
-            // Hide shortcut hint
-            HStack(spacing: 4) {
-                Text("\u{2318}\\")
+            // Shortcut hints
+            HStack(spacing: 8) {
+                Text("\u{2318}\\ hide")
                     .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.25))
-                Text("hide")
+                    .foregroundColor(.white.opacity(0.5))
+                Text("\u{2325} voice")
                     .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.25))
+                    .foregroundColor(.white.opacity(0.5))
             }
-            .padding(.bottom, 2)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 8)
-        .frame(height: 60)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .frame(height: 48)
         .background(DraggableAreaView(targetWindow: window))
     }
 
@@ -131,7 +124,7 @@ struct FloatingControlBarView: View {
             onCancel: onCloseAI,
             onHeightChange: { [weak state] height in
                 guard let state = state else { return }
-                let totalHeight = 60 + height + 24
+                let totalHeight = 48 + height + 24
                 state.inputViewHeight = totalHeight
             },
             onCaptureScreenshot: onCaptureScreenshot
