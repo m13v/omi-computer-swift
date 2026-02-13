@@ -84,7 +84,21 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         ))
         hostingView?.sizingOptions = []
         hostingView?.appearance = NSAppearance(named: .vibrantDark)
-        self.contentView = hostingView
+
+        // CRITICAL: Use a container view instead of making NSHostingView the contentView directly.
+        // When NSHostingView IS the contentView of a borderless window, it tries to negotiate
+        // window sizing through updateWindowContentSizeExtremaIfNecessary and updateAnimatedWindowSize,
+        // causing re-entrant constraint updates that crash in _postWindowNeedsUpdateConstraints.
+        // Wrapping it in a plain NSView breaks that relationship.
+        let container = NSView(frame: NSRect(origin: .zero, size: FloatingControlBarWindow.minBarSize))
+        container.wantsLayer = true
+        self.contentView = container
+
+        if let hosting = hostingView {
+            hosting.frame = container.bounds
+            hosting.autoresizingMask = [.width, .height]
+            container.addSubview(hosting)
+        }
 
         NotificationCenter.default.addObserver(
             forName: .floatingBarDragDidStart, object: nil, queue: .main
