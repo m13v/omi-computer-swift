@@ -700,6 +700,61 @@ actor ActionItemStorage {
         log("ActionItemStorage: Soft deleted action item \(id)")
     }
 
+    /// Optimistically update completion status locally (before API call)
+    /// Sets updatedAt to Date() so auto-refresh timestamp check skips this record
+    func updateCompletionStatus(backendId: String, completed: Bool) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            guard var record = try ActionItemRecord
+                .filter(Column("backendId") == backendId)
+                .fetchOne(database) else {
+                throw ActionItemStorageError.recordNotFound
+            }
+            record.completed = completed
+            record.updatedAt = Date()
+            try record.update(database)
+        }
+
+        log("ActionItemStorage: Locally set completed=\(completed) for \(backendId)")
+    }
+
+    /// Optimistically update task fields locally (before API call)
+    /// Sets updatedAt to Date() so auto-refresh timestamp check skips this record
+    func updateActionItemFields(
+        backendId: String,
+        description: String? = nil,
+        dueAt: Date? = nil,
+        priority: String? = nil,
+        metadata: [String: Any]? = nil
+    ) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            guard var record = try ActionItemRecord
+                .filter(Column("backendId") == backendId)
+                .fetchOne(database) else {
+                throw ActionItemStorageError.recordNotFound
+            }
+            if let description = description {
+                record.description = description
+            }
+            if let dueAt = dueAt {
+                record.dueAt = dueAt
+            }
+            if let priority = priority {
+                record.priority = priority
+            }
+            if let metadata = metadata {
+                record.setMetadata(metadata)
+            }
+            record.updatedAt = Date()
+            try record.update(database)
+        }
+
+        log("ActionItemStorage: Locally updated fields for \(backendId)")
+    }
+
     /// Soft delete an action item by backend ID
     func deleteActionItemByBackendId(_ backendId: String, deletedBy: String? = nil) async throws {
         let db = try await ensureInitialized()
