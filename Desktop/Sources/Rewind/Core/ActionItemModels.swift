@@ -47,6 +47,9 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var agentCompletedAt: Date?          // When agent finished
     var agentEditedFilesJson: String?    // JSON array of edited file paths
 
+    // Chat session (local-only, not synced to backend)
+    var chatSessionId: String?           // Firestore chat session ID for task-scoped chat
+
     // Timestamps
     var createdAt: Date
     var updatedAt: Date
@@ -86,6 +89,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         agentStartedAt: Date? = nil,
         agentCompletedAt: Date? = nil,
         agentEditedFilesJson: String? = nil,
+        chatSessionId: String? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -119,6 +123,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
         self.agentStartedAt = agentStartedAt
         self.agentCompletedAt = agentCompletedAt
         self.agentEditedFilesJson = agentEditedFilesJson
+        self.chatSessionId = chatSessionId
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -392,7 +397,8 @@ extension ActionItemRecord {
             agentPlan: agentPlan,
             agentSessionId: agentSessionName,
             agentStartedAt: agentStartedAt,
-            agentCompletedAt: agentCompletedAt
+            agentCompletedAt: agentCompletedAt,
+            chatSessionId: chatSessionId
         )
     }
 }
