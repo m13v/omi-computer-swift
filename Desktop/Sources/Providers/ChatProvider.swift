@@ -204,6 +204,11 @@ class ChatProvider: ObservableObject {
     /// Set by TaskChatCoordinator to point at the user's project directory.
     var workingDirectory: String?
 
+    /// Override app ID for message routing (e.g. "task-chat" to isolate task messages).
+    /// When set, messages are saved with this app_id so the backend routes them
+    /// to the correct session instead of the default chat.
+    var overrideAppId: String?
+
     /// Multi-chat mode setting - when false, only default chat is shown (syncs with Flutter)
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
@@ -328,9 +333,13 @@ class ChatProvider: ObservableObject {
     }
 
     /// Create a new chat session
-    func createNewSession(title: String? = nil, skipGreeting: Bool = false) async -> ChatSession? {
+    /// - Parameters:
+    ///   - title: Optional session title
+    ///   - skipGreeting: Skip the initial AI greeting message
+    ///   - appId: Override app ID (e.g. "task-chat" to isolate task sessions from default chat)
+    func createNewSession(title: String? = nil, skipGreeting: Bool = false, appId: String? = nil) async -> ChatSession? {
         do {
-            let session = try await APIClient.shared.createChatSession(title: title, appId: selectedAppId)
+            let session = try await APIClient.shared.createChatSession(title: title, appId: appId ?? selectedAppId)
             sessions.insert(session, at: 0)
             currentSession = session
             isInDefaultChat = false
@@ -951,12 +960,13 @@ class ChatProvider: ObservableObject {
         let userMessageId = UUID().uuidString
         let isFirstMessage = messages.isEmpty
         let capturedSessionId = sessionId
+        let capturedAppId = overrideAppId ?? selectedAppId
         Task { [weak self] in
             do {
                 let response = try await APIClient.shared.saveMessage(
                     text: trimmedText,
                     sender: "human",
-                    appId: self?.selectedAppId,
+                    appId: capturedAppId,
                     sessionId: capturedSessionId
                 )
                 // Sync local message ID with server ID
@@ -1072,7 +1082,7 @@ class ChatProvider: ObservableObject {
                     let response = try await APIClient.shared.saveMessage(
                         text: textToSave,
                         sender: "ai",
-                        appId: selectedAppId,
+                        appId: capturedAppId,
                         sessionId: capturedSessionId
                     )
                     if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
