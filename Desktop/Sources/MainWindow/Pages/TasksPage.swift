@@ -1538,8 +1538,8 @@ struct TasksPage: View {
             if !viewModel.isLoading {
                 NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
             }
-            // Trigger prioritization scoring if needed (e.g. first time opening tasks tab)
-            Task { await TaskPrioritizationService.shared.runIfNeeded() }
+            // Ensure prioritization service is running (no-op if already started)
+            Task { await TaskPrioritizationService.shared.start() }
         }
         .onChange(of: showChatPanel) { _, isShowing in
             // Expand/shrink the window when chat panel opens/closes
