@@ -32,7 +32,7 @@ struct ActionItemRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
     var contextSummary: String?
     var currentActivity: String?
     var metadataJson: String?           // Additional extraction metadata
-    var embedding: Data?                // 768 Float32s for vector search
+    var embedding: Data?                // 3072 Float32s for vector search (Gemini embedding-001)
 
     // Prioritization
     var relevanceScore: Int?             // 0-100 score from TaskPrioritizationService
