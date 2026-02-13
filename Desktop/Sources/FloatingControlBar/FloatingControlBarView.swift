@@ -49,18 +49,40 @@ struct FloatingControlBarView: View {
             }
 
             // Shortcut hints
-            HStack(spacing: 8) {
-                Text("\u{2318}\\ hide")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.5))
-                Text("\u{2325} voice")
-                    .font(.system(size: 9))
-                    .foregroundColor(.white.opacity(0.5))
+            HStack(spacing: 12) {
+                HStack(spacing: 6) {
+                    Text("Hide")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                    Text("\u{2318}")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
+                    Text("\\")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
+                }
+                HStack(spacing: 6) {
+                    Text("Push to talk")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.white)
+                    Text("\u{2325}")
+                        .font(.system(size: 11))
+                        .foregroundColor(.white)
+                        .frame(width: 20, height: 20)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(4)
+                }
             }
         }
         .padding(.horizontal, 8)
-        .padding(.vertical, 4)
-        .frame(height: 48)
+        .padding(.vertical, 6)
+        .frame(height: 72)
         .background(DraggableAreaView(targetWindow: window))
     }
 
@@ -124,7 +146,7 @@ struct FloatingControlBarView: View {
             onCancel: onCloseAI,
             onHeightChange: { [weak state] height in
                 guard let state = state else { return }
-                let totalHeight = 48 + height + 24
+                let totalHeight = 72 + height + 24
                 state.inputViewHeight = totalHeight
             },
             onCaptureScreenshot: onCaptureScreenshot
