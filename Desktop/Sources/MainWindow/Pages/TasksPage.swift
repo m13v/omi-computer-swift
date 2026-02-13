@@ -33,7 +33,6 @@ enum TaskCategory: String, CaseIterable {
 enum TaskFilterGroup: String, CaseIterable {
     case status = "Status"
     case date = "Date Range"
-    case display = "Display"
     case category = "Category"
     case source = "Source"
     case priority = "Priority"
@@ -222,8 +221,6 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
             } else {
                 return task.createdAt >= context.sevenDaysAgo
             }
-        case .topScoredOnly:
-            return task.source == "manual" || context.visibleAITaskIds.contains(task.id)
         default:
             return matches(task)
         }
@@ -465,9 +462,7 @@ class TasksViewModel: ObservableObject {
             isSwitchingSortMode = true
             if sortOption == .dueDate {
                 selectedTags.insert(.last7Days)
-                selectedTags.remove(.topScoredOnly)
             } else {
-                selectedTags.insert(.topScoredOnly)
                 selectedTags.remove(.last7Days)
             }
             // selectedTags didSet handles recomputeDisplayCaches
@@ -476,22 +471,10 @@ class TasksViewModel: ObservableObject {
 
 
     // Filter tags (Memories-style dropdown)
-    // Default to .todo — mode toggle didSet adds .topScoredOnly or .last7Days as needed
     @Published var selectedTags: Set<TaskFilterTag> = [.todo] {
         didSet {
             // Reset display limit when filters change
             displayLimit = 100
-
-            // Sync topScoredOnly filter with store.showAllTasks
-            let hasTopScoredFilter = selectedTags.contains(.topScoredOnly)
-            if hasTopScoredFilter != !store.showAllTasks {
-                // When topScoredOnly is selected, showAllTasks should be false
-                // When topScoredOnly is not selected, showAllTasks should be true
-                let newShowAll = !hasTopScoredFilter
-                store.showAllTasks = newShowAll
-                // Reload tasks so mergeAllowlistedTasks is skipped/applied correctly
-                Task { await store.loadIncompleteTasks(showAll: newShowAll) }
-            }
 
             // Map status tags to showCompleted for server-side loading
             let hasStatusFilter = selectedTags.contains(where: { $0.group == .status })
@@ -1213,35 +1196,13 @@ class TasksViewModel: ObservableObject {
             filteredTasks = applyTagFilters(sourceTasks, context: filterContext)
         }
 
-        // Ensure allowlisted tasks survive date filters — EXCEPT for .last7Days filter,
-        // which is an explicit user choice to see only recent tasks.
-        let hasLast7DaysFilter = selectedTags.contains(.last7Days)
-        if hasDateFilters && !hasLast7DaysFilter && store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
-            let filteredIds = Set(filteredTasks.map { $0.id })
-            let missingAllowlisted = sourceTasks.filter {
-                store.visibleAITaskIds.contains($0.id) && !filteredIds.contains($0.id)
-            }
-            filteredTasks.append(contentsOf: missingAllowlisted)
-        }
-
         // Sort
         let sorted = sortTasks(filteredTasks)
 
         // Apply display cap for filtered/search mode
         if isInFilteredMode {
             allFilteredDisplayTasks = sorted
-            var capped = Array(sorted.prefix(displayLimit))
-
-            // Ensure allowlisted tasks aren't cut off by the display cap.
-            // They sort last (no dueAt) but must always be visible.
-            if store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
-                let cappedIds = Set(capped.map { $0.id })
-                let missingAllowlisted = sorted.filter {
-                    store.visibleAITaskIds.contains($0.id) && !cappedIds.contains($0.id)
-                }
-                capped.append(contentsOf: missingAllowlisted)
-            }
-
+            let capped = Array(sorted.prefix(displayLimit))
             displayTasks = capped
             hasMoreFilteredResults = sorted.count > displayLimit
         } else {
@@ -1276,17 +1237,7 @@ class TasksViewModel: ObservableObject {
     /// Load more filtered/search results (pagination within already-queried results)
     func loadMoreFiltered() {
         displayLimit += 100
-        var capped = Array(allFilteredDisplayTasks.prefix(displayLimit))
-
-        // Ensure allowlisted tasks aren't cut off by the display cap
-        if store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
-            let cappedIds = Set(capped.map { $0.id })
-            let missingAllowlisted = allFilteredDisplayTasks.filter {
-                store.visibleAITaskIds.contains($0.id) && !cappedIds.contains($0.id)
-            }
-            capped.append(contentsOf: missingAllowlisted)
-        }
-
+        let capped = Array(allFilteredDisplayTasks.prefix(displayLimit))
         displayTasks = deduplicateById(capped)
         hasMoreFilteredResults = allFilteredDisplayTasks.count > displayLimit
 
@@ -1659,21 +1610,6 @@ struct TasksPage: View {
         VStack(spacing: 0) {
             // Header with filter toggle and sort
             headerView
-
-            // Prioritization indicator
-            if store.isPrioritizing {
-                HStack(spacing: 6) {
-                    ProgressView()
-                        .controlSize(.mini)
-                    Text("Organizing tasks...")
-                        .font(.system(size: 12))
-                        .foregroundColor(OmiColors.textTertiary)
-                }
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.2), value: store.isPrioritizing)
-            }
 
             // Content
             if viewModel.isSwitchingSortMode {
@@ -2316,14 +2252,7 @@ struct TasksPage: View {
                     }
                 } else {
                     // Flat list for other sort options, completed view, or multi-select mode
-                    // Apply allowlist filtering (same logic as TaskCategorySection.visibleTasks)
-                    let allTasks = viewModel.displayTasks
-                    let flatVisibleTasks = (store.showAllTasks || !store.hasCompletedScoring || store.visibleAITaskIds.isEmpty)
-                        ? allTasks
-                        : allTasks.filter { $0.source == "manual" || store.visibleAITaskIds.contains($0.id) }
-                    let flatHiddenCount = allTasks.count - flatVisibleTasks.count
-
-                    ForEach(flatVisibleTasks) { task in
+                    ForEach(viewModel.displayTasks) { task in
                         TaskRow(
                             task: task,
                             indentLevel: viewModel.getIndentLevel(for: task.id),
@@ -2344,44 +2273,6 @@ struct TasksPage: View {
                                     await viewModel.loadMoreIfNeeded(currentTask: task)
                                 }
                             }
-                    }
-
-                    // Show N more / Show less buttons for allowlist (matches TaskCategorySection)
-                    if flatHiddenCount > 0 {
-                        Button {
-                            store.showAllTasks = true
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.down")
-                                Text("Show \(flatHiddenCount) more")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(OmiColors.backgroundTertiary.opacity(0.5))
-                            .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                    if store.showAllTasks && store.hasCompletedScoring && !store.visibleAITaskIds.isEmpty {
-                        Button {
-                            store.showAllTasks = false
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "chevron.up")
-                                Text("Show less")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                            .frame(maxWidth: .infinity)
-                            .background(OmiColors.backgroundTertiary.opacity(0.5))
-                            .cornerRadius(8)
-                        }
-                        .buttonStyle(.plain)
                     }
                 }
 
@@ -2465,7 +2356,6 @@ struct TaskCategorySection: View {
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
 
-    /// Tasks visible in current view — category view (due date sort) shows all tasks, no allowlist filtering
     private var visibleTasks: [TaskActionItem] {
         orderedTasks
     }
