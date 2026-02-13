@@ -65,6 +65,19 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
+    override func keyDown(with event: NSEvent) {
+        // Esc closes the AI conversation, or hides the bar if collapsed
+        if event.keyCode == 53 { // Escape
+            if state.showingAIConversation {
+                closeAIConversation()
+            } else {
+                hideBar()
+            }
+            return
+        }
+        super.keyDown(with: event)
+    }
+
     private func setupViews() {
         let swiftUIView = FloatingControlBarView(
             window: self,
@@ -200,13 +213,16 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = true
             state.showingAIResponse = false
-            state.isAILoading = true
+            state.isAILoading = false
             state.aiInputText = ""
             state.aiResponseText = ""
             state.inputViewHeight = 100
         }
         resizeToFixedHeight(120, animated: true)
         setupInputHeightObserver()
+
+        // Ensure window is key so the text field can receive focus
+        makeKeyAndOrderFront(nil)
     }
 
     private func setupInputHeightObserver() {
