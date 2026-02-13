@@ -90,14 +90,18 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // window sizing through updateWindowContentSizeExtremaIfNecessary and updateAnimatedWindowSize,
         // causing re-entrant constraint updates that crash in _postWindowNeedsUpdateConstraints.
         // Wrapping it in a plain NSView breaks that relationship.
-        let container = NSView(frame: NSRect(origin: .zero, size: FloatingControlBarWindow.minBarSize))
-        container.wantsLayer = true
+        let container = NSView()
         self.contentView = container
 
         if let hosting = hostingView {
-            hosting.frame = container.bounds
-            hosting.autoresizingMask = [.width, .height]
+            hosting.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(hosting)
+            NSLayoutConstraint.activate([
+                hosting.topAnchor.constraint(equalTo: container.topAnchor),
+                hosting.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+                hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            ])
         }
 
         NotificationCenter.default.addObserver(
