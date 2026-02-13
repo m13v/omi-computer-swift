@@ -1744,6 +1744,112 @@ struct CreateActionItemRequest: Encodable {
     }
 }
 
+// MARK: - Staged Tasks API
+
+extension APIClient {
+
+    /// Creates a new staged task
+    func createStagedTask(
+        description: String,
+        dueAt: Date? = nil,
+        source: String? = nil,
+        priority: String? = nil,
+        category: String? = nil,
+        metadata: [String: Any]? = nil,
+        relevanceScore: Int? = nil
+    ) async throws -> TaskActionItem {
+        struct CreateRequest: Encodable {
+            let description: String
+            let dueAt: String?
+            let source: String?
+            let priority: String?
+            let category: String?
+            let metadata: String?
+            let relevanceScore: Int?
+
+            enum CodingKeys: String, CodingKey {
+                case description
+                case dueAt = "due_at"
+                case source, priority, category, metadata
+                case relevanceScore = "relevance_score"
+            }
+        }
+
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        var metadataString: String? = nil
+        if let metadata = metadata {
+            if let data = try? JSONSerialization.data(withJSONObject: metadata),
+               let str = String(data: data, encoding: .utf8) {
+                metadataString = str
+            }
+        }
+
+        let request = CreateRequest(
+            description: description,
+            dueAt: dueAt.map { formatter.string(from: $0) },
+            source: source,
+            priority: priority,
+            category: category,
+            metadata: metadataString,
+            relevanceScore: relevanceScore
+        )
+
+        return try await post("v1/staged-tasks", body: request)
+    }
+
+    /// Fetches staged tasks ordered by relevance score
+    func getStagedTasks(limit: Int = 100, offset: Int = 0) async throws -> ActionItemsResponse {
+        var params = "limit=\(limit)&offset=\(offset)"
+        return try await get("v1/staged-tasks?\(params)")
+    }
+
+    /// Hard-deletes a staged task
+    func deleteStagedTask(id: String) async throws {
+        try await delete("v1/staged-tasks/\(id)")
+    }
+
+    /// Batch update relevance scores for staged tasks
+    func batchUpdateStagedScores(_ scores: [(id: String, score: Int)]) async throws {
+        struct ScoreUpdate: Encodable {
+            let id: String
+            let relevance_score: Int
+        }
+        struct BatchRequest: Encodable {
+            let scores: [ScoreUpdate]
+        }
+        struct StatusResponse: Decodable {
+            let status: String
+        }
+        let request = BatchRequest(scores: scores.map { ScoreUpdate(id: $0.id, relevance_score: $0.score) })
+        let _: StatusResponse = try await patch("v1/staged-tasks/batch-scores", body: request)
+    }
+
+    /// Promotes the top-ranked staged task to action_items
+    func promoteTopStagedTask() async throws -> PromoteResponse {
+        return try await post("v1/staged-tasks/promote")
+    }
+
+    /// One-time migration of existing AI tasks to staged_tasks
+    func migrateStagedTasks() async throws {
+        struct StatusResponse: Decodable { let status: String }
+        let _: StatusResponse = try await post("v1/staged-tasks/migrate")
+    }
+}
+
+/// Response for staged task promotion
+struct PromoteResponse: Codable {
+    let promoted: Bool
+    let reason: String?
+    let promotedTask: TaskActionItem?
+
+    enum CodingKeys: String, CodingKey {
+        case promoted, reason
+        case promotedTask = "promoted_task"
+    }
+}
+
 // MARK: - Goals API
 
 extension APIClient {
