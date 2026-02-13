@@ -1605,6 +1605,12 @@ struct TasksPage: View {
             // Expand/shrink the window when chat panel opens/closes
             adjustWindowWidth(expand: isShowing)
         }
+        .onDisappear {
+            // Shrink window back if chat was open when navigating away from Tasks tab
+            if showChatPanel {
+                adjustWindowWidth(expand: false)
+            }
+        }
     }
 
     /// The currently active task for the chat panel
