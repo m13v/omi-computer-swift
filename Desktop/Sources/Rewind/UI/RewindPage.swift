@@ -1023,82 +1023,46 @@ struct RewindPage: View {
     private let minPanelWidth: CGFloat = 200
 
     private func expandedTranscriptView(appState: AppState) -> some View {
-        VStack(spacing: 0) {
-            // Back bar
-            HStack(spacing: 8) {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isTranscriptExpanded = false
-                    }
-                } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 11, weight: .semibold))
-                        Text("Back to Rewind")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(.white.opacity(0.7))
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(Color.white.opacity(0.1))
-                    .cornerRadius(6)
-                }
-                .buttonStyle(.plain)
+        // Split panel: transcript (left) + notes (right), no extra header
+        GeometryReader { geometry in
+            let totalWidth = geometry.size.width
+            let transcriptWidth = max(minPanelWidth, totalWidth * panelRatio)
+            let notesWidth = max(minPanelWidth, totalWidth - transcriptWidth - 1)
 
-                Spacer()
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-            .background(Color.black.opacity(0.6))
-
-            // Recording header
-            RecordingHeaderView(appState: appState)
-                .padding(16)
-
-            Divider()
-                .background(OmiColors.border)
-
-            // Split panel: transcript (left) + notes (right)
-            GeometryReader { geometry in
-                let totalWidth = geometry.size.width
-                let transcriptWidth = max(minPanelWidth, totalWidth * panelRatio)
-                let notesWidth = max(minPanelWidth, totalWidth - transcriptWidth - 1)
-
-                HStack(spacing: 0) {
-                    // Left: Live transcript
-                    VStack(spacing: 0) {
-                        if liveTranscript.isEmpty {
-                            VStack(spacing: 16) {
-                                Image(systemName: "waveform")
-                                    .font(.system(size: 48))
-                                    .foregroundColor(OmiColors.textTertiary)
-                                    .opacity(0.5)
-                                Text("Listening...")
-                                    .font(.system(size: 16, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-                                Text("Start speaking and your transcript will appear here")
-                                    .font(.system(size: 14))
-                                    .foregroundColor(OmiColors.textTertiary)
-                                    .multilineTextAlignment(.center)
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(32)
-                        } else {
-                            LiveTranscriptView(segments: liveTranscript.segments)
+            HStack(spacing: 0) {
+                // Left: Live transcript
+                VStack(spacing: 0) {
+                    if liveTranscript.isEmpty {
+                        VStack(spacing: 16) {
+                            Image(systemName: "waveform")
+                                .font(.system(size: 48))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .opacity(0.5)
+                            Text("Listening...")
+                                .font(.system(size: 16, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Start speaking and your transcript will appear here")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .multilineTextAlignment(.center)
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .padding(32)
+                    } else {
+                        LiveTranscriptView(segments: liveTranscript.segments)
                     }
-                    .frame(width: transcriptWidth)
-                    .background(OmiColors.backgroundPrimary)
-
-                    // Divider
-                    Rectangle()
-                        .fill(OmiColors.border)
-                        .frame(width: 1)
-
-                    // Right: Notes
-                    LiveNotesView()
-                        .frame(width: notesWidth)
                 }
+                .frame(width: transcriptWidth)
+                .background(OmiColors.backgroundPrimary)
+
+                // Divider
+                Rectangle()
+                    .fill(OmiColors.border)
+                    .frame(width: 1)
+
+                // Right: Notes
+                LiveNotesView()
+                    .frame(width: notesWidth)
             }
         }
         .background(OmiColors.backgroundPrimary)
@@ -1109,26 +1073,28 @@ struct RewindPage: View {
     private func rewindRecordingBar(appState: AppState) -> some View {
         HStack(spacing: 16) {
             if appState.isTranscribing {
-                // Pulsing dot
-                ZStack {
-                    Circle()
-                        .fill(OmiColors.purplePrimary.opacity(0.3))
-                        .frame(width: 20, height: 20)
-                        .scaleEffect(isRecordingPulsing ? 1.6 : 1.0)
-                        .opacity(isRecordingPulsing ? 0.0 : 0.6)
+                if !isTranscriptExpanded {
+                    // Pulsing dot (only when collapsed)
+                    ZStack {
+                        Circle()
+                            .fill(OmiColors.purplePrimary.opacity(0.3))
+                            .frame(width: 20, height: 20)
+                            .scaleEffect(isRecordingPulsing ? 1.6 : 1.0)
+                            .opacity(isRecordingPulsing ? 0.0 : 0.6)
 
-                    Circle()
-                        .fill(OmiColors.purplePrimary)
-                        .frame(width: 10, height: 10)
+                        Circle()
+                            .fill(OmiColors.purplePrimary)
+                            .frame(width: 10, height: 10)
+                    }
+                    .animation(
+                        .easeInOut(duration: 1.0)
+                            .repeatForever(autoreverses: true),
+                        value: isRecordingPulsing
+                    )
+                    .onAppear { isRecordingPulsing = true }
                 }
-                .animation(
-                    .easeInOut(duration: 1.0)
-                        .repeatForever(autoreverses: true),
-                    value: isRecordingPulsing
-                )
-                .onAppear { isRecordingPulsing = true }
 
-                // Latest transcript text (clickable to expand)
+                // Transcript text + chevron (clickable to expand/collapse)
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isTranscriptExpanded.toggle()
