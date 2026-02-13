@@ -6,6 +6,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
+import { existsSync, mkdirSync, createWriteStream, statSync, renameSync, unlinkSync } from "fs";
 
 // --- Configuration ---
 const DB_PATH = process.env.DB_PATH || "/home/matthewdi/omi-agent/data/omi.db";
@@ -13,13 +14,63 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const AUTH_TOKEN = process.env.AUTH_TOKEN;
 const PORT = parseInt(process.env.PORT || "8080", 10);
 const EMBEDDING_DIM = 3072;
+// Max upload size: 10GB
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024;
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const playwrightCli = join(__dirname, "node_modules", "@playwright", "mcp", "cli.js");
 
-// --- Database Setup ---
-const db = Database(DB_PATH, { readonly: true });
-db.pragma("journal_mode = WAL");
+// --- Database Setup (lazy — opened on first use or after upload) ---
+let db = null;
+let defaultSystemPrompt = null;
+let omiServer = null;
+
+function openDatabase() {
+  if (db) {
+    try { db.close(); } catch {}
+    db = null;
+  }
+  if (!existsSync(DB_PATH)) {
+    return false;
+  }
+  db = Database(DB_PATH, { readonly: true });
+  db.pragma("journal_mode = WAL");
+
+  // Rebuild schema + system prompt + MCP server
+  const schema = getSchema();
+  defaultSystemPrompt = `You are an AI assistant with access to the user's OMI desktop database.
+This database contains their screen history (screenshots with OCR text), tasks, transcriptions, memories, and focus sessions.
+
+DATABASE SCHEMA:
+${schema}
+
+TOOLS:
+- **execute_sql**: Run SQL queries on the database. SELECT auto-limits to 200 rows. Use for structured queries (app usage, time ranges, task management, aggregations).
+- **semantic_search**: Vector similarity search on screenshot OCR text. Use for fuzzy/conceptual queries where exact keywords won't work.
+- **Playwright browser tools**: You can navigate websites, click elements, fill forms, take screenshots, etc. Use when the user asks you to do something on the web.
+
+GUIDELINES:
+- Use datetime functions for time queries: datetime('now', '-1 day', 'localtime'), datetime('now', 'start of day', 'localtime')
+- Screenshots have: timestamp, appName, windowTitle, ocrText, embedding
+- Action items have: description, completed, deleted, priority, category, source, dueAt, createdAt
+- Transcription sessions have: title, overview, startedAt, finishedAt, source
+- For "what did I do today/yesterday" queries, use screenshots table grouped by appName
+- For task queries, use action_items table
+- For conversation queries, use transcription_sessions + transcription_segments
+- Be concise and helpful. Format results clearly.`;
+
+  omiServer = createSdkMcpServer({
+    name: "omi-tools",
+    tools: [executeSqlTool, semanticSearchTool],
+  });
+
+  console.log(`[db] Database opened: ${DB_PATH}`);
+  return true;
+}
+
+function isDatabaseReady() {
+  return db !== null;
+}
 
 function getSchema() {
   const tables = db
@@ -43,6 +94,7 @@ function getSchema() {
 const BLOCKED_KEYWORDS = ["DROP", "ALTER", "CREATE", "PRAGMA", "ATTACH", "DETACH", "VACUUM"];
 
 function executeSqlQuery(sqlQuery) {
+  if (!db) return JSON.stringify({ error: "Database not loaded. Upload omi.db first." });
   const upper = sqlQuery.toUpperCase();
   for (const kw of BLOCKED_KEYWORDS) {
     if (new RegExp(`\\b${kw}\\b`).test(upper)) {
@@ -102,6 +154,7 @@ function readEmbeddingFromBlob(buffer) {
 }
 
 async function performSemanticSearch(searchQuery, days = 7, appFilter = null) {
+  if (!db) return JSON.stringify({ error: "Database not loaded. Upload omi.db first." });
   if (!GEMINI_API_KEY) {
     return JSON.stringify({ error: "GEMINI_API_KEY not set" });
   }
@@ -178,38 +231,14 @@ e.g. "reading about machine learning", "working on design mockups"`,
   }
 );
 
-const omiServer = createSdkMcpServer({
-  name: "omi-tools",
-  tools: [executeSqlTool, semanticSearchTool],
-});
-
-// --- Build System Prompt ---
-
-const schema = getSchema();
-const defaultSystemPrompt = `You are an AI assistant with access to the user's OMI desktop database.
-This database contains their screen history (screenshots with OCR text), tasks, transcriptions, memories, and focus sessions.
-
-DATABASE SCHEMA:
-${schema}
-
-TOOLS:
-- **execute_sql**: Run SQL queries on the database. SELECT auto-limits to 200 rows. Use for structured queries (app usage, time ranges, task management, aggregations).
-- **semantic_search**: Vector similarity search on screenshot OCR text. Use for fuzzy/conceptual queries where exact keywords won't work.
-- **Playwright browser tools**: You can navigate websites, click elements, fill forms, take screenshots, etc. Use when the user asks you to do something on the web.
-
-GUIDELINES:
-- Use datetime functions for time queries: datetime('now', '-1 day', 'localtime'), datetime('now', 'start of day', 'localtime')
-- Screenshots have: timestamp, appName, windowTitle, ocrText, embedding
-- Action items have: description, completed, deleted, priority, category, source, dueAt, createdAt
-- Transcription sessions have: title, overview, startedAt, finishedAt, source
-- For "what did I do today/yesterday" queries, use screenshots table grouped by appName
-- For task queries, use action_items table
-- For conversation queries, use transcription_sessions + transcription_segments
-- Be concise and helpful. Format results clearly.`;
-
 // --- Shared Agent Query Handler ---
 
 async function handleQuery({ prompt, systemPrompt, cwd, send, abortController }) {
+  if (!isDatabaseReady()) {
+    send({ type: "error", message: "Database not available. Upload omi.db first." });
+    return { text: "", sessionId: "", costUsd: 0 };
+  }
+
   let sessionId = "";
   let fullText = "";
   let costUsd = 0;
@@ -332,6 +361,11 @@ async function handleQuery({ prompt, systemPrompt, cwd, send, abortController })
 // --- Mode: CLI ---
 
 async function runCli(userMessage) {
+  if (!openDatabase()) {
+    console.error(`ERROR: Database not found at ${DB_PATH}`);
+    process.exit(1);
+  }
+
   console.log(`\n${"=".repeat(60)}`);
   console.log(`User: ${userMessage}`);
   console.log("=".repeat(60));
@@ -356,6 +390,17 @@ async function runCli(userMessage) {
 
   const result = await handleQuery({ prompt: userMessage, send, abortController });
   console.log(`\n\n[Done — cost: $${result.costUsd.toFixed(4)}]`);
+  db.close();
+}
+
+// --- Auth helper for HTTP endpoints ---
+
+function verifyAuth(req) {
+  const authHeader = req.headers["authorization"];
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const tokenParam = url.searchParams.get("token");
+  const token = authHeader?.startsWith("Bearer ") ? authHeader.slice(7) : tokenParam;
+  return token === AUTH_TOKEN;
 }
 
 // --- Mode: WebSocket Server ---
@@ -365,17 +410,106 @@ function startServer() {
 
   if (!AUTH_TOKEN) {
     console.error("ERROR: AUTH_TOKEN environment variable is required for server mode.");
-    console.error("Set it to a secret string that clients must provide to connect.");
     process.exit(1);
   }
 
+  // Try to open DB if it exists (may not exist yet for fresh VMs)
+  if (openDatabase()) {
+    log("Database loaded at startup");
+  } else {
+    log(`Database not found at ${DB_PATH} — waiting for upload`);
+  }
+
+  // Ensure data directory exists for uploads
+  const dataDir = dirname(DB_PATH);
+  if (!existsSync(dataDir)) {
+    mkdirSync(dataDir, { recursive: true });
+  }
+
   const httpServer = createServer((req, res) => {
-    // Health check endpoint
-    if (req.url === "/health") {
+    // Health check endpoint (no auth)
+    if (req.url === "/health" && req.method === "GET") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ status: "ok", uptime: process.uptime() }));
+      res.end(JSON.stringify({
+        status: "ok",
+        uptime: process.uptime(),
+        databaseReady: isDatabaseReady(),
+      }));
       return;
     }
+
+    // Database upload endpoint
+    if (req.url?.startsWith("/upload") && req.method === "POST") {
+      if (!verifyAuth(req)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "Unauthorized" }));
+        return;
+      }
+
+      const contentLength = parseInt(req.headers["content-length"] || "0", 10);
+      if (contentLength > MAX_UPLOAD_BYTES) {
+        res.writeHead(413, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "File too large", maxBytes: MAX_UPLOAD_BYTES }));
+        return;
+      }
+
+      log(`Upload started (${(contentLength / 1024 / 1024).toFixed(1)} MB)`);
+
+      // Write to temp file first, then rename (atomic)
+      const tmpPath = DB_PATH + ".uploading";
+      const stream = createWriteStream(tmpPath);
+      let bytesReceived = 0;
+
+      req.on("data", (chunk) => {
+        bytesReceived += chunk.length;
+        stream.write(chunk);
+      });
+
+      req.on("end", () => {
+        stream.end(() => {
+          // Close existing DB connection before replacing the file
+          if (db) {
+            try { db.close(); } catch {}
+            db = null;
+          }
+
+          // Remove WAL/SHM files if they exist (stale from previous DB)
+          try { unlinkSync(DB_PATH + "-wal"); } catch {}
+          try { unlinkSync(DB_PATH + "-shm"); } catch {}
+
+          // Atomic rename
+          renameSync(tmpPath, DB_PATH);
+
+          log(`Upload complete: ${(bytesReceived / 1024 / 1024).toFixed(1)} MB`);
+
+          // Re-open the database
+          if (openDatabase()) {
+            log("Database loaded after upload");
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              status: "ok",
+              bytesReceived,
+              databaseReady: true,
+            }));
+          } else {
+            log("ERROR: Failed to open database after upload");
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ error: "Failed to open uploaded database" }));
+          }
+        });
+      });
+
+      req.on("error", (err) => {
+        log(`Upload error: ${err.message}`);
+        stream.destroy();
+        try { unlinkSync(tmpPath); } catch {}
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: err.message }));
+      });
+
+      return;
+    }
+
     res.writeHead(404);
     res.end();
   });
@@ -384,16 +518,7 @@ function startServer() {
     server: httpServer,
     path: "/ws",
     verifyClient: ({ req }, done) => {
-      // Check bearer token from Authorization header or ?token= query param
-      const authHeader = req.headers["authorization"];
-      const url = new URL(req.url, `http://${req.headers.host}`);
-      const tokenParam = url.searchParams.get("token");
-
-      const token = authHeader?.startsWith("Bearer ")
-        ? authHeader.slice(7)
-        : tokenParam;
-
-      if (token !== AUTH_TOKEN) {
+      if (!verifyAuth(req)) {
         log("Rejected connection: invalid token");
         done(false, 401, "Unauthorized");
         return;
@@ -492,6 +617,7 @@ function startServer() {
     log(`Listening on port ${PORT}`);
     log(`WebSocket: ws://0.0.0.0:${PORT}/ws`);
     log(`Health check: http://0.0.0.0:${PORT}/health`);
+    log(`Upload: POST http://0.0.0.0:${PORT}/upload`);
   });
 }
 
@@ -504,7 +630,6 @@ if (args[0] === "--serve") {
 } else if (args.length > 0) {
   // CLI mode
   await runCli(args.join(" "));
-  db.close();
 } else {
   console.log("Usage:");
   console.log('  node agent.mjs "What did I do today?"     # CLI mode');
