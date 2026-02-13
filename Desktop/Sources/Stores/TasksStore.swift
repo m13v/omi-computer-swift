@@ -214,6 +214,8 @@ class TasksStore: ObservableObject {
     /// Pure function — returns a new array instead of mutating incompleteTasks directly,
     /// so callers can do a single assignment and avoid an extra render.
     private func mergeAllowlistedTasks(_ tasks: [TaskActionItem]) async -> [TaskActionItem] {
+        // Only merge in Relevance mode (showAllTasks=false means topScoredOnly is active)
+        guard !showAllTasks else { return tasks }
         guard hasCompletedScoring, !visibleAITaskIds.isEmpty else { return tasks }
         let loadedIds = Set(tasks.map { $0.id })
         let missingIds = visibleAITaskIds.subtracting(loadedIds)
