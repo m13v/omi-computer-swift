@@ -20,7 +20,16 @@ export interface StopMessage {
   type: "stop";
 }
 
-export type InboundMessage = QueryMessage | ToolResultMessage | StopMessage;
+export interface FollowUpMessage {
+  type: "follow_up";
+  text: string;
+}
+
+export interface InterruptMessage {
+  type: "interrupt";
+}
+
+export type InboundMessage = QueryMessage | ToolResultMessage | StopMessage | FollowUpMessage | InterruptMessage;
 
 // === Bridge → Swift (stdout) ===
 
