@@ -73,7 +73,7 @@ actor TaskPromotionService {
                     }
 
                     // Delete from local StagedTaskStorage (if it was there)
-                    if let backendId = response.promotedTask?.id {
+                    if response.promotedTask?.id != nil {
                         // The staged task had a different backend ID before promotion,
                         // but we can try to match by description since the backend already
                         // deleted the staged task from Firestore
