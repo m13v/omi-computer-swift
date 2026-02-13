@@ -2945,7 +2945,7 @@ struct TaskRow: View {
 
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                     if TaskAgentSettings.shared.isEnabled {
-                        AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail)
+                        AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
                     }
 
                     // Chat button (shown on hover when onOpenChat is available)
