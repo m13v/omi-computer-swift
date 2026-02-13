@@ -72,10 +72,24 @@ actor TaskPrioritizationService {
     }
 
     private func checkAndRescore() async {
+        // Regenerate AI user profile if >24h old (runs daily)
+        await regenerateProfileIfNeeded()
+
         let now = Date()
         let timeSinceFull = lastFullRunTime.map { now.timeIntervalSince($0) } ?? .infinity
         if timeSinceFull >= fullRescoreInterval {
             await runFullRescore()
+        }
+    }
+
+    /// Check if the AI user profile needs regeneration (>24h old) and regenerate if so
+    private func regenerateProfileIfNeeded() async {
+        guard await AIUserProfileService.shared.shouldGenerate() else { return }
+        do {
+            _ = try await AIUserProfileService.shared.generateProfile()
+            log("TaskPrioritize: Regenerated AI user profile (daily)")
+        } catch {
+            log("TaskPrioritize: AI user profile generation failed: \(error.localizedDescription)")
         }
     }
 
