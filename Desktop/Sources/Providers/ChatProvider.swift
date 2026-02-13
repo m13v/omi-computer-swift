@@ -1046,11 +1046,11 @@ class ChatProvider: ObservableObject {
             let citations = extractCitations(from: queryResult.text, sources: citationSources)
             let displayText = stripCitationMarkers(from: queryResult.text)
 
-            // Update AI message with cleaned text and citations
+            // Determine the final text to display and save
+            let messageText: String
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                // If streaming populated the text, use displayText stripped of citations;
-                // otherwise use the final response
-                let messageText = messages[index].text.isEmpty ? displayText : stripCitationMarkers(from: messages[index].text)
+                // Message still in memory — update it in-place
+                messageText = messages[index].text.isEmpty ? displayText : stripCitationMarkers(from: messages[index].text)
                 messages[index].text = messageText
                 messages[index].citations = citations
                 messages[index].isStreaming = false
@@ -1058,25 +1058,30 @@ class ChatProvider: ObservableObject {
                 if !citations.isEmpty {
                     log("Extracted \(citations.count) citation(s) from response")
                 }
+            } else {
+                // Message no longer in memory (user switched away from this session).
+                // Still need to persist the response to the backend.
+                messageText = displayText
+                log("Chat response arrived after session switch, persisting to backend only")
+            }
 
-                // Save AI response to backend and sync ID
-                let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
-                if !textToSave.isEmpty {
-                    do {
-                        let response = try await APIClient.shared.saveMessage(
-                            text: textToSave,
-                            sender: "ai",
-                            appId: selectedAppId,
-                            sessionId: capturedSessionId
-                        )
-                        if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                            messages[syncIndex].id = response.id
-                            messages[syncIndex].isSynced = true
-                        }
-                        log("Saved and synced AI response: \(response.id)")
-                    } catch {
-                        logError("Failed to persist AI response", error: error)
+            // Always save AI response to backend (even if the user navigated away)
+            let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
+            if !textToSave.isEmpty {
+                do {
+                    let response = try await APIClient.shared.saveMessage(
+                        text: textToSave,
+                        sender: "ai",
+                        appId: selectedAppId,
+                        sessionId: capturedSessionId
+                    )
+                    if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                        messages[syncIndex].id = response.id
+                        messages[syncIndex].isSynced = true
                     }
+                    log("Saved and synced AI response: \(response.id)")
+                } catch {
+                    logError("Failed to persist AI response", error: error)
                 }
             }
 
