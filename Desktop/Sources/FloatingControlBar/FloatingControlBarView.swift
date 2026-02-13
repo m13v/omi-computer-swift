@@ -39,47 +39,35 @@ struct FloatingControlBarView: View {
     }
 
     private var controlBarView: some View {
-        HStack(spacing: 12) {
+        VStack(spacing: 0) {
+            HStack(spacing: 12) {
+                Spacer()
+
+                if state.isVoiceListening {
+                    voiceListeningView
+                } else {
+                    commandButton(title: "Ask omi", keys: ["\u{2318}", "\u{21A9}\u{FE0E}"]) {
+                        onAskAI()
+                    }
+                }
+
+                Spacer()
+            }
+
             // Hide shortcut hint
             HStack(spacing: 4) {
-                Text("\u{2318}")
-                    .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.3))
-                    .frame(width: 16, height: 16)
-                    .background(Color.white.opacity(0.06))
-                    .cornerRadius(3)
-                Text("\\")
-                    .font(.system(size: 10))
-                    .foregroundColor(.white.opacity(0.3))
-                    .frame(width: 16, height: 16)
-                    .background(Color.white.opacity(0.06))
-                    .cornerRadius(3)
+                Text("\u{2318}\\")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.25))
+                Text("hide")
+                    .font(.system(size: 9))
+                    .foregroundColor(.white.opacity(0.25))
             }
-
-            Spacer()
-
-            if state.isVoiceListening {
-                voiceListeningView
-            } else {
-                commandButton(title: "Ask omi", keys: ["\u{2318}", "\u{21A9}\u{FE0E}"]) {
-                    onAskAI()
-                }
-            }
-
-            Spacer()
-
-            // Balance the left side
-            Color.clear.frame(width: 40, height: 16)
+            .padding(.bottom, 2)
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.top, 8)
         .frame(height: 60)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            if !state.isVoiceListening && !state.showingAIConversation {
-                onAskAI()
-            }
-        }
         .background(DraggableAreaView(targetWindow: window))
     }
 
