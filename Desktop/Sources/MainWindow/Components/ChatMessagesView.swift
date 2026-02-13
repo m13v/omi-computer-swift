@@ -16,6 +16,13 @@ struct ChatMessagesView<WelcomeContent: View>: View {
     @ViewBuilder var welcomeContent: () -> WelcomeContent
 
     @State private var isUserAtBottom = true
+    /// Tracks whether we should follow new content (survives the race between
+    /// content growth and scroll position detection). Only set to false when
+    /// the user actively scrolls up (not when content grows past the viewport).
+    @State private var shouldFollowContent = true
+    /// True while a programmatic scroll is in-flight, so we can distinguish
+    /// user-initiated scrolls from our own.
+    @State private var isProgrammaticScroll = false
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -75,22 +82,38 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                     .padding()
                     .background(
                         ScrollPositionDetector { atBottom in
-                            if isUserAtBottom != atBottom {
-                                isUserAtBottom = atBottom
+                            isUserAtBottom = atBottom
+                            if atBottom {
+                                shouldFollowContent = true
+                            } else if !isProgrammaticScroll {
+                                // Only stop following when the user actively scrolls up,
+                                // not when content grows past the viewport or we're mid-scroll.
+                                shouldFollowContent = false
                             }
                         }
                     )
                 }
                 .onChange(of: messages.count) { oldCount, newCount in
                     if newCount > oldCount || oldCount == 0 {
-                        if isUserAtBottom || oldCount == 0 {
+                        if shouldFollowContent || oldCount == 0 {
                             scrollToBottom(proxy: proxy)
                         }
                     }
                 }
                 .onChange(of: messages.last?.text) { _, _ in
-                    if isUserAtBottom {
+                    if shouldFollowContent {
                         scrollToBottom(proxy: proxy)
+                    }
+                }
+                .onChange(of: messages.last?.contentBlocks.count) { _, _ in
+                    if shouldFollowContent {
+                        scrollToBottom(proxy: proxy)
+                    }
+                }
+                .onChange(of: isSending) { oldValue, newValue in
+                    // When streaming starts, follow if we're at/near bottom
+                    if newValue && !oldValue && isUserAtBottom {
+                        shouldFollowContent = true
                     }
                 }
                 .onAppear {
@@ -98,9 +121,9 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                 }
 
                 // Scroll to bottom button
-                if !isUserAtBottom && !messages.isEmpty {
+                if !shouldFollowContent && !messages.isEmpty {
                     Button {
-                        isUserAtBottom = true
+                        shouldFollowContent = true
                         scrollToBottom(proxy: proxy)
                     } label: {
                         Image(systemName: "arrow.down.circle.fill")
@@ -116,7 +139,7 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                     .buttonStyle(.plain)
                     .padding(.bottom, 16)
                     .transition(.scale.combined(with: .opacity))
-                    .animation(.easeInOut(duration: 0.2), value: isUserAtBottom)
+                    .animation(.easeInOut(duration: 0.2), value: shouldFollowContent)
                 }
             }
         }
@@ -124,8 +147,11 @@ struct ChatMessagesView<WelcomeContent: View>: View {
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
         if let lastMessage = messages.last {
-            withAnimation(.easeOut(duration: 0.1)) {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
+            isProgrammaticScroll = true
+            proxy.scrollTo(lastMessage.id, anchor: .bottom)
+            // Reset after a short delay to allow the scroll to settle
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                isProgrammaticScroll = false
             }
         }
     }
