@@ -117,7 +117,7 @@ class DashboardViewModel: ObservableObject {
                 targetValue: targetValue,
                 unit: unit
             )
-            try? await GoalStorage.shared.syncServerGoal(goal)
+            _ = try? await GoalStorage.shared.syncServerGoal(goal)
             goals = try await GoalStorage.shared.getLocalGoals()
         } catch {
             logError("Failed to create goal", error: error)
@@ -140,7 +140,7 @@ class DashboardViewModel: ObservableObject {
             )
 
             // Sync API response to SQLite
-            try? await GoalStorage.shared.syncServerGoal(updated)
+            _ = try? await GoalStorage.shared.syncServerGoal(updated)
 
             // Check if the backend auto-completed this goal
             if updated.completedAt != nil {
