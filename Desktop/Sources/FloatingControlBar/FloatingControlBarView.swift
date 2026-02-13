@@ -69,11 +69,11 @@ struct FloatingControlBarView: View {
     private func compactLabel(_ title: String, keys: [String]) -> some View {
         HStack(spacing: 3) {
             Text(title)
-                .font(.system(size: 11, weight: .medium))
+                .scaledFont(size: 11, weight: .medium)
                 .foregroundColor(.white)
             ForEach(keys, id: \.self) { key in
                 Text(key)
-                    .font(.system(size: 9))
+                    .scaledFont(size: 9)
                     .foregroundColor(.white)
                     .frame(width: 15, height: 15)
                     .background(Color.white.opacity(0.1))
@@ -92,12 +92,12 @@ struct FloatingControlBarView: View {
                 .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: state.isVoiceListening)
 
             Image(systemName: "mic.fill")
-                .font(.system(size: 14, weight: .semibold))
+                .scaledFont(size: 14, weight: .semibold)
                 .foregroundColor(.white)
 
             if state.isVoiceLocked {
                 Text("LOCKED")
-                    .font(.system(size: 10, weight: .bold))
+                    .scaledFont(size: 10, weight: .bold)
                     .foregroundColor(.orange)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -107,13 +107,13 @@ struct FloatingControlBarView: View {
 
             if !state.voiceTranscript.isEmpty {
                 Text(state.voiceTranscript)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundColor(.white.opacity(0.8))
                     .lineLimit(1)
                     .truncationMode(.tail)
             } else {
                 Text(state.isVoiceLocked ? "Tap \u{2325} to send" : "Release \u{2325} to send")
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundColor(.white.opacity(0.5))
             }
         }
