@@ -1016,6 +1016,34 @@ class TasksStore: ObservableObject {
         }
     }
 
+    /// Restore a previously soft-deleted task (for undo)
+    /// Uses local-first: un-soft-deletes in SQLite (with fresh updatedAt to prevent
+    /// auto-refresh from reverting) and re-inserts into in-memory arrays.
+    func restoreTask(_ task: TaskActionItem) async {
+        // 1. Un-soft-delete in SQLite
+        do {
+            try await ActionItemStorage.shared.undeleteActionItemByBackendId(task.id)
+        } catch {
+            logError("TasksStore: Failed to undelete task locally", error: error)
+            return
+        }
+
+        // 2. Read back from SQLite to get fresh state
+        guard let restoredTask = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: task.id) else {
+            logError("TasksStore: Failed to read back restored task", error: nil)
+            return
+        }
+
+        // 3. Re-insert into the appropriate in-memory array
+        if restoredTask.completed {
+            completedTasks.insert(restoredTask, at: 0)
+        } else {
+            incompleteTasks.insert(restoredTask, at: 0)
+        }
+
+        log("TasksStore: Restored task \(task.id) via undo")
+    }
+
     func updateTask(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
         // Track manual edits: if description is changed, mark as manually edited
         var metadata: [String: Any]? = nil
