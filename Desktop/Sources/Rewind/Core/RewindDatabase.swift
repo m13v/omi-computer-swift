@@ -1771,17 +1771,17 @@ actor RewindDatabase {
 
             guard !aiTasks.isEmpty else { return }
 
-            // Top 5 stay in action_items with [screen] prefix
+            // Top 5 stay in action_items with [screen] suffix
             let top5 = Array(aiTasks.prefix(5))
             let rest = Array(aiTasks.dropFirst(5))
 
-            // Prefix top 5 descriptions with [screen] if not already
+            // Add [screen] suffix to top 5 descriptions if not already tagged
             for task in top5 {
                 let desc = task["description"] as? String ?? ""
-                if !desc.hasPrefix("[screen]") {
+                if !desc.hasSuffix(" [screen]") && !desc.hasPrefix("[screen]") {
                     try db.execute(
                         sql: "UPDATE action_items SET description = ? WHERE id = ?",
-                        arguments: ["[screen] " + desc, task["id"]]
+                        arguments: [desc + " [screen]", task["id"]]
                     )
                 }
             }
