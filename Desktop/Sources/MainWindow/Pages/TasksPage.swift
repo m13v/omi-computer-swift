@@ -1629,8 +1629,8 @@ struct TasksPage: View {
                 }
                 cancelMultiSelectButton
             } else {
-                addTaskButton
                 modeToggle
+                addTaskButton
                 taskSettingsButton
             }
         }
@@ -2021,7 +2021,7 @@ struct TasksPage: View {
 
 
     private var modeToggle: some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 0) {
             ForEach(TaskSortOption.allCases, id: \.self) { option in
                 let isSelected = viewModel.sortOption == option
                 Button {
@@ -2035,21 +2035,26 @@ struct TasksPage: View {
                         Text(option.rawValue)
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundColor(isSelected ? .black : OmiColors.textSecondary)
+                    .foregroundColor(isSelected ? .black : OmiColors.textTertiary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
                             .fill(isSelected ? Color.white : Color.clear)
+                            .shadow(color: isSelected ? Color.black.opacity(0.08) : .clear, radius: 1, y: 1)
                     )
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(2)
+        .padding(3)
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(OmiColors.backgroundSecondary)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(OmiColors.border.opacity(0.5), lineWidth: 1)
         )
     }
 
