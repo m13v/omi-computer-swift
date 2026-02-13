@@ -414,6 +414,8 @@ struct RewindPage: View {
                 }
             }
 
+            Spacer()
+
             // Settings
             Button {
                 NotificationCenter.default.post(
