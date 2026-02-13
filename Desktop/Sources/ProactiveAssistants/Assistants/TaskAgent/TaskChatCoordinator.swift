@@ -20,6 +20,10 @@ class TaskChatCoordinator: ObservableObject {
     private var savedMessages: [ChatMessage] = []
     private var savedIsInDefaultChat = true
     private var savedWorkingDirectory: String?
+    private var savedOverrideAppId: String?
+
+    /// App ID used to isolate task chat messages from the default chat
+    static let taskChatAppId = "task-chat"
 
     init(chatProvider: ChatProvider) {
         self.chatProvider = chatProvider
@@ -44,6 +48,7 @@ class TaskChatCoordinator: ObservableObject {
             savedMessages = chatProvider.messages
             savedIsInDefaultChat = chatProvider.isInDefaultChat
             savedWorkingDirectory = chatProvider.workingDirectory
+            savedOverrideAppId = chatProvider.overrideAppId
         }
 
         activeTaskId = task.id
@@ -51,6 +56,8 @@ class TaskChatCoordinator: ObservableObject {
         // Set workspace path for file-system tools
         workspacePath = TaskAgentSettings.shared.workingDirectory
         chatProvider.workingDirectory = workspacePath
+        // Isolate task messages from the default chat
+        chatProvider.overrideAppId = Self.taskChatAppId
 
         // Check if task already has a chat session
         if let sessionId = task.chatSessionId {
@@ -59,7 +66,7 @@ class TaskChatCoordinator: ObservableObject {
             await chatProvider.selectSession(session)
         } else {
             // Create a new session for this task
-            if let session = await chatProvider.createNewSession(title: taskChatTitle(for: task), skipGreeting: true) {
+            if let session = await chatProvider.createNewSession(title: taskChatTitle(for: task), skipGreeting: true, appId: "task-chat") {
                 // Persist the session ID to the task's local storage
                 try? await ActionItemStorage.shared.updateChatSessionId(
                     taskId: task.id,
@@ -90,6 +97,7 @@ class TaskChatCoordinator: ObservableObject {
 
         // Restore previous ChatProvider state
         chatProvider.workingDirectory = savedWorkingDirectory
+        chatProvider.overrideAppId = savedOverrideAppId
         if savedIsInDefaultChat {
             await chatProvider.switchToDefaultChat()
         } else if let saved = savedSession {
@@ -100,6 +108,7 @@ class TaskChatCoordinator: ObservableObject {
         savedMessages = []
         savedIsInDefaultChat = true
         savedWorkingDirectory = nil
+        savedOverrideAppId = nil
     }
 
     /// Build the initial context prompt for a task chat session.
