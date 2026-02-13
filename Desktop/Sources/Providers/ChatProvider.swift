@@ -179,11 +179,20 @@ struct Citation: Identifiable {
     }
 }
 
+// MARK: - Chat Mode
+
+/// Controls whether the AI agent can perform write actions (Act) or is restricted to read-only (Ask)
+enum ChatMode: String, CaseIterable {
+    case ask
+    case act
+}
+
 /// State management for chat functionality with Claude Agent SDK
 /// Uses hybrid architecture: Swift → Claude Agent (via Node.js bridge) for AI, Backend for persistence + context
 @MainActor
 class ChatProvider: ObservableObject {
     // MARK: - Published State
+    @Published var chatMode: ChatMode = .act
     @Published var messages: [ChatMessage] = []
     @Published var sessions: [ChatSession] = []
     @Published var currentSession: ChatSession?
@@ -1073,6 +1082,7 @@ class ChatProvider: ObservableObject {
                 prompt: trimmedText,
                 systemPrompt: systemPrompt,
                 cwd: workingDirectory,
+                mode: chatMode.rawValue,
                 onTextDelta: { [weak self] delta in
                     Task { @MainActor [weak self] in
                         self?.appendToMessage(id: aiMessageId, text: delta)
