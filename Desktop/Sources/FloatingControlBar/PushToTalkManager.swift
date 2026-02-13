@@ -271,15 +271,17 @@ class PushToTalkManager: ObservableObject {
       query = lastInterimText.trimmingCharacters(in: .whitespacesAndNewlines)
     }
     let screenshot = capturedScreenshotURL
+    let hasQuery = !query.isEmpty
 
-    // Reset state
+    // Reset state — skip PTT collapse resize when we have a query,
+    // because openAIInputWithQuery will resize to the correct size
     state = .idle
     transcriptSegments = []
     lastInterimText = ""
     capturedScreenshotURL = nil
-    updateBarState()
+    updateBarState(skipResize: hasQuery)
 
-    guard !query.isEmpty else {
+    guard hasQuery else {
       log("PushToTalkManager: no transcript to send")
       return
     }
@@ -391,7 +393,7 @@ class PushToTalkManager: ObservableObject {
 
   // MARK: - Bar State Sync
 
-  private func updateBarState() {
+  private func updateBarState(skipResize: Bool = false) {
     guard let barState = barState else { return }
     let wasListening = barState.isVoiceListening
     barState.isVoiceListening =
@@ -402,6 +404,7 @@ class PushToTalkManager: ObservableObject {
     }
 
     // Resize the floating bar window for PTT state changes
+    guard !skipResize else { return }
     if barState.isVoiceListening && !wasListening {
       FloatingControlBarManager.shared.resizeForPTT(expanded: true)
     } else if !barState.isVoiceListening && wasListening {
