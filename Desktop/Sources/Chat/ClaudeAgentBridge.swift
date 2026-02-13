@@ -235,17 +235,8 @@ actor ClaudeAgentBridge {
 
     // MARK: - Streaming Input Controls
 
-    /// Send a follow-up message to the running agent, redirecting its work
-    func sendFollowUp(text: String) {
-        guard isRunning else { return }
-        let msg: [String: Any] = ["type": "follow_up", "text": text]
-        if let data = try? JSONSerialization.data(withJSONObject: msg),
-           let json = String(data: data, encoding: .utf8) {
-            sendLine(json)
-        }
-    }
-
-    /// Interrupt the running agent, keeping partial response
+    /// Interrupt the running agent, keeping partial response.
+    /// The bridge will abort the current query and send back a partial result.
     func interrupt() {
         guard isRunning else { return }
         sendLine("{\"type\":\"interrupt\"}")
