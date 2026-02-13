@@ -519,13 +519,15 @@ struct ChatBubble: View {
                                     .background(OmiColors.backgroundSecondary)
                                     .cornerRadius(18)
                             }
-                        case .toolCall(_, let name, let status):
-                            ToolCallIndicator(name: name, status: status)
+                        case .toolCall(_, let name, let status, _, let input, let output):
+                            ToolCallCard(name: name, status: status, input: input, output: output)
+                        case .thinking(_, let text):
+                            ThinkingBlock(text: text)
                         }
                     }
                     // Show typing indicator at end if still streaming
                     if message.isStreaming {
-                        if case .toolCall(_, _, .running) = message.contentBlocks.last {
+                        if case .toolCall(_, _, .running, _, _, _) = message.contentBlocks.last {
                             // Tool is running — indicator already shows spinner
                         } else if case .text(_, let lastText) = message.contentBlocks.last, lastText.isEmpty {
                             TypingIndicator()
@@ -613,31 +615,171 @@ struct ChatBubble: View {
     }
 }
 
-// MARK: - Tool Call Indicator
+// MARK: - Tool Call Card
 
-struct ToolCallIndicator: View {
+struct ToolCallCard: View {
     let name: String
     let status: ToolCallStatus
+    let input: ToolCallInput?
+    let output: String?
+
+    @State private var isExpanded = false
+
+    private var hasExpandableContent: Bool {
+        input?.details != nil || output != nil
+    }
 
     var body: some View {
-        HStack(spacing: 6) {
-            if status == .running {
-                ProgressView()
-                    .controlSize(.mini)
-                    .frame(width: 12, height: 12)
-            } else {
-                Image(systemName: "checkmark.circle.fill")
-                    .scaledFont(size: 12)
-                    .foregroundColor(.green)
-            }
+        VStack(alignment: .leading, spacing: 0) {
+            // Compact header row
+            Button(action: {
+                if hasExpandableContent {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isExpanded.toggle()
+                    }
+                }
+            }) {
+                HStack(spacing: 6) {
+                    // Status indicator
+                    if status == .running {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .scaledFont(size: 12)
+                            .foregroundColor(.green)
+                    }
 
-            Text(ChatContentBlock.displayName(for: name))
-                .scaledFont(size: 12, design: .monospaced)
-                .foregroundColor(OmiColors.textSecondary)
+                    // Tool name
+                    Text(ChatContentBlock.displayName(for: name))
+                        .scaledFont(size: 12, design: .monospaced)
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    // Inline argument summary
+                    if let summary = input?.summary {
+                        Text("·")
+                            .scaledFont(size: 12)
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Text(summary)
+                            .scaledFont(size: 11, design: .monospaced)
+                            .foregroundColor(OmiColors.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    // Expand chevron
+                    if hasExpandableContent {
+                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                            .scaledFont(size: 9)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded content
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 8)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    // Input details
+                    if let details = input?.details {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Input")
+                                .scaledFont(size: 10, weight: .semibold)
+                                .foregroundColor(OmiColors.textTertiary)
+
+                            Text(details)
+                                .scaledFont(size: 11, design: .monospaced)
+                                .foregroundColor(OmiColors.textSecondary)
+                                .lineLimit(10)
+                                .textSelection(.enabled)
+                        }
+                    }
+
+                    // Output
+                    if let output = output, !output.isEmpty {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Output")
+                                .scaledFont(size: 10, weight: .semibold)
+                                .foregroundColor(OmiColors.textTertiary)
+
+                            Text(output)
+                                .scaledFont(size: 11, design: .monospaced)
+                                .foregroundColor(OmiColors.textSecondary)
+                                .lineLimit(15)
+                                .textSelection(.enabled)
+                        }
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+            }
         }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
         .background(OmiColors.backgroundTertiary.opacity(0.5))
+        .cornerRadius(8)
+    }
+}
+
+// MARK: - Thinking Block
+
+struct ThinkingBlock: View {
+    let text: String
+
+    @State private var isExpanded = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Header
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack(spacing: 6) {
+                    Image(systemName: "brain")
+                        .scaledFont(size: 11)
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    Text("Thinking")
+                        .scaledFont(size: 12, weight: .medium)
+                        .foregroundColor(OmiColors.textTertiary)
+                        .italic()
+
+                    Spacer(minLength: 4)
+
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .scaledFont(size: 9)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded thinking content
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 8)
+
+                Text(text)
+                    .scaledFont(size: 12)
+                    .foregroundColor(OmiColors.textTertiary)
+                    .italic()
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .lineLimit(30)
+            }
+        }
+        .background(OmiColors.backgroundTertiary.opacity(0.3))
         .cornerRadius(8)
     }
 }
