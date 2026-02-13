@@ -13,6 +13,7 @@ struct ChatInputView: View {
     var onStop: (() -> Void)? = nil
     let isSending: Bool
     var placeholder: String = "Type a message..."
+    @Binding var mode: ChatMode
 
     @State private var inputText = ""
     @FocusState private var isInputFocused: Bool
@@ -44,6 +45,9 @@ struct ChatInputView: View {
                     isInputFocused = true
                 }
 
+            // Ask/Act mode toggle
+            ChatModeToggle(mode: $mode)
+
             if isSending && !hasText {
                 // Stop button — visible when agent is running and input is empty
                 Button(action: { onStop?() }) {
@@ -74,5 +78,33 @@ struct ChatInputView: View {
         } else {
             onSend(text)
         }
+    }
+}
+
+// MARK: - Ask/Act Mode Toggle
+
+struct ChatModeToggle: View {
+    @Binding var mode: ChatMode
+
+    var body: some View {
+        HStack(spacing: 0) {
+            modeButton(for: .ask, label: "Ask")
+            modeButton(for: .act, label: "Act")
+        }
+        .background(OmiColors.backgroundSecondary)
+        .cornerRadius(14)
+    }
+
+    private func modeButton(for targetMode: ChatMode, label: String) -> some View {
+        Button(action: { mode = targetMode }) {
+            Text(label)
+                .scaledFont(size: 12, weight: .medium)
+                .foregroundColor(mode == targetMode ? .white : OmiColors.textTertiary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 5)
+                .background(mode == targetMode ? OmiColors.purplePrimary : Color.clear)
+                .cornerRadius(12)
+        }
+        .buttonStyle(.plain)
     }
 }
