@@ -277,30 +277,48 @@ async fn migrate_ai_tasks(
 ) -> Result<Json<ActionItemStatusResponse>, StatusCode> {
     tracing::info!("Migrating AI tasks for user {}", user.uid);
 
-    // Get all non-completed, non-deleted action items
-    let all_items = match state
-        .firestore
-        .get_action_items(
-            &user.uid,
-            500,
-            0,
-            Some(false), // not completed
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None, // not deleted (default)
-        )
-        .await
-    {
-        Ok(items) => items,
-        Err(e) => {
-            tracing::error!("Failed to get action items for migration: {}", e);
-            return Err(StatusCode::INTERNAL_SERVER_ERROR);
+    // Get all non-completed, non-deleted action items (paginate to get everything)
+    let mut all_items: Vec<ActionItemDB> = Vec::new();
+    let mut offset = 0;
+    let batch_size = 500;
+    loop {
+        match state
+            .firestore
+            .get_action_items(
+                &user.uid,
+                batch_size,
+                offset,
+                Some(false), // not completed
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None, // not deleted (default)
+            )
+            .await
+        {
+            Ok(items) => {
+                let count = items.len();
+                all_items.extend(items);
+                if count < batch_size {
+                    break;
+                }
+                offset += count;
+            }
+            Err(e) => {
+                tracing::error!("Failed to get action items for migration: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
         }
-    };
+    }
+
+    tracing::info!(
+        "Migration: fetched {} total active action items for user {}",
+        all_items.len(),
+        user.uid
+    );
 
     // Filter to AI tasks (source contains "screenshot")
     let mut ai_tasks: Vec<ActionItemDB> = all_items
@@ -311,6 +329,12 @@ async fn migrate_ai_tasks(
                 .map_or(false, |s| s.contains("screenshot"))
         })
         .collect();
+
+    tracing::info!(
+        "Migration: found {} AI (screenshot) tasks for user {}",
+        ai_tasks.len(),
+        user.uid
+    );
 
     // Sort by relevance_score ASC (best first)
     ai_tasks.sort_by(|a, b| {
