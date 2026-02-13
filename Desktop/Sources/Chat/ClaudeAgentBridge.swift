@@ -45,11 +45,24 @@ actor ClaudeAgentBridge {
     private var messageContinuation: CheckedContinuation<InboundMessage, Error>?
     private var messageGeneration: UInt64 = 0
 
+    /// Whether the bridge subprocess is alive and ready
+    var isAlive: Bool { isRunning }
+
     // MARK: - Lifecycle
 
-    /// Start the Node.js bridge process
+    /// Start the Node.js bridge process (safe to call after a crash — cleans up old state)
     func start() async throws {
         guard !isRunning else { return }
+
+        // Clean up any leftover state from a previous crashed process
+        readTask?.cancel()
+        readTask = nil
+        process = nil
+        stdinPipe = nil
+        stdoutPipe = nil
+        stderrPipe = nil
+        pendingMessages.removeAll()
+        messageContinuation = nil
 
         let nodePath = findNodeBinary()
         guard let nodePath else {
