@@ -392,6 +392,9 @@ extension ActionItemRecord {
             deletedReason: nil,  // Not stored locally
             keptTaskId: nil,  // Not stored locally
             relevanceScore: relevanceScore,
+            contextSummary: contextSummary,
+            currentActivity: currentActivity,
+            agentEditedFiles: agentEditedFiles.isEmpty ? nil : agentEditedFiles,
             agentStatus: agentStatus,
             agentPrompt: agentPrompt,
             agentPlan: agentPlan,
@@ -581,6 +584,9 @@ struct StagedTaskRecord: Codable, FetchableRecord, PersistableRecord, Identifiab
             deletedReason: nil,
             keptTaskId: nil,
             relevanceScore: relevanceScore,
+            contextSummary: contextSummary,
+            currentActivity: currentActivity,
+            agentEditedFiles: nil,
             agentStatus: nil,
             agentPrompt: nil,
             agentPlan: nil,
