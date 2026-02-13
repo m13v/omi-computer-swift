@@ -59,15 +59,28 @@ struct ChatSession: Identifiable, Codable, Equatable {
 
 // MARK: - Content Block Model
 
+/// Structured tool input for inline display
+struct ToolCallInput {
+    /// Short summary for inline display (e.g., file path, command)
+    let summary: String
+    /// Full JSON details for expanded view
+    let details: String?
+}
+
 /// A block of content within an AI message (text or tool call indicator)
 enum ChatContentBlock: Identifiable {
     case text(id: String, text: String)
-    case toolCall(id: String, name: String, status: ToolCallStatus)
+    case toolCall(id: String, name: String, status: ToolCallStatus,
+                  toolUseId: String? = nil,
+                  input: ToolCallInput? = nil,
+                  output: String? = nil)
+    case thinking(id: String, text: String)
 
     var id: String {
         switch self {
         case .text(let id, _): return id
-        case .toolCall(let id, _, _): return id
+        case .toolCall(let id, _, _, _, _, _): return id
+        case .thinking(let id, _): return id
         }
     }
 
@@ -94,6 +107,64 @@ enum ChatContentBlock: Identifiable {
         case "WebFetch": return "Fetching page"
         default: return "Using \(cleanName)"
         }
+    }
+
+    /// Extracts a short summary from tool input for inline display
+    static func toolInputSummary(for toolName: String, input: [String: Any]) -> ToolCallInput? {
+        let cleanName: String
+        if toolName.hasPrefix("mcp__") {
+            cleanName = String(toolName.split(separator: "__").last ?? Substring(toolName))
+        } else {
+            cleanName = toolName
+        }
+
+        let summary: String?
+        switch cleanName {
+        case "Read":
+            summary = input["file_path"] as? String
+        case "Write", "Edit":
+            summary = input["file_path"] as? String
+        case "Bash":
+            if let cmd = input["command"] as? String {
+                summary = cmd.count > 80 ? String(cmd.prefix(80)) + "…" : cmd
+            } else {
+                summary = nil
+            }
+        case "Grep":
+            let pattern = input["pattern"] as? String ?? ""
+            let path = input["path"] as? String
+            summary = path != nil ? "\(pattern) in \(path!)" : pattern
+        case "Glob":
+            summary = input["pattern"] as? String
+        case "WebSearch":
+            summary = input["query"] as? String
+        case "WebFetch":
+            summary = input["url"] as? String
+        case "execute_sql":
+            if let query = input["query"] as? String {
+                summary = query.count > 100 ? String(query.prefix(100)) + "…" : query
+            } else {
+                summary = nil
+            }
+        case "semantic_search":
+            summary = input["query"] as? String
+        default:
+            // Try common key names
+            summary = (input["file_path"] ?? input["path"] ?? input["query"] ?? input["command"]) as? String
+        }
+
+        guard let summary = summary, !summary.isEmpty else { return nil }
+
+        // Build full details JSON
+        let details: String?
+        if let data = try? JSONSerialization.data(withJSONObject: input, options: [.prettyPrinted, .sortedKeys]),
+           let str = String(data: data, encoding: .utf8) {
+            details = str
+        } else {
+            details = nil
+        }
+
+        return ToolCallInput(summary: summary, details: details)
     }
 }
 
@@ -192,7 +263,7 @@ enum ChatMode: String, CaseIterable {
 @MainActor
 class ChatProvider: ObservableObject {
     // MARK: - Published State
-    @Published var chatMode: ChatMode = .act
+    @Published var chatMode: ChatMode = .ask
     @Published var messages: [ChatMessage] = []
     @Published var sessions: [ChatSession] = []
     @Published var currentSession: ChatSession?
@@ -1095,12 +1166,14 @@ class ChatProvider: ObservableObject {
                     log("OMI tool \(name) executed for callId=\(callId)")
                     return result
                 },
-                onToolActivity: { [weak self] name, status in
+                onToolActivity: { [weak self] name, status, toolUseId, input in
                     Task { @MainActor [weak self] in
                         self?.addToolActivity(
                             messageId: aiMessageId,
                             toolName: name,
-                            status: status == "started" ? .running : .completed
+                            status: status == "started" ? .running : .completed,
+                            toolUseId: toolUseId,
+                            input: input
                         )
                         // Track tool timing
                         if status == "started" {
@@ -1110,6 +1183,16 @@ class ChatProvider: ObservableObject {
                             let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
                             AnalyticsManager.shared.chatToolCallCompleted(toolName: name, durationMs: durationMs)
                         }
+                    }
+                },
+                onThinkingDelta: { [weak self] text in
+                    Task { @MainActor [weak self] in
+                        self?.appendThinking(messageId: aiMessageId, text: text)
+                    }
+                },
+                onToolResultDisplay: { [weak self] toolUseId, name, output in
+                    Task { @MainActor [weak self] in
+                        self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
                     }
                 }
             )
@@ -1287,22 +1370,75 @@ class ChatProvider: ObservableObject {
     }
 
     /// Add a tool call indicator to a streaming message
-    private func addToolActivity(messageId: String, toolName: String, status: ToolCallStatus) {
+    private func addToolActivity(messageId: String, toolName: String, status: ToolCallStatus, toolUseId: String? = nil, input: [String: Any]? = nil) {
         guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
 
+        let toolInput = input.flatMap { ChatContentBlock.toolInputSummary(for: toolName, input: $0) }
+
         if status == .running {
-            messages[index].contentBlocks.append(
-                .toolCall(id: UUID().uuidString, name: toolName, status: .running)
-            )
-        } else {
-            // Find and update the most recent tool call with this name
-            for i in stride(from: messages[index].contentBlocks.count - 1, through: 0, by: -1) {
-                if case .toolCall(let id, let name, .running) = messages[index].contentBlocks[i],
-                   name == toolName {
-                    messages[index].contentBlocks[i] = .toolCall(id: id, name: name, status: .completed)
-                    break
+            // If we have a toolUseId and input, try to update an existing running block (input arrived after start)
+            if let toolUseId = toolUseId, toolInput != nil {
+                for i in stride(from: messages[index].contentBlocks.count - 1, through: 0, by: -1) {
+                    if case .toolCall(let id, let name, let st, let existingTuid, _, let output) = messages[index].contentBlocks[i],
+                       (existingTuid == toolUseId || (existingTuid == nil && name == toolName && st == .running)) {
+                        messages[index].contentBlocks[i] = .toolCall(
+                            id: id, name: name, status: st,
+                            toolUseId: toolUseId, input: toolInput, output: output
+                        )
+                        return
+                    }
                 }
             }
+            // No existing block to update — create a new one
+            messages[index].contentBlocks.append(
+                .toolCall(id: UUID().uuidString, name: toolName, status: .running,
+                          toolUseId: toolUseId, input: toolInput)
+            )
+        } else {
+            // Mark as completed — find by toolUseId first, fall back to name
+            for i in stride(from: messages[index].contentBlocks.count - 1, through: 0, by: -1) {
+                if case .toolCall(let id, let name, .running, let existingTuid, let existingInput, let output) = messages[index].contentBlocks[i] {
+                    let matches = (toolUseId != nil && existingTuid == toolUseId) || (toolUseId == nil && name == toolName)
+                    if matches {
+                        messages[index].contentBlocks[i] = .toolCall(
+                            id: id, name: name, status: .completed,
+                            toolUseId: toolUseId ?? existingTuid,
+                            input: toolInput ?? existingInput,
+                            output: output
+                        )
+                        break
+                    }
+                }
+            }
+        }
+    }
+
+    /// Add tool result output to an existing tool call block
+    private func addToolResult(messageId: String, toolUseId: String, name: String, output: String) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+
+        for i in messages[index].contentBlocks.indices {
+            if case .toolCall(let id, let blockName, let status, let tuid, let input, _) = messages[index].contentBlocks[i],
+               (tuid == toolUseId || (tuid == nil && blockName == name)) {
+                messages[index].contentBlocks[i] = .toolCall(
+                    id: id, name: blockName, status: status,
+                    toolUseId: toolUseId, input: input, output: output
+                )
+                return
+            }
+        }
+    }
+
+    /// Append thinking text to the streaming message
+    private func appendThinking(messageId: String, text: String) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+
+        // Append to the last thinking block if it exists, otherwise create new
+        if let lastBlockIndex = messages[index].contentBlocks.indices.last,
+           case .thinking(let id, let existing) = messages[index].contentBlocks[lastBlockIndex] {
+            messages[index].contentBlocks[lastBlockIndex] = .thinking(id: id, text: existing + text)
+        } else {
+            messages[index].contentBlocks.append(.thinking(id: UUID().uuidString, text: text))
         }
     }
 
