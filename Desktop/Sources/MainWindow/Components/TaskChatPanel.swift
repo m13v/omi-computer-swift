@@ -56,7 +56,8 @@ struct TaskChatPanel: View {
                         chatProvider.stopAgent()
                     },
                     isSending: chatProvider.isSending,
-                    placeholder: "Ask about this task..."
+                    placeholder: "Ask about this task...",
+                    mode: $chatProvider.chatMode
                 )
                 .padding(12)
             }
