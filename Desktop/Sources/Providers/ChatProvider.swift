@@ -1210,6 +1210,7 @@ class ChatProvider: ObservableObject {
                 messages[index].text = messageText
                 messages[index].citations = citations
                 messages[index].isStreaming = false
+                completeRemainingToolCalls(messageId: aiMessageId)
 
                 if !citations.isEmpty {
                     log("Extracted \(citations.count) citation(s) from response")
@@ -1268,10 +1269,11 @@ class ChatProvider: ObservableObject {
             // Only remove the AI message if it's still empty (no streamed text yet).
             // If text was already streamed and visible, keep it and just stop streaming.
             if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
-                if messages[index].text.isEmpty {
+                if messages[index].text.isEmpty && messages[index].contentBlocks.isEmpty {
                     messages.remove(at: index)
                 } else {
                     messages[index].isStreaming = false
+                    completeRemainingToolCalls(messageId: aiMessageId)
                     log("Bridge error after partial response — keeping \(messages[index].text.count) chars of streamed text")
                     // Still try to persist the partial response
                     let partialText = messages[index].text
@@ -1439,6 +1441,20 @@ class ChatProvider: ObservableObject {
             messages[index].contentBlocks[lastBlockIndex] = .thinking(id: id, text: existing + text)
         } else {
             messages[index].contentBlocks.append(.thinking(id: UUID().uuidString, text: text))
+        }
+    }
+
+    /// Mark any remaining `.running` tool call blocks as `.completed` in a message.
+    /// Called when a query finishes (success or interrupt) so spinners don't spin forever.
+    private func completeRemainingToolCalls(messageId: String) {
+        guard let index = messages.firstIndex(where: { $0.id == messageId }) else { return }
+        for i in messages[index].contentBlocks.indices {
+            if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = messages[index].contentBlocks[i] {
+                messages[index].contentBlocks[i] = .toolCall(
+                    id: id, name: name, status: .completed,
+                    toolUseId: toolUseId, input: input, output: output
+                )
+            }
         }
     }
 
