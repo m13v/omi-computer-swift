@@ -690,38 +690,12 @@ class TasksStore: ObservableObject {
         }
 
         isLoadingMore = true
-        let startDate = isShowingAllIncompleteTasks ? nil : sevenDaysAgo
 
-        // Step 1: Try to load more from local cache first (Relevance mode only)
-        if !isShowingAllIncompleteTasks {
-            do {
-                let moreFromCache = try await ActionItemStorage.shared.getLocalActionItems(
-                    limit: pageSize,
-                    offset: incompleteOffset,
-                    completed: false,
-                    startDate: startDate
-                )
-
-                if !moreFromCache.isEmpty {
-                    incompleteTasks.append(contentsOf: moreFromCache)
-                    incompleteOffset += moreFromCache.count
-                    hasMoreIncompleteTasks = moreFromCache.count >= pageSize
-                    log("TasksStore: Loaded \(moreFromCache.count) more incomplete tasks from local cache")
-                    isLoadingMore = false
-                    return
-                }
-            } catch {
-                log("TasksStore: Local cache pagination failed for incomplete tasks")
-            }
-        }
-
-        // Step 2: Fetch from API
         do {
             let response = try await APIClient.shared.getActionItems(
                 limit: pageSize,
                 offset: incompleteOffset,
-                completed: false,
-                startDate: startDate
+                completed: false
             )
 
             // Sync to cache
