@@ -171,6 +171,11 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 
     send({ type: "result", text: fullText, sessionId, costUsd });
   } catch (err: unknown) {
+    // Silently handle abort — it's expected when a new query supersedes the old one
+    if (abortController.signal.aborted) {
+      logErr("Query aborted (superseded by new query)");
+      return;
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     logErr(`Query error: ${errMsg}`);
     send({ type: "error", message: errMsg });
@@ -180,6 +185,11 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     }
   }
 }
+
+// Prevent unhandled rejections from crashing the bridge process
+process.on("unhandledRejection", (reason) => {
+  logErr(`Unhandled rejection: ${reason}`);
+});
 
 // --- Main: read JSON lines from stdin ---
 
