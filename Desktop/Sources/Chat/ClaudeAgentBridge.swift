@@ -18,15 +18,23 @@ actor ClaudeAgentBridge {
     /// Callback for OMI tool calls that need Swift execution
     typealias ToolCallHandler = @Sendable (String, String, [String: Any]) async -> String
 
-    /// Callback for tool activity events (name, status: "started"/"completed")
-    typealias ToolActivityHandler = @Sendable (String, String) -> Void
+    /// Callback for tool activity events (name, status, toolUseId?, input?)
+    typealias ToolActivityHandler = @Sendable (String, String, String?, [String: Any]?) -> Void
+
+    /// Callback for thinking text deltas
+    typealias ThinkingDeltaHandler = @Sendable (String) -> Void
+
+    /// Callback for tool result display (toolUseId, name, output)
+    typealias ToolResultDisplayHandler = @Sendable (String, String, String) -> Void
 
     /// Inbound message types (Bridge → Swift, read from stdout)
     private enum InboundMessage {
         case `init`(sessionId: String)
         case textDelta(text: String)
+        case thinkingDelta(text: String)
         case toolUse(callId: String, name: String, input: [String: Any])
-        case toolActivity(name: String, status: String)
+        case toolActivity(name: String, status: String, toolUseId: String?, input: [String: Any]?)
+        case toolResultDisplay(toolUseId: String, name: String, output: String)
         case result(text: String, sessionId: String, costUsd: Double?)
         case error(message: String)
     }
@@ -173,7 +181,9 @@ actor ClaudeAgentBridge {
         mode: String? = nil,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler,
-        onToolActivity: @escaping ToolActivityHandler
+        onToolActivity: @escaping ToolActivityHandler,
+        onThinkingDelta: @escaping ThinkingDeltaHandler = { _ in },
+        onToolResultDisplay: @escaping ToolResultDisplayHandler = { _, _, _ in }
     ) async throws -> QueryResult {
         guard isRunning else {
             throw BridgeError.notRunning
@@ -225,8 +235,14 @@ actor ClaudeAgentBridge {
                     sendLine(resultString)
                 }
 
-            case .toolActivity(let name, let status):
-                onToolActivity(name, status)
+            case .thinkingDelta(let text):
+                onThinkingDelta(text)
+
+            case .toolActivity(let name, let status, let toolUseId, let input):
+                onToolActivity(name, status, toolUseId, input)
+
+            case .toolResultDisplay(let toolUseId, let name, let output):
+                onToolResultDisplay(toolUseId, name, output)
 
             case .result(let text, _, let costUsd):
                 return QueryResult(text: text, costUsd: costUsd ?? 0)
@@ -312,10 +328,22 @@ actor ClaudeAgentBridge {
             let input = dict["input"] as? [String: Any] ?? [:]
             return .toolUse(callId: callId, name: name, input: input)
 
+        case "thinking_delta":
+            let text = dict["text"] as? String ?? ""
+            return .thinkingDelta(text: text)
+
         case "tool_activity":
             let name = dict["name"] as? String ?? ""
             let status = dict["status"] as? String ?? "started"
-            return .toolActivity(name: name, status: status)
+            let toolUseId = dict["toolUseId"] as? String
+            let input = dict["input"] as? [String: Any]
+            return .toolActivity(name: name, status: status, toolUseId: toolUseId, input: input)
+
+        case "tool_result_display":
+            let toolUseId = dict["toolUseId"] as? String ?? ""
+            let name = dict["name"] as? String ?? ""
+            let output = dict["output"] as? String ?? ""
+            return .toolResultDisplay(toolUseId: toolUseId, name: name, output: output)
 
         case "result":
             let text = dict["text"] as? String ?? ""
