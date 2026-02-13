@@ -192,14 +192,14 @@ struct SidebarView: View {
                                     showAudioBars: true
                                 )
                             } else if item == .rewind {
-                                // Rewind - shows pulsing recording icon when active
+                                // Rewind - shows pulsing recording icon when both audio and screen are active
                                 NavItemWithStatusView(
                                     icon: item.icon,
                                     label: item.title,
                                     isSelected: selectedIndex == item.rawValue,
                                     isCollapsed: isCollapsed,
                                     iconWidth: iconWidth,
-                                    isOn: isMonitoring,
+                                    isOn: isMonitoring && appState.isTranscribing,
                                     isToggling: isTogglingMonitoring,
                                     isPageLoading: isRewindPageLoading,
                                     onTap: {
