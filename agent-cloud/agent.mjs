@@ -459,13 +459,22 @@ function startServer() {
       const tmpPath = DB_PATH + ".uploading";
       const stream = createWriteStream(tmpPath);
       let bytesReceived = 0;
+      let aborted = false;
+
+      stream.on("error", (err) => {
+        log(`Upload stream error: ${err.message}`);
+        aborted = true;
+        try { unlinkSync(tmpPath); } catch {}
+      });
 
       req.on("data", (chunk) => {
+        if (aborted) return;
         bytesReceived += chunk.length;
         stream.write(chunk);
       });
 
       req.on("end", () => {
+        if (aborted) return;
         stream.end(() => {
           // Close existing DB connection before replacing the file
           if (db) {
@@ -501,10 +510,20 @@ function startServer() {
 
       req.on("error", (err) => {
         log(`Upload error: ${err.message}`);
+        aborted = true;
         stream.destroy();
         try { unlinkSync(tmpPath); } catch {}
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ error: err.message }));
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+
+      req.on("aborted", () => {
+        log("Upload aborted by client");
+        aborted = true;
+        stream.destroy();
+        try { unlinkSync(tmpPath); } catch {}
       });
 
       return;
