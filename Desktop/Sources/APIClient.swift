@@ -1801,7 +1801,7 @@ extension APIClient {
 
     /// Fetches staged tasks ordered by relevance score
     func getStagedTasks(limit: Int = 100, offset: Int = 0) async throws -> ActionItemsListResponse {
-        var params = "limit=\(limit)&offset=\(offset)"
+        let params = "limit=\(limit)&offset=\(offset)"
         return try await get("v1/staged-tasks?\(params)")
     }
 
