@@ -287,6 +287,7 @@ class TasksStore: ObservableObject {
         // Then retry pushing any locally-created tasks that failed to sync
         Task {
             await performFullSyncIfNeeded()
+            await migrateAITasksToStagedIfNeeded()
             await retryUnsyncedItems()
         }
         // Backfill relevance scores for unscored tasks (independent of full sync)
@@ -601,6 +602,28 @@ class TasksStore: ObservableObject {
             await backfillDueDatesOnBackendIfNeeded(userId: userId)
         } catch {
             logError("TasksStore: Full sync failed (will retry next launch)", error: error)
+        }
+    }
+
+    /// One-time migration: tell backend to move excess AI tasks to staged_tasks subcollection.
+    /// The SQLite migration handles local data; this handles Firestore.
+    private func migrateAITasksToStagedIfNeeded() async {
+        let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
+        let migrationKey = "stagedTasksMigrationCompleted_\(userId)"
+
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else {
+            log("TasksStore: Staged tasks migration already completed for user \(userId)")
+            return
+        }
+
+        log("TasksStore: Starting staged tasks backend migration for user \(userId)")
+
+        do {
+            try await APIClient.shared.migrateStagedTasks()
+            UserDefaults.standard.set(true, forKey: migrationKey)
+            log("TasksStore: Staged tasks backend migration completed")
+        } catch {
+            logError("TasksStore: Staged tasks backend migration failed (will retry next launch)", error: error)
         }
     }
 
