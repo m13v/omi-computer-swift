@@ -166,10 +166,11 @@ class TasksStore: ObservableObject {
         // Only refresh if we've already loaded tasks
         guard hasLoadedIncomplete else { return }
 
-        // Silently sync and reload incomplete tasks
+        // Silently sync and reload incomplete tasks (local-first, like Memories)
         do {
+            let reloadLimit = max(pageSize, incompleteTasks.count)
             let response = try await APIClient.shared.getActionItems(
-                limit: pageSize,
+                limit: reloadLimit,
                 offset: 0,
                 completed: false
             )
@@ -177,13 +178,17 @@ class TasksStore: ObservableObject {
             // Sync API results to local cache
             try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
-            // Use API response directly to match iOS/Flutter behavior
-            let updated = response.items
-            if updated != incompleteTasks {
-                incompleteTasks = updated
-                hasMoreIncompleteTasks = updated.count >= pageSize
-                incompleteOffset = updated.count
-                log("TasksStore: Auto-refresh updated \(updated.count) incomplete tasks (API had \(response.items.count))")
+            // Reload from local cache (respects local changes like completions/deletions)
+            let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                limit: reloadLimit,
+                offset: 0,
+                completed: false
+            )
+            if mergedTasks != incompleteTasks {
+                incompleteTasks = mergedTasks
+                hasMoreIncompleteTasks = mergedTasks.count >= reloadLimit
+                incompleteOffset = mergedTasks.count
+                log("TasksStore: Auto-refresh updated \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
             }
         } catch {
             // Silently ignore errors during auto-refresh
@@ -290,8 +295,8 @@ class TasksStore: ObservableObject {
         }
     }
 
-    /// Load incomplete tasks (To Do) using local-first pattern
-    /// Load incomplete tasks (To Do) from API
+    /// Load incomplete tasks (To Do) using local-first pattern (like Memories)
+    /// Step 1: Show cached data instantly. Step 2: Sync API to cache, reload from cache.
     func loadIncompleteTasks() async {
         guard !isLoadingIncomplete else { return }
 
@@ -299,7 +304,25 @@ class TasksStore: ObservableObject {
         error = nil
         incompleteOffset = 0
 
-        // Fetch from API and sync to local cache
+        // Step 1: Load from local cache first for instant display
+        do {
+            let cachedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                limit: pageSize,
+                offset: 0,
+                completed: false
+            )
+            if !cachedTasks.isEmpty {
+                incompleteTasks = cachedTasks
+                incompleteOffset = cachedTasks.count
+                hasMoreIncompleteTasks = cachedTasks.count >= pageSize
+                isLoadingIncomplete = false  // Show cached data immediately
+                log("TasksStore: Loaded \(cachedTasks.count) incomplete tasks from local cache")
+            }
+        } catch {
+            log("TasksStore: Local cache unavailable for incomplete tasks, falling back to API")
+        }
+
+        // Step 2: Fetch from API, sync to cache, reload from cache
         do {
             let response = try await APIClient.shared.getActionItems(
                 limit: pageSize,
@@ -309,17 +332,23 @@ class TasksStore: ObservableObject {
             hasLoadedIncomplete = true
             log("TasksStore: Fetched \(response.items.count) incomplete tasks from API")
 
-            // Sync API data to cache, use API response as source of truth
+            // Sync API data to local cache
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
             } catch {
                 logError("TasksStore: Failed to sync incomplete tasks to local cache", error: error)
             }
 
-            incompleteTasks = response.items
-            incompleteOffset = response.items.count
-            hasMoreIncompleteTasks = response.hasMore
-            log("TasksStore: Showing \(response.items.count) incomplete tasks")
+            // Reload from cache to get merged data (local changes + API data)
+            let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                limit: pageSize,
+                offset: 0,
+                completed: false
+            )
+            incompleteTasks = mergedTasks
+            incompleteOffset = mergedTasks.count
+            hasMoreIncompleteTasks = mergedTasks.count >= pageSize
+            log("TasksStore: Showing \(mergedTasks.count) incomplete tasks from merged local cache")
         } catch {
             if incompleteTasks.isEmpty {
                 self.error = error.localizedDescription
