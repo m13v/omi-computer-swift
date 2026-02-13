@@ -123,7 +123,7 @@ struct AgentLaunchButton: View {
     @State private var errorMessage = ""
 
     private var canLaunch: Bool {
-        !manager.hasSession(for: task.id)
+        settings.isEnabled && !manager.hasSession(for: task.id)
     }
 
     var body: some View {
