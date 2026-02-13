@@ -40,6 +40,22 @@ struct FloatingControlBarView: View {
 
     private var controlBarView: some View {
         HStack(spacing: 12) {
+            // Hide shortcut hint
+            HStack(spacing: 4) {
+                Text("\u{2318}")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(width: 16, height: 16)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(3)
+                Text("\\")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.3))
+                    .frame(width: 16, height: 16)
+                    .background(Color.white.opacity(0.06))
+                    .cornerRadius(3)
+            }
+
             Spacer()
 
             if state.isVoiceListening {
@@ -51,10 +67,19 @@ struct FloatingControlBarView: View {
             }
 
             Spacer()
+
+            // Balance the left side
+            Color.clear.frame(width: 40, height: 16)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(height: 60)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !state.isVoiceListening && !state.showingAIConversation {
+                onAskAI()
+            }
+        }
         .background(DraggableAreaView(targetWindow: window))
     }
 
