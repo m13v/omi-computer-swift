@@ -156,6 +156,7 @@ actor ClaudeAgentBridge {
     func query(
         prompt: String,
         systemPrompt: String,
+        cwd: String? = nil,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler,
         onToolActivity: @escaping ToolActivityHandler
@@ -165,12 +166,15 @@ actor ClaudeAgentBridge {
         }
 
         // Build query message — no session resume, each query is independent
-        let queryDict: [String: Any] = [
+        var queryDict: [String: Any] = [
             "type": "query",
             "id": UUID().uuidString,
             "prompt": prompt,
             "systemPrompt": systemPrompt
         ]
+        if let cwd = cwd {
+            queryDict["cwd"] = cwd
+        }
 
         let jsonData = try JSONSerialization.data(withJSONObject: queryDict)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
