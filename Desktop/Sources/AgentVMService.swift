@@ -22,8 +22,9 @@ actor AgentVMService {
             // Check backend first
             do {
                 let status = try await APIClient.shared.getAgentStatus()
-                if let status = status, status.status == "ready", status.ip != nil {
-                    log("AgentVMService: VM already ready — vmName=\(status.vmName ?? "?") ip=\(status.ip ?? "?")")
+                if let status = status, status.status == "ready", let ip = status.ip {
+                    log("AgentVMService: VM already ready — vmName=\(status.vmName ?? "?") ip=\(ip)")
+                    await uploadDatabase(vmIP: ip, authToken: status.authToken)
                     return
                 }
                 if let status = status, status.status == "provisioning" {
