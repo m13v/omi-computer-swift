@@ -8,6 +8,7 @@ import Combine
 class TaskChatCoordinator: ObservableObject {
     @Published var activeTaskId: String?
     @Published var isPanelOpen = false
+    @Published var isOpening = false
 
     /// The workspace path used for file-system tools in task chat
     @Published var workspacePath: String = TaskAgentSettings.shared.workingDirectory
@@ -31,6 +32,11 @@ class TaskChatCoordinator: ObservableObject {
         if activeTaskId == task.id && isPanelOpen {
             return
         }
+
+        // Prevent duplicate open calls while one is in progress
+        guard !isOpening else { return }
+        isOpening = true
+        defer { isOpening = false }
 
         // Save current ChatProvider state on first open
         if activeTaskId == nil {
