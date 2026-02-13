@@ -1700,6 +1700,7 @@ struct TasksPage: View {
     @State private var lastEnterPressTime: Date?
     @State private var inlineCreateText = ""
     @FocusState private var inlineCreateFocused: Bool
+    @FocusState private var isTasksContentFocused: Bool
     @State private var scrollProxy: ScrollViewProxy?
 
     // Filter popover state
@@ -1877,6 +1878,13 @@ struct TasksPage: View {
         .animation(.easeInOut(duration: 0.15), value: isAnyTaskEditing)
         .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
         .focusable()
+        .focused($isTasksContentFocused)
+        .onAppear {
+            // Auto-focus the tasks content so arrow keys work immediately
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                isTasksContentFocused = true
+            }
+        }
         .onKeyPress(phases: .down) { press in
             if press.key == KeyEquivalent("n") && press.modifiers == .command {
                 viewModel.showingCreateTask = true
@@ -3264,7 +3272,9 @@ struct TaskRow: View {
                     }
 
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
-                    AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
+                    if TaskAgentSettings.shared.isEnabled {
+                        AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
+                    }
 
                     // Task detail button for tasks with rich metadata
                     if task.hasDetailMetadata {
@@ -4085,11 +4095,13 @@ struct KeyboardHintBar: View {
                 keyboardHint("esc", label: "Deselect")
                 keyboardHint("\u{2318}D", label: "Delete")
                 keyboardHint("\u{21E5}", label: "Indent")
+                keyboardHint("\u{21E7}\u{21E5}", label: "Outdent")
             } else {
                 keyboardHint("\u{2191}\u{2193}", label: "Navigate")
                 keyboardHint("\u{2318}N", label: "New")
                 keyboardHint("\u{2318}D", label: "Delete")
                 keyboardHint("\u{21E5}", label: "Indent")
+                keyboardHint("\u{21E7}\u{21E5}", label: "Outdent")
             }
         }
         .padding(.horizontal, 16)
