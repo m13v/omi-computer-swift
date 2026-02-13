@@ -828,8 +828,16 @@ class TasksViewModel: ObservableObject {
             }
         }
 
-        // Recompute display caches (reads @Published state, must stay on main but is now cheaper with cached dates)
-        recomputeDisplayCaches()
+        // If non-status filters are active, re-query SQLite to pick up changes
+        // (e.g. a task was just toggled completed and should no longer appear).
+        // Otherwise just recompute from the in-memory store arrays.
+        let hasNonStatusFilters = selectedTags.contains(where: { $0.group != .status && $0.group != .date })
+            || !selectedDynamicTags.isEmpty
+        if hasNonStatusFilters {
+            Task { await loadFilteredTasksFromDatabase() }
+        } else {
+            recomputeDisplayCaches()
+        }
 
         // Load true counts from SQLite asynchronously
         Task {
