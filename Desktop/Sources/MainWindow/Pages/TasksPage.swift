@@ -435,7 +435,7 @@ class TasksViewModel: ObservableObject {
                     if showCompleted {
                         await store.loadCompletedTasks()
                     } else {
-                        await store.loadIncompleteTasks(showAll: true)
+                        await store.loadIncompleteTasks()
                     }
                 }
             }
