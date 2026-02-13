@@ -26,7 +26,7 @@ struct FloatingBackgroundModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(
-                VisualEffectView(material: .hudWindow, blendingMode: .behindWindow)
+                VisualEffectView(material: .popover, blendingMode: .behindWindow)
             )
             .cornerRadius(cornerRadius)
     }
