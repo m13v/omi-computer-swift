@@ -1668,6 +1668,96 @@ actor RewindDatabase {
             }
         }
 
+        // Migration: Create staged_tasks table for AI task staging before promotion
+        migrator.registerMigration("createStagedTasksTable") { db in
+            try db.create(table: "staged_tasks") { t in
+                t.autoIncrementedPrimaryKey("id")
+
+                // Backend sync fields
+                t.column("backendId", .text).unique()
+                t.column("backendSynced", .boolean).notNull().defaults(to: false)
+
+                // Core fields (same as action_items minus agent fields)
+                t.column("description", .text).notNull()
+                t.column("completed", .boolean).notNull().defaults(to: false)
+                t.column("deleted", .boolean).notNull().defaults(to: false)
+                t.column("source", .text)
+                t.column("conversationId", .text)
+                t.column("priority", .text)
+                t.column("category", .text)
+                t.column("tagsJson", .text)
+                t.column("deletedBy", .text)
+                t.column("dueAt", .datetime)
+
+                // Desktop extraction fields
+                t.column("screenshotId", .integer)
+                    .references("screenshots", onDelete: .setNull)
+                t.column("confidence", .double)
+                t.column("sourceApp", .text)
+                t.column("windowTitle", .text)
+                t.column("contextSummary", .text)
+                t.column("currentActivity", .text)
+                t.column("metadataJson", .text)
+                t.column("embedding", .blob)
+
+                // Prioritization fields
+                t.column("relevanceScore", .integer)
+                t.column("scoredAt", .datetime)
+
+                // Timestamps
+                t.column("createdAt", .datetime).notNull()
+                t.column("updatedAt", .datetime).notNull()
+            }
+
+            // Indexes
+            try db.create(index: "idx_staged_tasks_backend_id", on: "staged_tasks", columns: ["backendId"])
+            try db.create(index: "idx_staged_tasks_score", on: "staged_tasks", columns: ["relevanceScore"])
+            try db.create(index: "idx_staged_tasks_created", on: "staged_tasks", columns: ["createdAt"])
+            try db.create(index: "idx_staged_tasks_completed", on: "staged_tasks", columns: ["completed"])
+            try db.create(index: "idx_staged_tasks_deleted", on: "staged_tasks", columns: ["deleted"])
+        }
+
+        // Migration: Create FTS5 index for staged_tasks
+        migrator.registerMigration("createStagedTasksFTS") { db in
+            try db.execute(sql: """
+                CREATE VIRTUAL TABLE staged_tasks_fts USING fts5(
+                    description,
+                    content='staged_tasks',
+                    content_rowid='id',
+                    tokenize='unicode61'
+                )
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER staged_tasks_fts_ai AFTER INSERT ON staged_tasks BEGIN
+                    INSERT INTO staged_tasks_fts(rowid, description)
+                    VALUES (new.id, new.description);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER staged_tasks_fts_ad AFTER DELETE ON staged_tasks BEGIN
+                    INSERT INTO staged_tasks_fts(staged_tasks_fts, rowid, description)
+                    VALUES ('delete', old.id, old.description);
+                END
+                """)
+
+            try db.execute(sql: """
+                CREATE TRIGGER staged_tasks_fts_au AFTER UPDATE OF description ON staged_tasks BEGIN
+                    INSERT INTO staged_tasks_fts(staged_tasks_fts, rowid, description)
+                    VALUES ('delete', old.id, old.description);
+                    INSERT INTO staged_tasks_fts(rowid, description)
+                    VALUES (new.id, new.description);
+                END
+                """)
+
+            // Populate from existing rows
+            try db.execute(sql: """
+                INSERT INTO staged_tasks_fts(rowid, description)
+                SELECT id, description FROM staged_tasks
+                """)
+        }
+
         try migrator.migrate(queue)
     }
 
