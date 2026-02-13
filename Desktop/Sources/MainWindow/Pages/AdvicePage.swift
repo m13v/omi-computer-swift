@@ -386,6 +386,7 @@ struct AdvicePage: View {
             Text(advice.advice.advice)
                 .font(.system(size: 18, weight: .medium))
                 .foregroundColor(OmiColors.textPrimary)
+                .textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
 
             // Reasoning
@@ -399,6 +400,7 @@ struct AdvicePage: View {
                     Text(reasoning)
                         .font(.system(size: 14))
                         .foregroundColor(OmiColors.textSecondary)
+                        .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(12)
@@ -423,6 +425,7 @@ struct AdvicePage: View {
                         Text(advice.advice.sourceApp)
                             .font(.system(size: 14))
                             .foregroundColor(OmiColors.textSecondary)
+                            .textSelection(.enabled)
                     }
 
                     HStack(alignment: .top, spacing: 8) {
@@ -434,6 +437,7 @@ struct AdvicePage: View {
                         Text(advice.currentActivity)
                             .font(.system(size: 14))
                             .foregroundColor(OmiColors.textSecondary)
+                            .textSelection(.enabled)
                     }
 
                     HStack(alignment: .top, spacing: 8) {
@@ -445,6 +449,7 @@ struct AdvicePage: View {
                         Text(advice.contextSummary)
                             .font(.system(size: 14))
                             .foregroundColor(OmiColors.textSecondary)
+                            .textSelection(.enabled)
                     }
                 }
             }
