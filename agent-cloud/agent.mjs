@@ -7,6 +7,7 @@ import { fileURLToPath } from "url";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { existsSync, mkdirSync, createWriteStream, statSync, renameSync, unlinkSync } from "fs";
+import { createInflate, createGunzip } from "zlib";
 
 // --- Configuration ---
 const DB_PATH = process.env.DB_PATH || "/home/matthewdi/omi-agent/data/omi.db";
@@ -453,13 +454,35 @@ function startServer() {
         return;
       }
 
-      log(`Upload started (${(contentLength / 1024 / 1024).toFixed(1)} MB)`);
+      const encoding = (req.headers["content-encoding"] || "").toLowerCase();
+      const isCompressed = encoding === "gzip" || encoding === "deflate" || encoding === "zlib";
+      log(`Upload started (${(contentLength / 1024 / 1024).toFixed(1)} MB${isCompressed ? ", " + encoding + " compressed" : ""})`);
 
       // Write to temp file first, then rename (atomic)
       const tmpPath = DB_PATH + ".uploading";
       const stream = createWriteStream(tmpPath);
       let bytesReceived = 0;
       let aborted = false;
+
+      // If compressed, pipe through decompressor
+      let decompressor = null;
+      if (encoding === "gzip") {
+        decompressor = createGunzip();
+      } else if (encoding === "deflate" || encoding === "zlib") {
+        decompressor = createInflate();
+      }
+
+      const writeTarget = decompressor || stream;
+
+      if (decompressor) {
+        decompressor.pipe(stream);
+        decompressor.on("error", (err) => {
+          log(`Upload decompression error: ${err.message}`);
+          aborted = true;
+          stream.destroy();
+          try { unlinkSync(tmpPath); } catch {}
+        });
+      }
 
       stream.on("error", (err) => {
         log(`Upload stream error: ${err.message}`);
@@ -470,47 +493,62 @@ function startServer() {
       req.on("data", (chunk) => {
         if (aborted) return;
         bytesReceived += chunk.length;
-        stream.write(chunk);
+        if (decompressor) {
+          decompressor.write(chunk);
+        } else {
+          stream.write(chunk);
+        }
       });
+
+      const finalize = () => {
+        // Close existing DB connection before replacing the file
+        if (db) {
+          try { db.close(); } catch {}
+          db = null;
+        }
+
+        // Remove WAL/SHM files if they exist (stale from previous DB)
+        try { unlinkSync(DB_PATH + "-wal"); } catch {}
+        try { unlinkSync(DB_PATH + "-shm"); } catch {}
+
+        // Atomic rename
+        renameSync(tmpPath, DB_PATH);
+
+        const finalSize = statSync(DB_PATH).size;
+        log(`Upload complete: ${(bytesReceived / 1024 / 1024).toFixed(1)} MB received → ${(finalSize / 1024 / 1024).toFixed(1)} MB on disk`);
+
+        // Re-open the database
+        if (openDatabase()) {
+          log("Database loaded after upload");
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            status: "ok",
+            bytesReceived,
+            finalSize,
+            databaseReady: true,
+          }));
+        } else {
+          log("ERROR: Failed to open database after upload");
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "Failed to open uploaded database" }));
+        }
+      };
 
       req.on("end", () => {
         if (aborted) return;
-        stream.end(() => {
-          // Close existing DB connection before replacing the file
-          if (db) {
-            try { db.close(); } catch {}
-            db = null;
-          }
-
-          // Remove WAL/SHM files if they exist (stale from previous DB)
-          try { unlinkSync(DB_PATH + "-wal"); } catch {}
-          try { unlinkSync(DB_PATH + "-shm"); } catch {}
-
-          // Atomic rename
-          renameSync(tmpPath, DB_PATH);
-
-          log(`Upload complete: ${(bytesReceived / 1024 / 1024).toFixed(1)} MB`);
-
-          // Re-open the database
-          if (openDatabase()) {
-            log("Database loaded after upload");
-            res.writeHead(200, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({
-              status: "ok",
-              bytesReceived,
-              databaseReady: true,
-            }));
-          } else {
-            log("ERROR: Failed to open database after upload");
-            res.writeHead(500, { "Content-Type": "application/json" });
-            res.end(JSON.stringify({ error: "Failed to open uploaded database" }));
-          }
-        });
+        if (decompressor) {
+          // End the decompressor; stream.end is called via pipe when decompressor finishes
+          decompressor.end();
+          stream.on("finish", finalize);
+        } else {
+          stream.end(finalize);
+        }
       });
 
       req.on("error", (err) => {
         log(`Upload error: ${err.message}`);
         aborted = true;
+        if (decompressor) decompressor.destroy();
         stream.destroy();
         try { unlinkSync(tmpPath); } catch {}
         if (!res.headersSent) {
