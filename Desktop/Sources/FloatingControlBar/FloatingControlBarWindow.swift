@@ -89,16 +89,24 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // window sizing through updateWindowContentSizeExtremaIfNecessary and updateAnimatedWindowSize,
         // causing re-entrant constraint updates that crash in _postWindowNeedsUpdateConstraints.
         // Wrapping in a container breaks that "I own this window" relationship.
-        // NOTE: Do NOT set sizingOptions = [] — that prevents SwiftUI from laying out to fill
-        // the available space. The container alone is sufficient to prevent the crash.
+        //
+        // sizingOptions: Remove .intrinsicContentSize so the hosting view can expand beyond
+        // its SwiftUI ideal size. Keep .minSize and .maxSize for proper min/max constraints.
+        // Setting [] removes ALL sizing info (broken). Default includes .intrinsicContentSize
+        // which pins the view to its ideal size (prevents expansion). [.minSize, .maxSize] is correct.
         let container = NSView()
-        container.autoresizesSubviews = true
         self.contentView = container
 
         if let hosting = hostingView {
-            hosting.autoresizingMask = [.width, .height]
-            hosting.frame = container.bounds
+            hosting.sizingOptions = [.minSize, .maxSize]
+            hosting.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(hosting)
+            NSLayoutConstraint.activate([
+                hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+                hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+                hosting.topAnchor.constraint(equalTo: container.topAnchor),
+                hosting.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            ])
         }
 
         NotificationCenter.default.addObserver(
