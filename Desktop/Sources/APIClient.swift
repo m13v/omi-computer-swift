@@ -3694,11 +3694,18 @@ extension APIClient {
         struct SaveRequest: Encodable {
             let text: String
             let sender: String
-            let app_id: String?
-            let session_id: String?
         }
-        let body = SaveRequest(text: text, sender: sender, app_id: appId, session_id: sessionId)
-        return try await post("v2/messages", body: body)
+        let body = SaveRequest(text: text, sender: sender)
+        // app_id must be a query parameter (backend reads it from URL, not body)
+        var endpoint = "v2/messages"
+        var queryItems: [String] = []
+        if let appId = appId {
+            queryItems.append("app_id=\(appId)")
+        }
+        if !queryItems.isEmpty {
+            endpoint += "?\(queryItems.joined(separator: "&"))"
+        }
+        return try await post(endpoint, body: body)
     }
 
     /// Fetch chat message history
