@@ -370,7 +370,7 @@ class PushToTalkManager: ObservableObject {
   }
 
   private func handleTranscript(_ segment: TranscriptionService.TranscriptSegment) {
-    guard state == .listening || state == .lockedListening else { return }
+    guard state == .listening || state == .lockedListening || state == .finalizing else { return }
 
     if segment.speechFinal || segment.isFinal {
       transcriptSegments.append(segment.text)
