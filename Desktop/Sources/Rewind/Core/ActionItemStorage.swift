@@ -489,9 +489,11 @@ actor ActionItemStorage {
                     // Skip if local record is newer than incoming API data
                     // This prevents auto-refresh from overwriting recent local changes
                     // (e.g. toggling a task) with stale backend data.
-                    // Fall back to createdAt when updatedAt is nil (legacy tasks without updated_at)
+                    // Exception: always accept API data for records we locally marked as "staged"
+                    // since that was our guess and the API is the source of truth.
                     let incomingTimestamp = item.updatedAt ?? item.createdAt
-                    if existingRecord.updatedAt > incomingTimestamp {
+                    let isLocalStagedGuess = existingRecord.deletedBy == "staged"
+                    if existingRecord.updatedAt > incomingTimestamp && !isLocalStagedGuess {
                         skipped += 1
                         continue
                     }
