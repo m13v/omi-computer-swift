@@ -2822,9 +2822,9 @@ struct TaskRow: View {
                 }
             }
 
-            Spacer(minLength: 0)
-
-            // Hover actions: indent controls and delete (not for deleted tasks)
+        }
+        .overlay(alignment: .trailing) {
+            // Hover actions overlaid on trailing edge (no layout shift)
             if isHovering && !isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
                     // Outdent button (decrease indent)
@@ -2883,6 +2883,23 @@ struct TaskRow: View {
                     }
                     .buttonStyle(.plain)
                 }
+                .padding(.trailing, 4)
+                .padding(.leading, 8)
+                .padding(.vertical, 4)
+                .background(
+                    HStack(spacing: 0) {
+                        LinearGradient(
+                            colors: [
+                                OmiColors.backgroundTertiary.opacity(0),
+                                OmiColors.backgroundTertiary
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                        .frame(width: 24)
+                        Rectangle().fill(OmiColors.backgroundTertiary)
+                    }
+                )
                 .transition(.opacity)
             }
         }
