@@ -46,34 +46,59 @@ struct TaskChatPanel: View {
 
     // MARK: - Header
 
+    /// Abbreviate a path for display: ~/Projects/my-app
+    private var displayPath: String {
+        let path = coordinator.workspacePath
+        let home = NSHomeDirectory()
+        if path.hasPrefix(home) {
+            return "~" + path.dropFirst(home.count)
+        }
+        return path
+    }
+
     private var panelHeader: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "bubble.left.and.bubble.right")
-                .font(.system(size: 12))
-                .foregroundColor(OmiColors.textSecondary)
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .font(.system(size: 12))
+                    .foregroundColor(OmiColors.textSecondary)
 
-            Text("Task Chat")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundColor(OmiColors.textPrimary)
+                Text("Task Chat")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
 
-            if let task = task {
-                Text(task.description)
-                    .font(.system(size: 11))
-                    .foregroundColor(OmiColors.textTertiary)
+                if let task = task {
+                    Text(task.description)
+                        .font(.system(size: 11))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+
+                Spacer()
+
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help("Close chat panel")
+            }
+
+            // Workspace path indicator
+            HStack(spacing: 4) {
+                Image(systemName: "folder")
+                    .font(.system(size: 9))
+                Text(displayPath)
+                    .font(.system(size: 10))
                     .lineLimit(1)
-                    .truncationMode(.tail)
+                    .truncationMode(.middle)
+                Spacer()
             }
-
-            Spacer()
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(OmiColors.textTertiary)
-                    .frame(width: 20, height: 20)
-            }
-            .buttonStyle(.plain)
-            .help("Close chat panel")
+            .foregroundColor(OmiColors.textTertiary.opacity(0.7))
+            .padding(.top, 4)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
