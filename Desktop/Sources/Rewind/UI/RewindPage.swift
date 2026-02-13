@@ -337,12 +337,9 @@ struct RewindPage: View {
                 .buttonStyle(.plain)
                 .help("Back to results")
             } else {
-                // Rewind title/logo with toggle
+                // Screen title
                 HStack(spacing: 8) {
-                    // Toggle for monitoring on/off
-                    rewindToggle
-
-                    Text("Rewind")
+                    Text("Screen")
                         .font(.system(size: 16, weight: .semibold))
                         .foregroundColor(.white)
 
@@ -417,7 +414,7 @@ struct RewindPage: View {
                 }
             }
 
-            // Settings - always visible
+            // Settings
             Button {
                 NotificationCenter.default.post(
                     name: .navigateToRewindSettings,
@@ -429,7 +426,44 @@ struct RewindPage: View {
                     .foregroundColor(.white.opacity(0.6))
             }
             .buttonStyle(.plain)
-            .help("Rewind Settings")
+            .help("Screen Settings")
+
+            // Screen recording start/stop
+            if isMonitoring {
+                Button {
+                    toggleMonitoring(enabled: false)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 12))
+                        Text("Stop Recording")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(OmiColors.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    toggleMonitoring(enabled: true)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "record.circle")
+                            .font(.system(size: 12))
+                        Text("Start Recording")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(OmiColors.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
@@ -1116,26 +1150,10 @@ struct RewindPage: View {
     private func rewindRecordingBar(appState: AppState) -> some View {
         HStack(spacing: 16) {
             if appState.isTranscribing {
-                if !isTranscriptExpanded {
-                    // Pulsing dot (only when collapsed)
-                    ZStack {
-                        Circle()
-                            .fill(OmiColors.purplePrimary.opacity(0.3))
-                            .frame(width: 20, height: 20)
-                            .scaleEffect(isRecordingPulsing ? 1.6 : 1.0)
-                            .opacity(isRecordingPulsing ? 0.0 : 0.6)
-
-                        Circle()
-                            .fill(OmiColors.purplePrimary)
-                            .frame(width: 10, height: 10)
-                    }
-                    .animation(
-                        .easeInOut(duration: 1.0)
-                            .repeatForever(autoreverses: true),
-                        value: isRecordingPulsing
-                    )
-                    .onAppear { isRecordingPulsing = true }
-                }
+                // "Audio" label
+                Text("Audio")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textSecondary)
 
                 // Transcript text + chevron (clickable to expand/collapse)
                 Button {
@@ -1252,7 +1270,11 @@ struct RewindPage: View {
 
                 Spacer()
             } else {
-                // Not recording — show start button
+                // Not recording — show "Audio" label + start button
+                Text("Audio")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(OmiColors.textSecondary)
+
                 Spacer()
 
                 Button(action: {
