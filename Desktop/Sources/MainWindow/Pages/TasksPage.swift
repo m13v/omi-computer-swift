@@ -2750,20 +2750,6 @@ struct TaskRow: View {
                         AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
                     }
 
-                    // Chat button (shown on hover when onOpenChat is available)
-                    if isHovering && onOpenChat != nil && !task.completed {
-                        Button {
-                            onOpenChat?(task)
-                        } label: {
-                            Image(systemName: "bubble.left")
-                                .font(.system(size: 10))
-                                .foregroundColor(OmiColors.textTertiary)
-                                .frame(width: 20, height: 20)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Chat about this task")
-                    }
-
                     // Task detail button for tasks with rich metadata
                     if task.hasDetailMetadata {
                         TaskDetailButton(showDetail: $showTaskDetail)
@@ -2777,24 +2763,6 @@ struct TaskRow: View {
                             showDatePicker: $showDatePicker,
                             editDueDate: $editDueDate
                         )
-                    } else if isHovering && !task.completed {
-                        // Show "add date" button on hover
-                        Button {
-                            editDueDate = Date()
-                            showDatePicker = true
-                        } label: {
-                            HStack(spacing: 3) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 8))
-                                Image(systemName: "calendar")
-                                    .font(.system(size: 9))
-                            }
-                            .foregroundColor(OmiColors.textTertiary)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(OmiColors.backgroundTertiary))
-                        }
-                        .buttonStyle(.plain)
                     }
 
                     // Source badge (read-only)
@@ -2827,6 +2795,35 @@ struct TaskRow: View {
             // Hover actions overlaid on trailing edge (no layout shift)
             if isHovering && !isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
+                    // Chat button (shown on hover when onOpenChat is available)
+                    if onOpenChat != nil && !task.completed {
+                        Button {
+                            onOpenChat?(task)
+                        } label: {
+                            Image(systemName: "bubble.left")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Chat about this task")
+                    }
+
+                    // Add date button (shown on hover when no due date)
+                    if task.dueAt == nil && !task.completed {
+                        Button {
+                            editDueDate = Date()
+                            showDatePicker = true
+                        } label: {
+                            Image(systemName: "calendar.badge.plus")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .frame(width: 24, height: 24)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Add due date")
+                    }
+
                     // Outdent button (decrease indent)
                     if indentLevel > 0 {
                         Button {
