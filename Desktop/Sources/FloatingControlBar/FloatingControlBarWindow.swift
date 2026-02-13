@@ -82,20 +82,22 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
                 .preferredColorScheme(.dark)
                 .environment(\.colorScheme, .dark)
         ))
-        hostingView?.sizingOptions = []
         hostingView?.appearance = NSAppearance(named: .vibrantDark)
 
         // CRITICAL: Use a container view instead of making NSHostingView the contentView directly.
         // When NSHostingView IS the contentView of a borderless window, it tries to negotiate
         // window sizing through updateWindowContentSizeExtremaIfNecessary and updateAnimatedWindowSize,
         // causing re-entrant constraint updates that crash in _postWindowNeedsUpdateConstraints.
-        // We use a custom subclass that manually sets the hosting view's frame in layout(),
-        // avoiding both Auto Layout constraints and autoresizing masks which don't reliably
-        // propagate size to NSHostingView.
-        let container = FramePassthroughView()
+        // Wrapping in a container breaks that "I own this window" relationship.
+        // NOTE: Do NOT set sizingOptions = [] — that prevents SwiftUI from laying out to fill
+        // the available space. The container alone is sufficient to prevent the crash.
+        let container = NSView()
+        container.autoresizesSubviews = true
         self.contentView = container
 
         if let hosting = hostingView {
+            hosting.autoresizingMask = [.width, .height]
+            hosting.frame = container.bounds
             container.addSubview(hosting)
         }
 
@@ -552,15 +554,6 @@ class FloatingControlBarManager {
         }
 
         await provider.sendMessage(fullMessage)
-    }
-}
-
-/// Container NSView that manually propagates its frame to the first subview on layout.
-/// This avoids Auto Layout and autoresizing masks, which don't reliably resize NSHostingView.
-private class FramePassthroughView: NSView {
-    override func layout() {
-        super.layout()
-        subviews.first?.frame = bounds
     }
 }
 
