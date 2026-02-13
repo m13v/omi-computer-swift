@@ -443,7 +443,7 @@ class TasksViewModel: ObservableObject {
         }
     }
     // Filter tags (Memories-style dropdown)
-    @Published var selectedTags: Set<TaskFilterTag> = [.todo] {
+    @Published var selectedTags: Set<TaskFilterTag> = [.todo, .last7Days] {
         didSet {
             // Reset display limit when filters change
             displayLimit = 100
@@ -1425,7 +1425,7 @@ struct TasksPage: View {
 
     // Filter popover state
     @State private var showFilterPopover = false
-    @State private var pendingSelectedTags: Set<TaskFilterTag> = []
+    @State private var pendingSelectedTags: Set<TaskFilterTag> = [.todo, .last7Days]
     @State private var pendingSelectedDynamicTags: Set<DynamicFilterTag> = []
     @State private var filterSearchText = ""
 
@@ -1626,6 +1626,8 @@ struct TasksPage: View {
         let totalCount = viewModel.selectedTags.count + viewModel.selectedDynamicTags.count
         if totalCount == 0 {
             return "All"
+        } else if viewModel.selectedTags == [.todo, .last7Days] && viewModel.selectedDynamicTags.isEmpty {
+            return "To Do"
         } else if totalCount == 1 {
             if let tag = viewModel.selectedTags.first {
                 return tag.displayName
