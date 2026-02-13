@@ -2027,6 +2027,11 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
     // Prioritization (stored locally, not synced to backend)
     var relevanceScore: Int?       // 0-100 relevance score from TaskPrioritizationService
 
+    // Desktop extraction context (stored locally, not synced to backend)
+    var contextSummary: String?    // Summary of screen context at extraction time
+    var currentActivity: String?   // What user was doing when task was detected
+    var agentEditedFiles: [String]? // Files the agent previously edited
+
     // Agent execution tracking (stored locally, not synced to backend)
     var agentStatus: String?       // nil, "pending", "processing", "completed", "failed"
     var agentPrompt: String?       // The prompt sent to Claude
@@ -2091,6 +2096,9 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         keptTaskId: String? = nil,
         goalId: String? = nil,
         relevanceScore: Int? = nil,
+        contextSummary: String? = nil,
+        currentActivity: String? = nil,
+        agentEditedFiles: [String]? = nil,
         agentStatus: String? = nil,
         agentPrompt: String? = nil,
         agentPlan: String? = nil,
@@ -2118,6 +2126,9 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         self.keptTaskId = keptTaskId
         self.goalId = goalId
         self.relevanceScore = relevanceScore
+        self.contextSummary = contextSummary
+        self.currentActivity = currentActivity
+        self.agentEditedFiles = agentEditedFiles
         self.agentStatus = agentStatus
         self.agentPrompt = agentPrompt
         self.agentPlan = agentPlan
@@ -2149,7 +2160,10 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         goalId = try container.decodeIfPresent(String.self, forKey: .goalId)
         relevanceScore = try container.decodeIfPresent(Int.self, forKey: .relevanceScore)
 
-        // Agent fields are local-only, not decoded from API
+        // Local-only fields, not decoded from API
+        contextSummary = nil
+        currentActivity = nil
+        agentEditedFiles = nil
         agentStatus = nil
         agentPrompt = nil
         agentPlan = nil
