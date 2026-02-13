@@ -158,31 +158,33 @@ async fn batch_update_staged_scores(
 
 /// POST /v1/staged-tasks/promote - Promote top staged task to action_items
 ///
-/// 1. Count active AI action_items (source contains "screenshot", !completed, !deleted)
+/// 1. Get active AI action_items (source contains "screenshot", !completed, !deleted)
 /// 2. If >= 5, return { promoted: false }
-/// 3. Get #1 ranked staged task
-/// 4. Create in action_items with [screen] prefix
-/// 5. Hard-delete from staged_tasks
-/// 6. Return { promoted: true, promoted_task }
+/// 3. Get top-ranked staged tasks (batch of 10 for dedup)
+/// 4. Skip any whose description already exists in active action_items
+/// 5. Create in action_items with [screen] suffix
+/// 6. Hard-delete from staged_tasks (including skipped duplicates)
+/// 7. Return { promoted: true, promoted_task }
 async fn promote_staged_task(
     State(state): State<AppState>,
     user: AuthUser,
 ) -> Result<Json<PromoteResponse>, StatusCode> {
     tracing::info!("Promote staged task requested for user {}", user.uid);
 
-    // Step 1: Count active AI tasks in action_items
-    let active_count = match state
+    // Step 1: Get active AI tasks and their descriptions for dedup
+    let active_ai_items = match state
         .firestore
-        .count_active_ai_action_items(&user.uid)
+        .get_active_ai_action_items(&user.uid)
         .await
     {
-        Ok(count) => count,
+        Ok(items) => items,
         Err(e) => {
-            tracing::error!("Failed to count active AI items: {}", e);
+            tracing::error!("Failed to get active AI items: {}", e);
             return Err(StatusCode::INTERNAL_SERVER_ERROR);
         }
     };
 
+    let active_count = active_ai_items.len();
     if active_count >= 5 {
         return Ok(Json(PromoteResponse {
             promoted: false,
@@ -191,8 +193,19 @@ async fn promote_staged_task(
         }));
     }
 
-    // Step 2: Get top-ranked staged task
-    let staged_tasks = match state.firestore.get_staged_tasks(&user.uid, 1, 0).await {
+    // Build set of existing descriptions for dedup (strip [screen] suffix for comparison)
+    let existing_descriptions: std::collections::HashSet<String> = active_ai_items
+        .iter()
+        .map(|item| {
+            item.description
+                .trim_start_matches("[screen] ")
+                .trim_end_matches(" [screen]")
+                .to_lowercase()
+        })
+        .collect();
+
+    // Step 2: Get top-ranked staged tasks (fetch a batch for dedup skipping)
+    let staged_tasks = match state.firestore.get_staged_tasks(&user.uid, 20, 0).await {
         Ok(tasks) => tasks,
         Err(e) => {
             tracing::error!("Failed to get staged tasks: {}", e);
@@ -200,29 +213,71 @@ async fn promote_staged_task(
         }
     };
 
-    let top_task = match staged_tasks.into_iter().next() {
+    if staged_tasks.is_empty() {
+        return Ok(Json(PromoteResponse {
+            promoted: false,
+            reason: Some("No staged tasks available".to_string()),
+            promoted_task: None,
+        }));
+    }
+
+    // Step 3: Find first non-duplicate task, deleting duplicates along the way
+    let mut selected_task = None;
+    for task in staged_tasks {
+        let normalized = task
+            .description
+            .trim_start_matches("[screen] ")
+            .trim_end_matches(" [screen]")
+            .to_lowercase();
+
+        if existing_descriptions.contains(&normalized) {
+            // Duplicate — hard-delete from staged_tasks silently
+            tracing::info!(
+                "Skipping duplicate staged task {} (\"{}\")",
+                task.id,
+                task.description
+            );
+            let _ = state
+                .firestore
+                .delete_staged_task(&user.uid, &task.id)
+                .await;
+            continue;
+        }
+
+        selected_task = Some(task);
+        break;
+    }
+
+    let top_task = match selected_task {
         Some(task) => task,
         None => {
             return Ok(Json(PromoteResponse {
                 promoted: false,
-                reason: Some("No staged tasks available".to_string()),
+                reason: Some("All candidate staged tasks are duplicates".to_string()),
                 promoted_task: None,
             }));
         }
     };
 
-    // Step 3: Create in action_items with [screen] prefix
-    let prefixed_description = if top_task.description.starts_with("[screen] ") {
-        top_task.description.clone()
+    // Step 4: Create in action_items with [screen] suffix
+    let tagged_description = if top_task.description.ends_with(" [screen]")
+        || top_task.description.starts_with("[screen] ")
+    {
+        // Already tagged — normalize to suffix form
+        let base = top_task
+            .description
+            .trim_start_matches("[screen] ")
+            .trim_end_matches(" [screen]");
+        format!("{} [screen]", base)
     } else {
-        format!("[screen] {}", top_task.description)
+        format!("{} [screen]", top_task.description)
     };
 
     let promoted_item = match state
         .firestore
         .create_action_item(
             &user.uid,
-            &prefixed_description,
+            &tagged_description,
             top_task.due_at,
             top_task.source.as_deref(),
             top_task.priority.as_deref(),
@@ -239,7 +294,7 @@ async fn promote_staged_task(
         }
     };
 
-    // Step 4: Hard-delete from staged_tasks
+    // Step 5: Hard-delete from staged_tasks
     if let Err(e) = state
         .firestore
         .delete_staged_task(&user.uid, &top_task.id)
@@ -250,7 +305,6 @@ async fn promote_staged_task(
             top_task.id,
             e
         );
-        // Don't fail the whole operation - the task was already promoted
     }
 
     tracing::info!(
@@ -349,10 +403,10 @@ async fn migrate_ai_tasks(
         score_a.cmp(&score_b)
     });
 
-    // Prefix top 5 with [screen] (small number, do individually)
+    // Tag top 5 with [screen] suffix (small number, do individually)
     for task in ai_tasks.iter().take(5) {
-        if !task.description.starts_with("[screen] ") {
-            let prefixed = format!("[screen] {}", task.description);
+        if !task.description.ends_with(" [screen]") && !task.description.starts_with("[screen] ") {
+            let prefixed = format!("{} [screen]", task.description);
             if let Err(e) = state
                 .firestore
                 .update_action_item(
