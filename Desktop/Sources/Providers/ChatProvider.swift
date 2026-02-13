@@ -1171,11 +1171,39 @@ class ChatProvider: ObservableObject {
                 await GoalsAIService.shared.extractProgressFromAllGoals(text: chatText)
             }
         } catch {
-            // Remove AI message placeholder on error
-            messages.removeAll { $0.id == aiMessageId }
+            // Only remove the AI message if it's still empty (no streamed text yet).
+            // If text was already streamed and visible, keep it and just stop streaming.
+            if let index = messages.firstIndex(where: { $0.id == aiMessageId }) {
+                if messages[index].text.isEmpty {
+                    messages.remove(at: index)
+                } else {
+                    messages[index].isStreaming = false
+                    log("Bridge error after partial response — keeping \(messages[index].text.count) chars of streamed text")
+                    // Still try to persist the partial response
+                    let partialText = messages[index].text
+                    Task { [weak self] in
+                        do {
+                            let response = try await APIClient.shared.saveMessage(
+                                text: partialText,
+                                sender: "ai",
+                                appId: capturedAppId,
+                                sessionId: capturedSessionId
+                            )
+                            await MainActor.run {
+                                if let syncIndex = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                    self?.messages[syncIndex].id = response.id
+                                    self?.messages[syncIndex].isSynced = true
+                                }
+                            }
+                            log("Saved partial AI response to backend: \(response.id)")
+                        } catch {
+                            logError("Failed to persist partial AI response", error: error)
+                        }
+                    }
+                }
+            }
 
             logError("Failed to get AI response", error: error)
-            errorMessage = "Failed to get response: \(error.localizedDescription)"
             AnalyticsManager.shared.chatAgentError(error: error.localizedDescription)
         }
 
