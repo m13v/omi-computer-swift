@@ -233,9 +233,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     func showAIConversation() {
-        // Capture screenshot before showing the AI panel, then focus input after
-        captureScreenshot(thenFocusInput: true)
-
+        // Show input and focus immediately — don't block on screenshot
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = true
             state.showingAIResponse = false
@@ -246,6 +244,20 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
         resizeToFixedHeight(120, animated: true)
         setupInputHeightObserver()
+
+        // Focus input ASAP (minimal delay for SwiftUI to create the text view)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+            self?.makeKeyAndOrderFront(nil)
+            self?.focusInputField()
+        }
+
+        // Capture screenshot in background without hiding the bar
+        Task.detached { [weak self] in
+            let url = ScreenCaptureManager.captureScreen()
+            await MainActor.run {
+                self?.state.screenshotURL = url
+            }
+        }
     }
 
     private func setupInputHeightObserver() {
@@ -260,6 +272,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
                 else { return }
                 self.resizeToFixedHeight(height)
             }
+    }
+
+    func cancelInputHeightObserver() {
+        inputHeightCancellable?.cancel()
+        inputHeightCancellable = nil
     }
 
     func updateAIResponse(type: String, text: String) {
@@ -311,6 +328,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             height: max(size.height, FloatingControlBarWindow.minBarSize.height)
         )
         let newOrigin = originForTopLeftAnchor(newSize: constrainedSize)
+
+        // Trace resize calls for debugging
+        let caller = Thread.callStackSymbols.prefix(6).joined(separator: "\n")
+        log("FloatingControlBar: resizeAnchored to \(constrainedSize) resizable=\(makeResizable) animated=\(animated) from=\(frame.size)\n\(caller)")
 
         if makeResizable {
             styleMask.insert(.resizable)
@@ -536,6 +557,11 @@ class FloatingControlBarManager {
     func openAIInputWithQuery(_ query: String, screenshot: URL?) {
         guard let window = window else { return }
 
+        // Cancel stale subscriptions immediately to prevent old data from flashing
+        chatCancellable?.cancel()
+        chatCancellable = nil
+        window.cancelInputHeightObserver()
+
         // Reset state directly (no animation) to avoid contract-then-expand flicker
         window.state.showingAIConversation = false
         window.state.showingAIResponse = false
@@ -596,7 +622,10 @@ class FloatingControlBarManager {
 
         // Observe messages for streaming response
         chatCancellable?.cancel()
+        barWindow.state.aiResponseText = ""
+        barWindow.state.isAILoading = true
         chatCancellable = provider.$messages
+            .dropFirst()  // Skip initial emission to prevent old response from flashing
             .receive(on: DispatchQueue.main)
             .sink { [weak barWindow] messages in
                 guard let lastMessage = messages.last, lastMessage.sender == .ai else { return }
