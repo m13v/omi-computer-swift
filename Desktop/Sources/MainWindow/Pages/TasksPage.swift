@@ -1541,13 +1541,16 @@ struct TasksPage: View {
     // Chat panel state
     @StateObject private var chatCoordinator: TaskChatCoordinator
     @State private var showChatPanel = false
-    @AppStorage("tasksChatPanelRatio") private var chatPanelRatio: Double = 0.55
+    @AppStorage("tasksChatPanelWidth") private var chatPanelWidth: Double = 400
 
     // Filter popover state
     @State private var showFilterPopover = false
     @State private var pendingSelectedTags: Set<TaskFilterTag> = []
     @State private var pendingSelectedDynamicTags: Set<DynamicFilterTag> = []
     @State private var filterSearchText = ""
+
+    /// Width added to the window for the chat panel
+    private static let chatExpandWidth: CGFloat = 400
 
     init(viewModel: TasksViewModel, chatProvider: ChatProvider? = nil) {
         self.viewModel = viewModel
@@ -1557,45 +1560,29 @@ struct TasksPage: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            let totalWidth = geometry.size.width
-            let minPanelWidth: CGFloat = 250
-            let isChatVisible = showChatPanel && chatCoordinator.activeTaskId != nil && chatProvider != nil
-            let tasksWidth = isChatVisible
-                ? max(minPanelWidth, totalWidth * chatPanelRatio)
-                : totalWidth
-            let chatWidth = isChatVisible
-                ? max(minPanelWidth, totalWidth - tasksWidth - 1)
-                : 0
+        let isChatVisible = showChatPanel && chatCoordinator.activeTaskId != nil && chatProvider != nil
 
-            HStack(spacing: 0) {
-                // Left panel: Tasks content
-                tasksContent
-                    .frame(width: tasksWidth)
+        HStack(spacing: 0) {
+            // Left panel: Tasks content (always full width)
+            tasksContent
+                .frame(maxWidth: .infinity)
 
-                if isChatVisible {
-                    // Draggable divider
-                    TaskChatDivider(
-                        panelRatio: $chatPanelRatio,
-                        totalWidth: totalWidth,
-                        minRatio: minPanelWidth / totalWidth,
-                        maxRatio: 1.0 - (minPanelWidth / totalWidth)
-                    )
+            if isChatVisible {
+                // Divider line
+                Rectangle()
+                    .fill(OmiColors.border)
+                    .frame(width: 1)
 
-                    // Right panel: Task chat
-                    TaskChatPanel(
-                        chatProvider: chatProvider!,
-                        coordinator: chatCoordinator,
-                        task: activeTask,
-                        onClose: {
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showChatPanel = false
-                            }
-                            Task { await chatCoordinator.closeChat() }
-                        }
-                    )
-                    .frame(width: chatWidth)
-                }
+                // Right panel: Task chat (fixed width, in expanded window space)
+                TaskChatPanel(
+                    chatProvider: chatProvider!,
+                    coordinator: chatCoordinator,
+                    task: activeTask,
+                    onClose: {
+                        closeChatPanel()
+                    }
+                )
+                .frame(width: chatPanelWidth)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1614,6 +1601,10 @@ struct TasksPage: View {
             // Trigger prioritization scoring if needed (e.g. first time opening tasks tab)
             Task { await TaskPrioritizationService.shared.runIfNeeded() }
         }
+        .onChange(of: showChatPanel) { _, isShowing in
+            // Expand/shrink the window when chat panel opens/closes
+            adjustWindowWidth(expand: isShowing)
+        }
     }
 
     /// The currently active task for the chat panel
@@ -1631,6 +1622,40 @@ struct TasksPage: View {
                 showChatPanel = true
             }
         }
+    }
+
+    /// Close the chat panel and shrink window
+    private func closeChatPanel() {
+        Task { await chatCoordinator.closeChat() }
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showChatPanel = false
+        }
+    }
+
+    /// Expand or shrink the main window to accommodate the chat panel
+    private func adjustWindowWidth(expand: Bool) {
+        guard let window = NSApp.windows.first(where: { $0.title.hasPrefix("Omi") && $0.isVisible }) else { return }
+
+        let expandAmount = chatPanelWidth + 1 // +1 for divider
+        var frame = window.frame
+
+        if expand {
+            // Expand to the right
+            frame.size.width += expandAmount
+            // Clamp to screen bounds
+            if let screen = window.screen {
+                let maxRight = screen.visibleFrame.maxX
+                if frame.maxX > maxRight {
+                    // Shift left if we'd go off-screen
+                    frame.origin.x = maxRight - frame.size.width
+                }
+            }
+        } else {
+            // Shrink from the right
+            frame.size.width = max(900, frame.size.width - expandAmount)
+        }
+
+        window.setFrame(frame, display: true, animate: true)
     }
 
     // MARK: - Tasks Content
@@ -2174,10 +2199,7 @@ struct TasksPage: View {
     private var chatToggleButton: some View {
         Button {
             if showChatPanel {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showChatPanel = false
-                }
-                Task { await chatCoordinator.closeChat() }
+                closeChatPanel()
             } else if let firstTask = viewModel.displayTasks.first {
                 openChatForTask(firstTask)
             }
@@ -3617,40 +3639,4 @@ struct TaskCreateSheet: View {
     }
 }
 
-// MARK: - Task Chat Divider
-
-/// Draggable divider between tasks list and chat panel
-private struct TaskChatDivider: View {
-    @Binding var panelRatio: Double
-    let totalWidth: CGFloat
-    let minRatio: Double
-    let maxRatio: Double
-
-    @State private var isDragging = false
-
-    var body: some View {
-        Rectangle()
-            .fill(isDragging ? OmiColors.textSecondary : OmiColors.border)
-            .frame(width: 1)
-            .contentShape(Rectangle().inset(by: -4))
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.resizeLeftRight.push()
-                } else {
-                    NSCursor.pop()
-                }
-            }
-            .gesture(
-                DragGesture()
-                    .onChanged { value in
-                        isDragging = true
-                        let newRatio = Double(value.location.x / totalWidth)
-                        panelRatio = min(maxRatio, max(minRatio, newRatio))
-                    }
-                    .onEnded { _ in
-                        isDragging = false
-                    }
-            )
-    }
-}
 
