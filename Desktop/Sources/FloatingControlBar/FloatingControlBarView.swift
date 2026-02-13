@@ -35,6 +35,7 @@ struct FloatingControlBarView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(DraggableAreaView(targetWindow: window))
         .floatingBackground()
     }
 
@@ -56,7 +57,6 @@ struct FloatingControlBarView: View {
         .padding(.horizontal, 6)
         .padding(.vertical, 3)
         .frame(height: 50)
-        .background(DraggableAreaView(targetWindow: window))
     }
 
     private func compactButton(title: String, keys: [String], action: @escaping () -> Void) -> some View {
