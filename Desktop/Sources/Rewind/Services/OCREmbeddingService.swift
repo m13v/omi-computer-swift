@@ -7,7 +7,7 @@ import Accelerate
 actor OCREmbeddingService {
     static let shared = OCREmbeddingService()
 
-    private let embeddingDimension = 3072  // Gemini gemini-embedding-001 now returns 3072-dim
+    private let embeddingDimension = EmbeddingService.embeddingDimension
     private let minTextLength = 20
 
     private init() {}
@@ -118,7 +118,7 @@ actor OCREmbeddingService {
         appFilter: String? = nil,
         topK: Int = 50
     ) async throws -> [(screenshotId: Int64, similarity: Float)] {
-        // Embed the query with RETRIEVAL_QUERY task type for asymmetric search (using Gemini 768-dim)
+        // Embed the query with RETRIEVAL_QUERY task type for asymmetric search
         let queryEmbedding = try await EmbeddingService.shared.embed(text: query, taskType: "RETRIEVAL_QUERY")
 
         let batchSize = 5000
