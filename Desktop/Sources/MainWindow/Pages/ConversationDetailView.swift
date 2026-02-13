@@ -516,6 +516,7 @@ struct ConversationDetailView: View {
             Text(displayConversation.overview)
                 .font(.system(size: 14))
                 .foregroundColor(OmiColors.textPrimary)
+                .textSelection(.enabled)
                 .lineSpacing(4)
         }
     }
@@ -750,6 +751,7 @@ struct ConversationDetailView: View {
                         Text(item.description)
                             .font(.system(size: 14))
                             .foregroundColor(item.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
+                            .textSelection(.enabled)
                             .strikethrough(item.completed, color: OmiColors.textTertiary)
                     }
                     .padding(12)
@@ -846,11 +848,13 @@ struct AppResultCard: View {
                 Text(result.content)
                     .font(.system(size: 13))
                     .foregroundColor(OmiColors.textSecondary)
+                    .textSelection(.enabled)
                     .lineSpacing(4)
             } else {
                 Text(result.content.prefix(200) + "...")
                     .font(.system(size: 13))
                     .foregroundColor(OmiColors.textSecondary)
+                    .textSelection(.enabled)
                     .lineSpacing(4)
             }
         }
