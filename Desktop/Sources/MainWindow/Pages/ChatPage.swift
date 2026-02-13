@@ -27,6 +27,11 @@ struct ScrollPositionDetector: NSViewRepresentable {
         let onScrollPositionChange: (Bool) -> Void
         private var scrollView: NSScrollView?
         private var observation: NSObjectProtocol?
+        /// Coalesces rapid bounds-change notifications so we update SwiftUI
+        /// state at most once per ~60ms, preventing a feedback loop with
+        /// programmatic scrolls during streaming.
+        private var coalesceWorkItem: DispatchWorkItem?
+        private var lastReportedValue: Bool?
 
         init(onScrollPositionChange: @escaping (Bool) -> Void) {
             self.onScrollPositionChange = onScrollPositionChange
@@ -74,12 +79,21 @@ struct ScrollPositionDetector: NSViewRepresentable {
             // At bottom if we can see within threshold of the document bottom
             let isAtBottom = visibleMaxY >= documentHeight - threshold
 
-            DispatchQueue.main.async {
-                self.onScrollPositionChange(isAtBottom)
+            // Skip if the value hasn't changed — avoids redundant state updates
+            guard isAtBottom != lastReportedValue else { return }
+
+            // Coalesce rapid notifications into a single state update
+            coalesceWorkItem?.cancel()
+            let workItem = DispatchWorkItem { [weak self] in
+                self?.lastReportedValue = isAtBottom
+                self?.onScrollPositionChange(isAtBottom)
             }
+            coalesceWorkItem = workItem
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.06, execute: workItem)
         }
 
         deinit {
+            coalesceWorkItem?.cancel()
             if let observation = observation {
                 NotificationCenter.default.removeObserver(observation)
             }
