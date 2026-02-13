@@ -2817,6 +2817,58 @@ impl FirestoreService {
         Ok(count)
     }
 
+    /// Get active AI action items (source contains "screenshot", not completed, not deleted).
+    /// Returns the actual items for dedup comparison during promotion.
+    pub async fn get_active_ai_action_items(
+        &self,
+        uid: &str,
+    ) -> Result<Vec<ActionItemDB>, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": ACTION_ITEMS_SUBCOLLECTION}],
+                "where": {
+                    "fieldFilter": {
+                        "field": {"fieldPath": "completed"},
+                        "op": "EQUAL",
+                        "value": {"booleanValue": false}
+                    }
+                },
+                "limit": 500
+            }
+        });
+
+        let query_url = format!("{}:runQuery", parent);
+        let response = self
+            .build_request(reqwest::Method::POST, &query_url)
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore get active AI items error: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let items: Vec<ActionItemDB> = results
+            .iter()
+            .filter_map(|r| r.get("document"))
+            .filter_map(|doc| self.parse_action_item(doc).ok())
+            .filter(|item| {
+                item.deleted != Some(true)
+                    && item
+                        .source
+                        .as_ref()
+                        .map_or(false, |s| s.contains("screenshot"))
+            })
+            .collect();
+
+        Ok(items)
+    }
+
     /// Get a single staged task by ID.
     pub async fn get_staged_task_by_id(
         &self,
