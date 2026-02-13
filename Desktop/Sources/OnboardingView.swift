@@ -335,7 +335,7 @@ struct OnboardingView: View {
             // Completed or granted - show checkmark
             Image(systemName: "checkmark.circle.fill")
                 .foregroundColor(.white)
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
         } else if index == currentStep {
             // Current step, not yet granted - filled circle
             Circle()
@@ -374,7 +374,7 @@ struct OnboardingView: View {
         case 4:
             VStack(spacing: 16) {
                 Image(systemName: "checkmark.circle")
-                    .font(.system(size: 48))
+                    .scaledFont(size: 48)
                     .foregroundColor(OmiColors.purplePrimary)
 
                 Text("You're All Set!")
@@ -398,7 +398,7 @@ struct OnboardingView: View {
     private var nameStepView: some View {
         VStack(spacing: 16) {
             Image(systemName: "person.circle")
-                .font(.system(size: 48))
+                .scaledFont(size: 48)
                 .foregroundColor(OmiColors.purplePrimary)
 
             Text("What's your name?")
@@ -467,7 +467,7 @@ struct OnboardingView: View {
     private var languageStepView: some View {
         VStack(spacing: 16) {
             Image(systemName: "globe")
-                .font(.system(size: 48))
+                .scaledFont(size: 48)
                 .foregroundColor(OmiColors.purplePrimary)
 
             Text("Language")
@@ -583,9 +583,9 @@ struct OnboardingView: View {
                     Button(action: { showPrivacySheet = true }) {
                         HStack(spacing: 6) {
                             Image(systemName: "shield.lefthalf.filled")
-                                .font(.system(size: 11))
+                                .scaledFont(size: 11)
                             Text("Data & Privacy")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                         }
                         .foregroundColor(OmiColors.textTertiary)
                     }
@@ -615,13 +615,13 @@ struct OnboardingView: View {
             } else if activePermissionIndex >= 0 {
                 Spacer()
                 Image(systemName: activePermissionIcon)
-                    .font(.system(size: 40))
+                    .scaledFont(size: 40)
                     .foregroundColor(OmiColors.purplePrimary)
                 Text(activePermissionName)
                     .font(.headline)
                     .fontWeight(.semibold)
                 Text(activePermissionGuideText)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, 16)
@@ -629,12 +629,12 @@ struct OnboardingView: View {
             } else {
                 Spacer()
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 48))
+                    .scaledFont(size: 48)
                     .foregroundColor(.green)
                 Text("All Set!")
                     .font(.headline)
                 Text("All permissions granted. Click Continue.")
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundColor(.secondary)
                     .multilineTextAlignment(.center)
                 Spacer()
@@ -651,28 +651,28 @@ struct OnboardingView: View {
     private func permissionRow(number: Int, icon: String, name: String, isGranted: Bool, isActive: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Text("\(number).")
-                .font(.system(size: 14, weight: .medium))
+                .scaledFont(size: 14, weight: .medium)
                 .foregroundColor(.secondary)
                 .frame(width: 20, alignment: .trailing)
 
             Image(systemName: icon)
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundColor(isGranted ? .green : OmiColors.purplePrimary)
                 .frame(width: 20)
 
             Text(name)
-                .font(.system(size: 14, weight: .medium))
+                .scaledFont(size: 14, weight: .medium)
 
             Spacer()
 
             if isGranted {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 16))
+                    .scaledFont(size: 16)
                     .foregroundColor(.green)
             } else {
                 Button(action: action) {
                     Text("Grant Access")
-                        .font(.system(size: 12, weight: .medium))
+                        .scaledFont(size: 12, weight: .medium)
                         .foregroundColor(.white)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 5)
@@ -907,18 +907,18 @@ struct OnboardingPrivacySheet: View {
             // Header
             HStack {
                 Image(systemName: "shield.lefthalf.filled")
-                    .font(.system(size: 16))
+                    .scaledFont(size: 16)
                     .foregroundColor(OmiColors.purplePrimary)
 
                 Text("Data & Privacy")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                     .foregroundColor(OmiColors.textPrimary)
 
                 Spacer()
 
                 Button(action: { isPresented = false }) {
                     Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 18))
+                        .scaledFont(size: 18)
                         .foregroundColor(OmiColors.textTertiary)
                 }
                 .buttonStyle(.plain)
@@ -933,18 +933,18 @@ struct OnboardingPrivacySheet: View {
                     privacyCard {
                         VStack(alignment: .leading, spacing: 10) {
                             Label("Encryption", systemImage: "lock.shield")
-                                .font(.system(size: 13, weight: .semibold))
+                                .scaledFont(size: 13, weight: .semibold)
                                 .foregroundColor(OmiColors.textPrimary)
 
                             HStack(spacing: 8) {
                                 Image(systemName: "checkmark.circle.fill")
-                                    .font(.system(size: 11))
+                                    .scaledFont(size: 11)
                                     .foregroundColor(.green)
                                 Text("Server-side encryption")
-                                    .font(.system(size: 12))
+                                    .scaledFont(size: 12)
                                     .foregroundColor(OmiColors.textSecondary)
                                 Text("Active")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .scaledFont(size: 10, weight: .semibold)
                                     .foregroundColor(.green)
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 1)
@@ -954,13 +954,13 @@ struct OnboardingPrivacySheet: View {
 
                             HStack(spacing: 8) {
                                 Image(systemName: "lock.fill")
-                                    .font(.system(size: 11))
+                                    .scaledFont(size: 11)
                                     .foregroundColor(OmiColors.textTertiary)
                                 Text("End-to-end encryption")
-                                    .font(.system(size: 12))
+                                    .scaledFont(size: 12)
                                     .foregroundColor(OmiColors.textTertiary)
                                 Text("Coming Soon")
-                                    .font(.system(size: 10, weight: .semibold))
+                                    .scaledFont(size: 10, weight: .semibold)
                                     .foregroundColor(OmiColors.textTertiary)
                                     .padding(.horizontal, 5)
                                     .padding(.vertical, 1)
@@ -969,7 +969,7 @@ struct OnboardingPrivacySheet: View {
                             }
 
                             Text("Your data is encrypted and stored securely with Google Cloud infrastructure.")
-                                .font(.system(size: 11))
+                                .scaledFont(size: 11)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .padding(.top, 2)
                         }
@@ -979,7 +979,7 @@ struct OnboardingPrivacySheet: View {
                     privacyCard {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("What We Track", systemImage: "list.bullet")
-                                .font(.system(size: 13, weight: .semibold))
+                                .scaledFont(size: 13, weight: .semibold)
                                 .foregroundColor(OmiColors.textPrimary)
 
                             VStack(alignment: .leading, spacing: 4) {
@@ -1002,7 +1002,7 @@ struct OnboardingPrivacySheet: View {
                     privacyCard {
                         VStack(alignment: .leading, spacing: 8) {
                             Label("Privacy Guarantees", systemImage: "hand.raised.fill")
-                                .font(.system(size: 13, weight: .semibold))
+                                .scaledFont(size: 13, weight: .semibold)
                                 .foregroundColor(OmiColors.textPrimary)
 
                             VStack(alignment: .leading, spacing: 5) {
@@ -1041,7 +1041,7 @@ struct OnboardingPrivacySheet: View {
                 .fill(OmiColors.textTertiary.opacity(0.5))
                 .frame(width: 3, height: 3)
             Text(text)
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundColor(OmiColors.textTertiary)
         }
     }
@@ -1049,10 +1049,10 @@ struct OnboardingPrivacySheet: View {
     private func sheetBullet(_ text: String) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "checkmark")
-                .font(.system(size: 8, weight: .bold))
+                .scaledFont(size: 8, weight: .bold)
                 .foregroundColor(.green)
             Text(text)
-                .font(.system(size: 11))
+                .scaledFont(size: 11)
                 .foregroundColor(OmiColors.textSecondary)
         }
     }
