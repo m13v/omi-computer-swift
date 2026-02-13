@@ -79,8 +79,18 @@ class TasksStore: ObservableObject {
         }
     }
 
-    /// Standard sort: due date ascending, then manual > AI-generated, then newest first
+    /// Standard sort: sortOrder first (if set), then due date ascending, then manual > AI-generated, then newest first
     private static func sortByDueDateThenSource(_ a: TaskActionItem, _ b: TaskActionItem) -> Bool {
+        // If both have sortOrder, use it
+        let aSort = a.sortOrder ?? 0
+        let bSort = b.sortOrder ?? 0
+        if aSort > 0 && bSort > 0 {
+            return aSort < bSort
+        }
+        // Tasks with sortOrder precede unsorted tasks
+        if aSort > 0 && bSort == 0 { return true }
+        if aSort == 0 && bSort > 0 { return false }
+
         let aDue = a.dueAt ?? .distantFuture
         let bDue = b.dueAt ?? .distantFuture
         if aDue != bDue {
@@ -949,7 +959,8 @@ class TasksStore: ObservableObject {
         }
     }
 
-    func createTask(description: String, dueAt: Date?, priority: String?, tags: [String]? = nil) async {
+    @discardableResult
+    func createTask(description: String, dueAt: Date?, priority: String?, tags: [String]? = nil) async -> TaskActionItem? {
         do {
             var metadata: [String: Any]? = nil
             if let tags = tags, !tags.isEmpty {
@@ -970,9 +981,11 @@ class TasksStore: ObservableObject {
 
             // New tasks are incomplete, add to incomplete list
             incompleteTasks.insert(created, at: 0)
+            return created
         } catch {
             self.error = error.localizedDescription
             logError("TasksStore: Failed to create task", error: error)
+            return nil
         }
     }
 
