@@ -407,20 +407,6 @@ enum UnifiedFilterTag: Identifiable, Hashable {
     }
 }
 
-// MARK: - Sort Option
-
-enum TaskSortOption: String, CaseIterable {
-    case dueDate = "Due Date"
-    case relevance = "Relevance"
-
-    var icon: String {
-        switch self {
-        case .dueDate: return "calendar"
-        case .relevance: return "sparkles"
-        }
-    }
-}
-
 // MARK: - Tasks View Model (uses shared TasksStore)
 
 @MainActor
@@ -456,20 +442,6 @@ class TasksViewModel: ObservableObject {
             recomputeDisplayCaches()
         }
     }
-    @Published var sortOption: TaskSortOption = .relevance {
-        didSet {
-            // Hide stale task list until store finishes reloading
-            isSwitchingSortMode = true
-            if sortOption == .dueDate {
-                selectedTags.insert(.last7Days)
-            } else {
-                selectedTags.remove(.last7Days)
-            }
-            // selectedTags didSet handles recomputeDisplayCaches
-        }
-    }
-
-
     // Filter tags (Memories-style dropdown)
     @Published var selectedTags: Set<TaskFilterTag> = [.todo] {
         didSet {
@@ -598,9 +570,6 @@ class TasksViewModel: ObservableObject {
 
     /// Throttle flag for loadMoreIfNeeded to prevent task storms during fast scroll
     private var isLoadingMoreGuard = false
-
-    /// True while switching between sort modes (hides stale list until fresh data arrives)
-    @Published private(set) var isSwitchingSortMode = false
 
     // MARK: - Cached Properties (avoid recomputation on every render)
 
@@ -851,11 +820,6 @@ class TasksViewModel: ObservableObject {
 
         // Recompute display caches (reads @Published state, must stay on main but is now cheaper with cached dates)
         recomputeDisplayCaches()
-
-        // Fresh data has arrived from the store — clear the mode-switching spinner
-        if isSwitchingSortMode {
-            isSwitchingSortMode = false
-        }
 
         // Load true counts from SQLite asynchronously
         Task {
@@ -1229,14 +1193,7 @@ class TasksViewModel: ObservableObject {
         categorizedTasks = result
 
         // Debug logging
-        if sortOption == .dueDate {
-            log("TasksViewModel: Categorized \(displayTasks.count) tasks - Today: \(result[.today]?.count ?? 0), Tomorrow: \(result[.tomorrow]?.count ?? 0), Later: \(result[.later]?.count ?? 0), No Deadline: \(result[.noDeadline]?.count ?? 0)")
-        }
-
-        // Clear mode-switching spinner (sort option change no longer triggers store reload)
-        if isSwitchingSortMode {
-            isSwitchingSortMode = false
-        }
+        log("TasksViewModel: Categorized \(displayTasks.count) tasks - Today: \(result[.today]?.count ?? 0), Tomorrow: \(result[.tomorrow]?.count ?? 0), Later: \(result[.later]?.count ?? 0), No Deadline: \(result[.noDeadline]?.count ?? 0)")
     }
 
     /// Load more filtered/search results (pagination within already-queried results)
@@ -1325,43 +1282,21 @@ class TasksViewModel: ObservableObject {
     }
 
     private func sortTasks(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
-        switch sortOption {
-        case .dueDate:
-            return tasks.sorted { a, b in
-                // Tasks with due dates first, then by due date ascending
-                // Tie-breaker: created_at descending (newest first) - matches backend
-                switch (a.dueAt, b.dueAt) {
-                case (nil, nil):
+        tasks.sorted { a, b in
+            // Tasks with due dates first, then by due date ascending
+            // Tie-breaker: created_at descending (newest first) - matches backend
+            switch (a.dueAt, b.dueAt) {
+            case (nil, nil):
+                return a.createdAt > b.createdAt
+            case (nil, _):
+                return false
+            case (_, nil):
+                return true
+            case (let aDate?, let bDate?):
+                if aDate == bDate {
                     return a.createdAt > b.createdAt
-                case (nil, _):
-                    return false
-                case (_, nil):
-                    return true
-                case (let aDate?, let bDate?):
-                    if aDate == bDate {
-                        // Tie-breaker: sort by created_at descending (newest first)
-                        return a.createdAt > b.createdAt
-                    }
-                    return aDate < bDate
                 }
-            }
-        case .relevance:
-            return tasks.sorted { a, b in
-                // Lower relevance score = higher priority (1 is most important)
-                // Tasks without scores go to the bottom
-                switch (a.relevanceScore, b.relevanceScore) {
-                case (nil, nil):
-                    return a.createdAt > b.createdAt
-                case (nil, _):
-                    return false
-                case (_, nil):
-                    return true
-                case (let aScore?, let bScore?):
-                    if aScore == bScore {
-                        return a.createdAt > b.createdAt
-                    }
-                    return aScore < bScore
-                }
+                return aDate < bDate
             }
         }
     }
@@ -1617,9 +1552,7 @@ struct TasksPage: View {
             headerView
 
             // Content
-            if viewModel.isSwitchingSortMode {
-                loadingView
-            } else if viewModel.isLoading && viewModel.tasks.isEmpty {
+            if viewModel.isLoading && viewModel.tasks.isEmpty {
                 loadingView
             } else if let error = viewModel.error, viewModel.tasks.isEmpty {
                 errorView(error)
@@ -1678,7 +1611,6 @@ struct TasksPage: View {
                 }
                 cancelMultiSelectButton
             } else {
-                modeToggle
                 addTaskButton
                 taskSettingsButton
             }
@@ -2069,35 +2001,6 @@ struct TasksPage: View {
     }
 
 
-    private var modeToggle: some View {
-        HStack(spacing: 2) {
-            ForEach(TaskSortOption.allCases, id: \.self) { option in
-                let isSelected = viewModel.sortOption == option
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        viewModel.sortOption = option
-                    }
-                } label: {
-                    VStack(spacing: 4) {
-                        HStack(spacing: 4) {
-                            Image(systemName: option.icon)
-                                .font(.system(size: 11))
-                            Text(option.rawValue)
-                                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
-                        }
-                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-
-                        Rectangle()
-                            .fill(isSelected ? OmiColors.textPrimary : Color.clear)
-                            .frame(height: 1.5)
-                    }
-                    .padding(.horizontal, 8)
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
     private var taskSettingsButton: some View {
         Button {
             NotificationCenter.default.post(
@@ -2219,11 +2122,10 @@ struct TasksPage: View {
     private var tasksListView: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                // Show tasks grouped by category when sorting by due date
-                // Show category grouping when sorting by due date and not viewing only completed/deleted tasks
+                // Show tasks grouped by due-date category (Today, Tomorrow, Later, No Deadline)
                 let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
                 let onlyDeleted = (viewModel.selectedTags.contains(.removedByAI) || viewModel.selectedTags.contains(.removedByMe)) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
-                if viewModel.sortOption == .dueDate && !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
+                if !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
                     ForEach(TaskCategory.allCases, id: \.self) { category in
                         let orderedTasks = viewModel.getOrderedTasks(for: category)
                         if !orderedTasks.isEmpty {
