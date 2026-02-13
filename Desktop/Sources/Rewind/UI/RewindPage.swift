@@ -55,13 +55,9 @@ struct RewindPage: View {
             } else {
                 // Main content with persistent search field
                 VStack(spacing: 0) {
-                    // Recording bar or start recording bar
+                    // Recording bar (always visible when appState exists)
                     if let appState = appState {
-                        if appState.isTranscribing || appState.isSavingConversation {
-                            rewindRecordingBar(appState: appState)
-                        } else {
-                            startRecordingBar(appState: appState)
-                        }
+                        rewindRecordingBar(appState: appState)
                     }
 
                     if isTranscriptExpanded {
@@ -1115,35 +1111,6 @@ struct RewindPage: View {
         .background(OmiColors.backgroundPrimary)
     }
 
-    // MARK: - Start Recording Bar
-
-    private func startRecordingBar(appState: AppState) -> some View {
-        HStack(spacing: 16) {
-            Button(action: {
-                appState.startTranscription()
-            }) {
-                HStack(spacing: 6) {
-                    Circle()
-                        .fill(OmiColors.purplePrimary)
-                        .frame(width: 10, height: 10)
-                    Text("Start Recording")
-                        .font(.system(size: 13, weight: .medium))
-                }
-                .foregroundColor(.white)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 8)
-                .background(Capsule().fill(OmiColors.purplePrimary.opacity(0.3)))
-                .overlay(Capsule().stroke(OmiColors.purplePrimary.opacity(0.5), lineWidth: 1))
-            }
-            .buttonStyle(.plain)
-
-            Spacer()
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(OmiColors.backgroundTertiary.opacity(0.5))
-    }
-
     // MARK: - Recording Bar
 
     private func rewindRecordingBar(appState: AppState) -> some View {
@@ -1284,6 +1251,26 @@ struct RewindPage: View {
                     .scaleEffect(0.7)
 
                 Spacer()
+            } else {
+                // Not recording — show start button
+                Spacer()
+
+                Button(action: {
+                    appState.startTranscription()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "record.circle")
+                            .font(.system(size: 12))
+                        Text("Start Recording")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(OmiColors.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
