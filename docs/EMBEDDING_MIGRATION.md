@@ -6,7 +6,7 @@ This document explains how we handle embedding migrations for existing users whe
 
 ## Current Status (Feb 2026)
 
-- **Embedding Model**: Gemini `gemini-embedding-001` (3072 dimensions)
+- **Embedding Model**: Gemini `gemini-embedding-001` (3072 dimensions by default)
 - **Task Types**:
   - Documents: `RETRIEVAL_DOCUMENT` (for screenshot embeddings)
   - Queries: `RETRIEVAL_QUERY` (for search queries)
