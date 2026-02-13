@@ -1655,25 +1655,28 @@ struct TasksPage: View {
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
         .focusable()
-        .onKeyPress(.init("n"), modifiers: .command) {
-            viewModel.showingCreateTask = true
-            return .handled
-        }
-        .onKeyPress(.init("d"), modifiers: .command) {
-            guard let taskId = hoveredTaskId,
-                  let task = findTask(taskId) else { return .ignored }
-            Task { await viewModel.deleteTaskWithUndo(task) }
-            return .handled
-        }
-        .onKeyPress(.tab, modifiers: []) {
-            guard let taskId = hoveredTaskId else { return .ignored }
-            viewModel.incrementIndent(for: taskId)
-            return .handled
-        }
-        .onKeyPress(.tab, modifiers: .shift) {
-            guard let taskId = hoveredTaskId else { return .ignored }
-            viewModel.decrementIndent(for: taskId)
-            return .handled
+        .onKeyPress(phases: .down) { press in
+            if press.key == KeyEquivalent("n") && press.modifiers == .command {
+                viewModel.showingCreateTask = true
+                return .handled
+            }
+            if press.key == KeyEquivalent("d") && press.modifiers == .command {
+                guard let taskId = hoveredTaskId,
+                      let task = findTask(taskId) else { return .ignored }
+                Task { await viewModel.deleteTaskWithUndo(task) }
+                return .handled
+            }
+            if press.key == .tab && press.modifiers.isEmpty {
+                guard let taskId = hoveredTaskId else { return .ignored }
+                viewModel.incrementIndent(for: taskId)
+                return .handled
+            }
+            if press.key == .tab && press.modifiers == .shift {
+                guard let taskId = hoveredTaskId else { return .ignored }
+                viewModel.decrementIndent(for: taskId)
+                return .handled
+            }
+            return .ignored
         }
     }
 
