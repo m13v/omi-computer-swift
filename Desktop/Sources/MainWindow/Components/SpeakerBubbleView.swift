@@ -43,6 +43,7 @@ struct SpeakerBubbleView: View {
                 Text(segment.text)
                     .font(.system(size: 14))
                     .foregroundColor(OmiColors.textPrimary)
+                    .textSelection(.enabled)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .background(
