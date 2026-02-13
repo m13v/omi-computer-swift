@@ -47,6 +47,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Each query is standalone — conversation history comes via systemPrompt
     // This ensures cross-platform sync (mobile messages are included in context)
     const options: Record<string, unknown> = {
+      model: "claude-opus-4-6",
       abortController,
       systemPrompt: msg.systemPrompt,
       allowedTools: [
