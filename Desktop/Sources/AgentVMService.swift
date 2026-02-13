@@ -23,7 +23,7 @@ actor AgentVMService {
             do {
                 let status = try await APIClient.shared.getAgentStatus()
                 if let status = status, status.status == "ready", let ip = status.ip {
-                    log("AgentVMService: VM already ready — vmName=\(status.vmName ?? "?") ip=\(ip)")
+                    log("AgentVMService: VM already ready — vmName=\(status.vmName) ip=\(ip)")
                     await uploadDatabase(vmIP: ip, authToken: status.authToken)
                     return
                 }
