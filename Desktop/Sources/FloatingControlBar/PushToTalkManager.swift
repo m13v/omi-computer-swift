@@ -190,6 +190,7 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem?.cancel()
     finalizeWorkItem = nil
 
+    AnalyticsManager.shared.floatingBarPTTStarted(mode: "hold")
     updateBarState()
 
     // Capture screenshot in background — do NOT block the main thread
@@ -210,6 +211,7 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem?.cancel()
     finalizeWorkItem = nil
     state = .lockedListening
+    AnalyticsManager.shared.floatingBarPTTStarted(mode: "locked")
 
     // If we were already listening from the first tap, keep going.
     // Otherwise start fresh.
@@ -243,9 +245,12 @@ class PushToTalkManager: ObservableObject {
     updateBarState()
   }
 
+  private var finalizedMode: String = "hold"
+
   private func finalize() {
     guard state == .listening || state == .lockedListening else { return }
 
+    finalizedMode = state == .lockedListening ? "locked" : "hold"
     state = .finalizing
     finalizeWorkItem?.cancel()
     finalizeWorkItem = nil
@@ -272,6 +277,12 @@ class PushToTalkManager: ObservableObject {
     }
     let screenshot = capturedScreenshotURL
     let hasQuery = !query.isEmpty
+
+    AnalyticsManager.shared.floatingBarPTTEnded(
+      mode: finalizedMode,
+      hadTranscript: hasQuery,
+      transcriptLength: query.count
+    )
 
     // Reset state — skip PTT collapse resize when we have a query,
     // because openAIInputWithQuery will resize to the correct size
