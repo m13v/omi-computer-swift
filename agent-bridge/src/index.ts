@@ -53,6 +53,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   let fullText = "";
   let costUsd = 0;
 
+  // Track pending tool calls so we can mark them completed on interrupt
+  const pendingTools: string[] = [];
+
   try {
     // Each query is standalone — conversation history comes via systemPrompt
     // This ensures cross-platform sync (mobile messages are included in context)
@@ -83,8 +86,6 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       includePartialMessages: true,
     };
 
-    // Track pending tool calls so we can mark them completed when new text arrives
-    const pendingTools: string[] = [];
     // Track tool_use block index → {id, name, inputChunks} for accumulating input_json_delta
     const blockTools: Map<number, { id: string; name: string; inputChunks: string[] }> = new Map();
     // Track toolUseId → name for correlating results
@@ -291,6 +292,11 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   } catch (err: unknown) {
     if (abortController.signal.aborted) {
       if (interruptRequested) {
+        // Mark any remaining pending tools as completed before sending partial result
+        for (const name of pendingTools) {
+          send({ type: "tool_activity", name, status: "completed" });
+        }
+        pendingTools.length = 0;
         // User-initiated stop: send partial result so Swift can display it
         logErr(`Query interrupted by user, sending partial result (${fullText.length} chars)`);
         send({ type: "result", text: fullText, sessionId, costUsd });
