@@ -39,51 +39,47 @@ struct FloatingControlBarView: View {
     }
 
     private var controlBarView: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 1) {
             if state.isVoiceListening {
                 voiceListeningView
             } else {
-                commandButton(title: "Ask omi", keys: ["\u{2318}", "\u{21A9}\u{FE0E}"]) {
+                compactButton(title: "Ask omi", keys: ["\u{2318}", "\u{21A9}\u{FE0E}"]) {
                     onAskAI()
                 }
             }
 
-            // Shortcut hints
-            HStack(spacing: 12) {
-                HStack(spacing: 6) {
-                    Text("Hide")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                    Text("\u{2318}")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
-                    Text("\\")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
-                }
-                HStack(spacing: 6) {
-                    Text("Push to talk")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.white)
-                    Text("\u{2325}")
-                        .font(.system(size: 11))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
-                }
+            HStack(spacing: 6) {
+                compactLabel("Hide", keys: ["\u{2318}", "\\"])
+                compactLabel("Push to talk", keys: ["\u{2325}"])
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
-        .frame(height: 72)
+        .padding(.horizontal, 6)
+        .padding(.vertical, 3)
+        .frame(height: 50)
         .background(DraggableAreaView(targetWindow: window))
+    }
+
+    private func compactButton(title: String, keys: [String], action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            compactLabel(title, keys: keys)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func compactLabel(_ title: String, keys: [String]) -> some View {
+        HStack(spacing: 3) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(.white)
+            ForEach(keys, id: \.self) { key in
+                Text(key)
+                    .font(.system(size: 9))
+                    .foregroundColor(.white)
+                    .frame(width: 15, height: 15)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(3)
+            }
+        }
     }
 
     private var voiceListeningView: some View {
@@ -146,7 +142,7 @@ struct FloatingControlBarView: View {
             onCancel: onCloseAI,
             onHeightChange: { [weak state] height in
                 guard let state = state else { return }
-                let totalHeight = 72 + height + 24
+                let totalHeight = 50 + height + 24
                 state.inputViewHeight = totalHeight
             },
             onCaptureScreenshot: onCaptureScreenshot
@@ -179,23 +175,5 @@ struct FloatingControlBarView: View {
             ))
     }
 
-    private func commandButton(title: String, keys: [String], action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Text(title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.white)
-                ForEach(keys, id: \.self) { key in
-                    Text(key)
-                        .font(.system(size: 11))
-                        .foregroundColor(.white)
-                        .frame(width: 20, height: 20)
-                        .background(Color.white.opacity(0.1))
-                        .cornerRadius(4)
-                }
-            }
-        }
-        .buttonStyle(.plain)
-    }
 
 }
