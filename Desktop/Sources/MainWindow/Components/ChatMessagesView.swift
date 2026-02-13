@@ -59,7 +59,7 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                                 ProgressView()
                                     .scaleEffect(0.8)
                                 Text("Loading...")
-                                    .font(.system(size: 13))
+                                    .scaledFont(size: 13)
                                     .foregroundColor(OmiColors.textTertiary)
                                 Spacer()
                             }
@@ -140,7 +140,7 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                         scrollToBottom(proxy: proxy)
                     } label: {
                         Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 32))
+                            .scaledFont(size: 32)
                             .foregroundColor(OmiColors.purplePrimary)
                             .background(
                                 Circle()
