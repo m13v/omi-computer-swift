@@ -502,6 +502,8 @@ class TasksViewModel: ObservableObject {
     @Published var selectedDynamicTags: Set<DynamicFilterTag> = [] {
         didSet {
             displayLimit = 100
+            keyboardSelectedTaskId = nil
+            isInlineCreating = false
             if !selectedDynamicTags.isEmpty {
                 Task { await loadFilteredTasksFromDatabase() }
             } else if selectedTags.isEmpty || !selectedTags.contains(where: { $0.group != .status }) {
@@ -589,16 +591,19 @@ class TasksViewModel: ObservableObject {
     @Published var selectedTaskIds: Set<String> = []
 
     // MARK: - Drag-and-Drop Reordering (like Flutter)
-    /// Custom order of task IDs per category (persisted to UserDefaults)
+    /// Custom order of task IDs per category (persisted to UserDefaults as fallback)
     @Published var categoryOrder: [TaskCategory: [String]] = [:] {
         didSet { saveCategoryOrder() }
     }
 
     // MARK: - Task Indentation (like Flutter)
-    /// Indent levels for tasks (0-3), persisted to UserDefaults
+    /// Indent levels for tasks (0-3), persisted to UserDefaults as fallback
     @Published var indentLevels: [String: Int] = [:] {
         didSet { saveIndentLevels() }
     }
+
+    /// Debounced task for syncing sort orders to SQLite + backend
+    private var sortOrderSyncTask: Task<Void, Never>?
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -648,6 +653,9 @@ class TasksViewModel: ObservableObject {
                 self?.objectWillChange.send()
             }
             .store(in: &cancellables)
+
+        // Migrate UserDefaults ordering to sortOrder fields
+        migrateUserDefaultsToSortOrder()
     }
 
     // MARK: - Persistence (UserDefaults)
@@ -689,12 +697,28 @@ class TasksViewModel: ObservableObject {
 
     // MARK: - Drag-and-Drop Methods
 
-    /// Get ordered tasks for a category, respecting custom order
+    /// Get ordered tasks for a category, respecting sortOrder then legacy categoryOrder
     func getOrderedTasks(for category: TaskCategory) -> [TaskActionItem] {
         guard let tasks = categorizedTasks[category], !tasks.isEmpty else {
             return []
         }
 
+        // Check if any tasks have sortOrder set (backend-synced ordering)
+        let hasSortOrder = tasks.contains { ($0.sortOrder ?? 0) > 0 }
+
+        if hasSortOrder {
+            // Sort by sortOrder ascending; tasks without sortOrder go at the end sorted by createdAt
+            return tasks.sorted { a, b in
+                let aOrder = a.sortOrder ?? Int.max
+                let bOrder = b.sortOrder ?? Int.max
+                if aOrder != bOrder {
+                    return aOrder < bOrder
+                }
+                return a.createdAt > b.createdAt
+            }
+        }
+
+        // Fall back to legacy UserDefaults categoryOrder
         guard let order = categoryOrder[category], !order.isEmpty else {
             return tasks // No custom order, return as-is
         }
@@ -729,6 +753,9 @@ class TasksViewModel: ObservableObject {
         order.insert(task.id, at: safeIndex)
 
         categoryOrder[category] = order
+
+        // Compute sortOrder values for all tasks in this category and schedule sync
+        scheduleSortOrderSync()
     }
 
     /// Move a task to first position in category
@@ -739,6 +766,11 @@ class TasksViewModel: ObservableObject {
     // MARK: - Indent Methods
 
     func getIndentLevel(for taskId: String) -> Int {
+        // Prefer task's own indentLevel from backend, fall back to UserDefaults
+        if let task = store.incompleteTasks.first(where: { $0.id == taskId }) ?? store.completedTasks.first(where: { $0.id == taskId }),
+           let level = task.indentLevel {
+            return level
+        }
         return indentLevels[taskId] ?? 0
     }
 
@@ -746,6 +778,7 @@ class TasksViewModel: ObservableObject {
         let current = indentLevels[taskId] ?? 0
         if current < 3 {
             indentLevels[taskId] = current + 1
+            scheduleSortOrderSync()
         }
     }
 
@@ -753,6 +786,78 @@ class TasksViewModel: ObservableObject {
         let current = indentLevels[taskId] ?? 0
         if current > 0 {
             indentLevels[taskId] = current - 1
+            scheduleSortOrderSync()
+        }
+    }
+
+    // MARK: - Sort Order Sync
+
+    /// Debounced sync of sort orders to SQLite + backend API (500ms)
+    private func scheduleSortOrderSync() {
+        sortOrderSyncTask?.cancel()
+        sortOrderSyncTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 500_000_000) // 500ms debounce
+            guard !Task.isCancelled else { return }
+            await self?.syncSortOrders()
+        }
+    }
+
+    /// Collect current sort orders from all categories and write to SQLite + backend
+    private func syncSortOrders() async {
+        var updates: [(id: String, sortOrder: Int, indentLevel: Int)] = []
+
+        for category in TaskCategory.allCases {
+            let orderedTasks = getOrderedTasks(for: category)
+            // Category offset: today=0, tomorrow=100_000, later=200_000, noDeadline=300_000
+            let categoryOffset = (TaskCategory.allCases.firstIndex(of: category) ?? 0) * 100_000
+
+            for (index, task) in orderedTasks.enumerated() {
+                guard !task.id.hasPrefix("local_"), !task.id.hasPrefix("staged_") else { continue }
+                let sortOrder = categoryOffset + (index + 1) * 1000
+                let indent = indentLevels[task.id] ?? task.indentLevel ?? 0
+                updates.append((id: task.id, sortOrder: sortOrder, indentLevel: indent))
+            }
+        }
+
+        guard !updates.isEmpty else { return }
+
+        // Write to SQLite
+        let storageUpdates = updates.map { (backendId: $0.id, sortOrder: $0.sortOrder, indentLevel: $0.indentLevel) }
+        do {
+            try await ActionItemStorage.shared.updateSortOrders(storageUpdates)
+        } catch {
+            log("TasksVM: Failed to write sort orders to SQLite: \(error)")
+        }
+
+        // Sync to backend API
+        do {
+            try await APIClient.shared.batchUpdateSortOrders(updates)
+            log("TasksVM: Synced \(updates.count) sort orders to backend")
+        } catch {
+            log("TasksVM: Failed to sync sort orders to backend: \(error)")
+        }
+    }
+
+    // MARK: - UserDefaults-to-SortOrder Migration
+
+    /// One-time migration: read existing UserDefaults ordering and write as sortOrder to SQLite + backend
+    private func migrateUserDefaultsToSortOrder() {
+        let migrationKey = "TasksSortOrderMigrated"
+        guard !UserDefaults.standard.bool(forKey: migrationKey) else { return }
+
+        // Only migrate if there's existing UserDefaults ordering data
+        let hasOrder = !categoryOrder.isEmpty
+        let hasIndents = !indentLevels.isEmpty
+        guard hasOrder || hasIndents else {
+            UserDefaults.standard.set(true, forKey: migrationKey)
+            return
+        }
+
+        Task { [weak self] in
+            guard let self else { return }
+            await self.syncSortOrders()
+            UserDefaults.standard.set(true, forKey: migrationKey)
+            log("TasksVM: Migrated UserDefaults ordering to sortOrder")
         }
     }
 
@@ -1744,17 +1849,33 @@ struct TasksPage: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if viewModel.showUndoToast, let lastAction = viewModel.undoStack.last {
-                UndoToastView(
-                    taskDescription: lastAction.task.description,
-                    undoCount: viewModel.undoStack.count,
-                    onUndo: { Task { await viewModel.undoLastDelete() } }
-                )
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .padding(.bottom, 16)
+            VStack(spacing: 8) {
+                Spacer()
+                // Keyboard hint bar
+                if !viewModel.displayTasks.isEmpty {
+                    KeyboardHintBar(
+                        isAnyTaskEditing: isAnyTaskEditing,
+                        isInlineCreating: viewModel.isInlineCreating,
+                        hasSelection: viewModel.keyboardSelectedTaskId != nil
+                    )
+                    .transition(.opacity)
+                }
+                // Undo toast
+                if viewModel.showUndoToast, let lastAction = viewModel.undoStack.last {
+                    UndoToastView(
+                        taskDescription: lastAction.task.description,
+                        undoCount: viewModel.undoStack.count,
+                        onUndo: { Task { await viewModel.undoLastDelete() } }
+                    )
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                }
             }
+            .padding(.bottom, 16)
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
+        .animation(.easeInOut(duration: 0.15), value: viewModel.keyboardSelectedTaskId)
+        .animation(.easeInOut(duration: 0.15), value: isAnyTaskEditing)
+        .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
         .focusable()
         .onKeyPress(phases: .down) { press in
             if press.key == KeyEquivalent("n") && press.modifiers == .command {
@@ -1802,15 +1923,6 @@ struct TasksPage: View {
             if press.key == .downArrow && press.modifiers.isEmpty {
                 moveSelection(1)
                 return .handled
-            }
-
-            // F2: Enter edit mode on selected task
-            if press.key == KeyEquivalent(Character(UnicodeScalar(63236))) && press.modifiers.isEmpty {
-                // F2 key
-                if viewModel.keyboardSelectedTaskId != nil {
-                    viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
-                    return .handled
-                }
             }
 
             // Enter: inline create or double-enter for edit
@@ -1916,7 +2028,7 @@ struct TasksPage: View {
                         .frame(width: 14, height: 14)
                 } else {
                     Image(systemName: "magnifyingglass")
-                        .font(.system(size: 14))
+                        .scaledFont(size: 14)
                         .foregroundColor(OmiColors.textTertiary)
                 }
 
@@ -2011,11 +2123,11 @@ struct TasksPage: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "line.3.horizontal.decrease")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                 Text(filterLabel)
-                    .font(.system(size: 13, weight: viewModel.hasActiveFilters ? .medium : .regular))
+                    .scaledFont(size: 13, weight: viewModel.hasActiveFilters ? .medium : .regular)
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10))
+                    .scaledFont(size: 10)
             }
             .foregroundColor(viewModel.hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
             .padding(.horizontal, 12)
@@ -2039,11 +2151,11 @@ struct TasksPage: View {
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundColor(OmiColors.textTertiary)
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
 
                 TextField("Search filters...", text: $filterSearchText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .scaledFont(size: 13)
                     .foregroundColor(OmiColors.textPrimary)
 
                 if !filterSearchText.isEmpty {
@@ -2052,7 +2164,7 @@ struct TasksPage: View {
                     } label: {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(OmiColors.textTertiary)
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                     }
                     .buttonStyle(.plain)
                 }
@@ -2078,13 +2190,13 @@ struct TasksPage: View {
                     } label: {
                         HStack {
                             Image(systemName: "tray.full")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                                 .frame(width: 20)
                             Text("All")
-                                .font(.system(size: 13))
+                                .scaledFont(size: 13)
                             Spacer()
                             Text("\(viewModel.todoCount + viewModel.doneCount)")
-                                .font(.system(size: 11))
+                                .scaledFont(size: 11)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 2)
@@ -2092,7 +2204,7 @@ struct TasksPage: View {
                                 .cornerRadius(4)
                             if pendingSelectedTags.isEmpty && pendingSelectedDynamicTags.isEmpty {
                                 Image(systemName: "checkmark")
-                                    .font(.system(size: 12, weight: .medium))
+                                    .scaledFont(size: 12, weight: .medium)
                                     .foregroundColor(.white)
                             }
                         }
@@ -2115,7 +2227,7 @@ struct TasksPage: View {
 
                             // Group header
                             Text(group.rawValue)
-                                .font(.system(size: 11, weight: .semibold))
+                                .scaledFont(size: 11, weight: .semibold)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .textCase(.uppercase)
                                 .padding(.horizontal, 12)
@@ -2136,13 +2248,13 @@ struct TasksPage: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: tag.icon)
-                                            .font(.system(size: 12))
+                                            .scaledFont(size: 12)
                                             .frame(width: 20)
                                         Text(tag.displayName)
-                                            .font(.system(size: 13))
+                                            .scaledFont(size: 13)
                                         Spacer()
                                         Text("\(count)")
-                                            .font(.system(size: 11))
+                                            .scaledFont(size: 11)
                                             .foregroundColor(OmiColors.textTertiary)
                                             .padding(.horizontal, 6)
                                             .padding(.vertical, 2)
@@ -2150,7 +2262,7 @@ struct TasksPage: View {
                                             .cornerRadius(4)
                                         if isSelected {
                                             Image(systemName: "checkmark")
-                                                .font(.system(size: 12, weight: .medium))
+                                                .scaledFont(size: 12, weight: .medium)
                                                 .foregroundColor(.white)
                                         }
                                     }
@@ -2178,13 +2290,13 @@ struct TasksPage: View {
                                 } label: {
                                     HStack {
                                         Image(systemName: tag.icon)
-                                            .font(.system(size: 12))
+                                            .scaledFont(size: 12)
                                             .frame(width: 20)
                                         Text(tag.displayName)
-                                            .font(.system(size: 13))
+                                            .scaledFont(size: 13)
                                         Spacer()
                                         Text("\(count)")
-                                            .font(.system(size: 11))
+                                            .scaledFont(size: 11)
                                             .foregroundColor(OmiColors.textTertiary)
                                             .padding(.horizontal, 6)
                                             .padding(.vertical, 2)
@@ -2192,7 +2304,7 @@ struct TasksPage: View {
                                             .cornerRadius(4)
                                         if isSelected {
                                             Image(systemName: "checkmark")
-                                                .font(.system(size: 12, weight: .medium))
+                                                .scaledFont(size: 12, weight: .medium)
                                                 .foregroundColor(.white)
                                         }
                                     }
@@ -2223,7 +2335,7 @@ struct TasksPage: View {
                     pendingSelectedDynamicTags.removeAll()
                 } label: {
                     Text("Clear")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(size: 13, weight: .medium)
                         .foregroundColor(OmiColors.textSecondary)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -2238,7 +2350,7 @@ struct TasksPage: View {
                     showFilterPopover = false
                 } label: {
                     Text("Apply")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(size: 13, weight: .medium)
                         .foregroundColor(.black)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
@@ -2263,16 +2375,16 @@ struct TasksPage: View {
             } label: {
                 HStack(spacing: 6) {
                     Image(systemName: viewModel.selectedTaskIds.count == viewModel.displayTasks.count ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 14))
+                        .scaledFont(size: 14)
                     Text(viewModel.selectedTaskIds.count == viewModel.displayTasks.count ? "Deselect All" : "Select All")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(size: 13, weight: .medium)
                 }
                 .foregroundColor(OmiColors.textSecondary)
             }
             .buttonStyle(.plain)
 
             Text("\(viewModel.selectedTaskIds.count) selected")
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundColor(OmiColors.textTertiary)
         }
     }
@@ -2285,9 +2397,9 @@ struct TasksPage: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "trash")
-                    .font(.system(size: 12))
+                    .scaledFont(size: 12)
                 Text("Delete \(viewModel.selectedTaskIds.count)")
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(size: 13, weight: .medium)
             }
             .foregroundColor(.white)
             .padding(.horizontal, 12)
@@ -2305,7 +2417,7 @@ struct TasksPage: View {
             viewModel.toggleMultiSelectMode()
         } label: {
             Text("Cancel")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: 13, weight: .medium)
                 .foregroundColor(OmiColors.textSecondary)
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -2323,9 +2435,9 @@ struct TasksPage: View {
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
-                    .font(.system(size: 12, weight: .semibold))
+                    .scaledFont(size: 12, weight: .semibold)
                 Text("Add Task")
-                    .font(.system(size: 13, weight: .medium))
+                    .scaledFont(size: 13, weight: .medium)
             }
             .foregroundColor(.black)
             .padding(.horizontal, 12)
@@ -2351,7 +2463,7 @@ struct TasksPage: View {
             )
         } label: {
             Image(systemName: "gearshape")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundColor(OmiColors.textSecondary)
                 .padding(8)
                 .background(
@@ -2372,7 +2484,7 @@ struct TasksPage: View {
             }
         } label: {
             Image(systemName: showChatPanel ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
-                .font(.system(size: 12))
+                .scaledFont(size: 12)
                 .foregroundColor(showChatPanel ? OmiColors.purplePrimary : OmiColors.textSecondary)
                 .padding(8)
                 .background(
@@ -2393,7 +2505,7 @@ struct TasksPage: View {
                 .tint(OmiColors.textSecondary)
 
             Text("Loading tasks...")
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundColor(OmiColors.textTertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -2404,15 +2516,15 @@ struct TasksPage: View {
     private func errorView(_ error: String) -> some View {
         VStack(spacing: 16) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 48))
+                .scaledFont(size: 48)
                 .foregroundColor(OmiColors.textTertiary)
 
             Text("Failed to load tasks")
-                .font(.system(size: 18, weight: .semibold))
+                .scaledFont(size: 18, weight: .semibold)
                 .foregroundColor(OmiColors.textPrimary)
 
             Text(error)
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 32)
@@ -2433,15 +2545,15 @@ struct TasksPage: View {
     private var emptyView: some View {
         VStack(spacing: 16) {
             Image(systemName: viewModel.hasActiveFilters ? "line.3.horizontal.decrease" : "tray.fill")
-                .font(.system(size: 48))
+                .scaledFont(size: 48)
                 .foregroundColor(OmiColors.textTertiary)
 
             Text(viewModel.hasActiveFilters ? "No Matching Tasks" : "All Caught Up!")
-                .font(.system(size: 24, weight: .semibold))
+                .scaledFont(size: 24, weight: .semibold)
                 .foregroundColor(OmiColors.textPrimary)
 
             Text(viewModel.hasActiveFilters ? "Try adjusting your filters" : "You have no tasks yet")
-                .font(.system(size: 14))
+                .scaledFont(size: 14)
                 .foregroundColor(OmiColors.textTertiary)
                 .multilineTextAlignment(.center)
 
@@ -2572,7 +2684,7 @@ struct TasksPage: View {
                                     Image(systemName: "arrow.down.circle")
                                     Text("Load more tasks")
                                 }
-                                .font(.system(size: 13, weight: .medium))
+                                .scaledFont(size: 13, weight: .medium)
                                 .foregroundColor(OmiColors.textSecondary)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
@@ -2590,7 +2702,7 @@ struct TasksPage: View {
                                     Image(systemName: "arrow.down.circle")
                                     Text("Load more tasks")
                                 }
-                                .font(.system(size: 13, weight: .medium))
+                                .scaledFont(size: 13, weight: .medium)
                                 .foregroundColor(OmiColors.textSecondary)
                                 .padding(.horizontal, 16)
                                 .padding(.vertical, 10)
@@ -2656,15 +2768,15 @@ struct TaskCategorySection: View {
             // Category header
             HStack(spacing: 8) {
                 Image(systemName: category.icon)
-                    .font(.system(size: 14))
+                    .scaledFont(size: 14)
                     .foregroundColor(category.color)
 
                 Text(category.rawValue)
-                    .font(.system(size: 15, weight: .semibold))
+                    .scaledFont(size: 15, weight: .semibold)
                     .foregroundColor(OmiColors.textPrimary)
 
                 Text("\(orderedTasks.count)")
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .foregroundColor(OmiColors.textTertiary)
                     .padding(.horizontal, 8)
                     .padding(.vertical, 2)
@@ -2681,21 +2793,26 @@ struct TaskCategorySection: View {
             if !isMultiSelectMode {
                 VStack(spacing: 8) {
                     ForEach(visibleTasks) { task in
-                        TaskRow(
-                            task: task,
-                            category: category,
-                            indentLevel: indentLevelFor?(task.id) ?? 0,
-                            isMultiSelectMode: isMultiSelectMode,
-                            isSelected: isSelectedFor?(task.id) ?? false,
-                            onToggle: onToggle,
-                            onDelete: onDelete,
-                            onToggleSelection: onToggleSelection,
-                            onUpdateDetails: onUpdateDetails,
-                            onIncrementIndent: onIncrementIndent,
-                            onDecrementIndent: onDecrementIndent,
-                            onOpenChat: onOpenChat,
-                            onHover: onHover
-                        )
+                        VStack(spacing: 0) {
+                            TaskRow(
+                                task: task,
+                                category: category,
+                                indentLevel: indentLevelFor?(task.id) ?? 0,
+                                isMultiSelectMode: isMultiSelectMode,
+                                isSelected: isSelectedFor?(task.id) ?? false,
+                                isKeyboardSelected: isKeyboardSelectedFor?(task.id) ?? false,
+                                onToggle: onToggle,
+                                onDelete: onDelete,
+                                onToggleSelection: onToggleSelection,
+                                onUpdateDetails: onUpdateDetails,
+                                onIncrementIndent: onIncrementIndent,
+                                onDecrementIndent: onDecrementIndent,
+                                onOpenChat: onOpenChat,
+                                onHover: onHover,
+                                editingTaskId: editingTaskId,
+                                onEditingChanged: onEditingChanged
+                            )
+                            .id(task.id)
                             .draggable(task.id) {
                                 // Drag preview
                                 TaskDragPreview(task: task)
@@ -2716,6 +2833,18 @@ struct TaskCategorySection: View {
                                 insertion: .opacity.combined(with: .move(edge: .top)),
                                 removal: .opacity.combined(with: .move(edge: .trailing))
                             ))
+
+                            // Inline creation row after this task
+                            if isInlineCreating && inlineCreateAfterTaskId == task.id {
+                                InlineTaskCreationRow(
+                                    text: $inlineCreateText,
+                                    isFocused: $inlineCreateFocused,
+                                    onCommit: { _ in onInlineCommit?() },
+                                    onCancel: { onInlineCancel?() }
+                                )
+                                .padding(.top, 4)
+                            }
+                        }
                     }
 
                 }
@@ -2732,11 +2861,11 @@ struct TaskDragPreview: View {
     var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "circle")
-                .font(.system(size: 16))
+                .scaledFont(size: 16)
                 .foregroundColor(OmiColors.textTertiary)
 
             Text(task.description)
-                .font(.system(size: 13))
+                .scaledFont(size: 13)
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
         }
@@ -2761,6 +2890,7 @@ struct TaskRow: View {
     var indentLevel: Int = 0
     var isMultiSelectMode: Bool = false
     var isSelected: Bool = false
+    var isKeyboardSelected: Bool = false
 
     // Action closures
     var onToggle: ((TaskActionItem) async -> Void)?
@@ -2771,6 +2901,10 @@ struct TaskRow: View {
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
+
+    // Edit mode support (external trigger from keyboard navigation)
+    var editingTaskId: String?
+    var onEditingChanged: ((Bool) -> Void)?
 
     @State private var isHovering = false
     @State private var isCompletingAnimation = false
@@ -2883,10 +3017,10 @@ struct TaskRow: View {
             Spacer()
             HStack(spacing: 8) {
                 Image(systemName: "trash.fill")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                 if swipeOffset < -deleteThreshold {
                     Text("Release to delete")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(size: 13, weight: .medium)
                 }
             }
             .foregroundColor(.white)
@@ -2901,10 +3035,10 @@ struct TaskRow: View {
         HStack {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.right.to.line")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                 if swipeOffset > indentThreshold {
                     Text("Release to indent")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(size: 13, weight: .medium)
                 }
             }
             .foregroundColor(.white)
@@ -2923,10 +3057,10 @@ struct TaskRow: View {
             HStack(spacing: 8) {
                 if swipeOffset < -indentThreshold {
                     Text("Release to outdent")
-                        .font(.system(size: 13, weight: .medium))
+                        .scaledFont(size: 13, weight: .medium)
                 }
                 Image(systemName: "arrow.left.to.line")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
             }
             .foregroundColor(.white)
             .padding(.horizontal, 20)
@@ -2998,7 +3132,7 @@ struct TaskRow: View {
             if isDeletedTask {
                 // Deleted tasks: show trash icon instead of checkbox
                 Image(systemName: "trash.slash")
-                    .font(.system(size: 14))
+                    .scaledFont(size: 14)
                     .foregroundColor(OmiColors.textTertiary)
                     .frame(width: 24, height: 24)
             } else if isMultiSelectMode {
@@ -3017,7 +3151,7 @@ struct TaskRow: View {
                                 .frame(width: 20, height: 20)
 
                             Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
+                                .scaledFont(size: 11, weight: .bold)
                                 .foregroundColor(.white)
                         }
                     }
@@ -3043,7 +3177,7 @@ struct TaskRow: View {
                                 .scaleEffect(checkmarkScale)
 
                             Image(systemName: "checkmark")
-                                .font(.system(size: 11, weight: .bold))
+                                .scaledFont(size: 11, weight: .bold)
                                 .foregroundColor(.black)
                                 .scaleEffect(checkmarkScale)
                         }
@@ -3059,13 +3193,13 @@ struct TaskRow: View {
                 // Deleted task: strikethrough description + reason
                 VStack(alignment: .leading, spacing: 4) {
                     Text(task.description)
-                        .font(.system(size: 14))
+                        .scaledFont(size: 14)
                         .foregroundColor(OmiColors.textTertiary)
                         .strikethrough(true, color: OmiColors.textTertiary)
 
                     if let reason = task.deletedReason {
                         Text(reason)
-                            .font(.system(size: 12))
+                            .scaledFont(size: 12)
                             .foregroundColor(OmiColors.textQuaternary)
                             .lineLimit(2)
                     }
@@ -3077,7 +3211,7 @@ struct TaskRow: View {
                     // Always-rendered TextField (notes-like editing)
                     TextField("Task description", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
-                        .font(.system(size: 14))
+                        .scaledFont(size: 14)
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
                         .lineLimit(1...4)
@@ -3088,9 +3222,15 @@ struct TaskRow: View {
                             commitEdit()
                         }
                         .onChange(of: isTextFieldFocused) { _, focused in
+                            onEditingChanged?(focused)
                             if !focused {
                                 debounceTask?.cancel()
                                 commitEdit()
+                            }
+                        }
+                        .onChange(of: editingTaskId) { _, newId in
+                            if newId == task.id {
+                                isTextFieldFocused = true
                             }
                         }
                         .onChange(of: editText) { _, _ in
@@ -3124,9 +3264,7 @@ struct TaskRow: View {
                     }
 
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
-                    if TaskAgentSettings.shared.isEnabled {
-                        AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
-                    }
+                    AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
 
                     // Task detail button for tasks with rich metadata
                     if task.hasDetailMetadata {
@@ -3179,7 +3317,7 @@ struct TaskRow: View {
                             onOpenChat?(task)
                         } label: {
                             Image(systemName: "bubble.left")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .frame(width: 24, height: 24)
                         }
@@ -3194,7 +3332,7 @@ struct TaskRow: View {
                             showDatePicker = true
                         } label: {
                             Image(systemName: "calendar.badge.plus")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .frame(width: 24, height: 24)
                         }
@@ -3210,7 +3348,7 @@ struct TaskRow: View {
                             }
                         } label: {
                             Image(systemName: "arrow.left.to.line")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .frame(width: 24, height: 24)
                         }
@@ -3226,7 +3364,7 @@ struct TaskRow: View {
                             }
                         } label: {
                             Image(systemName: "arrow.right.to.line")
-                                .font(.system(size: 12))
+                                .scaledFont(size: 12)
                                 .foregroundColor(OmiColors.textTertiary)
                                 .frame(width: 24, height: 24)
                         }
@@ -3239,7 +3377,7 @@ struct TaskRow: View {
                         Task { await copyShareLink() }
                     } label: {
                         Image(systemName: isCopyingLink ? "arrow.triangle.2.circlepath" : "link")
-                            .font(.system(size: 14))
+                            .scaledFont(size: 14)
                             .foregroundColor(OmiColors.textTertiary)
                             .frame(width: 24, height: 24)
                     }
@@ -3252,7 +3390,7 @@ struct TaskRow: View {
                         Task { await onDelete?(task) }
                     } label: {
                         Image(systemName: "trash")
-                            .font(.system(size: 14))
+                            .scaledFont(size: 14)
                             .foregroundColor(OmiColors.textTertiary)
                             .frame(width: 24, height: 24)
                     }
@@ -3283,8 +3421,20 @@ struct TaskRow: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundPrimary))
+                .fill(isKeyboardSelected ? OmiColors.purplePrimary.opacity(0.10) : (isHovering || isDragging ? OmiColors.backgroundTertiary : (isNewlyCreated ? OmiColors.purplePrimary.opacity(0.15) : OmiColors.backgroundPrimary)))
         )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isKeyboardSelected ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
+        .overlay(alignment: .leading) {
+            if isKeyboardSelected {
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(OmiColors.purplePrimary)
+                    .frame(width: 3)
+                    .padding(.vertical, 4)
+            }
+        }
         .opacity(rowOpacity)
         .offset(x: rowOffset)
         .onAppear {
@@ -3462,12 +3612,12 @@ struct DueDateBadgeInteractive: View {
         } label: {
             HStack(spacing: 3) {
                 Image(systemName: "calendar")
-                    .font(.system(size: 9))
+                    .scaledFont(size: 9)
                 Text(displayText)
-                    .font(.system(size: 11, weight: .medium))
+                    .scaledFont(size: 11, weight: .medium)
                 if isHovering {
                     Image(systemName: "pencil")
-                        .font(.system(size: 8))
+                        .scaledFont(size: 8)
                 }
             }
             .foregroundColor(isHovering ? OmiColors.textPrimary : OmiColors.textSecondary)
@@ -3510,16 +3660,16 @@ struct PriorityBadgeInteractive: View {
                 HStack(spacing: 3) {
                     if priority != nil {
                         Image(systemName: priority == "high" ? "flag.fill" : "flag")
-                            .font(.system(size: 8))
+                            .scaledFont(size: 8)
                     } else {
                         Image(systemName: "plus")
-                            .font(.system(size: 8))
+                            .scaledFont(size: 8)
                     }
                     Text(label)
-                        .font(.system(size: 10, weight: .medium))
+                        .scaledFont(size: 10, weight: .medium)
                     if badgeHovering && priority != nil {
                         Image(systemName: "pencil")
-                            .font(.system(size: 7))
+                            .scaledFont(size: 7)
                     }
                 }
                 .foregroundColor(badgeHovering ? badgeColor : (priority != nil ? OmiColors.textSecondary : OmiColors.textTertiary))
@@ -3540,16 +3690,16 @@ struct PriorityBadgeInteractive: View {
                         } label: {
                             HStack {
                                 Image(systemName: value == "high" ? "flag.fill" : "flag")
-                                    .font(.system(size: 12))
+                                    .scaledFont(size: 12)
                                     .foregroundColor(color)
                                     .frame(width: 20)
                                 Text(value.capitalized)
-                                    .font(.system(size: 13))
+                                    .scaledFont(size: 13)
                                     .foregroundColor(OmiColors.textPrimary)
                                 Spacer()
                                 if isSelected {
                                     Image(systemName: "checkmark")
-                                        .font(.system(size: 12, weight: .medium))
+                                        .scaledFont(size: 12, weight: .medium)
                                         .foregroundColor(color)
                                 }
                             }
@@ -3578,9 +3728,9 @@ struct SourceBadgeCompact: View {
     var body: some View {
         HStack(spacing: 2) {
             Image(systemName: sourceIcon)
-                .font(.system(size: 8))
+                .scaledFont(size: 8)
             Text(sourceLabel)
-                .font(.system(size: 10, weight: .medium))
+                .scaledFont(size: 10, weight: .medium)
         }
         .foregroundColor(OmiColors.textSecondary)
         .help(windowTitle ?? sourceLabel)
@@ -3593,7 +3743,7 @@ struct SourceBadgeCompact: View {
 struct NewBadge: View {
     var body: some View {
         Text("New")
-            .font(.system(size: 10, weight: .semibold))
+            .scaledFont(size: 10, weight: .semibold)
             .foregroundColor(OmiColors.purplePrimary)
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
@@ -3634,7 +3784,7 @@ struct TaskCreateSheet: View {
             // Header
             HStack {
                 Text("New Task")
-                    .font(.system(size: 16, weight: .semibold))
+                    .scaledFont(size: 16, weight: .semibold)
                     .foregroundColor(OmiColors.textPrimary)
                 Spacer()
                 DismissButton(action: dismissSheet)
@@ -3651,12 +3801,12 @@ struct TaskCreateSheet: View {
                     // Description field
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Description")
-                            .font(.system(size: 13, weight: .medium))
+                            .scaledFont(size: 13, weight: .medium)
                             .foregroundColor(OmiColors.textSecondary)
 
                         TextField("What needs to be done?", text: $description, axis: .vertical)
                             .textFieldStyle(.plain)
-                            .font(.system(size: 14))
+                            .scaledFont(size: 14)
                             .lineLimit(3...6)
                             .padding(12)
                             .background(
@@ -3673,7 +3823,7 @@ struct TaskCreateSheet: View {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Text("Due Date")
-                                .font(.system(size: 13, weight: .medium))
+                                .scaledFont(size: 13, weight: .medium)
                                 .foregroundColor(OmiColors.textSecondary)
                             Spacer()
                             Toggle("", isOn: $hasDueDate)
@@ -3693,7 +3843,7 @@ struct TaskCreateSheet: View {
                     // Priority
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Priority")
-                            .font(.system(size: 13, weight: .medium))
+                            .scaledFont(size: 13, weight: .medium)
                             .foregroundColor(OmiColors.textSecondary)
                         HStack(spacing: 8) {
                             createPriorityButton(label: "None", value: nil)
@@ -3706,7 +3856,7 @@ struct TaskCreateSheet: View {
                     // Tags
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Tags")
-                            .font(.system(size: 13, weight: .medium))
+                            .scaledFont(size: 13, weight: .medium)
                             .foregroundColor(OmiColors.textSecondary)
 
                         // Flow layout of toggleable tag pills
@@ -3726,9 +3876,9 @@ struct TaskCreateSheet: View {
                                 } label: {
                                     HStack(spacing: 3) {
                                         Image(systemName: classification.icon)
-                                            .font(.system(size: 9))
+                                            .scaledFont(size: 9)
                                         Text(classification.label)
-                                            .font(.system(size: 12, weight: isSelected ? .semibold : .medium))
+                                            .scaledFont(size: 12, weight: isSelected ? .semibold : .medium)
                                     }
                                     .foregroundColor(isSelected ? .white : tagColor)
                                     .padding(.horizontal, 10)
@@ -3785,7 +3935,7 @@ struct TaskCreateSheet: View {
             priority = value
         } label: {
             Text(label)
-                .font(.system(size: 13, weight: isSelected ? .semibold : .medium))
+                .scaledFont(size: 13, weight: isSelected ? .semibold : .medium)
                 .foregroundColor(isSelected ? OmiColors.backgroundPrimary : color)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 8)
@@ -3822,17 +3972,17 @@ struct UndoToastView: View {
     var body: some View {
         HStack(spacing: 12) {
             Image(systemName: "trash")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: 13, weight: .medium)
                 .foregroundColor(.white.opacity(0.7))
 
             Text("Task deleted")
-                .font(.system(size: 13, weight: .medium))
+                .scaledFont(size: 13, weight: .medium)
                 .foregroundColor(.white)
                 .lineLimit(1)
 
             if undoCount > 1 {
                 Text("(\(undoCount))")
-                    .font(.system(size: 12, weight: .medium))
+                    .scaledFont(size: 12, weight: .medium)
                     .foregroundColor(.white.opacity(0.5))
             }
 
@@ -3842,7 +3992,7 @@ struct UndoToastView: View {
                 onUndo()
             } label: {
                 Text("Undo")
-                    .font(.system(size: 13, weight: .semibold))
+                    .scaledFont(size: 13, weight: .semibold)
                     .foregroundColor(.white)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 6)
@@ -3861,5 +4011,109 @@ struct UndoToastView: View {
                 .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
         )
         .frame(maxWidth: 360)
+    }
+}
+
+// MARK: - Inline Task Creation Row
+
+struct InlineTaskCreationRow: View {
+    @Binding var text: String
+    @FocusState.Binding var isFocused: Bool
+    let onCommit: (String) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 12) {
+            // Circle placeholder (matches TaskRow checkbox)
+            Circle()
+                .stroke(OmiColors.purplePrimary.opacity(0.5), lineWidth: 1.5)
+                .frame(width: 20, height: 20)
+                .padding(.leading, 12)
+
+            TextField("New task...", text: $text)
+                .textFieldStyle(.plain)
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textPrimary)
+                .focused($isFocused)
+                .onSubmit {
+                    onCommit(text)
+                }
+                .onKeyPress(.escape) {
+                    onCancel()
+                    return .handled
+                }
+
+            Spacer()
+        }
+        .padding(.trailing, 12)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(OmiColors.purplePrimary.opacity(0.05))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(OmiColors.purplePrimary.opacity(0.3), lineWidth: 1)
+        )
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2)
+                .fill(OmiColors.purplePrimary)
+                .frame(width: 3)
+                .padding(.vertical, 4)
+        }
+    }
+}
+
+// MARK: - Keyboard Hint Bar
+
+struct KeyboardHintBar: View {
+    let isAnyTaskEditing: Bool
+    let isInlineCreating: Bool
+    let hasSelection: Bool
+
+    var body: some View {
+        HStack(spacing: 16) {
+            if isInlineCreating {
+                keyboardHint("\u{21A9}", label: "Create")
+                keyboardHint("esc", label: "Cancel")
+            } else if isAnyTaskEditing {
+                keyboardHint("esc", label: "Save & exit")
+            } else if hasSelection {
+                keyboardHint("\u{2191}\u{2193}", label: "Navigate")
+                keyboardHint("\u{21A9}", label: "New below")
+                keyboardHint("\u{21A9}\u{21A9}", label: "Edit")
+                keyboardHint("esc", label: "Deselect")
+                keyboardHint("\u{2318}D", label: "Delete")
+                keyboardHint("\u{21E5}", label: "Indent")
+            } else {
+                keyboardHint("\u{2191}\u{2193}", label: "Navigate")
+                keyboardHint("\u{2318}N", label: "New")
+                keyboardHint("\u{2318}D", label: "Delete")
+                keyboardHint("\u{21E5}", label: "Indent")
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+        .background(
+            Capsule()
+                .fill(OmiColors.backgroundSecondary)
+                .shadow(color: .black.opacity(0.15), radius: 4, x: 0, y: 2)
+        )
+    }
+
+    private func keyboardHint(_ key: String, label: String) -> some View {
+        HStack(spacing: 4) {
+            Text(key)
+                .scaledFont(size: 10, weight: .medium, design: .monospaced)
+                .foregroundColor(OmiColors.textSecondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .background(OmiColors.backgroundTertiary)
+                .cornerRadius(4)
+
+            Text(label)
+                .scaledFont(size: 10)
+                .foregroundColor(OmiColors.textTertiary)
+        }
     }
 }
