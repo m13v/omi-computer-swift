@@ -119,7 +119,7 @@ actor AgentVMService {
         return nil
     }
 
-    /// Upload the local omi.db to the VM's /upload endpoint.
+    /// Upload the local omi.db (gzip-compressed) to the VM's /upload endpoint.
     private func uploadDatabase(vmIP: String, authToken: String) async {
         // Find the local database path
         let dbPath = await MainActor.run {
@@ -137,28 +137,41 @@ actor AgentVMService {
             return
         }
 
-        // Get file size
-        let fileSize: UInt64
+        // Get original file size
+        let originalSize: UInt64
         do {
             let attrs = try FileManager.default.attributesOfItem(atPath: dbPath.path)
-            fileSize = attrs[.size] as? UInt64 ?? 0
+            originalSize = attrs[.size] as? UInt64 ?? 0
         } catch {
             log("AgentVMService: Failed to get DB size — \(error.localizedDescription)")
             return
         }
 
-        log("AgentVMService: Uploading database (\(fileSize / 1024 / 1024) MB) to \(vmIP)...")
+        log("AgentVMService: Compressing database (\(originalSize / 1024 / 1024) MB)...")
+
+        // Gzip compress the database
+        let compressedData: Data
+        do {
+            let rawData = try Data(contentsOf: dbPath)
+            compressedData = try gzipCompress(rawData)
+            log("AgentVMService: Compressed \(originalSize / 1024 / 1024) MB → \(compressedData.count / 1024 / 1024) MB (\(compressedData.count * 100 / Int(originalSize))%)")
+        } catch {
+            log("AgentVMService: Compression failed — \(error.localizedDescription)")
+            return
+        }
+
+        log("AgentVMService: Uploading compressed database (\(compressedData.count / 1024 / 1024) MB) to \(vmIP)...")
 
         let uploadURL = URL(string: "http://\(vmIP):8080/upload?token=\(authToken)")!
         var request = URLRequest(url: uploadURL)
         request.httpMethod = "POST"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        request.setValue(String(fileSize), forHTTPHeaderField: "Content-Length")
-        // Long timeout for large uploads
+        request.setValue("deflate", forHTTPHeaderField: "Content-Encoding")
+        request.setValue(String(compressedData.count), forHTTPHeaderField: "Content-Length")
         request.timeoutInterval = 600
 
         do {
-            let (data, response) = try await URLSession.shared.upload(for: request, fromFile: dbPath)
+            let (data, response) = try await URLSession.shared.upload(for: request, from: compressedData)
             guard let httpResponse = response as? HTTPURLResponse else {
                 log("AgentVMService: Upload failed — invalid response")
                 return
@@ -178,5 +191,15 @@ actor AgentVMService {
         } catch {
             log("AgentVMService: Upload failed — \(error.localizedDescription)")
         }
+    }
+
+    /// Gzip compress data using Apple's Compression framework.
+    private func gzipCompress(_ data: Data) throws -> Data {
+        // Use NSData's built-in compressed method (available macOS 10.15+)
+        let nsData = data as NSData
+        guard let compressed = try? nsData.compressed(using: .zlib) else {
+            throw NSError(domain: "AgentVMService", code: -1, userInfo: [NSLocalizedDescriptionKey: "Compression failed"])
+        }
+        return compressed as Data
     }
 }
