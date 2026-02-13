@@ -155,7 +155,7 @@ struct OnboardingView: View {
         case 0: return true // Video step - always valid
         case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
         case 2: return true // Language step - always valid (has default)
-        case 3: return true // Permissions step - always allow continuing (Skip exists)
+        case 3: return requiredPermissionsGranted
         case 4: return true // Done step
         default: return true
         }
@@ -168,6 +168,69 @@ struct OnboardingView: View {
             && appState.hasAccessibilityPermission
             && appState.hasAutomationPermission
             && (appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied)
+    }
+
+    private var requiredPermissionsGranted: Bool {
+        appState.hasScreenRecordingPermission
+            && appState.hasMicrophonePermission
+            && appState.hasNotificationPermission
+            && appState.hasAccessibilityPermission
+            && appState.hasAutomationPermission
+    }
+
+    /// Index of the first ungranted permission (determines which GIF/guide to show)
+    private var activePermissionIndex: Int {
+        if !appState.hasScreenRecordingPermission { return 0 }
+        if !appState.hasMicrophonePermission { return 1 }
+        if !appState.hasNotificationPermission { return 2 }
+        if !appState.hasAccessibilityPermission { return 3 }
+        if !appState.hasAutomationPermission { return 4 }
+        if !(appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied) { return 5 }
+        return -1 // All granted
+    }
+
+    private var activePermissionGifName: String? {
+        switch activePermissionIndex {
+        case 0: return "permissions"
+        case 2: return "enable_notifications"
+        default: return nil
+        }
+    }
+
+    private var activePermissionGuideText: String {
+        switch activePermissionIndex {
+        case 0: return "Click 'Grant Access', then toggle ON Screen Recording for Omi in System Settings and click 'Quit & Reopen'."
+        case 1: return "Click 'Grant Access' and allow Omi to use your microphone for live transcription."
+        case 2: return "Click 'Grant Access' and allow notifications so Omi can keep you updated."
+        case 3: return "Click 'Grant Access', then find Omi in System Settings and toggle the Accessibility switch ON."
+        case 4: return "Click 'Grant Access', then find Omi in the Automation list and toggle the switch ON."
+        case 5: return "Click 'Grant Access' to allow Omi to connect to Bluetooth wearable devices."
+        default: return "All permissions granted! Click Continue to finish setup."
+        }
+    }
+
+    private var activePermissionIcon: String {
+        switch activePermissionIndex {
+        case 0: return "record.circle"
+        case 1: return "mic"
+        case 2: return "bell"
+        case 3: return "hand.raised"
+        case 4: return "gearshape.2"
+        case 5: return "antenna.radiowaves.left.and.right"
+        default: return "checkmark.circle"
+        }
+    }
+
+    private var activePermissionName: String {
+        switch activePermissionIndex {
+        case 0: return "Screen Recording"
+        case 1: return "Microphone"
+        case 2: return "Notifications"
+        case 3: return "Accessibility"
+        case 4: return "Automation"
+        case 5: return "Bluetooth"
+        default: return ""
+        }
     }
 
     private var onboardingContent: some View {
@@ -210,28 +273,10 @@ struct OnboardingView: View {
                     Spacer()
 
                     VStack(spacing: 24) {
-                        // Progress indicators + Skip button row
-                        ZStack {
-                            HStack(spacing: 12) {
-                                ForEach(0..<steps.count, id: \.self) { index in
-                                    progressIndicator(for: index)
-                                }
-                            }
-
-                            // Skip button in top-right corner (only on Permissions step)
-                            if currentStep == 3 {
-                                HStack {
-                                    Spacer()
-                                    Button(action: {
-                                        AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Permissions")
-                                        currentStep = 4
-                                    }) {
-                                        Text("Skip")
-                                            .font(.system(size: 13))
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+                        // Progress indicators
+                        HStack(spacing: 12) {
+                            ForEach(0..<steps.count, id: \.self) { index in
+                                progressIndicator(for: index)
                             }
                         }
                         .padding(.top, 20)
@@ -247,8 +292,8 @@ struct OnboardingView: View {
 
                         buttonSection
                     }
-                    .frame(width: currentStep == 3 ? 480 : 420)
-                    .frame(height: currentStep == 3 ? 520 : 420)
+                    .frame(width: currentStep == 3 ? 720 : 420)
+                    .frame(height: currentStep == 3 ? 560 : 420)
                     .background(
                         RoundedRectangle(cornerRadius: 16)
                             .fill(OmiColors.backgroundSecondary)
@@ -436,7 +481,7 @@ struct OnboardingView: View {
     // MARK: - Consolidated Permissions Step View
 
     private var permissionsStepView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             Text("Permissions")
                 .font(.title2)
                 .fontWeight(.semibold)
@@ -445,15 +490,16 @@ struct OnboardingView: View {
                 .font(.body)
                 .foregroundColor(.secondary)
                 .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
 
-            ScrollView {
-                VStack(spacing: 10) {
+            HStack(spacing: 16) {
+                // Left side: permission rows
+                VStack(spacing: 8) {
                     permissionRow(
                         number: 1,
                         icon: "record.circle",
                         name: "Screen Recording",
                         isGranted: appState.hasScreenRecordingPermission,
+                        isActive: activePermissionIndex == 0,
                         action: {
                             AnalyticsManager.shared.permissionRequested(permission: "screen_recording")
                             appState.triggerScreenRecordingPermission()
@@ -464,6 +510,7 @@ struct OnboardingView: View {
                         icon: "mic",
                         name: "Microphone",
                         isGranted: appState.hasMicrophonePermission,
+                        isActive: activePermissionIndex == 1,
                         action: {
                             AnalyticsManager.shared.permissionRequested(permission: "microphone")
                             appState.requestMicrophonePermission()
@@ -474,6 +521,7 @@ struct OnboardingView: View {
                         icon: "bell",
                         name: "Notifications",
                         isGranted: appState.hasNotificationPermission,
+                        isActive: activePermissionIndex == 2,
                         action: {
                             AnalyticsManager.shared.permissionRequested(permission: "notifications")
                             appState.requestNotificationPermission()
@@ -484,6 +532,7 @@ struct OnboardingView: View {
                         icon: "hand.raised",
                         name: "Accessibility",
                         isGranted: appState.hasAccessibilityPermission,
+                        isActive: activePermissionIndex == 3,
                         action: {
                             AnalyticsManager.shared.permissionRequested(permission: "accessibility")
                             appState.triggerAccessibilityPermission()
@@ -494,6 +543,7 @@ struct OnboardingView: View {
                         icon: "gearshape.2",
                         name: "Automation",
                         isGranted: appState.hasAutomationPermission,
+                        isActive: activePermissionIndex == 4,
                         action: {
                             AnalyticsManager.shared.permissionRequested(permission: "automation")
                             appState.triggerAutomationPermission()
@@ -504,6 +554,7 @@ struct OnboardingView: View {
                         icon: "antenna.radiowaves.left.and.right",
                         name: "Bluetooth",
                         isGranted: appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied,
+                        isActive: activePermissionIndex == 5,
                         action: {
                             AnalyticsManager.shared.permissionRequested(permission: "bluetooth")
                             appState.initializeBluetoothIfNeeded()
@@ -511,14 +562,60 @@ struct OnboardingView: View {
                         }
                     )
                 }
-                .padding(.horizontal, 24)
+                .frame(maxWidth: .infinity)
+
+                // Right side: GIF / guide for active permission
+                permissionGuidePanel
+                    .frame(maxWidth: .infinity)
             }
-            .frame(maxHeight: 260)
+            .padding(.horizontal, 16)
         }
     }
 
+    private var permissionGuidePanel: some View {
+        VStack(spacing: 12) {
+            if let gifName = activePermissionGifName {
+                AnimatedGIFView(gifName: gifName)
+                    .id(gifName)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if activePermissionIndex >= 0 {
+                Spacer()
+                Image(systemName: activePermissionIcon)
+                    .font(.system(size: 40))
+                    .foregroundColor(OmiColors.purplePrimary)
+                Text(activePermissionName)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                Text(activePermissionGuideText)
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 16)
+                Spacer()
+            } else {
+                Spacer()
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 48))
+                    .foregroundColor(.green)
+                Text("All Set!")
+                    .font(.headline)
+                Text("All permissions granted. Click Continue.")
+                    .font(.system(size: 13))
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                Spacer()
+            }
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(OmiColors.backgroundPrimary.opacity(0.5))
+        )
+    }
+
     @ViewBuilder
-    private func permissionRow(number: Int, icon: String, name: String, isGranted: Bool, action: @escaping () -> Void) -> some View {
+    private func permissionRow(number: Int, icon: String, name: String, isGranted: Bool, isActive: Bool, action: @escaping () -> Void) -> some View {
         HStack(spacing: 12) {
             Text("\(number).")
                 .font(.system(size: 14, weight: .medium))
@@ -558,7 +655,11 @@ struct OnboardingView: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(isGranted ? Color.green.opacity(0.08) : OmiColors.backgroundPrimary.opacity(0.5))
+                .fill(isGranted ? Color.green.opacity(0.08) : (isActive ? OmiColors.purplePrimary.opacity(0.08) : OmiColors.backgroundPrimary.opacity(0.5)))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActive && !isGranted ? OmiColors.purplePrimary.opacity(0.4) : Color.clear, lineWidth: 1.5)
         )
     }
 
