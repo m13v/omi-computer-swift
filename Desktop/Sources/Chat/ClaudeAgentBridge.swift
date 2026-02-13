@@ -170,6 +170,7 @@ actor ClaudeAgentBridge {
         prompt: String,
         systemPrompt: String,
         cwd: String? = nil,
+        mode: String? = nil,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler,
         onToolActivity: @escaping ToolActivityHandler
@@ -188,6 +189,9 @@ actor ClaudeAgentBridge {
         if let cwd = cwd {
             queryDict["cwd"] = cwd
         }
+        if let mode = mode {
+            queryDict["mode"] = mode
+        }
 
         let jsonData = try JSONSerialization.data(withJSONObject: queryDict)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
@@ -198,7 +202,7 @@ actor ClaudeAgentBridge {
 
         // Read messages until we get a result or error
         while true {
-            let message = try await waitForMessage(timeout: 120.0)
+            let message = try await waitForMessage()
 
             switch message {
             case .`init`:
@@ -338,7 +342,7 @@ actor ClaudeAgentBridge {
         }
     }
 
-    private func waitForMessage(timeout: TimeInterval) async throws -> InboundMessage {
+    private func waitForMessage(timeout: TimeInterval? = nil) async throws -> InboundMessage {
         // Check pending first
         if !pendingMessages.isEmpty {
             return pendingMessages.removeFirst()
@@ -348,16 +352,18 @@ actor ClaudeAgentBridge {
         messageGeneration &+= 1
         let expectedGeneration = messageGeneration
 
-        // Wait for next message with timeout
+        // Wait for next message (with optional timeout)
         return try await withCheckedThrowingContinuation { continuation in
             self.messageContinuation = continuation
 
-            // Set up timeout — only fires if this is still the active generation
-            Task {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                if self.messageGeneration == expectedGeneration, self.messageContinuation != nil {
-                    self.messageContinuation = nil
-                    continuation.resume(throwing: BridgeError.timeout)
+            // Set up timeout only if specified — process termination handler covers crash cases
+            if let timeout = timeout {
+                Task {
+                    try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
+                    if self.messageGeneration == expectedGeneration, self.messageContinuation != nil {
+                        self.messageContinuation = nil
+                        continuation.resume(throwing: BridgeError.timeout)
+                    }
                 }
             }
         }
