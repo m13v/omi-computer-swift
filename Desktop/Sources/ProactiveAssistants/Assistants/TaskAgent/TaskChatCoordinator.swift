@@ -9,12 +9,16 @@ class TaskChatCoordinator: ObservableObject {
     @Published var activeTaskId: String?
     @Published var isPanelOpen = false
 
+    /// The workspace path used for file-system tools in task chat
+    @Published var workspacePath: String = TaskAgentSettings.shared.workingDirectory
+
     private let chatProvider: ChatProvider
 
     /// Saved state from before we switched to task chat
     private var savedSession: ChatSession?
     private var savedMessages: [ChatMessage] = []
     private var savedIsInDefaultChat = true
+    private var savedWorkingDirectory: String?
 
     init(chatProvider: ChatProvider) {
         self.chatProvider = chatProvider
@@ -33,9 +37,14 @@ class TaskChatCoordinator: ObservableObject {
             savedSession = chatProvider.currentSession
             savedMessages = chatProvider.messages
             savedIsInDefaultChat = chatProvider.isInDefaultChat
+            savedWorkingDirectory = chatProvider.workingDirectory
         }
 
         activeTaskId = task.id
+
+        // Set workspace path for file-system tools
+        workspacePath = TaskAgentSettings.shared.workingDirectory
+        chatProvider.workingDirectory = workspacePath
 
         // Check if task already has a chat session
         if let sessionId = task.chatSessionId {
@@ -74,6 +83,7 @@ class TaskChatCoordinator: ObservableObject {
         activeTaskId = nil
 
         // Restore previous ChatProvider state
+        chatProvider.workingDirectory = savedWorkingDirectory
         if savedIsInDefaultChat {
             await chatProvider.switchToDefaultChat()
         } else if let saved = savedSession {
@@ -83,6 +93,7 @@ class TaskChatCoordinator: ObservableObject {
         savedSession = nil
         savedMessages = []
         savedIsInDefaultChat = true
+        savedWorkingDirectory = nil
     }
 
     /// Build the initial context prompt for a task chat session.
