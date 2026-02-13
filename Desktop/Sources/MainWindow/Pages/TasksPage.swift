@@ -1522,7 +1522,7 @@ struct TasksPage: View {
     }
 
     var body: some View {
-        let isChatVisible = showChatPanel && chatCoordinator.activeTaskId != nil && chatProvider != nil
+        let isChatVisible = showChatPanel && (chatCoordinator.activeTaskId != nil || chatCoordinator.isOpening) && chatProvider != nil
 
         HStack(spacing: 0) {
             // Left panel: Tasks content (always full width)
@@ -1584,11 +1584,12 @@ struct TasksPage: View {
 
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
+        // Show the panel immediately so the user sees a loading state
+        withAnimation(.easeInOut(duration: 0.2)) {
+            showChatPanel = true
+        }
         Task {
             await chatCoordinator.openChat(for: task)
-            withAnimation(.easeInOut(duration: 0.2)) {
-                showChatPanel = true
-            }
         }
     }
 
