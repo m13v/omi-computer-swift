@@ -295,6 +295,17 @@ struct SidebarView: View {
                         permissionWarningButton
                     }
 
+                    // Floating control bar toggle
+                    BottomNavItemView(
+                        icon: "rectangle.bottomhalf.filled",
+                        label: isCollapsed ? "Ask Omi" : "Ask Omi  ⌘\\",
+                        isCollapsed: isCollapsed,
+                        iconWidth: iconWidth,
+                        onTap: {
+                            FloatingControlBarManager.shared.toggle()
+                        }
+                    )
+
                     // Secondary navigation items
                     if currentTierLevel == 0 || currentTierLevel >= 4 {
                         BottomNavItemView(
