@@ -1146,6 +1146,32 @@ actor ActionItemStorage {
         }
     }
 
+    // MARK: - Chat Session
+
+    /// Update chat session ID for a task
+    func updateChatSessionId(taskId: String, sessionId: String?) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            var record: ActionItemRecord?
+            if taskId.hasPrefix("local_"), let localId = Int64(taskId.dropFirst(6)) {
+                record = try ActionItemRecord.fetchOne(database, key: localId)
+            } else {
+                record = try ActionItemRecord
+                    .filter(Column("backendId") == taskId)
+                    .fetchOne(database)
+            }
+
+            guard var rec = record else {
+                log("ActionItemStorage: updateChatSessionId - record not found for taskId \(taskId)")
+                return
+            }
+
+            rec.chatSessionId = sessionId
+            try rec.update(database)
+        }
+    }
+
     // MARK: - Stats
 
     /// Get action item storage statistics
