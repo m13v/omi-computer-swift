@@ -47,7 +47,6 @@ class TasksStore: ObservableObject {
     private var hasLoadedCompleted = false
     private var hasLoadedDeleted = false
     /// Whether we're currently showing all tasks (no date filter) or just recent
-    private var isShowingAllIncompleteTasks = false
     private var cancellables = Set<AnyCancellable>()
     private var isRetryingUnsynced = false
 
@@ -167,33 +166,19 @@ class TasksStore: ObservableObject {
         // Only refresh if we've already loaded tasks
         guard hasLoadedIncomplete else { return }
 
-        // Silently sync and reload incomplete tasks (local-first pattern)
+        // Silently sync and reload incomplete tasks
         do {
-            let startDate = isShowingAllIncompleteTasks ? nil : sevenDaysAgo
             let response = try await APIClient.shared.getActionItems(
                 limit: pageSize,
                 offset: 0,
-                completed: false,
-                startDate: startDate
+                completed: false
             )
 
             // Sync API results to local cache
             try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
-            let updated: [TaskActionItem]
-            if isShowingAllIncompleteTasks {
-                // Due Date mode: use API response directly to match iOS/Flutter
-                updated = response.items
-            } else {
-                // Relevance mode: reload from local cache to get merged data
-                let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                    limit: pageSize,
-                    offset: 0,
-                    completed: false,
-                    startDate: startDate
-                )
-                updated = mergedTasks
-            }
+            // Use API response directly to match iOS/Flutter behavior
+            let updated = response.items
             if updated != incompleteTasks {
                 incompleteTasks = updated
                 hasMoreIncompleteTasks = updated.count >= pageSize
@@ -269,7 +254,7 @@ class TasksStore: ObservableObject {
     /// Load incomplete tasks if not already loaded (call this on app launch)
     func loadTasksIfNeeded() async {
         guard !hasLoadedIncomplete else { return }
-        await loadIncompleteTasks(showAll: true)
+        await loadIncompleteTasks()
         // Also load deleted tasks in background so the filter count is ready
         if !hasLoadedDeleted {
             await loadDeletedTasks()
@@ -278,7 +263,7 @@ class TasksStore: ObservableObject {
 
     /// Legacy method - loads incomplete tasks
     func loadTasks() async {
-        await loadIncompleteTasks(showAll: true)
+        await loadIncompleteTasks()
         // Also load deleted tasks so the "Removed by AI" filter count is ready
         if !hasLoadedDeleted {
             await loadDeletedTasks()
@@ -299,88 +284,40 @@ class TasksStore: ObservableObject {
         Task {
             await TaskPromotionService.shared.ensureMinimumOnStartup()
             // Reload after promotion to show newly promoted tasks
-            await self.loadIncompleteTasks(showAll: true)
+            await self.loadIncompleteTasks()
         }
     }
 
     /// Load incomplete tasks (To Do) using local-first pattern
-    /// - Parameter showAll: If false, only loads tasks from last 7 days. If true, loads all incomplete tasks.
-    func loadIncompleteTasks(showAll: Bool) async {
+    /// Load incomplete tasks (To Do) from API
+    func loadIncompleteTasks() async {
         guard !isLoadingIncomplete else { return }
 
         isLoadingIncomplete = true
         error = nil
         incompleteOffset = 0
-        isShowingAllIncompleteTasks = showAll
 
-        let startDate = showAll ? nil : sevenDaysAgo
-
-        // Step 1: Load from local cache first for instant display
-        // Skip cache in Due Date mode (showAll) — SQLite's full-sync data yields
-        // more 7-day tasks than the API returns, causing a count mismatch with iOS/Flutter.
-        if !showAll {
-            do {
-                let cachedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                    limit: pageSize,
-                    offset: 0,
-                    completed: false,
-                    startDate: startDate
-                )
-                if !cachedTasks.isEmpty {
-                    incompleteTasks = cachedTasks
-                    incompleteOffset = cachedTasks.count
-                    hasMoreIncompleteTasks = cachedTasks.count >= pageSize
-                    isLoadingIncomplete = false  // Show cached data immediately
-                    log("TasksStore: Loaded \(cachedTasks.count) incomplete tasks from local cache")
-                }
-            } catch {
-                log("TasksStore: Local cache unavailable for incomplete tasks, falling back to API")
-            }
-        }
-
-        // Step 2: Fetch from API and sync to local cache
+        // Fetch from API and sync to local cache
         do {
             let response = try await APIClient.shared.getActionItems(
                 limit: pageSize,
                 offset: 0,
-                completed: false,
-                startDate: startDate
+                completed: false
             )
             hasLoadedIncomplete = true
             log("TasksStore: Fetched \(response.items.count) incomplete tasks from API")
 
-            // Step 3: Sync API data to cache, then decide source of truth
+            // Sync API data to cache, use API response as source of truth
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
-
-                if showAll {
-                    // Due Date mode: use API response directly to match iOS/Flutter behavior.
-                    // SQLite (populated by full sync) has a different ordering that yields
-                    // more tasks within the 7-day window than the API returns.
-                    incompleteTasks = response.items
-                    incompleteOffset = response.items.count
-                    hasMoreIncompleteTasks = response.hasMore
-                    log("TasksStore: Showing \(response.items.count) incomplete tasks from API directly (Due Date mode)")
-                } else {
-                    // Relevance mode: reload from cache to merge local + synced data
-                    let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                        limit: pageSize,
-                        offset: 0,
-                        completed: false,
-                        startDate: startDate
-                    )
-                    incompleteTasks = mergedTasks
-                    incompleteOffset = mergedTasks.count
-                    hasMoreIncompleteTasks = mergedTasks.count >= pageSize
-                    log("TasksStore: Showing \(mergedTasks.count) incomplete tasks from merged local cache")
-                }
             } catch {
-                logError("TasksStore: Failed to sync/reload incomplete tasks from local cache", error: error)
-                // Fall back to API data
-                incompleteTasks = response.items
-                incompleteOffset = response.items.count
-                hasMoreIncompleteTasks = response.hasMore
+                logError("TasksStore: Failed to sync incomplete tasks to local cache", error: error)
             }
+
+            incompleteTasks = response.items
+            incompleteOffset = response.items.count
+            hasMoreIncompleteTasks = response.hasMore
+            log("TasksStore: Showing \(response.items.count) incomplete tasks")
         } catch {
             if incompleteTasks.isEmpty {
                 self.error = error.localizedDescription
@@ -892,7 +829,7 @@ class TasksStore: ObservableObject {
                 if task.source?.contains("screenshot") == true {
                     Task {
                         await TaskPromotionService.shared.promoteIfNeeded()
-                        await self.loadIncompleteTasks(showAll: true)
+                        await self.loadIncompleteTasks()
                     }
                 }
             } else {
@@ -958,7 +895,7 @@ class TasksStore: ObservableObject {
         if task.source?.contains("screenshot") == true {
             Task {
                 await TaskPromotionService.shared.promoteIfNeeded()
-                await self.loadIncompleteTasks(showAll: true)
+                await self.loadIncompleteTasks()
             }
         }
 
