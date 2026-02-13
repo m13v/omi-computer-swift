@@ -149,6 +149,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             // Showing response, close it
             closeAIConversation()
         } else {
+            AnalyticsManager.shared.floatingBarAskOmiOpened(source: "button")
             onAskAI?()
         }
     }
@@ -195,6 +196,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     func closeAIConversation() {
+        AnalyticsManager.shared.floatingBarAskOmiClosed()
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = false
             state.showingAIResponse = false
@@ -300,6 +302,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     private func resizeAnchored(to size: NSSize, makeResizable: Bool, animated: Bool = false) {
+        // Cancel any pending resizeToFixedHeight work item to prevent stale resizes
+        resizeWorkItem?.cancel()
+        resizeWorkItem = nil
+
         let constrainedSize = NSSize(
             width: max(size.width, FloatingControlBarWindow.minBarSize.width),
             height: max(size.height, FloatingControlBarWindow.minBarSize.height)
@@ -507,8 +513,10 @@ class FloatingControlBarManager {
     func toggle() {
         guard let window = window else { return }
         if window.isVisible {
+            AnalyticsManager.shared.floatingBarToggled(visible: false, source: "shortcut")
             hide()
         } else {
+            AnalyticsManager.shared.floatingBarToggled(visible: true, source: "shortcut")
             show()
         }
     }
@@ -516,6 +524,7 @@ class FloatingControlBarManager {
     /// Open the AI input panel.
     func openAIInput() {
         guard let window = window else { return }
+        AnalyticsManager.shared.floatingBarAskOmiOpened(source: "shortcut")
         if !window.isVisible {
             show()
         }
@@ -578,6 +587,8 @@ class FloatingControlBarManager {
     // MARK: - AI Query
 
     private func sendAIQuery(_ message: String, screenshotURL: URL?, barWindow: FloatingControlBarWindow, provider: ChatProvider) async {
+        AnalyticsManager.shared.floatingBarQuerySent(messageLength: message.count, hasScreenshot: screenshotURL != nil)
+
         // Initialize the provider if needed
         if provider.messages.isEmpty {
             await provider.initialize()
