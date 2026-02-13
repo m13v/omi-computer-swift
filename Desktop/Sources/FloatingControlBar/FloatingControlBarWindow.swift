@@ -89,19 +89,14 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // When NSHostingView IS the contentView of a borderless window, it tries to negotiate
         // window sizing through updateWindowContentSizeExtremaIfNecessary and updateAnimatedWindowSize,
         // causing re-entrant constraint updates that crash in _postWindowNeedsUpdateConstraints.
-        // Wrapping it in a plain NSView breaks that relationship.
-        let container = NSView()
+        // We use a custom subclass that manually sets the hosting view's frame in layout(),
+        // avoiding both Auto Layout constraints and autoresizing masks which don't reliably
+        // propagate size to NSHostingView.
+        let container = FramePassthroughView()
         self.contentView = container
 
         if let hosting = hostingView {
-            hosting.translatesAutoresizingMaskIntoConstraints = false
             container.addSubview(hosting)
-            NSLayoutConstraint.activate([
-                hosting.topAnchor.constraint(equalTo: container.topAnchor),
-                hosting.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-                hosting.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-                hosting.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            ])
         }
 
         NotificationCenter.default.addObserver(
@@ -557,6 +552,15 @@ class FloatingControlBarManager {
         }
 
         await provider.sendMessage(fullMessage)
+    }
+}
+
+/// Container NSView that manually propagates its frame to the first subview on layout.
+/// This avoids Auto Layout and autoresizing masks, which don't reliably resize NSHostingView.
+private class FramePassthroughView: NSView {
+    override func layout() {
+        super.layout()
+        subviews.first?.frame = bounds
     }
 }
 
