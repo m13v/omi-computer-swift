@@ -29,6 +29,9 @@ struct RewindPage: View {
     @State private var isRecordingPulsing = false
     @State private var isSavingPulsing = false
 
+    // Expanded transcript state
+    @State private var isTranscriptExpanded = false
+
     enum SearchViewMode {
         case results  // Full-screen search results
         case timeline // Timeline with search highlights
@@ -56,28 +59,33 @@ struct RewindPage: View {
                         rewindRecordingBar(appState: appState)
                     }
 
-                    // Recovery banner (if database was recovered from corruption)
-                    if viewModel.showRecoveryBanner {
-                        recoveryBanner
-                    }
-
-                    // Unified top bar - search field is always here
-                    unifiedTopBar
-
-                    // Content area changes based on mode
-                    if isInSearchMode {
-                        if viewModel.screenshots.isEmpty {
-                            noSearchResultsView
-                        } else if searchViewMode == .timeline {
-                            timelineWithSearch
-                        } else {
-                            fullScreenResultsView
-                        }
-                    } else if viewModel.screenshots.isEmpty {
-                        emptyState
+                    if isTranscriptExpanded, let appState = appState, appState.isTranscribing {
+                        // Expanded transcript + notes view replaces timeline
+                        expandedTranscriptView(appState: appState)
                     } else {
-                        // Normal timeline view (without top bar, since we have unified one)
-                        timelineContentBody
+                        // Recovery banner (if database was recovered from corruption)
+                        if viewModel.showRecoveryBanner {
+                            recoveryBanner
+                        }
+
+                        // Unified top bar - search field is always here
+                        unifiedTopBar
+
+                        // Content area changes based on mode
+                        if isInSearchMode {
+                            if viewModel.screenshots.isEmpty {
+                                noSearchResultsView
+                            } else if searchViewMode == .timeline {
+                                timelineWithSearch
+                            } else {
+                                fullScreenResultsView
+                            }
+                        } else if viewModel.screenshots.isEmpty {
+                            emptyState
+                        } else {
+                            // Normal timeline view (without top bar, since we have unified one)
+                            timelineContentBody
+                        }
                     }
                 }
             }
@@ -121,8 +129,18 @@ struct RewindPage: View {
                 selectedGroupIndex = 0
             }
         }
+        .onChange(of: appState?.isTranscribing) { _, newValue in
+            if newValue != true {
+                isTranscriptExpanded = false
+            }
+        }
         // Global keyboard handlers
         .onKeyPress(.escape) {
+            // Expanded transcript → collapse
+            if isTranscriptExpanded {
+                isTranscriptExpanded = false
+                return .handled
+            }
             // Timeline mode → go back to results list
             if searchViewMode == .timeline {
                 searchViewMode = .results
@@ -999,6 +1017,93 @@ struct RewindPage: View {
         }
     }
 
+    // MARK: - Expanded Transcript View
+
+    @AppStorage("recordingNotesPanelRatio") private var panelRatio: Double = 0.65
+    private let minPanelWidth: CGFloat = 200
+
+    private func expandedTranscriptView(appState: AppState) -> some View {
+        VStack(spacing: 0) {
+            // Back bar
+            HStack(spacing: 8) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isTranscriptExpanded = false
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 11, weight: .semibold))
+                        Text("Back to Rewind")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.white.opacity(0.7))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(Color.white.opacity(0.1))
+                    .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+            .background(Color.black.opacity(0.6))
+
+            // Recording header
+            RecordingHeaderView(appState: appState)
+                .padding(16)
+
+            Divider()
+                .background(OmiColors.border)
+
+            // Split panel: transcript (left) + notes (right)
+            GeometryReader { geometry in
+                let totalWidth = geometry.size.width
+                let transcriptWidth = max(minPanelWidth, totalWidth * panelRatio)
+                let notesWidth = max(minPanelWidth, totalWidth - transcriptWidth - 1)
+
+                HStack(spacing: 0) {
+                    // Left: Live transcript
+                    VStack(spacing: 0) {
+                        if liveTranscript.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .opacity(0.5)
+                                Text("Listening...")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("Start speaking and your transcript will appear here")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(32)
+                        } else {
+                            LiveTranscriptView(segments: liveTranscript.segments)
+                        }
+                    }
+                    .frame(width: transcriptWidth)
+                    .background(OmiColors.backgroundPrimary)
+
+                    // Divider
+                    Rectangle()
+                        .fill(OmiColors.border)
+                        .frame(width: 1)
+
+                    // Right: Notes
+                    LiveNotesView()
+                        .frame(width: notesWidth)
+                }
+            }
+        }
+        .background(OmiColors.backgroundPrimary)
+    }
+
     // MARK: - Recording Bar
 
     private func rewindRecordingBar(appState: AppState) -> some View {
@@ -1023,19 +1128,37 @@ struct RewindPage: View {
                 )
                 .onAppear { isRecordingPulsing = true }
 
-                // Latest transcript text
-                if let latestText = liveTranscript.latestText, !liveTranscript.isEmpty {
-                    Text(latestText)
-                        .font(.system(size: 14))
-                        .foregroundColor(OmiColors.textSecondary)
-                        .lineLimit(1)
-                        .truncationMode(.head)
-                        .frame(maxWidth: 280, alignment: .leading)
-                } else {
-                    Text("Listening")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(OmiColors.textPrimary)
+                // Latest transcript text (clickable to expand)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        isTranscriptExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if let latestText = liveTranscript.latestText, !liveTranscript.isEmpty {
+                            Text(latestText)
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .lineLimit(1)
+                                .truncationMode(.head)
+                                .frame(maxWidth: 260, alignment: .leading)
+                        } else {
+                            Text("Listening")
+                                .font(.system(size: 14, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+                        }
+                        Image(systemName: isTranscriptExpanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(OmiColors.backgroundTertiary.opacity(0.5))
+                    )
                 }
+                .buttonStyle(.plain)
 
                 // Audio level waveforms
                 HStack(spacing: 16) {
