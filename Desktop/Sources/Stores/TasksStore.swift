@@ -548,7 +548,7 @@ class TasksStore: ObservableObject {
     /// The SQLite migration handles local data; this handles Firestore.
     private func migrateAITasksToStagedIfNeeded() async {
         let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
-        let migrationKey = "stagedTasksMigrationCompleted_v3_\(userId)"
+        let migrationKey = "stagedTasksMigrationCompleted_v4_\(userId)"
 
         guard !UserDefaults.standard.bool(forKey: migrationKey) else {
             log("TasksStore: Staged tasks migration already completed for user \(userId)")
