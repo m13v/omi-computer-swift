@@ -93,7 +93,7 @@ actor ActionItemStorage {
             }
 
             let records = try query
-                .order(sql: "CASE WHEN dueAt IS NULL THEN 1 ELSE 0 END ASC, dueAt ASC, createdAt DESC")
+                .order(Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
@@ -205,7 +205,7 @@ actor ActionItemStorage {
             }
 
             let records = try query
-                .order(sql: "CASE WHEN dueAt IS NULL THEN 1 ELSE 0 END ASC, dueAt ASC, createdAt DESC")
+                .order(Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
@@ -259,7 +259,7 @@ actor ActionItemStorage {
             }
 
             let records = try query
-                .order(sql: "CASE WHEN dueAt IS NULL THEN 1 ELSE 0 END ASC, dueAt ASC, createdAt DESC")
+                .order(Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
