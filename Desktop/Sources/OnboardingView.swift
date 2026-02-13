@@ -693,6 +693,7 @@ struct OnboardingView: View {
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
+            .disabled(currentStep == 3 && !requiredPermissionsGranted)
         }
         .padding(.horizontal, 40)
         .padding(.bottom, 20)
