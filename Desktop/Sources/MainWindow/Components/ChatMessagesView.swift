@@ -23,6 +23,9 @@ struct ChatMessagesView<WelcomeContent: View>: View {
     /// True while a programmatic scroll is in-flight, so we can distinguish
     /// user-initiated scrolls from our own.
     @State private var isProgrammaticScroll = false
+    /// Throttle token for scrollToBottom — prevents the streaming + scroll
+    /// detection feedback loop from saturating the main thread.
+    @State private var scrollThrottleWorkItem: DispatchWorkItem?
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -108,12 +111,12 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                 }
                 .onChange(of: messages.last?.text) { _, _ in
                     if shouldFollowContent {
-                        scrollToBottom(proxy: proxy)
+                        throttledScrollToBottom(proxy: proxy)
                     }
                 }
                 .onChange(of: messages.last?.contentBlocks.count) { _, _ in
                     if shouldFollowContent {
-                        scrollToBottom(proxy: proxy)
+                        throttledScrollToBottom(proxy: proxy)
                     }
                 }
                 .onChange(of: isSending) { oldValue, newValue in
@@ -164,5 +167,19 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                 isProgrammaticScroll = false
             }
         }
+    }
+
+    /// Throttled version of scrollToBottom — coalesces rapid calls (e.g. during
+    /// streaming) so we scroll at most once per ~80ms instead of every token.
+    /// This prevents the scroll → notify → state update → re-render → scroll
+    /// feedback loop from saturating the main thread.
+    private func throttledScrollToBottom(proxy: ScrollViewProxy) {
+        // Cancel any pending scroll — we'll schedule a fresh one
+        scrollThrottleWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [self] in
+            scrollToBottom(proxy: proxy)
+        }
+        scrollThrottleWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08, execute: workItem)
     }
 }
