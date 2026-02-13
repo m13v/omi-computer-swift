@@ -419,6 +419,8 @@ class TasksViewModel: ObservableObject {
         didSet {
             if oldValue != searchText {
                 displayLimit = 100
+                keyboardSelectedTaskId = nil
+                isInlineCreating = false
                 Task { await performSearch() }
             }
         }
@@ -445,8 +447,10 @@ class TasksViewModel: ObservableObject {
     // Filter tags (Memories-style dropdown)
     @Published var selectedTags: Set<TaskFilterTag> = [.todo, .last7Days] {
         didSet {
-            // Reset display limit when filters change
+            // Reset display limit and keyboard selection when filters change
             displayLimit = 100
+            keyboardSelectedTaskId = nil
+            isInlineCreating = false
 
             // Map status tags to showCompleted for server-side loading
             let hasStatusFilter = selectedTags.contains(where: { $0.group == .status })
@@ -543,6 +547,29 @@ class TasksViewModel: ObservableObject {
     func clearAllFilters() {
         selectedTags.removeAll()
         selectedDynamicTags.removeAll()
+    }
+
+    // Keyboard navigation state
+    @Published var keyboardSelectedTaskId: String? {
+        didSet {
+            if oldValue != keyboardSelectedTaskId {
+                objectWillChange.send()
+            }
+        }
+    }
+    @Published var isInlineCreating = false
+    @Published var inlineCreateAfterTaskId: String?
+    @Published var editingTaskId: String?
+
+    /// Flat task list matching visual order (for arrow key navigation)
+    var navigationOrder: [TaskActionItem] {
+        let onlyDone = selectedTags.contains(.done) && !selectedTags.contains(.todo)
+        let onlyDeleted = (selectedTags.contains(.removedByAI) || selectedTags.contains(.removedByMe)) && !selectedTags.contains(.todo) && !selectedTags.contains(.done)
+        if !onlyDone && !onlyDeleted && !isMultiSelectMode {
+            return TaskCategory.allCases.flatMap { getOrderedTasks(for: $0) }
+        } else {
+            return displayTasks
+        }
     }
 
     // Create/Edit task state
@@ -1488,6 +1515,64 @@ class TasksViewModel: ObservableObject {
             updateInDisplay(updated)
         }
     }
+
+    // MARK: - Inline Task Creation
+
+    /// Determine context (due date, tags) for a new inline task based on selected task position
+    func contextForInlineCreate() -> (dueAt: Date?, tags: [String]) {
+        let tags = selectedTags.compactMap { $0.categoryValue }
+        guard let selectedId = keyboardSelectedTaskId else { return (nil, tags) }
+
+        // Determine category of selected task
+        for category in TaskCategory.allCases {
+            if categorizedTasks[category]?.contains(where: { $0.id == selectedId }) == true {
+                return (dueAtForCategory(category), tags)
+            }
+        }
+        // Flat view: inherit from selected task
+        if let task = displayTasks.first(where: { $0.id == selectedId }) {
+            return (task.dueAt, tags)
+        }
+        return (nil, tags)
+    }
+
+    private func dueAtForCategory(_ category: TaskCategory) -> Date? {
+        let cal = Calendar.current
+        let startOfToday = cal.startOfDay(for: Date())
+        switch category {
+        case .today: return cal.date(bySettingHour: 23, minute: 59, second: 0, of: Date())
+        case .tomorrow: return cal.date(byAdding: .day, value: 1, to: startOfToday)
+        case .later: return cal.date(byAdding: .day, value: 7, to: startOfToday)
+        case .noDeadline: return nil
+        }
+    }
+
+    /// Create an inline task below the specified task
+    func createInlineTask(description: String, afterTaskId: String?) async {
+        let context = contextForInlineCreate()
+        let created = await store.createTask(
+            description: description,
+            dueAt: context.dueAt,
+            priority: nil,
+            tags: context.tags.isEmpty ? nil : context.tags
+        )
+
+        // Position the new task after afterTaskId in category order
+        if let created = created, let afterId = afterTaskId {
+            for category in TaskCategory.allCases {
+                if let tasks = categorizedTasks[category],
+                   let afterIndex = tasks.firstIndex(where: { $0.id == afterId }) {
+                    moveTask(created, toIndex: afterIndex + 1, inCategory: category)
+                    break
+                }
+            }
+            // Select the newly created task
+            keyboardSelectedTaskId = created.id
+        }
+
+        isInlineCreating = false
+        inlineCreateAfterTaskId = nil
+    }
 }
 
 // MARK: - Tasks Page
@@ -1504,6 +1589,13 @@ struct TasksPage: View {
 
     // Hover tracking for keyboard shortcuts
     @State private var hoveredTaskId: String?
+
+    // Keyboard navigation state
+    @State private var isAnyTaskEditing = false
+    @State private var lastEnterPressTime: Date?
+    @State private var inlineCreateText = ""
+    @FocusState private var inlineCreateFocused: Bool
+    @State private var scrollProxy: ScrollViewProxy?
 
     // Filter popover state
     @State private var showFilterPopover = false
@@ -1670,22 +1762,145 @@ struct TasksPage: View {
                 return .handled
             }
             if press.key == KeyEquivalent("d") && press.modifiers == .command {
-                guard let taskId = hoveredTaskId,
+                guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId,
                       let task = findTask(taskId) else { return .ignored }
+                // Auto-select next task after delete
+                let nav = viewModel.navigationOrder
+                if let idx = nav.firstIndex(where: { $0.id == taskId }) {
+                    let nextIdx = idx + 1 < nav.count ? idx + 1 : max(0, idx - 1)
+                    if nav.count > 1 {
+                        viewModel.keyboardSelectedTaskId = nav[nextIdx].id
+                    } else {
+                        viewModel.keyboardSelectedTaskId = nil
+                    }
+                }
                 Task { await viewModel.deleteTaskWithUndo(task) }
                 return .handled
             }
             if press.key == .tab && press.modifiers.isEmpty {
-                guard let taskId = hoveredTaskId else { return .ignored }
+                guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return .ignored }
                 viewModel.incrementIndent(for: taskId)
                 return .handled
             }
             if press.key == .tab && press.modifiers == .shift {
-                guard let taskId = hoveredTaskId else { return .ignored }
+                guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return .ignored }
                 viewModel.decrementIndent(for: taskId)
                 return .handled
             }
+
+            // Guard: don't navigate while editing or inline creating
+            guard !isAnyTaskEditing && !viewModel.isInlineCreating else { return .ignored }
+
+            // Guard: don't navigate in multi-select mode
+            guard !viewModel.isMultiSelectMode else { return .ignored }
+
+            // Arrow Up/Down navigation
+            if press.key == .upArrow && press.modifiers.isEmpty {
+                moveSelection(-1)
+                return .handled
+            }
+            if press.key == .downArrow && press.modifiers.isEmpty {
+                moveSelection(1)
+                return .handled
+            }
+
+            // F2: Enter edit mode on selected task
+            if press.key == KeyEquivalent(Character(UnicodeScalar(63236))) && press.modifiers.isEmpty {
+                // F2 key
+                if viewModel.keyboardSelectedTaskId != nil {
+                    viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
+                    return .handled
+                }
+            }
+
+            // Enter: inline create or double-enter for edit
+            if press.key == .return && press.modifiers.isEmpty && viewModel.keyboardSelectedTaskId != nil {
+                // Don't create inline tasks during search
+                if !viewModel.searchText.isEmpty { return .ignored }
+
+                let now = Date()
+                if let last = lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
+                    // Double-Enter → edit mode
+                    lastEnterPressTime = nil
+                    viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
+                    return .handled
+                }
+                lastEnterPressTime = now
+                // Delayed single-Enter → inline create (after 400ms if no second Enter)
+                let capturedTime = now
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    guard lastEnterPressTime == capturedTime else { return }
+                    lastEnterPressTime = nil
+                    beginInlineCreate()
+                }
+                return .handled
+            }
+
+            // Escape: cancel inline create, or deselect
+            if press.key == .escape {
+                if viewModel.isInlineCreating {
+                    cancelInlineCreate()
+                    return .handled
+                }
+                if viewModel.keyboardSelectedTaskId != nil {
+                    viewModel.keyboardSelectedTaskId = nil
+                    return .handled
+                }
+            }
+
             return .ignored
+        }
+    }
+
+    // MARK: - Keyboard Navigation Helpers
+
+    private func moveSelection(_ direction: Int) {
+        let nav = viewModel.navigationOrder
+        guard !nav.isEmpty else { return }
+
+        if let currentId = viewModel.keyboardSelectedTaskId,
+           let currentIndex = nav.firstIndex(where: { $0.id == currentId }) {
+            let newIndex = min(max(currentIndex + direction, 0), nav.count - 1)
+            let newId = nav[newIndex].id
+            viewModel.keyboardSelectedTaskId = newId
+            scrollProxy?.scrollTo(newId, anchor: .center)
+        } else {
+            // No current selection: select first (down) or last (up)
+            let task = direction > 0 ? nav.first : nav.last
+            if let task = task {
+                viewModel.keyboardSelectedTaskId = task.id
+                scrollProxy?.scrollTo(task.id, anchor: .center)
+            }
+        }
+    }
+
+    private func beginInlineCreate() {
+        viewModel.isInlineCreating = true
+        viewModel.inlineCreateAfterTaskId = viewModel.keyboardSelectedTaskId
+        inlineCreateText = ""
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            inlineCreateFocused = true
+        }
+    }
+
+    private func cancelInlineCreate() {
+        viewModel.isInlineCreating = false
+        viewModel.inlineCreateAfterTaskId = nil
+        inlineCreateText = ""
+        inlineCreateFocused = false
+    }
+
+    private func commitInlineCreate() {
+        let text = inlineCreateText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            cancelInlineCreate()
+            return
+        }
+        let afterId = viewModel.inlineCreateAfterTaskId
+        inlineCreateText = ""
+        inlineCreateFocused = false
+        Task {
+            await viewModel.createInlineTask(description: text, afterTaskId: afterId)
         }
     }
 
@@ -2247,119 +2462,154 @@ struct TasksPage: View {
     // MARK: - Tasks List View
 
     private var tasksListView: some View {
-        ScrollView {
-            LazyVStack(spacing: 16) {
-                // Show tasks grouped by due-date category (Today, Tomorrow, Later, No Deadline)
-                let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
-                let onlyDeleted = (viewModel.selectedTags.contains(.removedByAI) || viewModel.selectedTags.contains(.removedByMe)) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
-                if !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
-                    ForEach(TaskCategory.allCases, id: \.self) { category in
-                        let orderedTasks = viewModel.getOrderedTasks(for: category)
-                        if !orderedTasks.isEmpty {
-                            TaskCategorySection(
-                                category: category,
-                                orderedTasks: orderedTasks,
-                                isMultiSelectMode: viewModel.isMultiSelectMode,
-                                indentLevelFor: { viewModel.getIndentLevel(for: $0) },
-                                isSelectedFor: { viewModel.selectedTaskIds.contains($0) },
-                                onToggle: { await viewModel.toggleTask($0) },
-                                onDelete: { await viewModel.deleteTaskWithUndo($0) },
-                                onToggleSelection: { viewModel.toggleTaskSelection($0) },
-                                onUpdateDetails: { task, desc, date, priority in
-                                    await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
-                                },
-                                onIncrementIndent: { viewModel.incrementIndent(for: $0) },
-                                onDecrementIndent: { viewModel.decrementIndent(for: $0) },
-                                onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
-                                onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
-                                onHover: { hoveredTaskId = $0 }
-                            )
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 16) {
+                    // Show tasks grouped by due-date category (Today, Tomorrow, Later, No Deadline)
+                    let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
+                    let onlyDeleted = (viewModel.selectedTags.contains(.removedByAI) || viewModel.selectedTags.contains(.removedByMe)) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
+                    if !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
+                        ForEach(TaskCategory.allCases, id: \.self) { category in
+                            let orderedTasks = viewModel.getOrderedTasks(for: category)
+                            if !orderedTasks.isEmpty {
+                                TaskCategorySection(
+                                    category: category,
+                                    orderedTasks: orderedTasks,
+                                    isMultiSelectMode: viewModel.isMultiSelectMode,
+                                    indentLevelFor: { viewModel.getIndentLevel(for: $0) },
+                                    isSelectedFor: { viewModel.selectedTaskIds.contains($0) },
+                                    isKeyboardSelectedFor: { viewModel.keyboardSelectedTaskId == $0 },
+                                    onToggle: { await viewModel.toggleTask($0) },
+                                    onDelete: { await viewModel.deleteTaskWithUndo($0) },
+                                    onToggleSelection: { viewModel.toggleTaskSelection($0) },
+                                    onUpdateDetails: { task, desc, date, priority in
+                                        await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
+                                    },
+                                    onIncrementIndent: { viewModel.incrementIndent(for: $0) },
+                                    onDecrementIndent: { viewModel.decrementIndent(for: $0) },
+                                    onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
+                                    onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onHover: { hoveredTaskId = $0 },
+                                    editingTaskId: viewModel.editingTaskId,
+                                    onEditingChanged: { editing in
+                                        isAnyTaskEditing = editing
+                                        if !editing { viewModel.editingTaskId = nil }
+                                    },
+                                    isInlineCreating: viewModel.isInlineCreating,
+                                    inlineCreateAfterTaskId: viewModel.inlineCreateAfterTaskId,
+                                    inlineCreateText: $inlineCreateText,
+                                    inlineCreateFocused: $inlineCreateFocused,
+                                    onInlineCommit: { commitInlineCreate() },
+                                    onInlineCancel: { cancelInlineCreate() }
+                                )
+                            }
                         }
-                    }
-                } else {
-                    // Flat list for other sort options, completed view, or multi-select mode
-                    ForEach(viewModel.displayTasks) { task in
-                        TaskRow(
-                            task: task,
-                            indentLevel: viewModel.getIndentLevel(for: task.id),
-                            isMultiSelectMode: viewModel.isMultiSelectMode,
-                            isSelected: viewModel.selectedTaskIds.contains(task.id),
-                            onToggle: { await viewModel.toggleTask($0) },
-                            onDelete: { await viewModel.deleteTaskWithUndo($0) },
-                            onToggleSelection: { viewModel.toggleTaskSelection($0) },
-                            onUpdateDetails: { task, desc, date, priority in
-                                await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
-                            },
-                            onIncrementIndent: { viewModel.incrementIndent(for: $0) },
-                            onDecrementIndent: { viewModel.decrementIndent(for: $0) },
-                            onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
-                            onHover: { hoveredTaskId = $0 }
-                        )
+                    } else {
+                        // Flat list for other sort options, completed view, or multi-select mode
+                        ForEach(viewModel.displayTasks) { task in
+                            VStack(spacing: 0) {
+                                TaskRow(
+                                    task: task,
+                                    indentLevel: viewModel.getIndentLevel(for: task.id),
+                                    isMultiSelectMode: viewModel.isMultiSelectMode,
+                                    isSelected: viewModel.selectedTaskIds.contains(task.id),
+                                    isKeyboardSelected: viewModel.keyboardSelectedTaskId == task.id,
+                                    onToggle: { await viewModel.toggleTask($0) },
+                                    onDelete: { await viewModel.deleteTaskWithUndo($0) },
+                                    onToggleSelection: { viewModel.toggleTaskSelection($0) },
+                                    onUpdateDetails: { task, desc, date, priority in
+                                        await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
+                                    },
+                                    onIncrementIndent: { viewModel.incrementIndent(for: $0) },
+                                    onDecrementIndent: { viewModel.decrementIndent(for: $0) },
+                                    onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onHover: { hoveredTaskId = $0 },
+                                    editingTaskId: viewModel.editingTaskId,
+                                    onEditingChanged: { editing in
+                                        isAnyTaskEditing = editing
+                                        if !editing { viewModel.editingTaskId = nil }
+                                    }
+                                )
+                                .id(task.id)
+
+                                // Inline creation row (flat view)
+                                if viewModel.isInlineCreating && viewModel.inlineCreateAfterTaskId == task.id {
+                                    InlineTaskCreationRow(
+                                        text: $inlineCreateText,
+                                        isFocused: $inlineCreateFocused,
+                                        onCommit: { _ in commitInlineCreate() },
+                                        onCancel: { cancelInlineCreate() }
+                                    )
+                                    .padding(.top, 4)
+                                }
+                            }
                             .onAppear {
                                 Task {
                                     await viewModel.loadMoreIfNeeded(currentTask: task)
                                 }
                             }
-                    }
-                }
-
-                // Loading more indicator
-                if viewModel.isLoadingMore {
-                    HStack {
-                        Spacer()
-                        ProgressView()
-                            .controlSize(.small)
-                        Spacer()
-                    }
-                    .padding(.vertical, 12)
-                }
-
-                // "Load more" button
-                if !viewModel.displayTasks.isEmpty && !viewModel.isLoadingMore {
-                    if viewModel.isInFilteredMode && viewModel.hasMoreFilteredResults {
-                        Button {
-                            viewModel.loadMoreFiltered()
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.down.circle")
-                                Text("Load more tasks")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(OmiColors.backgroundTertiary)
-                            .cornerRadius(8)
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
-                    } else if !viewModel.isInFilteredMode && viewModel.hasMoreTasks {
-                        Button {
-                            Task { await viewModel.loadMoreIfNeeded(currentTask: viewModel.displayTasks.last!) }
-                        } label: {
-                            HStack(spacing: 6) {
-                                Image(systemName: "arrow.down.circle")
-                                Text("Load more tasks")
-                            }
-                            .font(.system(size: 13, weight: .medium))
-                            .foregroundColor(OmiColors.textSecondary)
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 10)
-                            .background(OmiColors.backgroundTertiary)
-                            .cornerRadius(8)
+                    }
+
+                    // Loading more indicator
+                    if viewModel.isLoadingMore {
+                        HStack {
+                            Spacer()
+                            ProgressView()
+                                .controlSize(.small)
+                            Spacer()
                         }
-                        .buttonStyle(.plain)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 8)
+                        .padding(.vertical, 12)
+                    }
+
+                    // "Load more" button
+                    if !viewModel.displayTasks.isEmpty && !viewModel.isLoadingMore {
+                        if viewModel.isInFilteredMode && viewModel.hasMoreFilteredResults {
+                            Button {
+                                viewModel.loadMoreFiltered()
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.circle")
+                                    Text("Load more tasks")
+                                }
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(OmiColors.backgroundTertiary)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        } else if !viewModel.isInFilteredMode && viewModel.hasMoreTasks {
+                            Button {
+                                Task { await viewModel.loadMoreIfNeeded(currentTask: viewModel.displayTasks.last!) }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "arrow.down.circle")
+                                    Text("Load more tasks")
+                                }
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(OmiColors.textSecondary)
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 10)
+                                .background(OmiColors.backgroundTertiary)
+                                .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 8)
+                        }
                     }
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 8)
-        }
-        .refreshable {
-            await viewModel.loadTasks()
+            .refreshable {
+                await viewModel.loadTasks()
+            }
+            .onAppear { scrollProxy = proxy }
         }
     }
 }
@@ -2374,6 +2624,7 @@ struct TaskCategorySection: View {
     // Callbacks for row data and actions (passed through to TaskRow)
     var indentLevelFor: ((String) -> Int)?
     var isSelectedFor: ((String) -> Bool)?
+    var isKeyboardSelectedFor: ((String) -> Bool)?
     var onToggle: ((TaskActionItem) async -> Void)?
     var onDelete: ((TaskActionItem) async -> Void)?
     var onToggleSelection: ((TaskActionItem) -> Void)?
@@ -2383,6 +2634,18 @@ struct TaskCategorySection: View {
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
+
+    // Edit mode support
+    var editingTaskId: String?
+    var onEditingChanged: ((Bool) -> Void)?
+
+    // Inline creation support
+    var isInlineCreating: Bool = false
+    var inlineCreateAfterTaskId: String?
+    @Binding var inlineCreateText: String
+    @FocusState.Binding var inlineCreateFocused: Bool
+    var onInlineCommit: (() -> Void)?
+    var onInlineCancel: (() -> Void)?
 
     private var visibleTasks: [TaskActionItem] {
         orderedTasks
