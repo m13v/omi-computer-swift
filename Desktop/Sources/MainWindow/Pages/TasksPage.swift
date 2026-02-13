@@ -74,9 +74,6 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
     // Date Range
     case last7Days
 
-    // Display
-    case topScoredOnly
-
     // Origin (source classification)
     case originDirectRequest
     case originSelfGenerated
@@ -91,7 +88,6 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .todo, .done, .removedByAI, .removedByMe: return .status
         case .last7Days: return .date
-        case .topScoredOnly: return .display
         case .personal, .work, .feature, .bug, .code, .research, .communication, .finance, .health, .other: return .category
         case .sourceScreen, .sourceOmi, .sourceDesktop, .sourceManual, .sourceOmiAnalytics: return .source
         case .priorityHigh, .priorityMedium, .priorityLow: return .priority
@@ -106,7 +102,6 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .removedByAI: return "Removed by AI"
         case .removedByMe: return "Removed by me"
         case .last7Days: return "Last 7 days"
-        case .topScoredOnly: return "Top Scored Only"
         case .personal: return "Personal"
         case .work: return "Work"
         case .feature: return "Feature"
@@ -141,7 +136,6 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         case .removedByAI: return "trash.slash"
         case .removedByMe: return "trash"
         case .last7Days: return "clock.arrow.circlepath"
-        case .topScoredOnly: return "star.fill"
         case .personal: return "person.fill"
         case .work: return "briefcase.fill"
         case .feature: return "sparkles"
@@ -183,9 +177,6 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
             } else {
                 return task.createdAt >= sevenDaysAgo
             }
-        case .topScoredOnly:
-            // Filter to manual tasks OR tasks in the allowlist
-            return task.source == "manual" || MainActor.assumeIsolated { TasksStore.shared.visibleAITaskIds.contains(task.id) }
         case .personal: return task.tags.contains("personal")
         case .work: return task.tags.contains("work")
         case .feature: return task.tags.contains("feature")
@@ -213,14 +204,12 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
-    /// Pre-computed context for efficient batch filtering (avoids per-task Calendar/MainActor calls)
+    /// Pre-computed context for efficient batch filtering (avoids per-task Calendar calls)
     struct FilterContext {
         let sevenDaysAgo: Date
-        let visibleAITaskIds: Set<String>
 
-        @MainActor init() {
+        init() {
             self.sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
-            self.visibleAITaskIds = TasksStore.shared.visibleAITaskIds
         }
     }
 
