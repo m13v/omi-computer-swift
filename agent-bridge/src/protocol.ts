@@ -7,6 +7,7 @@ export interface QueryMessage {
   id: string;
   prompt: string;
   systemPrompt: string;
+  cwd?: string;
 }
 
 export interface ToolResultMessage {
