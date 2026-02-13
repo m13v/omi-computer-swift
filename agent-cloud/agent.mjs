@@ -7,7 +7,7 @@ import { fileURLToPath } from "url";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { existsSync, mkdirSync, createWriteStream, statSync, renameSync, unlinkSync } from "fs";
-import { createInflate, createGunzip } from "zlib";
+import { createInflateRaw, createGunzip } from "zlib";
 
 // --- Configuration ---
 const DB_PATH = process.env.DB_PATH || "/home/matthewdi/omi-agent/data/omi.db";
@@ -469,7 +469,7 @@ function startServer() {
       if (encoding === "gzip") {
         decompressor = createGunzip();
       } else if (encoding === "deflate" || encoding === "zlib") {
-        decompressor = createInflate();
+        decompressor = createInflateRaw();
       }
 
       const writeTarget = decompressor || stream;
