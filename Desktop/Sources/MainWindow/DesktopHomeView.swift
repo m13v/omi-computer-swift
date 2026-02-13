@@ -111,6 +111,9 @@ struct DesktopHomeView: View {
                             async let conversations: Void = appState.loadConversations()
                             async let folders: Void = appState.loadFolders()
                             _ = await (vmLoad, conversations, folders)
+
+                            // Backend-based check: ensure user has a cloud agent VM
+                            await AgentVMService.shared.ensureProvisioned()
                         }
 
                     if !viewModelContainer.isInitialLoadComplete {
