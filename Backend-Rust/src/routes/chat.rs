@@ -11,6 +11,7 @@ use axum::{
     Json, Router,
 };
 use chrono::{DateTime, Duration, Utc};
+use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
 use std::sync::Arc;
@@ -298,7 +299,7 @@ async fn get_chat_context(
     let memories = get_user_memories(&state.firestore, &user.uid).await;
 
     // Step 5: Build context string for prompt (including conversation history and app context)
-    let (base_context, citation_sources) = build_context_string(&conversations, &memories);
+    let (base_context, citation_sources) = build_context_string(&conversations, &memories, &request.timezone);
 
     // Add app-specific context if available
     let context_with_app = if let Some((app_name, chat_prompt, persona_prompt)) = &app_context {
@@ -674,7 +675,9 @@ async fn get_user_memories(firestore: &Arc<FirestoreService>, uid: &str) -> Vec<
 fn build_context_string(
     conversations: &[ConversationSummary],
     memories: &[MemorySummary],
+    timezone: &str,
 ) -> (String, Vec<CitationSource>) {
+    let tz: Option<Tz> = timezone.parse().ok();
     let mut parts = Vec::new();
     let mut citation_sources = Vec::new();
 
@@ -695,13 +698,18 @@ fn build_context_string(
         conv_lines.push("Recent conversations for context:".to_string());
         for (i, conv) in conversations.iter().take(10).enumerate() {
             let index = i + 1;
+            let date_str = if let Some(tz) = tz {
+                conv.created_at.with_timezone(&tz).format("%Y-%m-%d").to_string()
+            } else {
+                conv.created_at.format("%Y-%m-%d").to_string()
+            };
             conv_lines.push(format!(
                 "[{}] {} {} - {} ({})",
                 index,
                 conv.emoji,
                 conv.title,
                 conv.overview,
-                conv.created_at.format("%Y-%m-%d")
+                date_str
             ));
 
             // Track citation source
@@ -774,7 +782,7 @@ async fn get_basic_context(
 
     // Include conversation history in context string
     let conversation_history = format_conversation_history(&request.messages);
-    let (base_context, citation_sources) = build_context_string(&conversations, &memories);
+    let (base_context, citation_sources) = build_context_string(&conversations, &memories, &request.timezone);
 
     // Add app-specific context if available
     let context_with_app = if let Some((app_name, chat_prompt, persona_prompt)) = &app_context {
