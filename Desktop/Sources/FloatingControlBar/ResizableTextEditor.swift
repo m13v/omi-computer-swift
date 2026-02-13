@@ -36,6 +36,11 @@ struct ResizableTextEditor: NSViewRepresentable {
         scrollView.backgroundColor = .clear
         scrollView.drawsBackground = false
 
+        // Auto-focus the text view when it appears
+        DispatchQueue.main.async {
+            textView.window?.makeFirstResponder(textView)
+        }
+
         return scrollView
     }
 
