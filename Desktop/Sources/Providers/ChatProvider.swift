@@ -316,18 +316,21 @@ class ChatProvider: ObservableObject {
     }
 
     /// Create a new chat session
-    func createNewSession() async -> ChatSession? {
+    func createNewSession(title: String? = nil, skipGreeting: Bool = false) async -> ChatSession? {
         do {
-            let session = try await APIClient.shared.createChatSession(appId: selectedAppId)
+            let session = try await APIClient.shared.createChatSession(title: title, appId: selectedAppId)
             sessions.insert(session, at: 0)
             currentSession = session
+            isInDefaultChat = false
             messages = []
             hasMoreMessages = false
             log("Created new chat session: \(session.id)")
             AnalyticsManager.shared.chatSessionCreated()
 
-            // Generate initial greeting message
-            await fetchInitialMessage(for: session)
+            // Generate initial greeting message (skip for task chats that send their own context)
+            if !skipGreeting {
+                await fetchInitialMessage(for: session)
+            }
 
             return session
         } catch {
