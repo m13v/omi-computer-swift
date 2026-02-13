@@ -1242,7 +1242,7 @@ actor RewindDatabase {
         // Migration 18: Add embedding column to action_items for vector search
         migrator.registerMigration("addActionItemEmbedding") { db in
             try db.alter(table: "action_items") { t in
-                t.add(column: "embedding", .blob)  // 768 Float32s = 3072 bytes
+                t.add(column: "embedding", .blob)  // 3072 Float32s = 12288 bytes (Gemini embedding-001)
             }
         }
 
