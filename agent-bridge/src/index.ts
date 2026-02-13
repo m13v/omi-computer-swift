@@ -56,20 +56,19 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   try {
     // Each query is standalone — conversation history comes via systemPrompt
     // This ensures cross-platform sync (mobile messages are included in context)
+    const mode = msg.mode ?? "act";
+    const isAskMode = mode === "ask";
+
+    // In ask mode, only allow read-only tools (no Write, Edit, Bash)
+    const allowedTools = isAskMode
+      ? ["Read", "Glob", "Grep", "WebSearch", "WebFetch"]
+      : ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"];
+
     const options: Record<string, unknown> = {
       model: "claude-opus-4-6",
       abortController,
       systemPrompt: msg.systemPrompt,
-      allowedTools: [
-        "Read",
-        "Write",
-        "Edit",
-        "Bash",
-        "Glob",
-        "Grep",
-        "WebSearch",
-        "WebFetch",
-      ],
+      allowedTools,
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       maxTurns: 15,
@@ -86,6 +85,10 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 
     // Track pending tool calls so we can mark them completed when new text arrives
     const pendingTools: string[] = [];
+    // Track tool_use block index → {id, name, inputChunks} for accumulating input_json_delta
+    const blockTools: Map<number, { id: string; name: string; inputChunks: string[] }> = new Map();
+    // Track toolUseId → name for correlating results
+    const toolIdToName: Map<string, string> = new Map();
 
     const q = query({ prompt: msg.prompt, options: options as any });
 
@@ -109,8 +112,74 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
             event.content_block?.type === "tool_use"
           ) {
             const name = event.content_block.name as string;
+            const toolUseId = event.content_block.id as string | undefined;
+            const blockIndex = event.index as number | undefined;
             pendingTools.push(name);
-            send({ type: "tool_activity", name, status: "started" });
+            if (toolUseId) {
+              toolIdToName.set(toolUseId, name);
+            }
+            if (blockIndex !== undefined && toolUseId) {
+              blockTools.set(blockIndex, { id: toolUseId, name, inputChunks: [] });
+            }
+            send({ type: "tool_activity", name, status: "started", toolUseId });
+          }
+
+          // Accumulate input_json_delta for tool blocks
+          if (
+            event?.type === "content_block_delta" &&
+            event.delta?.type === "input_json_delta"
+          ) {
+            const blockIndex = event.index as number | undefined;
+            const partial = event.delta.partial_json as string | undefined;
+            if (blockIndex !== undefined && partial) {
+              const block = blockTools.get(blockIndex);
+              if (block) {
+                block.inputChunks.push(partial);
+              }
+            }
+          }
+
+          // On content_block_stop, send complete input for tool blocks
+          if (event?.type === "content_block_stop") {
+            const blockIndex = event.index as number | undefined;
+            if (blockIndex !== undefined) {
+              const block = blockTools.get(blockIndex);
+              if (block && block.inputChunks.length > 0) {
+                try {
+                  const fullJson = block.inputChunks.join("");
+                  const input = JSON.parse(fullJson) as Record<string, unknown>;
+                  send({
+                    type: "tool_activity",
+                    name: block.name,
+                    status: "started",
+                    toolUseId: block.id,
+                    input,
+                  });
+                } catch {
+                  // Failed to parse accumulated input — skip
+                }
+              }
+              blockTools.delete(blockIndex);
+            }
+          }
+
+          // Thinking block start
+          if (
+            event?.type === "content_block_start" &&
+            event.content_block?.type === "thinking"
+          ) {
+            // Thinking block started — deltas will follow
+          }
+
+          // Thinking deltas
+          if (
+            event?.type === "content_block_delta" &&
+            event.delta?.type === "thinking_delta"
+          ) {
+            const thinkingText = event.delta.thinking as string;
+            if (thinkingText) {
+              send({ type: "thinking_delta", text: thinkingText });
+            }
           }
 
           // Text deltas — if tools were pending, they're now complete
@@ -132,7 +201,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         }
 
         case "assistant": {
-          // Complete assistant message — extract text from content blocks
+          // Complete assistant message — extract text and tool_use blocks
           const content = (message as any).message?.content;
           if (Array.isArray(content)) {
             for (const block of content) {
@@ -142,6 +211,49 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
                   fullText = block.text;
                   send({ type: "text_delta", text: block.text });
                 }
+              }
+              // Extract tool_use blocks with complete input (fallback if streaming didn't capture it)
+              if (block.type === "tool_use" && block.id && block.name) {
+                const toolUseId = block.id as string;
+                const name = block.name as string;
+                const input = block.input as Record<string, unknown> | undefined;
+                toolIdToName.set(toolUseId, name);
+                if (input && Object.keys(input).length > 0) {
+                  send({ type: "tool_activity", name, status: "started", toolUseId, input });
+                }
+              }
+            }
+          }
+          break;
+        }
+
+        case "user": {
+          // User messages contain tool_result blocks — forward as tool_result_display
+          const content = (message as any).message?.content;
+          if (Array.isArray(content)) {
+            for (const block of content) {
+              if (block.type === "tool_result" && block.tool_use_id) {
+                const toolUseId = block.tool_use_id as string;
+                const name = toolIdToName.get(toolUseId) ?? "unknown";
+                // Extract text output — may be string or array of content blocks
+                let output = "";
+                if (typeof block.content === "string") {
+                  output = block.content;
+                } else if (Array.isArray(block.content)) {
+                  output = block.content
+                    .filter((c: any) => c.type === "text")
+                    .map((c: any) => c.text)
+                    .join("\n");
+                }
+                // Truncate to ~2000 chars for display
+                if (output.length > 2000) {
+                  output = output.slice(0, 2000) + "\n... (truncated)";
+                }
+                if (output) {
+                  send({ type: "tool_result_display", toolUseId, name, output });
+                }
+                // Mark tool as completed
+                send({ type: "tool_activity", name, status: "completed", toolUseId });
               }
             }
           }
