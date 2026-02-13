@@ -185,6 +185,11 @@ async fn promote_staged_task(
     };
 
     let active_count = active_ai_items.len();
+    tracing::info!(
+        "User {} has {} active AI tasks in action_items",
+        user.uid,
+        active_count
+    );
     if active_count >= 5 {
         return Ok(Json(PromoteResponse {
             promoted: false,
