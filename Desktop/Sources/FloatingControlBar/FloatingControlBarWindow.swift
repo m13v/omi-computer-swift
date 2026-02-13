@@ -82,6 +82,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
                 .preferredColorScheme(.dark)
                 .environment(\.colorScheme, .dark)
         ))
+        hostingView?.sizingOptions = []
         hostingView?.appearance = NSAppearance(named: .vibrantDark)
         self.contentView = hostingView
 
