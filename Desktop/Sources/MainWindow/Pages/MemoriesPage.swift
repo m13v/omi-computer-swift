@@ -2035,6 +2035,7 @@ struct MemoryDetailSheet: View {
                         Text(reasoning)
                             .font(.system(size: 14))
                             .foregroundColor(OmiColors.textPrimary)
+                            .textSelection(.enabled)
                     }
                     .padding(12)
                     .background(OmiColors.backgroundTertiary)
@@ -2054,6 +2055,7 @@ struct MemoryDetailSheet: View {
                                     .font(.system(size: 12))
                                 Text(activity)
                                     .font(.system(size: 13))
+                                    .textSelection(.enabled)
                             }
                             .foregroundColor(OmiColors.textTertiary)
                         }
@@ -2062,6 +2064,7 @@ struct MemoryDetailSheet: View {
                             Text(context)
                                 .font(.system(size: 13))
                                 .foregroundColor(OmiColors.textTertiary)
+                                .textSelection(.enabled)
                         }
                     }
                     .padding(12)
