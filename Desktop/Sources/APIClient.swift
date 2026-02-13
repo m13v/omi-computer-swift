@@ -4173,4 +4173,19 @@ extension APIClient {
     func provisionAgentVM() async throws -> AgentProvisionResponse {
         return try await post("v2/agent/provision")
     }
+
+    struct AgentStatusResponse: Decodable {
+        let vmName: String
+        let zone: String
+        let ip: String?
+        let status: String
+        let authToken: String
+        let createdAt: String
+        let lastQueryAt: String?
+    }
+
+    /// Get current agent VM status
+    func getAgentStatus() async throws -> AgentStatusResponse? {
+        return try await get("v2/agent/status")
+    }
 }
