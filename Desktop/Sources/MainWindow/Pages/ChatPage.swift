@@ -90,16 +90,11 @@ struct ScrollPositionDetector: NSViewRepresentable {
 struct ChatPage: View {
     @ObservedObject var appProvider: AppProvider
     @ObservedObject var chatProvider: ChatProvider
-    @State private var inputText = ""
     @State private var showAppPicker = false
     @State private var showHistoryPopover = false
     @State private var selectedCitation: Citation?
     @State private var citedConversation: ServerConversation?
     @State private var isLoadingCitation = false
-    @FocusState private var isInputFocused: Bool
-
-    // Smart scroll state - tracks if user has scrolled away from bottom
-    @State private var isUserAtBottom = true
 
     var selectedApp: OmiApp? {
         guard let appId = chatProvider.selectedAppId else { return nil }
@@ -330,129 +325,22 @@ struct ChatPage: View {
     // MARK: - Messages
 
     private var messagesView: some View {
-        ScrollViewReader { proxy in
-            ZStack(alignment: .bottom) {
-                ScrollView {
-                    LazyVStack(spacing: 16) {
-                        // Load more button at top
-                        if chatProvider.hasMoreMessages {
-                            Button {
-                                Task {
-                                    await chatProvider.loadMoreMessages()
-                                }
-                            } label: {
-                                if chatProvider.isLoadingMoreMessages {
-                                    ProgressView()
-                                        .scaleEffect(0.8)
-                                } else {
-                                    Text("Load earlier messages")
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 8)
-                        }
-
-                        if (chatProvider.isLoading || chatProvider.isLoadingSessions) && chatProvider.messages.isEmpty {
-                            // Show loading indicator while fetching sessions or messages
-                            VStack(spacing: 12) {
-                                Spacer()
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                                Text("Loading...")
-                                    .font(.system(size: 13))
-                                    .foregroundColor(OmiColors.textTertiary)
-                                Spacer()
-                            }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        } else if chatProvider.messages.isEmpty {
-                            welcomeMessage
-                        } else {
-                            ForEach(chatProvider.messages) { message in
-                                ChatBubble(
-                                    message: message,
-                                    app: selectedApp,
-                                    onRate: { rating in
-                                        Task {
-                                            await chatProvider.rateMessage(message.id, rating: rating)
-                                        }
-                                    },
-                                    onCitationTap: { citation in
-                                        handleCitationTap(citation)
-                                    }
-                                )
-                                .id(message.id)
-                            }
-                        }
-                    }
-                    .padding()
-                    .background(
-                        // Invisible scroll position detector
-                        ScrollPositionDetector { atBottom in
-                            if isUserAtBottom != atBottom {
-                                log("SCROLL: isUserAtBottom changed to \(atBottom)")
-                                isUserAtBottom = atBottom
-                            }
-                        }
-                    )
-                }
-                .onChange(of: chatProvider.messages.count) { oldCount, newCount in
-                    log("SCROLL: messages.count changed from \(oldCount) to \(newCount), isUserAtBottom: \(isUserAtBottom)")
-                    // Scroll to bottom when messages first load or when at bottom
-                    if newCount > oldCount || oldCount == 0 {
-                        if isUserAtBottom || oldCount == 0 {
-                            scrollToBottom(proxy: proxy, reason: "messages.count changed (\(oldCount)->\(newCount))")
-                        } else {
-                            log("SCROLL: NOT scrolling - user scrolled up")
-                        }
-                    }
-                }
-                .onChange(of: chatProvider.messages.last?.text) { _, _ in
-                    // Scroll as streaming text updates, but only if user is at bottom
-                    if isUserAtBottom {
-                        scrollToBottom(proxy: proxy, reason: "streaming text update")
-                    }
-                }
-                .onAppear {
-                    // Scroll to bottom when chat view first appears
-                    log("SCROLL: onAppear triggered")
-                    scrollToBottom(proxy: proxy, reason: "onAppear")
-                }
-
-                // Scroll to bottom button - appears when user has scrolled up
-                if !isUserAtBottom && !chatProvider.messages.isEmpty {
-                    Button {
-                        isUserAtBottom = true
-                        scrollToBottom(proxy: proxy, reason: "button tap")
-                    } label: {
-                        Image(systemName: "arrow.down.circle.fill")
-                            .font(.system(size: 32))
-                            .foregroundColor(OmiColors.purplePrimary)
-                            .background(
-                                Circle()
-                                    .fill(OmiColors.backgroundPrimary)
-                                    .frame(width: 28, height: 28)
-                            )
-                            .shadow(color: .black.opacity(0.2), radius: 4, x: 0, y: 2)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.bottom, 16)
-                    .transition(.scale.combined(with: .opacity))
-                    .animation(.easeInOut(duration: 0.2), value: isUserAtBottom)
-                }
-            }
-        }
-    }
-
-    private func scrollToBottom(proxy: ScrollViewProxy, reason: String = "unknown") {
-        if let lastMessage = chatProvider.messages.last {
-            log("SCROLL: scrollToBottom called - reason: \(reason), isUserAtBottom: \(isUserAtBottom), messageCount: \(chatProvider.messages.count)")
-            withAnimation(.easeOut(duration: 0.1)) {
-                proxy.scrollTo(lastMessage.id, anchor: .bottom)
-            }
-        }
+        ChatMessagesView(
+            messages: chatProvider.messages,
+            isSending: chatProvider.isSending,
+            hasMoreMessages: chatProvider.hasMoreMessages,
+            isLoadingMoreMessages: chatProvider.isLoadingMoreMessages,
+            isLoadingInitial: chatProvider.isLoading || chatProvider.isLoadingSessions,
+            app: selectedApp,
+            onLoadMore: { await chatProvider.loadMoreMessages() },
+            onRate: { messageId, rating in
+                Task { await chatProvider.rateMessage(messageId, rating: rating) }
+            },
+            onCitationTap: { citation in
+                handleCitationTap(citation)
+            },
+            welcomeContent: { welcomeMessage }
+        )
     }
 
     private var welcomeMessage: some View {
@@ -510,54 +398,13 @@ struct ChatPage: View {
     // MARK: - Input Area
 
     private var inputArea: some View {
-        HStack(spacing: 12) {
-            TextField("Type a message...", text: $inputText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundColor(OmiColors.textPrimary)
-                .focused($isInputFocused)
-                .padding(12)
-                .lineLimit(1...5)
-                .onSubmit {
-                    sendMessage()
-                }
-                .frame(maxWidth: .infinity)
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(20)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    isInputFocused = true
-                }
-
-            Button(action: sendMessage) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(canSend ? OmiColors.purplePrimary : OmiColors.textTertiary)
-            }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
-        }
-    }
-
-    private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !chatProvider.isSending
-    }
-
-    // MARK: - Actions
-
-    private func sendMessage() {
-        guard canSend else { return }
-
-        let messageText = inputText
-        inputText = ""
-
-        // Track chat message sent
-        AnalyticsManager.shared.chatMessageSent(messageLength: messageText.count, hasContext: selectedApp != nil)
-
-        Task {
-            await chatProvider.sendMessage(messageText)
-        }
+        ChatInputView(
+            onSend: { text in
+                AnalyticsManager.shared.chatMessageSent(messageLength: text.count, hasContext: selectedApp != nil)
+                Task { await chatProvider.sendMessage(text) }
+            },
+            isSending: chatProvider.isSending
+        )
     }
 
     /// Handle tapping on a citation card
