@@ -2327,6 +2327,67 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         default: return "gray"
         }
     }
+
+    /// All meaningful task data formatted for chat context.
+    /// Add new fields here when they're added to the struct so chat always gets everything.
+    var chatContext: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        formatter.timeStyle = .short
+
+        var lines: [String] = []
+
+        // Core
+        lines.append("Task: \(description)")
+        if let category = category { lines.append("Category: \(category)") }
+        if !tags.isEmpty { lines.append("Tags: \(tags.joined(separator: ", "))") }
+        if let priority = priority { lines.append("Priority: \(priority)") }
+        lines.append("Status: \(completed ? "completed" : "active")")
+        lines.append("Created: \(formatter.string(from: createdAt))")
+        if let dueAt = dueAt { lines.append("Due: \(formatter.string(from: dueAt))") }
+        if let completedAt = completedAt { lines.append("Completed: \(formatter.string(from: completedAt))") }
+
+        // Source & origin
+        if let source = source { lines.append("Source: \(sourceLabel) (\(source))") }
+        if let app = sourceApp { lines.append("Source app: \(app)") }
+        if let title = windowTitle { lines.append("Window title: \(title)") }
+        if let conf = confidence { lines.append("Extraction confidence: \(String(format: "%.0f%%", conf * 100))") }
+
+        // Screen context at extraction time
+        if let ctx = contextSummary, !ctx.isEmpty { lines.append("Context when detected: \(ctx)") }
+        if let act = currentActivity, !act.isEmpty { lines.append("User activity: \(act)") }
+
+        // Relationships
+        if let convId = conversationId { lines.append("Conversation ID: \(convId)") }
+        if let goalId = goalId { lines.append("Linked goal: \(goalId)") }
+
+        // Agent work
+        if let status = agentStatus { lines.append("Agent status: \(status)") }
+        if let prompt = agentPrompt, !prompt.isEmpty {
+            lines.append("Agent prompt: \(String(prompt.prefix(1000)))")
+        }
+        if let plan = agentPlan, !plan.isEmpty {
+            lines.append("Agent plan:\n\(String(plan.prefix(2000)))")
+        }
+        if let files = agentEditedFiles, !files.isEmpty {
+            lines.append("Files edited by agent: \(files.joined(separator: ", "))")
+        }
+
+        // Raw metadata (catches anything not explicitly listed above)
+        if let meta = parsedMetadata {
+            let coveredKeys: Set<String> = [
+                "tags", "source_app", "window_title", "confidence",
+                "source_category", "source_subcategory"
+            ]
+            let extra = meta.filter { !coveredKeys.contains($0.key) }
+            if !extra.isEmpty {
+                let pairs = extra.map { "\($0.key): \($0.value)" }.sorted()
+                lines.append("Additional metadata: \(pairs.joined(separator: ", "))")
+            }
+        }
+
+        return lines.joined(separator: "\n")
+    }
 }
 
 // MARK: - Goal Models
