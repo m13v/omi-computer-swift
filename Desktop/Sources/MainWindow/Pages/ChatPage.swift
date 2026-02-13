@@ -69,7 +69,7 @@ struct ScrollPositionDetector: NSViewRepresentable {
             let clipBounds = scrollView.contentView.bounds
             let documentHeight = documentView.frame.height
             let visibleMaxY = clipBounds.origin.y + clipBounds.height
-            let threshold: CGFloat = 50
+            let threshold: CGFloat = 100
 
             // At bottom if we can see within threshold of the document bottom
             let isAtBottom = visibleMaxY >= documentHeight - threshold
