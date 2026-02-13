@@ -674,6 +674,15 @@ struct OnboardingView: View {
             AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Done")
             AnalyticsManager.shared.onboardingCompleted()
             appState.hasCompletedOnboarding = true
+            // Provision cloud agent VM (fire-and-forget)
+            Task {
+                do {
+                    let response = try await APIClient.shared.provisionAgentVM()
+                    log("OnboardingView: Agent VM provisioning started — \(response.vmName) (\(response.status))")
+                } catch {
+                    log("OnboardingView: Agent VM provisioning failed (non-blocking) — \(error.localizedDescription)")
+                }
+            }
             // Enable launch at login by default for new users
             if LaunchAtLoginManager.shared.setEnabled(true) {
                 AnalyticsManager.shared.launchAtLoginChanged(enabled: true, source: "onboarding")
