@@ -2070,7 +2070,7 @@ struct TasksPage: View {
 
 
     private var modeToggle: some View {
-        HStack(spacing: 0) {
+        HStack(spacing: 2) {
             ForEach(TaskSortOption.allCases, id: \.self) { option in
                 let isSelected = viewModel.sortOption == option
                 Button {
@@ -2078,33 +2078,24 @@ struct TasksPage: View {
                         viewModel.sortOption = option
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: option.icon)
-                            .font(.system(size: 11))
-                        Text(option.rawValue)
-                            .font(.system(size: 12, weight: .medium))
+                    VStack(spacing: 4) {
+                        HStack(spacing: 4) {
+                            Image(systemName: option.icon)
+                                .font(.system(size: 11))
+                            Text(option.rawValue)
+                                .font(.system(size: 12, weight: isSelected ? .semibold : .regular))
+                        }
+                        .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+
+                        Rectangle()
+                            .fill(isSelected ? OmiColors.textPrimary : Color.clear)
+                            .frame(height: 1.5)
                     }
-                    .foregroundColor(isSelected ? .black : OmiColors.textTertiary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 6)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6)
-                            .fill(isSelected ? Color.white : Color.clear)
-                            .shadow(color: isSelected ? Color.black.opacity(0.08) : .clear, radius: 1, y: 1)
-                    )
+                    .padding(.horizontal, 8)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(3)
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(OmiColors.backgroundSecondary)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(OmiColors.border.opacity(0.5), lineWidth: 1)
-        )
     }
 
     private var taskSettingsButton: some View {
