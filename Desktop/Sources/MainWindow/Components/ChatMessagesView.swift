@@ -97,6 +97,12 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                     if newCount > oldCount || oldCount == 0 {
                         if shouldFollowContent || oldCount == 0 {
                             scrollToBottom(proxy: proxy)
+                            // Extra scroll after layout settles for initial load
+                            if oldCount == 0 {
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                                    scrollToBottom(proxy: proxy)
+                                }
+                            }
                         }
                     }
                 }
@@ -117,7 +123,11 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                     }
                 }
                 .onAppear {
+                    // Scroll immediately and again after layout settles
                     scrollToBottom(proxy: proxy)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                        scrollToBottom(proxy: proxy)
+                    }
                 }
 
                 // Scroll to bottom button
