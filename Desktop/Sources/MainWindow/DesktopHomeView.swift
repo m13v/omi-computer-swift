@@ -134,7 +134,7 @@ struct DesktopHomeView: View {
                             }
 
                             Text(viewModelContainer.initStatusMessage)
-                                .font(.system(size: 14, weight: .medium))
+                                .scaledFont(size: 14, weight: .medium)
                                 .foregroundColor(OmiColors.textTertiary)
 
                             ProgressView()
