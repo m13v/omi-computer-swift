@@ -586,6 +586,9 @@ class TasksViewModel: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
+    /// Version counter to coalesce rapid recomputation requests
+    private var recomputeVersion: Int = 0
+
     // MARK: - Cached Properties (avoid recomputation on every render)
 
     @Published private(set) var displayTasks: [TaskActionItem] = []
@@ -783,11 +786,58 @@ class TasksViewModel: ObservableObject {
 
     /// Recompute all caches when tasks change
     private func recomputeAllCaches() {
-        // Recompute display caches first (fast, in-memory)
-        recomputeDisplayCaches()
+        recomputeVersion += 1
+        let version = recomputeVersion
 
-        // Discover dynamic tags from task data
-        discoverDynamicTags()
+        // Snapshot inputs for background computation
+        let allTasks = store.incompleteTasks + store.completedTasks
+        let knownSources = TaskFilterTag.knownSources
+        let knownCategories = TaskFilterTag.knownCategories
+
+        // Discover dynamic tags on a background thread (iterates all tasks)
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var newDynamicTags: [DynamicFilterTag] = []
+            var newDynamicCounts: [String: Int] = [:]
+
+            var allSources: [String: Int] = [:]
+            var allCategories: [String: Int] = [:]
+
+            for task in allTasks {
+                if let source = task.source, !source.isEmpty {
+                    allSources[source, default: 0] += 1
+                }
+                for tag in task.tags {
+                    allCategories[tag, default: 0] += 1
+                }
+            }
+
+            for (source, count) in allSources {
+                if !knownSources.contains(source) {
+                    let tag = DynamicFilterTag.source(source)
+                    newDynamicTags.append(tag)
+                    newDynamicCounts[tag.id] = count
+                }
+            }
+
+            for (category, count) in allCategories {
+                if !knownCategories.contains(category) {
+                    let tag = DynamicFilterTag.category(category)
+                    newDynamicTags.append(tag)
+                    newDynamicCounts[tag.id] = count
+                }
+            }
+
+            newDynamicTags.sort { (newDynamicCounts[$0.id] ?? 0) > (newDynamicCounts[$1.id] ?? 0) }
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.recomputeVersion == version else { return }
+                self.dynamicTags = newDynamicTags
+                self.dynamicTagCounts = newDynamicCounts
+            }
+        }
+
+        // Recompute display caches (reads @Published state, must stay on main but is now cheaper with cached dates)
+        recomputeDisplayCaches()
 
         // Load true counts from SQLite asynchronously
         Task {
@@ -1170,8 +1220,13 @@ class TasksViewModel: ObservableObject {
         for category in TaskCategory.allCases {
             result[category] = []
         }
+        // Pre-compute date boundaries once for all tasks
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
+        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
         for task in displayTasks {
-            let category = categoryFor(task: task)
+            let category = categoryFor(task: task, startOfTomorrow: startOfTomorrow, startOfDayAfterTomorrow: startOfDayAfterTomorrow)
             result[category, default: []].append(task)
         }
         categorizedTasks = result
@@ -1204,8 +1259,12 @@ class TasksViewModel: ObservableObject {
         for category in TaskCategory.allCases {
             result[category] = []
         }
+        let calendar = Calendar.current
+        let startOfToday = calendar.startOfDay(for: Date())
+        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
+        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
         for task in displayTasks {
-            let category = categoryFor(task: task)
+            let category = categoryFor(task: task, startOfTomorrow: startOfTomorrow, startOfDayAfterTomorrow: startOfDayAfterTomorrow)
             result[category, default: []].append(task)
         }
         categorizedTasks = result
@@ -1258,16 +1317,10 @@ class TasksViewModel: ObservableObject {
 
     // MARK: - Category Helpers
 
-    private func categoryFor(task: TaskActionItem) -> TaskCategory {
+    private func categoryFor(task: TaskActionItem, startOfTomorrow: Date, startOfDayAfterTomorrow: Date) -> TaskCategory {
         guard let dueAt = task.dueAt else {
             return .noDeadline
         }
-
-        let calendar = Calendar.current
-        let now = Date()
-        let startOfToday = calendar.startOfDay(for: now)
-        let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
-        let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
 
         // Overdue and today's tasks go into "Today" category (like Flutter)
         if dueAt < startOfTomorrow {
