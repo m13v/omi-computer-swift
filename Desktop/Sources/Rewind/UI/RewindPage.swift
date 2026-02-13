@@ -1148,13 +1148,14 @@ struct RewindPage: View {
     // MARK: - Recording Bar
 
     private func rewindRecordingBar(appState: AppState) -> some View {
-        HStack(spacing: 16) {
-            if appState.isTranscribing {
-                // "Audio" label
-                Text("Audio")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(OmiColors.textSecondary)
+        HStack(spacing: 12) {
+            // Left: always show "Audio" label
+            Text("Audio")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundColor(.white)
 
+            // Middle content depends on state
+            if appState.isTranscribing {
                 // Transcript text + chevron (clickable to expand/collapse)
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
@@ -1215,30 +1216,10 @@ struct RewindPage: View {
                     }
                 }
 
-                Spacer()
-
                 // Duration
                 Text(recordingTimer.formattedDuration)
                     .font(.system(size: 14, weight: .medium, design: .monospaced))
                     .foregroundColor(OmiColors.textSecondary)
-
-                // Stop button
-                Button(action: {
-                    appState.stopTranscription()
-                }) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "stop.circle.fill")
-                            .font(.system(size: 12))
-                        Text("Stop Recording")
-                            .font(.system(size: 13, weight: .medium))
-                    }
-                    .foregroundColor(.black)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
-                    .background(Capsule().fill(Color.white))
-                    .overlay(Capsule().stroke(OmiColors.border, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
             } else if appState.isSavingConversation {
                 // Saving indicator
                 ZStack {
@@ -1267,16 +1248,29 @@ struct RewindPage: View {
 
                 ProgressView()
                     .scaleEffect(0.7)
+            }
 
-                Spacer()
-            } else {
-                // Not recording — show "Audio" label + start button
-                Text("Audio")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(OmiColors.textSecondary)
+            Spacer()
 
-                Spacer()
-
+            // Right: Start/Stop button (always present)
+            if appState.isTranscribing {
+                Button(action: {
+                    appState.stopTranscription()
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "stop.circle.fill")
+                            .font(.system(size: 12))
+                        Text("Stop Recording")
+                            .font(.system(size: 13, weight: .medium))
+                    }
+                    .foregroundColor(.black)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 6)
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(OmiColors.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            } else if !appState.isSavingConversation {
                 Button(action: {
                     appState.startTranscription()
                 }) {
@@ -1288,7 +1282,7 @@ struct RewindPage: View {
                     }
                     .foregroundColor(.black)
                     .padding(.horizontal, 14)
-                    .padding(.vertical, 8)
+                    .padding(.vertical, 6)
                     .background(Capsule().fill(Color.white))
                     .overlay(Capsule().stroke(OmiColors.border, lineWidth: 1))
                 }
