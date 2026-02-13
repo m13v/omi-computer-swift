@@ -1620,6 +1620,12 @@ struct TasksPage: View {
 
     // MARK: - Tasks Content
 
+    /// Find a task by ID across all store arrays
+    private func findTask(_ id: String) -> TaskActionItem? {
+        store.incompleteTasks.first(where: { $0.id == id })
+            ?? store.completedTasks.first(where: { $0.id == id })
+    }
+
     private var tasksContent: some View {
         VStack(spacing: 0) {
             // Header with filter toggle and sort
@@ -1635,6 +1641,39 @@ struct TasksPage: View {
             } else {
                 tasksListView
             }
+        }
+        .overlay(alignment: .bottom) {
+            if viewModel.showUndoToast, let lastAction = viewModel.undoStack.last {
+                UndoToastView(
+                    taskDescription: lastAction.task.description,
+                    undoCount: viewModel.undoStack.count,
+                    onUndo: { Task { await viewModel.undoLastDelete() } }
+                )
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+                .padding(.bottom, 16)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
+        .focusable()
+        .onKeyPress(.init("n"), modifiers: .command) {
+            viewModel.showingCreateTask = true
+            return .handled
+        }
+        .onKeyPress(.init("d"), modifiers: .command) {
+            guard let taskId = hoveredTaskId,
+                  let task = findTask(taskId) else { return .ignored }
+            Task { await viewModel.deleteTaskWithUndo(task) }
+            return .handled
+        }
+        .onKeyPress(.tab, modifiers: []) {
+            guard let taskId = hoveredTaskId else { return .ignored }
+            viewModel.incrementIndent(for: taskId)
+            return .handled
+        }
+        .onKeyPress(.tab, modifiers: .shift) {
+            guard let taskId = hoveredTaskId else { return .ignored }
+            viewModel.decrementIndent(for: taskId)
+            return .handled
         }
     }
 
@@ -3498,4 +3537,54 @@ struct TaskCreateSheet: View {
     }
 }
 
+// MARK: - Undo Toast View
 
+struct UndoToastView: View {
+    let taskDescription: String
+    let undoCount: Int
+    let onUndo: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "trash")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white.opacity(0.7))
+
+            Text("Task deleted")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundColor(.white)
+                .lineLimit(1)
+
+            if undoCount > 1 {
+                Text("(\(undoCount))")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+
+            Spacer()
+
+            Button {
+                onUndo()
+            } label: {
+                Text("Undo")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule()
+                            .fill(.white.opacity(0.2))
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(
+            Capsule()
+                .fill(Color(.darkGray))
+                .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
+        )
+        .frame(maxWidth: 360)
+    }
+}
