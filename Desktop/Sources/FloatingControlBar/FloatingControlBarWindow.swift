@@ -6,8 +6,8 @@ import SwiftUI
 class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private static let positionKey = "FloatingControlBarPosition"
     private static let sizeKey = "FloatingControlBarSize"
-    private static let defaultSize = NSSize(width: 200, height: 60)
-    private static let minBarSize = NSSize(width: 200, height: 60)
+    private static let defaultSize = NSSize(width: 170, height: 48)
+    private static let minBarSize = NSSize(width: 170, height: 48)
     private static let maxBarSize = NSSize(width: 1200, height: 1000)
     private static let expandedWidth: CGFloat = 430
 
@@ -202,7 +202,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             state.aiResponseText = ""
             state.screenshotURL = nil
         }
-        resizeToFixedHeight(60, animated: true)
+        resizeToFixedHeight(FloatingControlBarWindow.minBarSize.height, animated: true)
     }
 
     private func resetToInputView() {
@@ -326,7 +326,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private func resizeToFixedHeight(_ height: CGFloat, animated: Bool = false) {
         resizeWorkItem?.cancel()
         // Use narrow width for collapsed bar, expanded for AI panels
-        let width = height <= 60 ? FloatingControlBarWindow.defaultSize.width : FloatingControlBarWindow.expandedWidth
+        let width = height <= FloatingControlBarWindow.minBarSize.height ? FloatingControlBarWindow.defaultSize.width : FloatingControlBarWindow.expandedWidth
         let size = NSSize(width: width, height: height)
         resizeWorkItem = DispatchWorkItem { [weak self] in
             self?.resizeAnchored(to: size, makeResizable: false, animated: animated)
@@ -339,7 +339,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// Resize window for PTT state (expanded when listening, narrow when idle)
     func resizeForPTTState(expanded: Bool) {
         let width = expanded ? FloatingControlBarWindow.expandedWidth : FloatingControlBarWindow.defaultSize.width
-        let size = NSSize(width: width, height: 60)
+        let size = NSSize(width: width, height: FloatingControlBarWindow.minBarSize.height)
         resizeAnchored(to: size, makeResizable: false, animated: true)
     }
 
@@ -527,8 +527,13 @@ class FloatingControlBarManager {
     func openAIInputWithQuery(_ query: String, screenshot: URL?) {
         guard let window = window else { return }
 
-        // Close any existing conversation and create fresh ChatProvider
-        window.closeAIConversation()
+        // Reset state directly (no animation) to avoid contract-then-expand flicker
+        window.state.showingAIConversation = false
+        window.state.showingAIResponse = false
+        window.state.aiInputText = ""
+        window.state.aiResponseText = ""
+        window.state.screenshotURL = nil
+
         let provider = ChatProvider()
         self.chatProvider = provider
 
@@ -549,6 +554,7 @@ class FloatingControlBarManager {
         window.state.showingAIResponse = false
         window.state.isAILoading = true
         window.state.aiInputText = query
+        window.state.displayedQuery = query
         window.state.aiResponseText = ""
         window.resizeToResponseHeightPublic(animated: true)
         window.orderFrontRegardless()
