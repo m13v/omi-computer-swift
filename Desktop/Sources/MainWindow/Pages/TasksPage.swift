@@ -496,7 +496,10 @@ class TasksViewModel: ObservableObject {
             if hasTopScoredFilter != !store.showAllTasks {
                 // When topScoredOnly is selected, showAllTasks should be false
                 // When topScoredOnly is not selected, showAllTasks should be true
-                store.showAllTasks = !hasTopScoredFilter
+                let newShowAll = !hasTopScoredFilter
+                store.showAllTasks = newShowAll
+                // Reload tasks so mergeAllowlistedTasks is skipped/applied correctly
+                Task { await store.loadIncompleteTasks(showAll: newShowAll) }
             }
 
             // Map status tags to showCompleted for server-side loading
