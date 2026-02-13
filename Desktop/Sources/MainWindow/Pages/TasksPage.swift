@@ -1751,11 +1751,6 @@ struct TasksPage: View {
                 modeToggle
                 addTaskButton
                 taskSettingsButton
-
-                // Chat panel toggle (only when chatProvider is available)
-                if chatProvider != nil {
-                    chatToggleButton
-                }
             }
         }
         .padding(.horizontal, 16)
