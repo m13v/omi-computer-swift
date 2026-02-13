@@ -755,6 +755,20 @@ actor ActionItemStorage {
         log("ActionItemStorage: Locally updated fields for \(backendId)")
     }
 
+    /// Un-soft-delete an action item by backend ID (for undo)
+    func undeleteActionItemByBackendId(_ backendId: String) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            try database.execute(
+                sql: "UPDATE action_items SET deleted = 0, deletedBy = NULL, updatedAt = ? WHERE backendId = ?",
+                arguments: [Date(), backendId]
+            )
+        }
+
+        log("ActionItemStorage: Undeleted action item with backendId \(backendId)")
+    }
+
     /// Soft delete an action item by backend ID
     func deleteActionItemByBackendId(_ backendId: String, deletedBy: String? = nil) async throws {
         let db = try await ensureInitialized()
