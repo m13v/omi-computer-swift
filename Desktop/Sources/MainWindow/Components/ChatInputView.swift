@@ -2,16 +2,23 @@ import SwiftUI
 
 /// Reusable chat input field with send button, extracted from ChatPage.
 /// Used by both ChatPage (main chat) and TaskChatPanel (task sidebar chat).
+///
+/// When `isSending` is true:
+///   - Input stays enabled so the user can type a follow-up
+///   - If input is empty, the button becomes a stop button
+///   - If input has text, pressing send calls `onFollowUp` (redirects the agent)
 struct ChatInputView: View {
     let onSend: (String) -> Void
+    var onFollowUp: ((String) -> Void)? = nil
+    var onStop: (() -> Void)? = nil
     let isSending: Bool
     var placeholder: String = "Type a message..."
 
     @State private var inputText = ""
     @FocusState private var isInputFocused: Bool
 
-    private var canSend: Bool {
-        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
+    private var hasText: Bool {
+        !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     var body: some View {
@@ -24,7 +31,7 @@ struct ChatInputView: View {
                 .padding(12)
                 .lineLimit(1...5)
                 .onSubmit {
-                    sendMessage()
+                    handleSubmit()
                 }
                 .frame(maxWidth: .infinity)
                 .background(OmiColors.backgroundSecondary)
@@ -34,20 +41,35 @@ struct ChatInputView: View {
                     isInputFocused = true
                 }
 
-            Button(action: sendMessage) {
-                Image(systemName: "arrow.up.circle.fill")
-                    .font(.system(size: 32))
-                    .foregroundColor(canSend ? OmiColors.purplePrimary : OmiColors.textTertiary)
+            if isSending && !hasText {
+                // Stop button — visible when agent is running and input is empty
+                Button(action: { onStop?() }) {
+                    Image(systemName: "stop.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(.red.opacity(0.8))
+                }
+                .buttonStyle(.plain)
+            } else {
+                // Send / follow-up button
+                Button(action: handleSubmit) {
+                    Image(systemName: "arrow.up.circle.fill")
+                        .font(.system(size: 32))
+                        .foregroundColor(hasText ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+                .disabled(!hasText)
             }
-            .buttonStyle(.plain)
-            .disabled(!canSend)
         }
     }
 
-    private func sendMessage() {
-        guard canSend else { return }
+    private func handleSubmit() {
+        guard hasText else { return }
         let text = inputText
         inputText = ""
-        onSend(text)
+        if isSending {
+            onFollowUp?(text)
+        } else {
+            onSend(text)
+        }
     }
 }
