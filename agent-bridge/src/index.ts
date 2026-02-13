@@ -6,6 +6,12 @@ import type {
   QueryMessage,
 } from "./protocol.js";
 import { createInterface } from "readline";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+// Resolve path to bundled @playwright/mcp CLI
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const playwrightCli = join(__dirname, "..", "node_modules", "@playwright", "mcp", "cli.js");
 
 // --- Helpers ---
 
@@ -56,8 +62,14 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       permissionMode: "bypassPermissions",
       allowDangerouslySkipPermissions: true,
       maxTurns: 15,
-      cwd: process.env.HOME || "/",
-      mcpServers: { "omi-tools": omiServer },
+      cwd: msg.cwd || process.env.HOME || "/",
+      mcpServers: {
+        "omi-tools": omiServer,
+        "playwright": {
+          command: process.execPath,
+          args: [playwrightCli],
+        },
+      },
       includePartialMessages: true,
     };
 
