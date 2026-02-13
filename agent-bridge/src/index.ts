@@ -1,4 +1,5 @@
 import { query } from "@anthropic-ai/claude-agent-sdk";
+import type { SDKUserMessage, Query } from "@anthropic-ai/claude-agent-sdk";
 import { createOmiMcpServer, resolveToolCall } from "./omi-tools.js";
 import type {
   InboundMessage,
@@ -8,6 +9,7 @@ import type {
 import { createInterface } from "readline";
 import { fileURLToPath } from "url";
 import { dirname, join } from "path";
+import { randomUUID } from "crypto";
 
 // Resolve path to bundled @playwright/mcp CLI
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -27,9 +29,51 @@ function logErr(msg: string): void {
 
 const omiServer = createOmiMcpServer();
 
+// --- MessageChannel: async queue for follow-up messages ---
+
+class MessageChannel<T> {
+  private queue: T[] = [];
+  private waiter: { resolve: (v: T) => void; reject: (e: Error) => void } | null = null;
+  private closed = false;
+
+  push(value: T) {
+    if (this.closed) return;
+    if (this.waiter) {
+      const w = this.waiter;
+      this.waiter = null;
+      w.resolve(value);
+    } else {
+      this.queue.push(value);
+    }
+  }
+
+  async pull(): Promise<T> {
+    if (this.queue.length > 0) {
+      return this.queue.shift()!;
+    }
+    if (this.closed) {
+      throw new Error("channel closed");
+    }
+    return new Promise((resolve, reject) => {
+      this.waiter = { resolve, reject };
+    });
+  }
+
+  close() {
+    this.closed = true;
+    if (this.waiter) {
+      this.waiter.reject(new Error("channel closed"));
+      this.waiter = null;
+    }
+  }
+}
+
 // --- Active query state ---
 
 let activeAbort: AbortController | null = null;
+let activeQuery: Query | null = null;
+let followUpChannel: MessageChannel<string> | null = null;
+let queryDone = false;
 
 // --- Handle a query from Swift ---
 
@@ -39,9 +83,44 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     activeAbort.abort();
     activeAbort = null;
   }
+  activeQuery = null;
+  followUpChannel?.close();
+  followUpChannel = null;
 
   const abortController = new AbortController();
   activeAbort = abortController;
+  queryDone = false;
+
+  const channel = new MessageChannel<string>();
+  followUpChannel = channel;
+
+  // Session ID for constructing SDKUserMessage objects
+  const inputSessionId = randomUUID();
+
+  // Async generator that yields the initial prompt, then follow-ups from the channel
+  async function* userMessageStream(): AsyncGenerator<SDKUserMessage> {
+    yield {
+      type: "user",
+      message: { role: "user", content: msg.prompt },
+      parent_tool_use_id: null,
+      session_id: inputSessionId,
+    };
+
+    while (true) {
+      try {
+        const text = await channel.pull();
+        yield {
+          type: "user",
+          message: { role: "user", content: text },
+          parent_tool_use_id: null,
+          session_id: inputSessionId,
+        };
+      } catch {
+        // Channel closed — no more input
+        return;
+      }
+    }
+  }
 
   try {
     // Each query is standalone — conversation history comes via systemPrompt
@@ -81,7 +160,8 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Track pending tool calls so we can mark them completed when new text arrives
     const pendingTools: string[] = [];
 
-    const q = query({ prompt: msg.prompt, options: options as any });
+    const q = query({ prompt: userMessageStream(), options: options as any });
+    activeQuery = q;
 
     for await (const message of q) {
       if (abortController.signal.aborted) break;
@@ -150,8 +230,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
           pendingTools.length = 0;
 
           const result = message as any;
-          if (result.subtype === "success") {
-            costUsd = result.total_cost_usd || 0;
+          if (result.subtype === "success" || result.subtype === "interrupt") {
+            // Accumulate cost across turns (follow-ups produce multiple results)
+            costUsd += (result.total_cost_usd || 0);
             // Use result.result as final text if we didn't capture anything
             if (!fullText && result.result) {
               fullText = result.result;
@@ -183,7 +264,41 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     if (activeAbort === abortController) {
       activeAbort = null;
     }
+    activeQuery = null;
+    followUpChannel = null;
+    queryDone = true;
   }
+}
+
+// --- Follow-up and interrupt handlers ---
+
+async function handleFollowUp(text: string): Promise<void> {
+  if (!activeQuery || queryDone || !followUpChannel) {
+    logErr("Follow-up ignored: no active query");
+    return;
+  }
+  try {
+    await activeQuery.interrupt();
+    followUpChannel.push(text);
+    logErr(`Follow-up delivered: "${text.slice(0, 50)}..."`);
+  } catch (err) {
+    logErr(`Follow-up error: ${err}`);
+  }
+}
+
+async function handleInterrupt(): Promise<void> {
+  if (!activeQuery || queryDone) {
+    logErr("Interrupt ignored: no active query");
+    return;
+  }
+  try {
+    await activeQuery.interrupt();
+  } catch (err) {
+    logErr(`Interrupt error: ${err}`);
+  }
+  followUpChannel?.close();
+  queryDone = true;
+  logErr("Query interrupted by user");
 }
 
 // Prevent unhandled rejections from crashing the bridge process
@@ -216,6 +331,18 @@ rl.on("line", (line: string) => {
 
     case "tool_result":
       resolveToolCall(msg);
+      break;
+
+    case "follow_up":
+      handleFollowUp(msg.text).catch((err) => {
+        logErr(`Unhandled follow-up error: ${err}`);
+      });
+      break;
+
+    case "interrupt":
+      handleInterrupt().catch((err) => {
+        logErr(`Unhandled interrupt error: ${err}`);
+      });
       break;
 
     case "stop":
