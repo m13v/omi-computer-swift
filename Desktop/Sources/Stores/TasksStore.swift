@@ -259,19 +259,25 @@ class TasksStore: ObservableObject {
             // Sync API results to local cache
             try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
-            // Reload from local cache to get merged data (local + synced)
-            let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                limit: pageSize,
-                offset: 0,
-                completed: false,
-                startDate: startDate
-            )
-            let merged = await mergeAllowlistedTasks(mergedTasks)
-            if merged != incompleteTasks {
-                incompleteTasks = merged
-                hasMoreIncompleteTasks = mergedTasks.count >= pageSize
-                incompleteOffset = mergedTasks.count
-                log("TasksStore: Auto-refresh updated \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
+            let updated: [TaskActionItem]
+            if isShowingAllIncompleteTasks {
+                // Due Date mode: use API response directly to match iOS/Flutter
+                updated = response.items
+            } else {
+                // Relevance mode: reload from local cache to get merged data
+                let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                    limit: pageSize,
+                    offset: 0,
+                    completed: false,
+                    startDate: startDate
+                )
+                updated = await mergeAllowlistedTasks(mergedTasks)
+            }
+            if updated != incompleteTasks {
+                incompleteTasks = updated
+                hasMoreIncompleteTasks = updated.count >= pageSize
+                incompleteOffset = updated.count
+                log("TasksStore: Auto-refresh updated \(updated.count) incomplete tasks (API had \(response.items.count))")
             }
         } catch {
             // Silently ignore errors during auto-refresh
@@ -389,22 +395,26 @@ class TasksStore: ObservableObject {
         let startDate = showAll ? nil : sevenDaysAgo
 
         // Step 1: Load from local cache first for instant display
-        do {
-            let cachedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                limit: pageSize,
-                offset: 0,
-                completed: false,
-                startDate: startDate
-            )
-            if !cachedTasks.isEmpty {
-                incompleteTasks = await mergeAllowlistedTasks(cachedTasks)
-                incompleteOffset = cachedTasks.count
-                hasMoreIncompleteTasks = cachedTasks.count >= pageSize
-                isLoadingIncomplete = false  // Show cached data immediately
-                log("TasksStore: Loaded \(cachedTasks.count) incomplete tasks from local cache")
+        // Skip cache in Due Date mode (showAll) — SQLite's full-sync data yields
+        // more 7-day tasks than the API returns, causing a count mismatch with iOS/Flutter.
+        if !showAll {
+            do {
+                let cachedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                    limit: pageSize,
+                    offset: 0,
+                    completed: false,
+                    startDate: startDate
+                )
+                if !cachedTasks.isEmpty {
+                    incompleteTasks = await mergeAllowlistedTasks(cachedTasks)
+                    incompleteOffset = cachedTasks.count
+                    hasMoreIncompleteTasks = cachedTasks.count >= pageSize
+                    isLoadingIncomplete = false  // Show cached data immediately
+                    log("TasksStore: Loaded \(cachedTasks.count) incomplete tasks from local cache")
+                }
+            } catch {
+                log("TasksStore: Local cache unavailable for incomplete tasks, falling back to API")
             }
-        } catch {
-            log("TasksStore: Local cache unavailable for incomplete tasks, falling back to API")
         }
 
         // Step 2: Fetch from API and sync to local cache
@@ -418,20 +428,31 @@ class TasksStore: ObservableObject {
             hasLoadedIncomplete = true
             log("TasksStore: Fetched \(response.items.count) incomplete tasks from API")
 
-            // Step 3: Sync to cache, then reload from cache
+            // Step 3: Sync API data to cache, then decide source of truth
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
 
-                let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
-                    limit: pageSize,
-                    offset: 0,
-                    completed: false,
-                    startDate: startDate
-                )
-                incompleteTasks = await mergeAllowlistedTasks(mergedTasks)
-                incompleteOffset = mergedTasks.count
-                hasMoreIncompleteTasks = mergedTasks.count >= pageSize
-                log("TasksStore: Showing \(mergedTasks.count) incomplete tasks from merged local cache")
+                if showAll {
+                    // Due Date mode: use API response directly to match iOS/Flutter behavior.
+                    // SQLite (populated by full sync) has a different ordering that yields
+                    // more tasks within the 7-day window than the API returns.
+                    incompleteTasks = response.items
+                    incompleteOffset = response.items.count
+                    hasMoreIncompleteTasks = response.hasMore
+                    log("TasksStore: Showing \(response.items.count) incomplete tasks from API directly (Due Date mode)")
+                } else {
+                    // Relevance mode: reload from cache to merge local + synced data
+                    let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
+                        limit: pageSize,
+                        offset: 0,
+                        completed: false,
+                        startDate: startDate
+                    )
+                    incompleteTasks = await mergeAllowlistedTasks(mergedTasks)
+                    incompleteOffset = mergedTasks.count
+                    hasMoreIncompleteTasks = mergedTasks.count >= pageSize
+                    log("TasksStore: Showing \(mergedTasks.count) incomplete tasks from merged local cache")
+                }
             } catch {
                 logError("TasksStore: Failed to sync/reload incomplete tasks from local cache", error: error)
                 // Fall back to API data
