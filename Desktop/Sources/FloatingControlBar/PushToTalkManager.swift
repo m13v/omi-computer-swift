@@ -191,7 +191,7 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem = nil
 
     // Play start-of-PTT sound
-    NSSound(named: "Tink")?.play()
+    NSSound(named: "Funk")?.play()
 
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "hold")
     updateBarState()
@@ -216,7 +216,7 @@ class PushToTalkManager: ObservableObject {
     state = .lockedListening
 
     // Play start-of-PTT sound for locked mode
-    NSSound(named: "Tink")?.play()
+    NSSound(named: "Funk")?.play()
 
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "locked")
 
@@ -271,7 +271,7 @@ class PushToTalkManager: ObservableObject {
     transcriptionService?.finishStream()
 
     // Play end-of-PTT sound
-    NSSound(named: "Pop")?.play()
+    NSSound(named: "Bottle")?.play()
 
     log("PushToTalkManager: finalizing — mic stopped, waiting for Deepgram to finish")
 
