@@ -2032,12 +2032,12 @@ struct TasksPage: View {
                         Text(option.rawValue)
                             .font(.system(size: 12, weight: .medium))
                     }
-                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                    .foregroundColor(isSelected ? .black : OmiColors.textSecondary)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 6)
-                            .fill(isSelected ? OmiColors.backgroundTertiary : Color.clear)
+                            .fill(isSelected ? Color.white : Color.clear)
                     )
                 }
                 .buttonStyle(.plain)
