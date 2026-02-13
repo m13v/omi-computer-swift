@@ -756,6 +756,22 @@ actor ActionItemStorage {
         log("ActionItemStorage: Locally updated fields for \(backendId)")
     }
 
+    /// Batch update sort orders and indent levels in SQLite
+    func updateSortOrders(_ updates: [(backendId: String, sortOrder: Int, indentLevel: Int)]) async throws {
+        let db = try await ensureInitialized()
+
+        try await db.write { database in
+            for update in updates {
+                try database.execute(
+                    sql: "UPDATE action_items SET sortOrder = ?, indentLevel = ?, updatedAt = ? WHERE backendId = ?",
+                    arguments: [update.sortOrder, update.indentLevel, Date(), update.backendId]
+                )
+            }
+        }
+
+        log("ActionItemStorage: Updated sort orders for \(updates.count) items")
+    }
+
     /// Un-soft-delete an action item by backend ID (for undo)
     func undeleteActionItemByBackendId(_ backendId: String) async throws {
         let db = try await ensureInitialized()
