@@ -178,7 +178,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     /// Focus the text input field by finding the NSTextView in the view hierarchy
-    private func focusInputField() {
+    func focusInputField() {
         guard let contentView = self.contentView else { return }
         // Find the NSTextView inside the hosting view hierarchy
         func findTextView(in view: NSView) -> NSTextView? {
@@ -487,8 +487,15 @@ class FloatingControlBarManager {
     /// Show the floating bar.
     func show() {
         log("FloatingControlBarManager: show() called, window=\(window != nil), isVisible=\(window?.isVisible ?? false)")
-        window?.orderFront(nil)
+        window?.makeKeyAndOrderFront(nil)
         log("FloatingControlBarManager: show() done, frame=\(window?.frame ?? .zero)")
+
+        // Auto-focus input if AI conversation is open
+        if let window = window, window.state.showingAIConversation && !window.state.showingAIResponse {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                window.focusInputField()
+            }
+        }
     }
 
     /// Hide the floating bar.
