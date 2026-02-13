@@ -1068,6 +1068,17 @@ class TasksStore: ObservableObject {
         }
     }
 
+    // MARK: - Chat Session
+
+    /// Update the chatSessionId for a task in memory
+    func updateChatSessionId(taskId: String, sessionId: String) {
+        if let idx = incompleteTasks.firstIndex(where: { $0.id == taskId }) {
+            incompleteTasks[idx].chatSessionId = sessionId
+        } else if let idx = completedTasks.firstIndex(where: { $0.id == taskId }) {
+            completedTasks[idx].chatSessionId = sessionId
+        }
+    }
+
     // MARK: - Bulk Actions
 
     func deleteMultipleTasks(ids: [String]) async {
