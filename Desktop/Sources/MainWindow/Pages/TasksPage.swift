@@ -1232,6 +1232,11 @@ class TasksViewModel: ObservableObject {
         if sortOption == .dueDate {
             log("TasksViewModel: Categorized \(displayTasks.count) tasks - Today: \(result[.today]?.count ?? 0), Tomorrow: \(result[.tomorrow]?.count ?? 0), Later: \(result[.later]?.count ?? 0), No Deadline: \(result[.noDeadline]?.count ?? 0)")
         }
+
+        // Clear mode-switching spinner (sort option change no longer triggers store reload)
+        if isSwitchingSortMode {
+            isSwitchingSortMode = false
+        }
     }
 
     /// Load more filtered/search results (pagination within already-queried results)
