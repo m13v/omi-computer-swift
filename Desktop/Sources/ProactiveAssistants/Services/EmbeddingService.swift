@@ -1,31 +1,15 @@
 import Foundation
 import Accelerate
 
-/// Actor-based service for embeddings with support for both Gemini (768-dim) and OpenAI (3072-dim)
+/// Actor-based service for embeddings using Gemini (3072-dim)
 actor EmbeddingService {
     static let shared = EmbeddingService()
 
-    enum EmbeddingModel {
-        case gemini  // 768 dimensions - for action items
-        case openai  // 3072 dimensions - for screenshots
-
-        var dimensions: Int {
-            switch self {
-            case .gemini: return 768
-            case .openai: return 3072
-            }
-        }
-
-        var modelName: String {
-            switch self {
-            case .gemini: return "gemini-embedding-001"
-            case .openai: return "text-embedding-3-large"
-            }
-        }
-    }
+    /// Gemini embedding-001 outputs 3072 dimensions by default
+    static let embeddingDimension = 3072
+    static let modelName = "gemini-embedding-001"
 
     private let geminiApiKey: String?
-    private let openaiApiKey: String?
 
     /// In-memory index: action_item.id -> normalized embedding
     private var index: [Int64: [Float]] = [:]
@@ -33,32 +17,20 @@ actor EmbeddingService {
 
     private init() {
         self.geminiApiKey = ProcessInfo.processInfo.environment["GEMINI_API_KEY"]
-        self.openaiApiKey = ProcessInfo.processInfo.environment["OPENAI_API_KEY"]
     }
 
     // MARK: - Embedding API
 
-    /// Generate embedding for a single text
+    /// Generate embedding for a single text using Gemini (3072-dim)
     /// - Parameters:
     ///   - text: Text to embed
-    ///   - model: Embedding model to use (default: .gemini for backward compatibility)
     ///   - taskType: Optional Gemini task type (e.g. "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY")
-    func embed(text: String, model: EmbeddingModel = .gemini, taskType: String? = nil) async throws -> [Float] {
-        switch model {
-        case .gemini:
-            return try await embedGemini(text: text, taskType: taskType)
-        case .openai:
-            return try await embedOpenAI(text: text)
-        }
-    }
-
-    /// Gemini embedding (768 dimensions)
-    private func embedGemini(text: String, taskType: String? = nil) async throws -> [Float] {
+    func embed(text: String, taskType: String? = nil) async throws -> [Float] {
         guard let apiKey = geminiApiKey else {
-            throw EmbeddingError.missingAPIKey(provider: "Gemini")
+            throw EmbeddingError.missingAPIKey
         }
 
-        let modelName = EmbeddingModel.gemini.modelName
+        let modelName = Self.modelName
         var requestBody: [String: Any] = [
             "model": "models/\(modelName)",
             "content": [
@@ -88,60 +60,16 @@ actor EmbeddingService {
         return normalize(floats)
     }
 
-    /// OpenAI embedding (3072 dimensions)
-    private func embedOpenAI(text: String) async throws -> [Float] {
-        guard let apiKey = openaiApiKey else {
-            throw EmbeddingError.missingAPIKey(provider: "OpenAI")
-        }
-
-        let requestBody: [String: Any] = [
-            "input": text,
-            "model": EmbeddingModel.openai.modelName,
-            "encoding_format": "float"
-        ]
-
-        let url = URL(string: "https://api.openai.com/v1/embeddings")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 30
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dataArray = json["data"] as? [[String: Any]],
-              let firstItem = dataArray.first,
-              let embedding = firstItem["embedding"] as? [Double] else {
-            throw EmbeddingError.invalidResponse
-        }
-
-        let floats = embedding.map { Float($0) }
-        return normalize(floats)
-    }
-
-    /// Batch embed multiple texts (up to 100 per call)
+    /// Batch embed multiple texts using Gemini (3072-dim, up to 100 per call)
     /// - Parameters:
     ///   - texts: Texts to embed
-    ///   - model: Embedding model to use (default: .gemini for backward compatibility)
     ///   - taskType: Optional Gemini task type (e.g. "RETRIEVAL_DOCUMENT", "RETRIEVAL_QUERY")
-    func embedBatch(texts: [String], model: EmbeddingModel = .gemini, taskType: String? = nil) async throws -> [[Float]] {
-        switch model {
-        case .gemini:
-            return try await embedBatchGemini(texts: texts, taskType: taskType)
-        case .openai:
-            return try await embedBatchOpenAI(texts: texts)
-        }
-    }
-
-    /// Gemini batch embedding (768 dimensions)
-    private func embedBatchGemini(texts: [String], taskType: String? = nil) async throws -> [[Float]] {
+    func embedBatch(texts: [String], taskType: String? = nil) async throws -> [[Float]] {
         guard let apiKey = geminiApiKey else {
-            throw EmbeddingError.missingAPIKey(provider: "Gemini")
+            throw EmbeddingError.missingAPIKey
         }
 
-        let modelName = EmbeddingModel.gemini.modelName
+        let modelName = Self.modelName
         let requests = texts.map { text in
             var req: [String: Any] = [
                 "model": "models/\(modelName)",
@@ -174,40 +102,6 @@ actor EmbeddingService {
         return embeddings.compactMap { embedding in
             guard let values = embedding["values"] as? [Double] else { return nil }
             return normalize(values.map { Float($0) })
-        }
-    }
-
-    /// OpenAI batch embedding (3072 dimensions) - processes texts sequentially to avoid rate limits
-    private func embedBatchOpenAI(texts: [String]) async throws -> [[Float]] {
-        guard let apiKey = openaiApiKey else {
-            throw EmbeddingError.missingAPIKey(provider: "OpenAI")
-        }
-
-        // OpenAI supports batch requests with multiple inputs
-        let requestBody: [String: Any] = [
-            "input": texts,
-            "model": EmbeddingModel.openai.modelName,
-            "encoding_format": "float"
-        ]
-
-        let url = URL(string: "https://api.openai.com/v1/embeddings")!
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-        request.timeoutInterval = 60
-        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
-
-        let (data, _) = try await URLSession.shared.data(for: request)
-
-        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-              let dataArray = json["data"] as? [[String: Any]] else {
-            throw EmbeddingError.invalidResponse
-        }
-
-        return dataArray.compactMap { item in
-            guard let embedding = item["embedding"] as? [Double] else { return nil }
-            return normalize(embedding.map { Float($0) })
         }
     }
 
@@ -330,15 +224,12 @@ actor EmbeddingService {
         }
     }
 
-    /// Convert Data (BLOB) back to [Float]
-    /// Supports both 768-dim (Gemini) and 3072-dim (OpenAI) embeddings
+    /// Convert Data (BLOB) back to [Float] (expects 3072-dim Gemini embeddings)
     func dataToFloats(_ data: Data) -> [Float]? {
         let floatSize = MemoryLayout<Float>.size
         let floatCount = data.count / floatSize
 
-        // Accept both 768-dim (Gemini) and 3072-dim (OpenAI) embeddings
-        guard floatCount == EmbeddingModel.gemini.dimensions ||
-              floatCount == EmbeddingModel.openai.dimensions else {
+        guard floatCount == Self.embeddingDimension else {
             return nil
         }
 
@@ -350,12 +241,12 @@ actor EmbeddingService {
     // MARK: - Errors
 
     enum EmbeddingError: LocalizedError {
-        case missingAPIKey(provider: String)
+        case missingAPIKey
         case invalidResponse
 
         var errorDescription: String? {
             switch self {
-            case .missingAPIKey(let provider): return "\(provider) API key not set"
+            case .missingAPIKey: return "Gemini API key not set"
             case .invalidResponse: return "Invalid embedding API response"
             }
         }
