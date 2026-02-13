@@ -847,45 +847,74 @@ class TasksStore: ObservableObject {
     // MARK: - Task Actions
 
     func toggleTask(_ task: TaskActionItem) async {
+        let newCompleted = !task.completed
+
+        // 1. Local-first: update SQLite immediately so auto-refresh reads correct state
         do {
-            let updated = try await APIClient.shared.updateActionItem(
-                id: task.id,
-                completed: !task.completed
+            try await ActionItemStorage.shared.updateCompletionStatus(
+                backendId: task.id, completed: newCompleted
             )
+        } catch {
+            logError("TasksStore: Failed to update task locally", error: error)
+            self.error = error.localizedDescription
+            return
+        }
 
-            // Sync to local SQLite cache so auto-refresh doesn't revert the change
-            try await ActionItemStorage.shared.syncTaskActionItems([updated])
+        // 2. Read back from SQLite to get a TaskActionItem with the new completed value
+        guard let updatedTask = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: task.id) else {
+            logError("TasksStore: Failed to read back toggled task", error: nil)
+            return
+        }
 
-            // Move task between lists based on new completion status
-            if updated.completed {
-                // Was incomplete, now completed - move to completed list
-                incompleteTasks.removeAll { $0.id == task.id }
-                completedTasks.insert(updated, at: 0)
+        // 3. Update in-memory arrays immediately (optimistic UI)
+        if newCompleted {
+            incompleteTasks.removeAll { $0.id == task.id }
+            completedTasks.insert(updatedTask, at: 0)
 
-                // Compact relevance scores to fill the gap
-                if let score = task.relevanceScore {
-                    try await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
-                    Task { await self.syncScoresToBackend() }
-                }
+            // Compact relevance scores to fill the gap
+            if let score = task.relevanceScore {
+                try? await ActionItemStorage.shared.compactScoresAfterRemoval(removedScore: score)
+                Task { await self.syncScoresToBackend() }
+            }
 
-                // Promote a staged task to fill the vacated slot
-                if task.source?.contains("screenshot") == true {
-                    Task {
-                        let promoted = await TaskPromotionService.shared.promoteIfNeeded()
-                        if !promoted.isEmpty {
-                            self.incompleteTasks.append(contentsOf: promoted)
-                            log("TasksStore: Inserted \(promoted.count) promoted tasks after completion")
-                        }
+            // Promote a staged task to fill the vacated slot
+            if task.source?.contains("screenshot") == true {
+                Task {
+                    let promoted = await TaskPromotionService.shared.promoteIfNeeded()
+                    if !promoted.isEmpty {
+                        self.incompleteTasks.append(contentsOf: promoted)
+                        log("TasksStore: Inserted \(promoted.count) promoted tasks after completion")
                     }
                 }
-            } else {
-                // Was completed, now incomplete - move to incomplete list
-                completedTasks.removeAll { $0.id == task.id }
-                incompleteTasks.insert(updated, at: 0)
             }
+        } else {
+            completedTasks.removeAll { $0.id == task.id }
+            incompleteTasks.insert(updatedTask, at: 0)
+        }
+
+        // 4. Call API in background, revert on failure
+        do {
+            let apiResult = try await APIClient.shared.updateActionItem(
+                id: task.id,
+                completed: newCompleted
+            )
+            // Sync API result to store server-side timestamps
+            try await ActionItemStorage.shared.syncTaskActionItems([apiResult])
         } catch {
+            logError("TasksStore: Failed to toggle task on backend, reverting", error: error)
+            // Revert SQLite
+            try? await ActionItemStorage.shared.updateCompletionStatus(
+                backendId: task.id, completed: task.completed
+            )
+            // Revert in-memory arrays
+            if newCompleted {
+                completedTasks.removeAll { $0.id == task.id }
+                incompleteTasks.insert(task, at: 0)
+            } else {
+                incompleteTasks.removeAll { $0.id == task.id }
+                completedTasks.insert(task, at: 0)
+            }
             self.error = error.localizedDescription
-            logError("TasksStore: Failed to toggle task", error: error)
         }
     }
 
@@ -957,41 +986,59 @@ class TasksStore: ObservableObject {
     }
 
     func updateTask(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
+        // Track manual edits: if description is changed, mark as manually edited
+        var metadata: [String: Any]? = nil
+        if description != nil {
+            metadata = ["manually_edited": true]
+            // Preserve existing tags in metadata
+            if !task.tags.isEmpty {
+                metadata?["tags"] = task.tags
+            }
+        }
+
+        // 1. Local-first: update SQLite immediately so auto-refresh reads correct state
         do {
-            // Track manual edits: if description is changed, mark as manually edited
-            var metadata: [String: Any]? = nil
-            if description != nil {
-                metadata = ["manually_edited": true]
-                // Preserve existing tags in metadata
-                if !task.tags.isEmpty {
-                    metadata?["tags"] = task.tags
+            try await ActionItemStorage.shared.updateActionItemFields(
+                backendId: task.id,
+                description: description,
+                dueAt: dueAt,
+                priority: priority,
+                metadata: metadata
+            )
+        } catch {
+            logError("TasksStore: Failed to update task locally", error: error)
+            self.error = error.localizedDescription
+            return
+        }
+
+        // 2. Read back from SQLite and update in-memory arrays immediately
+        if let updatedTask = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: task.id) {
+            if task.completed {
+                if let index = completedTasks.firstIndex(where: { $0.id == task.id }) {
+                    completedTasks[index] = updatedTask
+                }
+            } else {
+                if let index = incompleteTasks.firstIndex(where: { $0.id == task.id }) {
+                    incompleteTasks[index] = updatedTask
                 }
             }
+        }
 
-            let updated = try await APIClient.shared.updateActionItem(
+        // 3. Call API in background
+        do {
+            let apiResult = try await APIClient.shared.updateActionItem(
                 id: task.id,
                 description: description,
                 dueAt: dueAt,
                 priority: priority,
                 metadata: metadata
             )
-
-            // Sync to local SQLite cache so auto-refresh doesn't revert the change
-            try await ActionItemStorage.shared.syncTaskActionItems([updated])
-
-            // Update in appropriate list
-            if task.completed {
-                if let index = completedTasks.firstIndex(where: { $0.id == task.id }) {
-                    completedTasks[index] = updated
-                }
-            } else {
-                if let index = incompleteTasks.firstIndex(where: { $0.id == task.id }) {
-                    incompleteTasks[index] = updated
-                }
-            }
+            // Sync API result to store server-side timestamps
+            try await ActionItemStorage.shared.syncTaskActionItems([apiResult])
         } catch {
+            // Local change persists; next successful sync will reconcile
             self.error = error.localizedDescription
-            logError("TasksStore: Failed to update task", error: error)
+            logError("TasksStore: Failed to update task on backend (local update preserved)", error: error)
         }
     }
 
