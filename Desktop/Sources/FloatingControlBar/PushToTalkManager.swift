@@ -190,6 +190,9 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem?.cancel()
     finalizeWorkItem = nil
 
+    // Play start-of-PTT sound
+    NSSound(named: "Tink")?.play()
+
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "hold")
     updateBarState()
 
@@ -211,6 +214,10 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem?.cancel()
     finalizeWorkItem = nil
     state = .lockedListening
+
+    // Play start-of-PTT sound for locked mode
+    NSSound(named: "Tink")?.play()
+
     AnalyticsManager.shared.floatingBarPTTStarted(mode: "locked")
 
     // If we were already listening from the first tap, keep going.
@@ -256,10 +263,20 @@ class PushToTalkManager: ObservableObject {
     finalizeWorkItem = nil
     updateBarState()
 
-    log("PushToTalkManager: finalizing — waiting for last segments")
+    // Stop mic immediately — no more audio capture
+    audioCaptureService?.stopCapture()
 
-    // Wait 500ms for DeepGram to flush final segments, then send
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+    // Flush remaining audio buffer and tell Deepgram we're done sending
+    // (keeps WebSocket open to receive final transcription results)
+    transcriptionService?.finishStream()
+
+    // Play end-of-PTT sound
+    NSSound(named: "Pop")?.play()
+
+    log("PushToTalkManager: finalizing — mic stopped, waiting for Deepgram to finish")
+
+    // Wait 1.5s for Deepgram to process remaining audio and send final results
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
       Task { @MainActor in
         self?.sendTranscript()
       }
