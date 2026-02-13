@@ -153,7 +153,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
     }
 
-    func captureScreenshot() {
+    func captureScreenshot(thenFocusInput: Bool = false) {
         // Temporarily hide the bar to avoid capturing it in the screenshot
         let wasVisible = isVisible
         if wasVisible { orderOut(nil) }
@@ -167,6 +167,30 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
                 self?.orderFront(nil)
                 self?.makeKeyAndOrderFront(nil)
             }
+
+            if thenFocusInput {
+                // Focus after a short delay to let SwiftUI create the text view
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    self?.focusInputField()
+                }
+            }
+        }
+    }
+
+    /// Focus the text input field by finding the NSTextView in the view hierarchy
+    private func focusInputField() {
+        guard let contentView = self.contentView else { return }
+        // Find the NSTextView inside the hosting view hierarchy
+        func findTextView(in view: NSView) -> NSTextView? {
+            if let textView = view as? NSTextView { return textView }
+            for subview in view.subviews {
+                if let found = findTextView(in: subview) { return found }
+            }
+            return nil
+        }
+        if let textView = findTextView(in: contentView) {
+            makeKeyAndOrderFront(nil)
+            makeFirstResponder(textView)
         }
     }
 
@@ -207,8 +231,8 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     func showAIConversation() {
-        // Capture screenshot before showing the AI panel
-        captureScreenshot()
+        // Capture screenshot before showing the AI panel, then focus input after
+        captureScreenshot(thenFocusInput: true)
 
         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
             state.showingAIConversation = true
@@ -220,9 +244,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         }
         resizeToFixedHeight(120, animated: true)
         setupInputHeightObserver()
-
-        // Ensure window is key so the text field can receive focus
-        makeKeyAndOrderFront(nil)
     }
 
     private func setupInputHeightObserver() {
