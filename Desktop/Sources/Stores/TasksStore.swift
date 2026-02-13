@@ -175,10 +175,8 @@ class TasksStore: ObservableObject {
                 completed: false
             )
 
-            // Sync API results to local cache, clean up phantom tasks
+            // Sync API results to local cache
             try await ActionItemStorage.shared.syncTaskActionItems(response.items)
-            let apiIds = Set(response.items.map { $0.id })
-            try await ActionItemStorage.shared.markAbsentTasksAsStaged(apiIds: apiIds)
 
             // Reload from local cache (respects local changes like completions/deletions)
             let mergedTasks = try await ActionItemStorage.shared.getLocalActionItems(
@@ -334,12 +332,9 @@ class TasksStore: ObservableObject {
             hasLoadedIncomplete = true
             log("TasksStore: Fetched \(response.items.count) incomplete tasks from API")
 
-            // Sync API data to local cache, then clean up phantom tasks
+            // Sync API data to local cache
             do {
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
-                // Mark tasks that the API no longer returns as staged
-                let apiIds = Set(response.items.map { $0.id })
-                try await ActionItemStorage.shared.markAbsentTasksAsStaged(apiIds: apiIds)
             } catch {
                 logError("TasksStore: Failed to sync incomplete tasks to local cache", error: error)
             }
@@ -507,7 +502,7 @@ class TasksStore: ObservableObject {
     /// Ensures filter/search queries have the full dataset. Keyed per user so it runs once per account.
     private func performFullSyncIfNeeded() async {
         let userId = UserDefaults.standard.string(forKey: "auth_userId") ?? "unknown"
-        let syncKey = "tasksFullSyncCompleted_v3_\(userId)"
+        let syncKey = "tasksFullSyncCompleted_v4_\(userId)"
 
         guard !UserDefaults.standard.bool(forKey: syncKey) else {
             log("TasksStore: Full sync already completed for user \(userId)")
@@ -521,6 +516,7 @@ class TasksStore: ObservableObject {
 
         do {
             // Sync all incomplete tasks (start at 0 — initial load uses a date filter so it's a different dataset)
+            var allIncompleteApiIds = Set<String>()
             var offset = 0
             while true {
                 let response = try await APIClient.shared.getActionItems(
@@ -530,10 +526,17 @@ class TasksStore: ObservableObject {
                 )
                 if response.items.isEmpty { break }
                 try await ActionItemStorage.shared.syncTaskActionItems(response.items)
+                allIncompleteApiIds.formUnion(response.items.map { $0.id })
                 totalSynced += response.items.count
                 offset += response.items.count
                 log("TasksStore: Full sync progress - \(totalSynced) tasks synced (incomplete)")
                 if response.items.count < batchSize { break }
+            }
+
+            // Now that we have ALL incomplete API IDs, mark any local tasks
+            // not in this set as staged. This is safe because we have the full dataset.
+            if !allIncompleteApiIds.isEmpty {
+                try await ActionItemStorage.shared.markAbsentTasksAsStaged(apiIds: allIncompleteApiIds)
             }
 
             // Sync all completed tasks
@@ -570,6 +573,21 @@ class TasksStore: ObservableObject {
 
             UserDefaults.standard.set(true, forKey: syncKey)
             log("TasksStore: Full sync completed - \(totalSynced) tasks synced total")
+
+            // Reload incomplete tasks from cache so UI reflects the full dataset
+            do {
+                let refreshed = try await ActionItemStorage.shared.getLocalActionItems(
+                    limit: pageSize,
+                    offset: 0,
+                    completed: false
+                )
+                incompleteTasks = refreshed
+                incompleteOffset = refreshed.count
+                hasMoreIncompleteTasks = refreshed.count >= pageSize
+                log("TasksStore: Refreshed UI after full sync - \(refreshed.count) incomplete tasks")
+            } catch {
+                logError("TasksStore: Failed to refresh UI after full sync", error: error)
+            }
 
             // Backfill due dates on backend for tasks that have none
             await backfillDueDatesOnBackendIfNeeded(userId: userId)
