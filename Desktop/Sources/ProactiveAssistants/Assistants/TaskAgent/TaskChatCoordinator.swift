@@ -75,9 +75,10 @@ class TaskChatCoordinator: ObservableObject {
                 // Also update the in-memory task in the store
                 TasksStore.shared.updateChatSessionId(taskId: task.id, sessionId: session.id)
 
-                // Send initial context message about the task
+                // Send initial context message about the task (fire-and-forget so panel opens immediately)
                 let contextMessage = buildInitialPrompt(for: task)
-                await chatProvider.sendMessage(contextMessage)
+                let provider = chatProvider
+                Task { await provider.sendMessage(contextMessage) }
             }
         }
 
