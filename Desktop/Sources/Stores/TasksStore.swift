@@ -186,11 +186,15 @@ class TasksStore: ObservableObject {
                 completed: false
             )
 
-            // Merge in-place: update existing, remove gone (no new items added during auto-refresh)
-            mergeInPlace(source: mergedTasks, into: &incompleteTasks)
+            // Merge without triggering @Published unless something actually changed
+            let merged = mergeWithoutAdding(source: mergedTasks, current: incompleteTasks)
+            if merged != incompleteTasks {
+                incompleteTasks = merged
+                incompleteOffset = merged.count
+                log("TasksStore: Auto-refresh updated incomplete tasks (\(merged.count) items)")
+            }
             let newHasMore = mergedTasks.count >= reloadLimit
             if hasMoreIncompleteTasks != newHasMore { hasMoreIncompleteTasks = newHasMore }
-            incompleteOffset = incompleteTasks.count
         } catch {
             // Silently ignore errors during auto-refresh
             logError("TasksStore: Auto-refresh failed", error: error)
@@ -214,10 +218,13 @@ class TasksStore: ObservableObject {
                     offset: 0,
                     completed: true
                 )
-                mergeInPlace(source: mergedTasks, into: &completedTasks)
+                let merged = mergeWithoutAdding(source: mergedTasks, current: completedTasks)
+                if merged != completedTasks {
+                    completedTasks = merged
+                    completedOffset = merged.count
+                }
                 let newHasMore = mergedTasks.count >= pageSize
                 if hasMoreCompletedTasks != newHasMore { hasMoreCompletedTasks = newHasMore }
-                completedOffset = completedTasks.count
             } catch {
                 logError("TasksStore: Auto-refresh completed tasks failed", error: error)
             }
@@ -243,42 +250,39 @@ class TasksStore: ObservableObject {
                 )
                 // Filter to only deleted
                 let newDeleted = mergedTasks.filter { $0.deleted == true }
-                mergeInPlace(source: newDeleted, into: &deletedTasks)
+                let merged = mergeWithoutAdding(source: newDeleted, current: deletedTasks)
+                if merged != deletedTasks {
+                    deletedTasks = merged
+                    deletedOffset = merged.count
+                }
                 if hasMoreDeletedTasks != response.hasMore { hasMoreDeletedTasks = response.hasMore }
-                deletedOffset = deletedTasks.count
             } catch {
                 logError("TasksStore: Auto-refresh deleted tasks failed", error: error)
             }
         }
     }
 
-    /// Merge source into target in-place: update changed items and remove gone ones.
+    /// Build a merged result from source and current: update changed items, remove gone ones.
     /// Does NOT add new items — new tasks only appear on explicit load (initial load, tab switch).
-    /// This avoids wholesale array replacement which forces SwiftUI to recreate all views
-    /// (killing in-progress gestures like swipe-to-delete and causing visual jumping).
-    private func mergeInPlace(source: [TaskActionItem], into target: inout [TaskActionItem]) {
+    /// Returns a new array only if different from current (caller compares with == before assigning
+    /// to @Published property, preventing unnecessary objectWillChange notifications).
+    private func mergeWithoutAdding(source: [TaskActionItem], current: [TaskActionItem]) -> [TaskActionItem] {
         let sourceById = Dictionary(uniqueKeysWithValues: source.map { ($0.id, $0) })
-        let targetIds = Set(target.map { $0.id })
         let sourceIds = Set(source.map { $0.id })
-        var updatedCount = 0
 
-        // Update existing items in-place (preserves array positions)
-        for i in target.indices {
-            if let updated = sourceById[target[i].id], updated != target[i] {
-                target[i] = updated
-                updatedCount += 1
+        var result = current
+
+        // Update existing items
+        for i in result.indices {
+            if let updated = sourceById[result[i].id], updated != result[i] {
+                result[i] = updated
             }
         }
 
         // Remove items no longer in source (e.g. completed/deleted by another device)
-        let removed = targetIds.subtracting(sourceIds)
-        if !removed.isEmpty {
-            target.removeAll { removed.contains($0.id) }
-        }
+        result.removeAll { !sourceIds.contains($0.id) }
 
-        if updatedCount > 0 || !removed.isEmpty {
-            log("TasksStore: Auto-refresh merged in-place (updated \(updatedCount), removed \(removed.count), kept \(target.count))")
-        }
+        return result
     }
 
     // MARK: - Load Tasks
