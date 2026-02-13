@@ -476,7 +476,10 @@ actor ActionItemStorage {
     }
 
     /// Sync multiple TaskActionItems to local storage (batch upsert with full data)
-    func syncTaskActionItems(_ items: [TaskActionItem]) async throws {
+    /// - Parameter overrideStagedDeletions: When true, API data overrides local "staged" deletions
+    ///   (used during full sync where we have the complete dataset). When false (default),
+    ///   staged deletions are preserved to avoid un-deleting tasks during partial refreshes.
+    func syncTaskActionItems(_ items: [TaskActionItem], overrideStagedDeletions: Bool = false) async throws {
         let db = try await ensureInitialized()
 
         let (skipped, adopted) = try await db.write { database -> (Int, Int) in
@@ -489,10 +492,10 @@ actor ActionItemStorage {
                     // Skip if local record is newer than incoming API data
                     // This prevents auto-refresh from overwriting recent local changes
                     // (e.g. toggling a task) with stale backend data.
-                    // Exception: always accept API data for records we locally marked as "staged"
-                    // since that was our guess and the API is the source of truth.
+                    // Exception: during full sync, accept API data for records we locally
+                    // marked as "staged" since that was our guess and the API is the source of truth.
                     let incomingTimestamp = item.updatedAt ?? item.createdAt
-                    let isLocalStagedGuess = existingRecord.deletedBy == "staged"
+                    let isLocalStagedGuess = overrideStagedDeletions && existingRecord.deletedBy == "staged"
                     if existingRecord.updatedAt > incomingTimestamp && !isLocalStagedGuess {
                         skipped += 1
                         continue
