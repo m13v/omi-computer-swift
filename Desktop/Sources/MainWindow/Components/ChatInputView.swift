@@ -40,6 +40,9 @@ struct ChatInputView: View {
                 .onTapGesture {
                     isInputFocused = true
                 }
+                .onAppear {
+                    isInputFocused = true
+                }
 
             if isSending && !hasText {
                 // Stop button — visible when agent is running and input is empty
