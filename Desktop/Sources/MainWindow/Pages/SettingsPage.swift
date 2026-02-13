@@ -1010,184 +1010,162 @@ struct SettingsContentView: View {
     // MARK: - Privacy Section
 
     private var privacySection: some View {
-        VStack(spacing: 20) {
-            // Recording Permission
+        VStack(spacing: 16) {
+            // Data Controls
             settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
+                VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Image(systemName: "mic.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 14))
                             .foregroundColor(OmiColors.purplePrimary)
+                            .frame(width: 20)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Store Recordings")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(OmiColors.textPrimary)
-
-                            Text("Allow Omi to store audio recordings of your conversations")
-                                .font(.system(size: 13))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
+                        Text("Store Recordings")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
 
                         Toggle("", isOn: $recordingPermissionEnabled)
                             .toggleStyle(.switch)
                             .labelsHidden()
+                            .controlSize(.small)
                             .onChange(of: recordingPermissionEnabled) { _, newValue in
                                 updateRecordingPermission(newValue)
                             }
                     }
-                }
-            }
+                    .padding(.bottom, 4)
 
-            // Private Cloud Sync
-            settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
+                    Text("Allow Omi to store audio recordings of your conversations")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.leading, 34)
+
+                    Divider()
+                        .padding(.vertical, 12)
+
                     HStack {
                         Image(systemName: "cloud.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 14))
                             .foregroundColor(OmiColors.purplePrimary)
+                            .frame(width: 20)
 
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Private Cloud Sync")
-                                .font(.system(size: 15, weight: .medium))
-                                .foregroundColor(OmiColors.textPrimary)
-
-                            Text("Sync your data securely to your private cloud storage")
-                                .font(.system(size: 13))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
+                        Text("Private Cloud Sync")
+                            .font(.system(size: 14, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
 
                         Toggle("", isOn: $privateCloudSyncEnabled)
                             .toggleStyle(.switch)
                             .labelsHidden()
+                            .controlSize(.small)
                             .onChange(of: privateCloudSyncEnabled) { _, newValue in
                                 updatePrivateCloudSync(newValue)
                             }
                     }
+                    .padding(.bottom, 4)
+
+                    Text("Sync your data securely to your private cloud storage")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.leading, 34)
                 }
             }
 
-            // Data Protection Level
+            // Encryption
             settingsCard {
-                VStack(alignment: .leading, spacing: 16) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
                         Image(systemName: "shield.lefthalf.filled")
-                            .font(.system(size: 16))
+                            .font(.system(size: 14))
                             .foregroundColor(OmiColors.purplePrimary)
+                            .frame(width: 20)
 
-                        Text("Data Protection Level")
-                            .font(.system(size: 15, weight: .medium))
+                        Text("Encryption")
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(OmiColors.textPrimary)
                     }
 
-                    // Secure Encryption (active)
-                    HStack(spacing: 12) {
-                        Image(systemName: "checkmark.shield.fill")
-                            .font(.system(size: 14))
+                    HStack(spacing: 10) {
+                        Image(systemName: "checkmark.circle.fill")
+                            .font(.system(size: 12))
                             .foregroundColor(.green)
+                            .frame(width: 20)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text("Secure Encryption")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(OmiColors.textPrimary)
+                        Text("Server-side encryption")
+                            .font(.system(size: 13))
+                            .foregroundColor(OmiColors.textSecondary)
 
-                                Text("Active")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(.green)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(Color.green.opacity(0.15))
-                                    .cornerRadius(4)
-                            }
-
-                            Text("Your data is encrypted server-side and stored securely with Google Cloud infrastructure")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
+                        Text("Active")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.green)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Color.green.opacity(0.15))
+                            .cornerRadius(3)
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.green.opacity(0.05))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
-                            )
-                    )
+                    .padding(.leading, 14)
 
-                    // End-to-End Encryption (coming soon)
-                    HStack(spacing: 12) {
+                    HStack(spacing: 10) {
                         Image(systemName: "lock.fill")
-                            .font(.system(size: 14))
+                            .font(.system(size: 12))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .frame(width: 20)
+
+                        Text("End-to-end encryption")
+                            .font(.system(size: 13))
                             .foregroundColor(OmiColors.textTertiary)
 
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 6) {
-                                Text("End-to-End Encryption")
-                                    .font(.system(size: 14, weight: .medium))
-                                    .foregroundColor(OmiColors.textSecondary)
-
-                                Text("Coming Soon")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(OmiColors.textTertiary)
-                                    .padding(.horizontal, 6)
-                                    .padding(.vertical, 2)
-                                    .background(OmiColors.backgroundQuaternary.opacity(0.5))
-                                    .cornerRadius(4)
-                            }
-
-                            Text("Maximum security where only you can access your data. Some features like server-side search may be limited.")
-                                .font(.system(size: 12))
-                                .foregroundColor(OmiColors.textTertiary)
-                        }
+                        Text("Coming Soon")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(OmiColors.textTertiary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(OmiColors.backgroundQuaternary.opacity(0.5))
+                            .cornerRadius(3)
                     }
-                    .padding(12)
-                    .background(
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(OmiColors.backgroundQuaternary.opacity(0.2))
-                            .overlay(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
-                            )
-                    )
+                    .padding(.leading, 14)
+
+                    Text("Your data is encrypted and stored securely with Google Cloud infrastructure.")
+                        .font(.system(size: 12))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.leading, 34)
                 }
             }
 
             // What We Track
             settingsCard {
-                VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 0) {
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isTrackingExpanded.toggle()
                         }
                     }) {
-                        HStack {
-                            Image(systemName: "eye.slash")
-                                .font(.system(size: 16))
+                        HStack(spacing: 10) {
+                            Image(systemName: "list.bullet")
+                                .font(.system(size: 14))
                                 .foregroundColor(OmiColors.purplePrimary)
+                                .frame(width: 20)
 
                             Text("What We Track")
-                                .font(.system(size: 15, weight: .medium))
+                                .font(.system(size: 14, weight: .medium))
                                 .foregroundColor(OmiColors.textPrimary)
 
                             Spacer()
 
-                            Image(systemName: isTrackingExpanded ? "chevron.up" : "chevron.down")
-                                .font(.system(size: 12, weight: .medium))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundColor(OmiColors.textTertiary)
+                                .rotationEffect(.degrees(isTrackingExpanded ? 90 : 0))
                         }
                     }
                     .buttonStyle(.plain)
 
                     if isTrackingExpanded {
-                        VStack(alignment: .leading, spacing: 8) {
+                        VStack(alignment: .leading, spacing: 6) {
                             trackingItem("Onboarding steps completed")
-                            trackingItem("Settings changes (toggles, preferences)")
+                            trackingItem("Settings changes")
                             trackingItem("App installations and usage")
                             trackingItem("Device connection status")
                             trackingItem("Transcript processing events")
@@ -1198,52 +1176,34 @@ struct SettingsContentView: View {
                             trackingItem("Focus session events")
                             trackingItem("App open/close events")
                         }
-                        .padding(.leading, 4)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .padding(.top, 10)
+                        .padding(.leading, 34)
+                        .transition(.opacity)
                     }
                 }
             }
 
-            // Anonymity & Privacy
+            // Privacy Guarantees
             settingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "person.fill.questionmark")
-                            .font(.system(size: 16))
-                            .foregroundColor(OmiColors.purplePrimary)
-
-                        Text("Anonymity & Privacy")
-                            .font(.system(size: 15, weight: .medium))
-                            .foregroundColor(OmiColors.textPrimary)
-                    }
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        privacyBullet("All tracking is anonymous using randomly generated IDs")
-                        privacyBullet("No personal information (email, name) is stored in analytics")
-                        privacyBullet("Your data is never sold or shared with third parties")
-                        privacyBullet("Analytics are used solely to improve the app experience")
-                    }
-                    .padding(.leading, 4)
-                }
-            }
-
-            // Your Control
-            settingsCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
                         Image(systemName: "hand.raised.fill")
-                            .font(.system(size: 16))
+                            .font(.system(size: 14))
                             .foregroundColor(OmiColors.purplePrimary)
+                            .frame(width: 20)
 
-                        Text("Your Control")
-                            .font(.system(size: 15, weight: .medium))
+                        Text("Privacy Guarantees")
+                            .font(.system(size: 14, weight: .medium))
                             .foregroundColor(OmiColors.textPrimary)
                     }
 
-                    Text("You can opt out of analytics tracking at any time. Core app functionality works without any data collection. Use the toggles above to control what data is stored and synced.")
-                        .font(.system(size: 13))
-                        .foregroundColor(OmiColors.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 6) {
+                        privacyBullet("Anonymous tracking with randomly generated IDs")
+                        privacyBullet("No personal info stored in analytics")
+                        privacyBullet("Data is never sold or shared with third parties")
+                        privacyBullet("Opt out of tracking at any time")
+                    }
+                    .padding(.leading, 34)
                 }
             }
         }
@@ -2900,27 +2860,25 @@ struct SettingsContentView: View {
     }
 
     private func trackingItem(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(spacing: 8) {
             Circle()
-                .fill(OmiColors.textTertiary)
+                .fill(OmiColors.textTertiary.opacity(0.5))
                 .frame(width: 4, height: 4)
-                .padding(.top, 6)
 
             Text(text)
-                .font(.system(size: 13))
-                .foregroundColor(OmiColors.textSecondary)
+                .font(.system(size: 12))
+                .foregroundColor(OmiColors.textTertiary)
         }
     }
 
     private func privacyBullet(_ text: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(spacing: 8) {
             Image(systemName: "checkmark")
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 9, weight: .bold))
                 .foregroundColor(.green)
-                .padding(.top, 3)
 
             Text(text)
-                .font(.system(size: 13))
+                .font(.system(size: 12))
                 .foregroundColor(OmiColors.textSecondary)
         }
     }
