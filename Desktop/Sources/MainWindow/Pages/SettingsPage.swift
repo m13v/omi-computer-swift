@@ -138,6 +138,7 @@ struct SettingsContentView: View {
     // Privacy settings (from backend)
     @State private var recordingPermissionEnabled: Bool = false
     @State private var privateCloudSyncEnabled: Bool = true
+    @State private var isTrackingExpanded: Bool = false
 
     // Transcription settings (from backend)
     @State private var singleLanguageMode: Bool = false
@@ -1070,31 +1071,179 @@ struct SettingsContentView: View {
                 }
             }
 
-            // Data Management
+            // Data Protection Level
             settingsCard {
-                HStack(spacing: 16) {
-                    Image(systemName: "shield.lefthalf.filled")
-                        .font(.system(size: 16))
-                        .foregroundColor(OmiColors.purplePrimary)
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Image(systemName: "shield.lefthalf.filled")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
 
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Data & Privacy")
+                        Text("Data Protection Level")
                             .font(.system(size: 15, weight: .medium))
                             .foregroundColor(OmiColors.textPrimary)
-
-                        Text("Manage your data and privacy settings")
-                            .font(.system(size: 13))
-                            .foregroundColor(OmiColors.textTertiary)
                     }
 
-                    Spacer()
+                    // Secure Encryption (active)
+                    HStack(spacing: 12) {
+                        Image(systemName: "checkmark.shield.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(.green)
 
-                    Button("Manage") {
-                        if let url = URL(string: "https://omi.me/privacy") {
-                            NSWorkspace.shared.open(url)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("Secure Encryption")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(OmiColors.textPrimary)
+
+                                Text("Active")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(.green)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(Color.green.opacity(0.15))
+                                    .cornerRadius(4)
+                            }
+
+                            Text("Your data is encrypted server-side and stored securely with Google Cloud infrastructure")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
                         }
                     }
-                    .buttonStyle(.bordered)
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.green.opacity(0.05))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(Color.green.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+
+                    // End-to-End Encryption (coming soon)
+                    HStack(spacing: 12) {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 14))
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                Text("End-to-End Encryption")
+                                    .font(.system(size: 14, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+
+                                Text("Coming Soon")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(OmiColors.backgroundQuaternary.opacity(0.5))
+                                    .cornerRadius(4)
+                            }
+
+                            Text("Maximum security where only you can access your data. Some features like server-side search may be limited.")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                    }
+                    .padding(12)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(OmiColors.backgroundQuaternary.opacity(0.2))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
+                            )
+                    )
+                }
+            }
+
+            // What We Track
+            settingsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    Button(action: {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isTrackingExpanded.toggle()
+                        }
+                    }) {
+                        HStack {
+                            Image(systemName: "eye.slash")
+                                .font(.system(size: 16))
+                                .foregroundColor(OmiColors.purplePrimary)
+
+                            Text("What We Track")
+                                .font(.system(size: 15, weight: .medium))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            Spacer()
+
+                            Image(systemName: isTrackingExpanded ? "chevron.up" : "chevron.down")
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
+
+                    if isTrackingExpanded {
+                        VStack(alignment: .leading, spacing: 8) {
+                            trackingItem("Onboarding steps completed")
+                            trackingItem("Settings changes (toggles, preferences)")
+                            trackingItem("App installations and usage")
+                            trackingItem("Device connection status")
+                            trackingItem("Transcript processing events")
+                            trackingItem("Conversation creation and updates")
+                            trackingItem("Memory extraction events")
+                            trackingItem("Chat interactions")
+                            trackingItem("Speech profile creation")
+                            trackingItem("Focus session events")
+                            trackingItem("App open/close events")
+                        }
+                        .padding(.leading, 4)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+            }
+
+            // Anonymity & Privacy
+            settingsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "person.fill.questionmark")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Anonymity & Privacy")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+                    }
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        privacyBullet("All tracking is anonymous using randomly generated IDs")
+                        privacyBullet("No personal information (email, name) is stored in analytics")
+                        privacyBullet("Your data is never sold or shared with third parties")
+                        privacyBullet("Analytics are used solely to improve the app experience")
+                    }
+                    .padding(.leading, 4)
+                }
+            }
+
+            // Your Control
+            settingsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "hand.raised.fill")
+                            .font(.system(size: 16))
+                            .foregroundColor(OmiColors.purplePrimary)
+
+                        Text("Your Control")
+                            .font(.system(size: 15, weight: .medium))
+                            .foregroundColor(OmiColors.textPrimary)
+                    }
+
+                    Text("You can opt out of analytics tracking at any time. Core app functionality works without any data collection. Use the toggles above to control what data is stored and synced.")
+                        .font(.system(size: 13))
+                        .foregroundColor(OmiColors.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -2612,7 +2761,22 @@ struct SettingsContentView: View {
                     // Links
                     linkRow(title: "Visit Website", url: "https://omi.me")
                     linkRow(title: "Help Center", url: "https://help.omi.me")
-                    linkRow(title: "Privacy Policy", url: "https://omi.me/privacy")
+                    Button(action: {
+                        selectedSection = .privacy
+                    }) {
+                        HStack {
+                            Text("Privacy Policy")
+                                .font(.system(size: 14))
+                                .foregroundColor(OmiColors.textSecondary)
+
+                            Spacer()
+
+                            Image(systemName: "arrow.right")
+                                .font(.system(size: 12))
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                    }
+                    .buttonStyle(.plain)
                     linkRow(title: "Terms of Service", url: "https://omi.me/terms")
                 }
             }
@@ -2733,6 +2897,32 @@ struct SettingsContentView: View {
             }
         }
         .buttonStyle(.plain)
+    }
+
+    private func trackingItem(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Circle()
+                .fill(OmiColors.textTertiary)
+                .frame(width: 4, height: 4)
+                .padding(.top, 6)
+
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundColor(OmiColors.textSecondary)
+        }
+    }
+
+    private func privacyBullet(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundColor(.green)
+                .padding(.top, 3)
+
+            Text(text)
+                .font(.system(size: 13))
+                .foregroundColor(OmiColors.textSecondary)
+        }
     }
 
     // MARK: - Language Helpers
