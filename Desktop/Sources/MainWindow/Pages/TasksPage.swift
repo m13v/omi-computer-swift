@@ -472,18 +472,21 @@ class TasksViewModel: ObservableObject {
     }
     @Published var sortOption: TaskSortOption = .relevance {
         didSet {
-            if sortOption == .dueDate && !selectedTags.contains(.last7Days) {
-                selectedTags.insert(.last7Days)  // triggers its own recompute
+            if sortOption == .dueDate {
+                selectedTags.insert(.last7Days)
+                selectedTags.remove(.topScoredOnly)
             } else {
-                recomputeDisplayCaches()
+                selectedTags.insert(.topScoredOnly)
+                selectedTags.remove(.last7Days)
             }
+            // selectedTags didSet handles recomputeDisplayCaches
         }
     }
 
 
     // Filter tags (Memories-style dropdown)
-    // Default to .todo and .topScoredOnly to match store.showAllTasks = false
-    @Published var selectedTags: Set<TaskFilterTag> = [.todo, .topScoredOnly] {
+    // Default to .todo — mode toggle didSet adds .topScoredOnly or .last7Days as needed
+    @Published var selectedTags: Set<TaskFilterTag> = [.todo] {
         didSet {
             // Reset display limit when filters change
             displayLimit = 100
@@ -1624,7 +1627,7 @@ struct TasksPage: View {
                 cancelMultiSelectButton
             } else {
                 addTaskButton
-                sortDropdown
+                modeToggle
                 taskSettingsButton
             }
         }
@@ -2014,40 +2017,37 @@ struct TasksPage: View {
     }
 
 
-    private var sortDropdown: some View {
-        Menu {
+    private var modeToggle: some View {
+        HStack(spacing: 2) {
             ForEach(TaskSortOption.allCases, id: \.self) { option in
-                Button(action: {
-                    withAnimation {
+                let isSelected = viewModel.sortOption == option
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
                         viewModel.sortOption = option
                     }
-                }) {
-                    HStack {
+                } label: {
+                    HStack(spacing: 4) {
                         Image(systemName: option.icon)
+                            .font(.system(size: 11))
                         Text(option.rawValue)
-                        if viewModel.sortOption == option {
-                            Image(systemName: "checkmark")
-                        }
+                            .font(.system(size: 12, weight: .medium))
                     }
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(isSelected ? OmiColors.backgroundTertiary : Color.clear)
+                    )
                 }
+                .buttonStyle(.plain)
             }
-        } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "arrow.up.arrow.down")
-                    .font(.system(size: 12))
-                Text(viewModel.sortOption.rawValue)
-                    .font(.system(size: 13, weight: .medium))
-            }
-            .foregroundColor(OmiColors.textSecondary)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(OmiColors.backgroundSecondary)
-            )
         }
-        .menuStyle(.borderlessButton)
-        .menuIndicator(.hidden)
+        .padding(2)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(OmiColors.backgroundSecondary)
+        )
     }
 
     private var taskSettingsButton: some View {
