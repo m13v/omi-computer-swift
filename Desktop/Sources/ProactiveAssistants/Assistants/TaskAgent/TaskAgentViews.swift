@@ -21,6 +21,7 @@ struct TaskClassificationBadge: View {
 struct AgentStatusIndicator: View {
     let task: TaskActionItem
     @Binding var showAgentDetail: Bool
+    var onLaunchWithChat: ((TaskActionItem) -> Void)? = nil
     @ObservedObject private var manager = TaskAgentManager.shared
 
     private var taskId: String { task.id }
@@ -77,7 +78,7 @@ struct AgentStatusIndicator: View {
                 .help("View Agent Details")
             } else {
                 // Run Agent button — launches immediately
-                AgentLaunchButton(task: task)
+                AgentLaunchButton(task: task, onLaunchWithChat: onLaunchWithChat)
             }
         }
     }
@@ -114,6 +115,7 @@ struct AgentStatusIndicator: View {
 /// Button to launch a Claude agent for a task
 struct AgentLaunchButton: View {
     let task: TaskActionItem
+    var onLaunchWithChat: ((TaskActionItem) -> Void)? = nil
     @ObservedObject private var manager = TaskAgentManager.shared
     @ObservedObject private var settings = TaskAgentSettings.shared
     @State private var isLaunching = false
@@ -170,6 +172,9 @@ struct AgentLaunchButton: View {
 
                 let context = TaskAgentContext()
                 try await manager.launchAgent(for: latestTask, context: context)
+
+                // Also open chat panel for this task
+                onLaunchWithChat?(latestTask)
             } catch {
                 errorMessage = error.localizedDescription
                 showError = true
