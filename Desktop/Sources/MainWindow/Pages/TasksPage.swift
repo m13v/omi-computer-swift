@@ -213,6 +213,33 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         }
     }
 
+    /// Pre-computed context for efficient batch filtering (avoids per-task Calendar/MainActor calls)
+    struct FilterContext {
+        let sevenDaysAgo: Date
+        let visibleAITaskIds: Set<String>
+
+        init() {
+            self.sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
+            self.visibleAITaskIds = TasksStore.shared.visibleAITaskIds
+        }
+    }
+
+    /// Efficient match using pre-computed context — use this in batch filter loops
+    func matches(_ task: TaskActionItem, context: FilterContext) -> Bool {
+        switch self {
+        case .last7Days:
+            if let dueAt = task.dueAt {
+                return dueAt >= context.sevenDaysAgo
+            } else {
+                return task.createdAt >= context.sevenDaysAgo
+            }
+        case .topScoredOnly:
+            return task.source == "manual" || context.visibleAITaskIds.contains(task.id)
+        default:
+            return matches(task)
+        }
+    }
+
     /// Tags grouped by their filter group
     static func tags(for group: TaskFilterGroup) -> [TaskFilterTag] {
         allCases.filter { $0.group == group }
@@ -589,6 +616,9 @@ class TasksViewModel: ObservableObject {
     /// Version counter to coalesce rapid recomputation requests
     private var recomputeVersion: Int = 0
 
+    /// Throttle flag for loadMoreIfNeeded to prevent task storms during fast scroll
+    private var isLoadingMoreGuard = false
+
     // MARK: - Cached Properties (avoid recomputation on every render)
 
     @Published private(set) var displayTasks: [TaskActionItem] = []
@@ -770,7 +800,7 @@ class TasksViewModel: ObservableObject {
     }
 
     /// Apply selected filter tags to tasks (non-status tags)
-    private func applyTagFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+    private func applyTagFilters(_ tasks: [TaskActionItem], context: TaskFilterTag.FilterContext) -> [TaskActionItem] {
         let nonStatusTags = selectedTags.filter { $0.group != .status }
         guard !nonStatusTags.isEmpty else { return tasks }
 
@@ -779,7 +809,7 @@ class TasksViewModel: ObservableObject {
 
         return tasks.filter { task in
             tagsByGroup.allSatisfy { (_, groupTags) in
-                groupTags.contains { $0.matches(task) }
+                groupTags.contains { $0.matches(task, context: context) }
             }
         }
     }
@@ -1165,16 +1195,17 @@ class TasksViewModel: ObservableObject {
         // Date filters (like last7Days) are applied in-memory, not via SQLite
         let hasSQLiteFilters = selectedTags.contains(where: { $0.group != .status && $0.group != .date })
         let hasDateFilters = selectedTags.contains(where: { $0.group == .date })
+        let filterContext = TaskFilterTag.FilterContext()
         var filteredTasks: [TaskActionItem]
         if !searchText.isEmpty {
-            filteredTasks = applyNonStatusTagFilters(sourceTasks)
+            filteredTasks = applyNonStatusTagFilters(sourceTasks, context: filterContext)
         } else if hasSQLiteFilters {
             // SQLite already filtered by category/source/priority
             // But we may still need to apply status + date filters
             let statusFiltered = applyStatusFilters(sourceTasks)
-            filteredTasks = hasDateFilters ? applyDateFilters(statusFiltered) : statusFiltered
+            filteredTasks = hasDateFilters ? applyDateFilters(statusFiltered, context: filterContext) : statusFiltered
         } else {
-            filteredTasks = applyTagFilters(sourceTasks)
+            filteredTasks = applyTagFilters(sourceTasks, context: filterContext)
         }
 
         // Ensure allowlisted tasks survive date filters — EXCEPT for .last7Days filter,
@@ -1291,16 +1322,16 @@ class TasksViewModel: ObservableObject {
     }
 
     /// Apply only date filters (e.g., last7Days) — used when SQLite handled other filters
-    private func applyDateFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+    private func applyDateFilters(_ tasks: [TaskActionItem], context: TaskFilterTag.FilterContext) -> [TaskActionItem] {
         let dateTags = selectedTags.filter { $0.group == .date }
         guard !dateTags.isEmpty else { return tasks }
         return tasks.filter { task in
-            dateTags.contains { $0.matches(task) }
+            dateTags.contains { $0.matches(task, context: context) }
         }
     }
 
     /// Apply only non-status tag filters (for search results which already include all statuses)
-    private func applyNonStatusTagFilters(_ tasks: [TaskActionItem]) -> [TaskActionItem] {
+    private func applyNonStatusTagFilters(_ tasks: [TaskActionItem], context: TaskFilterTag.FilterContext) -> [TaskActionItem] {
         let nonStatusTags = selectedTags.filter { $0.group != .status }
         guard !nonStatusTags.isEmpty else { return tasks }
 
@@ -1308,7 +1339,7 @@ class TasksViewModel: ObservableObject {
 
         return tasks.filter { task in
             for (_, groupTags) in tagsByGroup {
-                let matchesGroup = groupTags.contains { $0.matches(task) }
+                let matchesGroup = groupTags.contains { $0.matches(task, context: context) }
                 if !matchesGroup { return false }
             }
             return true
@@ -1381,6 +1412,8 @@ class TasksViewModel: ObservableObject {
     }
 
     func loadMoreIfNeeded(currentTask: TaskActionItem) async {
+        guard !isLoadingMoreGuard else { return }
+
         if isInFilteredMode {
             // In filtered mode, check if we need to show more from already-queried results
             let hasMore = hasMoreFilteredResults
@@ -1391,9 +1424,13 @@ class TasksViewModel: ObservableObject {
                   taskIndex >= thresholdIndex else {
                 return
             }
+            isLoadingMoreGuard = true
             loadMoreFiltered()
+            isLoadingMoreGuard = false
         } else {
+            isLoadingMoreGuard = true
             await store.loadMoreIfNeeded(currentTask: currentTask)
+            isLoadingMoreGuard = false
         }
     }
 
