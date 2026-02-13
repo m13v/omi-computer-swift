@@ -25,6 +25,9 @@ struct OnboardingView: View {
     // Track whether we've initialized bluetooth on the permissions step
     @State private var hasInitializedBluetoothForPermissions = false
 
+    // Privacy sheet
+    @State private var showPrivacySheet = false
+
     var body: some View {
         ZStack {
             // Full dark background
@@ -575,6 +578,19 @@ struct OnboardingView: View {
                             appState.triggerBluetoothPermission()
                         }
                     )
+
+                    // Privacy link
+                    Button(action: { showPrivacySheet = true }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "shield.lefthalf.filled")
+                                .font(.system(size: 11))
+                            Text("Data & Privacy")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, 4)
                 }
                 .frame(maxWidth: .infinity)
 
@@ -583,6 +599,9 @@ struct OnboardingView: View {
                     .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 16)
+        }
+        .sheet(isPresented: $showPrivacySheet) {
+            OnboardingPrivacySheet(isPresented: $showPrivacySheet)
         }
     }
 
@@ -875,5 +894,166 @@ struct AnimatedGIFView: NSViewRepresentable {
 
     func updateNSView(_ nsView: NSImageView, context: Context) {
         nsView.animates = true
+    }
+}
+
+// MARK: - Onboarding Privacy Sheet
+
+struct OnboardingPrivacySheet: View {
+    @Binding var isPresented: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Image(systemName: "shield.lefthalf.filled")
+                    .font(.system(size: 16))
+                    .foregroundColor(OmiColors.purplePrimary)
+
+                Text("Data & Privacy")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(OmiColors.textPrimary)
+
+                Spacer()
+
+                Button(action: { isPresented = false }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 18))
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(20)
+
+            Divider()
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    // Encryption
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Label("Encryption", systemImage: "lock.shield")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(.green)
+                                Text("Server-side encryption")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("Active")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(.green)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(Color.green.opacity(0.15))
+                                    .cornerRadius(3)
+                            }
+
+                            HStack(spacing: 8) {
+                                Image(systemName: "lock.fill")
+                                    .font(.system(size: 11))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Text("End-to-end encryption")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                Text("Coming Soon")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(OmiColors.backgroundQuaternary.opacity(0.5))
+                                    .cornerRadius(3)
+                            }
+
+                            Text("Your data is encrypted and stored securely with Google Cloud infrastructure.")
+                                .font(.system(size: 11))
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.top, 2)
+                        }
+                    }
+
+                    // What We Track
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("What We Track", systemImage: "list.bullet")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                sheetTrackingItem("Onboarding steps completed")
+                                sheetTrackingItem("Settings changes")
+                                sheetTrackingItem("App installations and usage")
+                                sheetTrackingItem("Device connection status")
+                                sheetTrackingItem("Transcript processing events")
+                                sheetTrackingItem("Conversation creation and updates")
+                                sheetTrackingItem("Memory extraction events")
+                                sheetTrackingItem("Chat interactions")
+                                sheetTrackingItem("Speech profile creation")
+                                sheetTrackingItem("Focus session events")
+                                sheetTrackingItem("App open/close events")
+                            }
+                        }
+                    }
+
+                    // Privacy Guarantees
+                    privacyCard {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Privacy Guarantees", systemImage: "hand.raised.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            VStack(alignment: .leading, spacing: 5) {
+                                sheetBullet("Anonymous tracking with randomly generated IDs")
+                                sheetBullet("No personal info stored in analytics")
+                                sheetBullet("Data is never sold or shared with third parties")
+                                sheetBullet("Opt out of tracking at any time")
+                            }
+                        }
+                    }
+                }
+                .padding(20)
+            }
+        }
+        .frame(width: 400, height: 480)
+        .background(OmiColors.backgroundSecondary)
+    }
+
+    private func privacyCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        content()
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(OmiColors.backgroundTertiary.opacity(0.5))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 10)
+                            .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
+                    )
+            )
+    }
+
+    private func sheetTrackingItem(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Circle()
+                .fill(OmiColors.textTertiary.opacity(0.5))
+                .frame(width: 3, height: 3)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(OmiColors.textTertiary)
+        }
+    }
+
+    private func sheetBullet(_ text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "checkmark")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundColor(.green)
+            Text(text)
+                .font(.system(size: 11))
+                .foregroundColor(OmiColors.textSecondary)
+        }
     }
 }
