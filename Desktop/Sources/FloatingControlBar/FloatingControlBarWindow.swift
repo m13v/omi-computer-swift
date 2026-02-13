@@ -255,8 +255,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Capture screenshot in background without hiding the bar
         Task.detached { [weak self] in
             let url = ScreenCaptureManager.captureScreen()
+            let capturedSelf = self
             await MainActor.run {
-                self?.state.screenshotURL = url
+                capturedSelf?.state.screenshotURL = url
             }
         }
     }
