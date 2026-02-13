@@ -467,7 +467,7 @@ struct RewindPage: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
-        .background(Color.black.opacity(0.8))
+        .background(OmiColors.backgroundTertiary.opacity(0.8))
     }
 
     // MARK: - Timeline Content Body (without top bar)
