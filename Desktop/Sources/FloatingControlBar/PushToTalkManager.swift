@@ -195,8 +195,9 @@ class PushToTalkManager: ObservableObject {
     // Capture screenshot in background — do NOT block the main thread
     Task.detached { [weak self] in
       let url = ScreenCaptureManager.captureScreen()
+      guard let self else { return }
       await MainActor.run {
-        self?.capturedScreenshotURL = url
+        self.capturedScreenshotURL = url
         log("PushToTalkManager: screenshot captured: \(url?.lastPathComponent ?? "nil")")
       }
     }
@@ -218,8 +219,9 @@ class PushToTalkManager: ObservableObject {
 
       Task.detached { [weak self] in
         let url = ScreenCaptureManager.captureScreen()
+        guard let self else { return }
         await MainActor.run {
-          self?.capturedScreenshotURL = url
+          self.capturedScreenshotURL = url
         }
       }
 
@@ -327,7 +329,7 @@ class PushToTalkManager: ObservableObject {
             self?.stopListening()
           }
         },
-        onConnected: { [weak self] in
+        onConnected: {
           Task { @MainActor in
             log("PushToTalkManager: DeepGram connected")
           }
