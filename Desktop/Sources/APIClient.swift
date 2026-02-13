@@ -1645,6 +1645,23 @@ extension APIClient {
         let _: StatusResponse = try await patch("v1/action-items/batch-scores", body: request)
     }
 
+    /// Batch update sort orders and indent levels for multiple action items
+    func batchUpdateSortOrders(_ updates: [(id: String, sortOrder: Int, indentLevel: Int)]) async throws {
+        struct SortUpdate: Encodable {
+            let id: String
+            let sort_order: Int
+            let indent_level: Int
+        }
+        struct BatchRequest: Encodable {
+            let items: [SortUpdate]
+        }
+        struct StatusResponse: Decodable {
+            let status: String
+        }
+        let request = BatchRequest(items: updates.map { SortUpdate(id: $0.id, sort_order: $0.sortOrder, indent_level: $0.indentLevel) })
+        let _: StatusResponse = try await patch("v1/action-items/batch", body: request)
+    }
+
     // MARK: - Task Sharing
 
     /// Shares tasks and returns a shareable URL
@@ -2024,6 +2041,10 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
     /// ID of the goal this task is linked to
     let goalId: String?
 
+    // Ordering (synced to backend)
+    var sortOrder: Int?            // Sort position within category
+    var indentLevel: Int?          // 0-3 indent depth
+
     // Prioritization (stored locally, not synced to backend)
     var relevanceScore: Int?       // 0-100 relevance score from TaskPrioritizationService
 
@@ -2072,6 +2093,8 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         case deletedReason = "deleted_reason"
         case keptTaskId = "kept_task_id"
         case goalId = "goal_id"
+        case sortOrder = "sort_order"
+        case indentLevel = "indent_level"
         case relevanceScore = "relevance_score"
     }
 
@@ -2095,6 +2118,8 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         deletedReason: String? = nil,
         keptTaskId: String? = nil,
         goalId: String? = nil,
+        sortOrder: Int? = nil,
+        indentLevel: Int? = nil,
         relevanceScore: Int? = nil,
         contextSummary: String? = nil,
         currentActivity: String? = nil,
@@ -2125,6 +2150,8 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         self.deletedReason = deletedReason
         self.keptTaskId = keptTaskId
         self.goalId = goalId
+        self.sortOrder = sortOrder
+        self.indentLevel = indentLevel
         self.relevanceScore = relevanceScore
         self.contextSummary = contextSummary
         self.currentActivity = currentActivity
@@ -2158,6 +2185,8 @@ struct TaskActionItem: Codable, Identifiable, Equatable {
         deletedReason = try container.decodeIfPresent(String.self, forKey: .deletedReason)
         keptTaskId = try container.decodeIfPresent(String.self, forKey: .keptTaskId)
         goalId = try container.decodeIfPresent(String.self, forKey: .goalId)
+        sortOrder = try container.decodeIfPresent(Int.self, forKey: .sortOrder)
+        indentLevel = try container.decodeIfPresent(Int.self, forKey: .indentLevel)
         relevanceScore = try container.decodeIfPresent(Int.self, forKey: .relevanceScore)
 
         // Local-only fields, not decoded from API
