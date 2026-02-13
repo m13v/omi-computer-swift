@@ -92,6 +92,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
         hostingView = NSHostingView(rootView: AnyView(
             swiftUIView
+                .withFontScaling()
                 .preferredColorScheme(.dark)
                 .environment(\.colorScheme, .dark)
         ))
