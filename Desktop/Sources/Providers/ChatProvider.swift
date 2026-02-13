@@ -200,6 +200,10 @@ class ChatProvider: ObservableObject {
     /// Whether the user is currently viewing the default chat (syncs with Flutter app)
     @Published var isInDefaultChat = true
 
+    /// Working directory for Claude Agent SDK file-system tools (Read, Write, Bash, etc.)
+    /// Set by TaskChatCoordinator to point at the user's project directory.
+    var workingDirectory: String?
+
     /// Multi-chat mode setting - when false, only default chat is shown (syncs with Flutter)
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
@@ -997,6 +1001,7 @@ class ChatProvider: ObservableObject {
             let queryResult = try await claudeBridge.query(
                 prompt: trimmedText,
                 systemPrompt: systemPrompt,
+                cwd: workingDirectory,
                 onTextDelta: { [weak self] delta in
                     Task { @MainActor [weak self] in
                         self?.appendToMessage(id: aiMessageId, text: delta)
