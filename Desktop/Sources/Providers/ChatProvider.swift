@@ -925,6 +925,10 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Stop / Follow-Up
 
+    /// Text of a follow-up queued while the current query is being interrupted.
+    /// Checked at the end of `sendMessage` — if set, a new query is chained automatically.
+    private var pendingFollowUpText: String?
+
     /// Stop the running agent, keeping partial response
     func stopAgent() {
         guard isSending else { return }
@@ -934,15 +938,15 @@ class ChatProvider: ObservableObject {
         // Result flows back normally through the bridge with partial text
     }
 
-    /// Send a follow-up message while the agent is still running
+    /// Send a follow-up message while the agent is still running.
+    /// Interrupts the current query and chains a new one with full context.
     func sendFollowUp(_ text: String) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, isSending else { return }
 
         // Add as user message in UI
-        let userMessageId = UUID().uuidString
         let userMessage = ChatMessage(
-            id: userMessageId,
+            id: UUID().uuidString,
             text: trimmedText,
             sender: .user
         )
@@ -951,28 +955,25 @@ class ChatProvider: ObservableObject {
         // Persist to backend (fire-and-forget)
         let capturedSessionId = isInDefaultChat ? nil : currentSessionId
         let capturedAppId = overrideAppId ?? selectedAppId
-        Task { [weak self] in
+        Task {
             do {
-                let response = try await APIClient.shared.saveMessage(
+                _ = try await APIClient.shared.saveMessage(
                     text: trimmedText,
                     sender: "human",
                     appId: capturedAppId,
                     sessionId: capturedSessionId
                 )
-                await MainActor.run {
-                    if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
-                        self?.messages[index].id = response.id
-                        self?.messages[index].isSynced = true
-                    }
-                }
             } catch {
                 logError("Failed to persist follow-up message", error: error)
             }
         }
 
-        // Send to bridge
-        await claudeBridge.sendFollowUp(text: trimmedText)
-        log("ChatProvider: follow-up sent to bridge")
+        // Queue the follow-up and interrupt the current query.
+        // When sendMessage finishes (due to the interrupt), it checks
+        // pendingFollowUpText and chains a new full query automatically.
+        pendingFollowUpText = trimmedText
+        await claudeBridge.interrupt()
+        log("ChatProvider: follow-up queued, interrupt sent")
     }
 
     // MARK: - Send Message
@@ -1208,6 +1209,13 @@ class ChatProvider: ObservableObject {
         }
 
         isSending = false
+
+        // If a follow-up was queued while we were running, chain it as a new full query
+        if let followUp = pendingFollowUpText {
+            pendingFollowUpText = nil
+            log("ChatProvider: chaining follow-up query")
+            await sendMessage(followUp)
+        }
     }
 
     /// Generate a title for the session using LLM
