@@ -218,7 +218,7 @@ enum TaskFilterTag: String, CaseIterable, Identifiable, Hashable {
         let sevenDaysAgo: Date
         let visibleAITaskIds: Set<String>
 
-        init() {
+        @MainActor init() {
             self.sevenDaysAgo = Calendar.current.date(byAdding: .day, value: -7, to: Date())!
             self.visibleAITaskIds = TasksStore.shared.visibleAITaskIds
         }
