@@ -53,9 +53,12 @@ class TaskChatCoordinator: ObservableObject {
 
         activeTaskId = task.id
 
-        // Set workspace path for file-system tools
-        workspacePath = TaskAgentSettings.shared.workingDirectory
-        chatProvider.workingDirectory = workspacePath
+        // Set workspace path for file-system tools (only if explicitly configured)
+        let configuredPath = TaskAgentSettings.shared.workingDirectory
+        if !configuredPath.isEmpty {
+            workspacePath = configuredPath
+            chatProvider.workingDirectory = workspacePath
+        }
         // Isolate task messages from the default chat
         chatProvider.overrideAppId = Self.taskChatAppId
 
@@ -113,76 +116,18 @@ class TaskChatCoordinator: ObservableObject {
     }
 
     /// Build the initial context prompt for a task chat session.
+    /// Uses task.chatContext which lives on the model itself — add new fields there.
     private func buildInitialPrompt(for task: TaskActionItem) -> String {
-        var parts: [String] = []
-        parts.append("I'd like help with this task: \(task.description)")
+        var prompt = "I'd like help with this task.\n\n\(task.chatContext)"
 
-        // Task metadata
-        if let category = task.category {
-            parts.append("Category: \(category)")
-        }
-        if !task.tags.isEmpty {
-            parts.append("Tags: \(task.tags.joined(separator: ", "))")
-        }
-        if let priority = task.priority {
-            parts.append("Priority: \(priority)")
-        }
-        if let dueAt = task.dueAt {
-            let formatter = DateFormatter()
-            formatter.dateStyle = .medium
-            parts.append("Due: \(formatter.string(from: dueAt))")
-        }
-
-        // Source/origin context
-        if let source = task.source {
-            parts.append("Source: \(task.sourceLabel) (\(source))")
-        }
-        if let sourceApp = task.sourceApp {
-            parts.append("Source app: \(sourceApp)")
-        }
-        if let windowTitle = task.windowTitle {
-            parts.append("Window title: \(windowTitle)")
-        }
-
-        // Screen context at extraction time
-        if let context = task.contextSummary, !context.isEmpty {
-            parts.append("Context when detected: \(context)")
-        }
-        if let activity = task.currentActivity, !activity.isEmpty {
-            parts.append("User activity: \(activity)")
-        }
-
-        // Timestamps
-        let formatter = DateFormatter()
-        formatter.dateStyle = .medium
-        formatter.timeStyle = .short
-        parts.append("Created: \(formatter.string(from: task.createdAt))")
-
-        // Goal linkage
-        if let goalId = task.goalId {
-            parts.append("Linked to goal: \(goalId)")
-        }
-
-        // Previous agent work
-        if let status = task.agentStatus {
-            parts.append("\nAgent status: \(status)")
-        }
-        if let plan = task.agentPlan, !plan.isEmpty {
-            let truncated = String(plan.prefix(2000))
-            parts.append("Agent plan:\n\(truncated)")
-        }
-        if let files = task.agentEditedFiles, !files.isEmpty {
-            parts.append("Files edited by agent: \(files.joined(separator: ", "))")
-        }
-
-        // Live agent output (from running/completed session)
+        // Live agent output (from running/completed session, not persisted on the model)
         if let session = TaskAgentManager.shared.getSession(for: task.id),
            let output = session.output, !output.isEmpty {
             let truncated = String(output.prefix(2000))
-            parts.append("\nAgent output so far:\n\(truncated)")
+            prompt += "\n\nAgent output so far:\n\(truncated)"
         }
 
-        return parts.joined(separator: "\n")
+        return prompt
     }
 
     private func taskChatTitle(for task: TaskActionItem) -> String {
