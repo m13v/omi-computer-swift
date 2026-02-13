@@ -2666,6 +2666,102 @@ impl FirestoreService {
         Ok(())
     }
 
+    /// Batch migrate tasks from action_items to staged_tasks using Firestore commit API.
+    /// Each task is created in staged_tasks and deleted from action_items atomically.
+    /// Processes 250 tasks per commit (each needs 2 writes, Firestore limit is 500).
+    pub async fn batch_migrate_to_staged(
+        &self,
+        uid: &str,
+        tasks: &[ActionItemDB],
+    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+        let now = Utc::now();
+        let mut migrated_count = 0;
+
+        // 250 tasks per batch (each task = 2 writes: create + delete, limit 500)
+        for chunk in tasks.chunks(250) {
+            let mut writes: Vec<Value> = Vec::new();
+
+            for task in chunk {
+                let staged_id = uuid::Uuid::new_v4().to_string();
+                let staged_doc_name = format!(
+                    "projects/{}/databases/(default)/documents/{}/{}/{}/{}",
+                    self.project_id, USERS_COLLECTION, uid, STAGED_TASKS_SUBCOLLECTION, staged_id
+                );
+
+                let mut fields = json!({
+                    "description": {"stringValue": &task.description},
+                    "completed": {"booleanValue": false},
+                    "created_at": {"timestampValue": now.to_rfc3339()},
+                    "updated_at": {"timestampValue": now.to_rfc3339()}
+                });
+                if let Some(ref due) = task.due_at {
+                    fields["due_at"] = json!({"timestampValue": due.to_rfc3339()});
+                }
+                if let Some(ref src) = task.source {
+                    fields["source"] = json!({"stringValue": src});
+                }
+                if let Some(ref pri) = task.priority {
+                    fields["priority"] = json!({"stringValue": pri});
+                }
+                if let Some(ref meta) = task.metadata {
+                    fields["metadata"] = json!({"stringValue": meta});
+                }
+                if let Some(ref cat) = task.category {
+                    fields["category"] = json!({"stringValue": cat});
+                }
+                if let Some(score) = task.relevance_score {
+                    fields["relevance_score"] = json!({"integerValue": score.to_string()});
+                }
+
+                // Write 1: Create in staged_tasks
+                writes.push(json!({
+                    "update": {
+                        "name": staged_doc_name,
+                        "fields": fields
+                    }
+                }));
+
+                // Write 2: Delete from action_items
+                let action_doc_name = format!(
+                    "projects/{}/databases/(default)/documents/{}/{}/{}/{}",
+                    self.project_id, USERS_COLLECTION, uid, ACTION_ITEMS_SUBCOLLECTION, task.id
+                );
+                writes.push(json!({
+                    "delete": action_doc_name
+                }));
+            }
+
+            let commit_url = format!(
+                "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:commit",
+                self.project_id
+            );
+
+            let body = json!({ "writes": writes });
+
+            let response = self
+                .build_request(reqwest::Method::POST, &commit_url)
+                .await?
+                .json(&body)
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                return Err(format!("Firestore batch migrate commit error: {}", error_text).into());
+            }
+
+            migrated_count += chunk.len();
+            tracing::info!(
+                "Batch migrated {} tasks ({} total so far) for user {}",
+                chunk.len(),
+                migrated_count,
+                uid
+            );
+        }
+
+        Ok(migrated_count)
+    }
+
     /// Count active AI action items (source contains "screenshot", not completed, not deleted).
     /// Used by the promotion system to determine if more tasks should be promoted.
     pub async fn count_active_ai_action_items(
