@@ -156,6 +156,7 @@ class TasksStore: ObservableObject {
 
     /// Refresh tasks if already loaded (for auto-refresh)
     /// Uses local-first pattern: sync API to cache, then reload from cache
+    /// Merges changes in-place to avoid wholesale array replacement (which kills SwiftUI gestures)
     private func refreshTasksIfNeeded() async {
         // Skip if page is not visible
         guard isActive else { return }
@@ -184,12 +185,11 @@ class TasksStore: ObservableObject {
                 offset: 0,
                 completed: false
             )
-            if mergedTasks != incompleteTasks {
-                incompleteTasks = mergedTasks
-                hasMoreIncompleteTasks = mergedTasks.count >= reloadLimit
-                incompleteOffset = mergedTasks.count
-                log("TasksStore: Auto-refresh updated \(mergedTasks.count) incomplete tasks (API had \(response.items.count))")
-            }
+
+            // Merge in-place: update existing, add new, remove gone
+            mergeInPlace(source: mergedTasks, into: &incompleteTasks)
+            hasMoreIncompleteTasks = mergedTasks.count >= reloadLimit
+            incompleteOffset = incompleteTasks.count
         } catch {
             // Silently ignore errors during auto-refresh
             logError("TasksStore: Auto-refresh failed", error: error)
@@ -213,11 +213,9 @@ class TasksStore: ObservableObject {
                     offset: 0,
                     completed: true
                 )
-                if mergedTasks != completedTasks {
-                    completedTasks = mergedTasks
-                    hasMoreCompletedTasks = mergedTasks.count >= pageSize
-                    completedOffset = mergedTasks.count
-                }
+                mergeInPlace(source: mergedTasks, into: &completedTasks)
+                hasMoreCompletedTasks = mergedTasks.count >= pageSize
+                completedOffset = completedTasks.count
             } catch {
                 logError("TasksStore: Auto-refresh completed tasks failed", error: error)
             }
@@ -243,14 +241,50 @@ class TasksStore: ObservableObject {
                 )
                 // Filter to only deleted
                 let newDeleted = mergedTasks.filter { $0.deleted == true }
-                if newDeleted != deletedTasks {
-                    deletedTasks = newDeleted
-                    hasMoreDeletedTasks = response.hasMore
-                    deletedOffset = newDeleted.count
-                }
+                mergeInPlace(source: newDeleted, into: &deletedTasks)
+                hasMoreDeletedTasks = response.hasMore
+                deletedOffset = deletedTasks.count
             } catch {
                 logError("TasksStore: Auto-refresh deleted tasks failed", error: error)
             }
+        }
+    }
+
+    /// Merge source into target in-place: update changed items, add new ones, remove gone ones.
+    /// Avoids wholesale array replacement which forces SwiftUI to recreate all views
+    /// (killing in-progress gestures like swipe-to-delete).
+    private func mergeInPlace(source: [TaskActionItem], into target: inout [TaskActionItem]) {
+        let sourceById = Dictionary(uniqueKeysWithValues: source.map { ($0.id, $0) })
+        let targetIds = Set(target.map { $0.id })
+        let sourceIds = Set(source.map { $0.id })
+        var changed = false
+
+        // Update existing items in-place
+        for i in target.indices {
+            if let updated = sourceById[target[i].id], updated != target[i] {
+                target[i] = updated
+                changed = true
+            }
+        }
+
+        // Remove items no longer in source
+        let removed = targetIds.subtracting(sourceIds)
+        if !removed.isEmpty {
+            target.removeAll { removed.contains($0.id) }
+            changed = true
+        }
+
+        // Add new items from source
+        let added = sourceIds.subtracting(targetIds)
+        if !added.isEmpty {
+            for item in source where added.contains(item.id) {
+                target.append(item)
+            }
+            changed = true
+        }
+
+        if changed {
+            log("TasksStore: Auto-refresh merged \(source.count) tasks (updated in-place, removed \(removed.count), added \(added.count))")
         }
     }
 
