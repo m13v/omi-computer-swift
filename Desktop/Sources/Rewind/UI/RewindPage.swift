@@ -31,6 +31,7 @@ struct RewindPage: View {
 
     // Expanded transcript state
     @State private var isTranscriptExpanded = false
+    @State private var savedTranscriptSegments: [SpeakerSegment] = []
 
     enum SearchViewMode {
         case results  // Full-screen search results
@@ -59,9 +60,9 @@ struct RewindPage: View {
                         rewindRecordingBar(appState: appState)
                     }
 
-                    if isTranscriptExpanded, let appState = appState, appState.isTranscribing {
+                    if isTranscriptExpanded {
                         // Expanded transcript + notes view replaces timeline
-                        expandedTranscriptView(appState: appState)
+                        expandedTranscriptView
                     } else {
                         // Recovery banner (if database was recovered from corruption)
                         if viewModel.showRecoveryBanner {
@@ -130,8 +131,9 @@ struct RewindPage: View {
             }
         }
         .onChange(of: appState?.isTranscribing) { _, newValue in
-            if newValue != true {
-                isTranscriptExpanded = false
+            // When recording stops, snapshot the transcript so it survives the clear
+            if newValue != true && isTranscriptExpanded && !liveTranscript.segments.isEmpty {
+                savedTranscriptSegments = liveTranscript.segments
             }
         }
         // Global keyboard handlers
@@ -139,6 +141,7 @@ struct RewindPage: View {
             // Expanded transcript → collapse
             if isTranscriptExpanded {
                 isTranscriptExpanded = false
+                savedTranscriptSegments = []
                 return .handled
             }
             // Timeline mode → go back to results list
@@ -1022,47 +1025,87 @@ struct RewindPage: View {
     @AppStorage("recordingNotesPanelRatio") private var panelRatio: Double = 0.65
     private let minPanelWidth: CGFloat = 200
 
-    private func expandedTranscriptView(appState: AppState) -> some View {
-        // Split panel: transcript (left) + notes (right), no extra header
-        GeometryReader { geometry in
-            let totalWidth = geometry.size.width
-            let transcriptWidth = max(minPanelWidth, totalWidth * panelRatio)
-            let notesWidth = max(minPanelWidth, totalWidth - transcriptWidth - 1)
+    /// The segments to display — live if available, otherwise the saved snapshot
+    private var displaySegments: [SpeakerSegment] {
+        if !liveTranscript.segments.isEmpty {
+            return liveTranscript.segments
+        }
+        return savedTranscriptSegments
+    }
 
-            HStack(spacing: 0) {
-                // Left: Live transcript
-                VStack(spacing: 0) {
-                    if liveTranscript.isEmpty {
-                        VStack(spacing: 16) {
-                            Image(systemName: "waveform")
-                                .font(.system(size: 48))
-                                .foregroundColor(OmiColors.textTertiary)
-                                .opacity(0.5)
-                            Text("Listening...")
-                                .font(.system(size: 16, weight: .medium))
-                                .foregroundColor(OmiColors.textSecondary)
-                            Text("Start speaking and your transcript will appear here")
-                                .font(.system(size: 14))
-                                .foregroundColor(OmiColors.textTertiary)
-                                .multilineTextAlignment(.center)
+    private var expandedTranscriptView: some View {
+        VStack(spacing: 0) {
+            // Show a back bar only when the recording bar is not visible
+            if appState?.isTranscribing != true && appState?.isSavingConversation != true {
+                HStack(spacing: 8) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            isTranscriptExpanded = false
+                            savedTranscriptSegments = []
                         }
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .padding(32)
-                    } else {
-                        LiveTranscriptView(segments: liveTranscript.segments)
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "chevron.up")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Back to Rewind")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(6)
                     }
+                    .buttonStyle(.plain)
+
+                    Spacer()
                 }
-                .frame(width: transcriptWidth)
-                .background(OmiColors.backgroundPrimary)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
+                .background(OmiColors.backgroundTertiary.opacity(0.8))
+            }
 
-                // Divider
-                Rectangle()
-                    .fill(OmiColors.border)
-                    .frame(width: 1)
+            // Split panel: transcript (left) + notes (right)
+            GeometryReader { geometry in
+                let totalWidth = geometry.size.width
+                let transcriptWidth = max(minPanelWidth, totalWidth * panelRatio)
+                let notesWidth = max(minPanelWidth, totalWidth - transcriptWidth - 1)
 
-                // Right: Notes
-                LiveNotesView()
-                    .frame(width: notesWidth)
+                HStack(spacing: 0) {
+                    // Left: Live transcript
+                    VStack(spacing: 0) {
+                        if displaySegments.isEmpty {
+                            VStack(spacing: 16) {
+                                Image(systemName: "waveform")
+                                    .font(.system(size: 48))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .opacity(0.5)
+                                Text("Listening...")
+                                    .font(.system(size: 16, weight: .medium))
+                                    .foregroundColor(OmiColors.textSecondary)
+                                Text("Start speaking and your transcript will appear here")
+                                    .font(.system(size: 14))
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            .padding(32)
+                        } else {
+                            LiveTranscriptView(segments: displaySegments)
+                        }
+                    }
+                    .frame(width: transcriptWidth)
+                    .background(OmiColors.backgroundPrimary)
+
+                    // Divider
+                    Rectangle()
+                        .fill(OmiColors.border)
+                        .frame(width: 1)
+
+                    // Right: Notes
+                    LiveNotesView()
+                        .frame(width: notesWidth)
+                }
             }
         }
         .background(OmiColors.backgroundPrimary)
@@ -1098,6 +1141,9 @@ struct RewindPage: View {
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isTranscriptExpanded.toggle()
+                        if !isTranscriptExpanded {
+                            savedTranscriptSegments = []
+                        }
                     }
                 } label: {
                     HStack(spacing: 6) {
