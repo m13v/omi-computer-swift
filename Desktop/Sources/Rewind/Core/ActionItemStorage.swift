@@ -352,23 +352,24 @@ actor ActionItemStorage {
                 .fetchCount(database)
 
             // Category/tag counts - count each known tag using LIKE on tagsJson
+            // Only count incomplete tasks so numbers match the default (todo) view
             var categories: [String: Int] = [:]
             let knownTags = ["personal", "work", "feature", "bug", "code", "research", "communication", "finance", "health", "other"]
             for tag in knownTags {
                 let count = try Int.fetchOne(database, sql: """
                     SELECT COUNT(*) FROM action_items
-                    WHERE deleted = 0 AND (tagsJson LIKE ? OR (tagsJson IS NULL AND category = ?))
+                    WHERE deleted = 0 AND completed = 0 AND (tagsJson LIKE ? OR (tagsJson IS NULL AND category = ?))
                 """, arguments: ["%\"\(tag)\"%", tag]) ?? 0
                 if count > 0 {
                     categories[tag] = count
                 }
             }
 
-            // Source counts
+            // Source counts (incomplete only to match default view)
             var sources: [String: Int] = [:]
             let sourceRows = try Row.fetchAll(database, sql: """
                 SELECT source, COUNT(*) as count FROM action_items
-                WHERE deleted = 0 AND source IS NOT NULL
+                WHERE deleted = 0 AND completed = 0 AND source IS NOT NULL
                 GROUP BY source
             """)
             for row in sourceRows {
@@ -377,11 +378,11 @@ actor ActionItemStorage {
                 }
             }
 
-            // Priority counts
+            // Priority counts (incomplete only to match default view)
             var priorities: [String: Int] = [:]
             let priorityRows = try Row.fetchAll(database, sql: """
                 SELECT priority, COUNT(*) as count FROM action_items
-                WHERE deleted = 0 AND priority IS NOT NULL
+                WHERE deleted = 0 AND completed = 0 AND priority IS NOT NULL
                 GROUP BY priority
             """)
             for row in priorityRows {
@@ -396,7 +397,7 @@ actor ActionItemStorage {
             for origin in knownOrigins {
                 let count = try Int.fetchOne(database, sql: """
                     SELECT COUNT(*) FROM action_items
-                    WHERE deleted = 0 AND metadataJson LIKE ?
+                    WHERE deleted = 0 AND completed = 0 AND metadataJson LIKE ?
                 """, arguments: ["%\"source_category\":\"\(origin)\"%"]) ?? 0
                 if count > 0 {
                     origins[origin] = count
