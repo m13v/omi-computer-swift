@@ -766,16 +766,19 @@ class TasksViewModel: ObservableObject {
     // MARK: - Indent Methods
 
     func getIndentLevel(for taskId: String) -> Int {
-        // Prefer task's own indentLevel from backend, fall back to UserDefaults
+        // Local in-session overrides take priority, then fall back to persisted value from backend/SQLite
+        if let local = indentLevels[taskId] {
+            return local
+        }
         if let task = store.incompleteTasks.first(where: { $0.id == taskId }) ?? store.completedTasks.first(where: { $0.id == taskId }),
            let level = task.indentLevel {
             return level
         }
-        return indentLevels[taskId] ?? 0
+        return 0
     }
 
     func incrementIndent(for taskId: String) {
-        let current = indentLevels[taskId] ?? 0
+        let current = getIndentLevel(for: taskId)
         if current < 3 {
             indentLevels[taskId] = current + 1
             scheduleSortOrderSync()
@@ -783,7 +786,7 @@ class TasksViewModel: ObservableObject {
     }
 
     func decrementIndent(for taskId: String) {
-        let current = indentLevels[taskId] ?? 0
+        let current = getIndentLevel(for: taskId)
         if current > 0 {
             indentLevels[taskId] = current - 1
             scheduleSortOrderSync()
@@ -1733,7 +1736,7 @@ struct TasksPage: View {
                     .fill(OmiColors.border)
                     .frame(width: 1)
 
-                // Right panel: Task chat (fixed width, in expanded window space)
+                // Right panel: Task chat (slides in from right)
                 TaskChatPanel(
                     chatProvider: chatProvider!,
                     coordinator: chatCoordinator,
@@ -1743,6 +1746,7 @@ struct TasksPage: View {
                     }
                 )
                 .frame(width: chatPanelWidth)
+                .transition(.move(edge: .trailing))
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -1761,14 +1765,11 @@ struct TasksPage: View {
             // Ensure prioritization service is running (no-op if already started)
             Task { await TaskPrioritizationService.shared.start() }
         }
-        .onChange(of: showChatPanel) { _, isShowing in
-            // Expand/shrink the window when chat panel opens/closes
-            adjustWindowWidth(expand: isShowing)
-        }
         .onDisappear {
-            // Shrink window back if chat was open when navigating away from Tasks tab
+            // Reset chat state when navigating away from Tasks tab
             if showChatPanel {
-                adjustWindowWidth(expand: false)
+                showChatPanel = false
+                Task { await chatCoordinator.closeChat() }
             }
         }
     }
