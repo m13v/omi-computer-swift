@@ -2131,16 +2131,10 @@ struct TasksPage: View {
             filterSearchText = ""
             showFilterPopover = true
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "line.3.horizontal.decrease")
-                    .scaledFont(size: 12)
-                Text(filterLabel)
-                    .scaledFont(size: 13, weight: viewModel.hasActiveFilters ? .medium : .regular)
-                Image(systemName: "chevron.down")
-                    .scaledFont(size: 10)
-            }
+            Image(systemName: "line.3.horizontal.decrease")
+                .scaledFont(size: 12)
             .foregroundColor(viewModel.hasActiveFilters ? OmiColors.textPrimary : OmiColors.textSecondary)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(8)
@@ -2443,14 +2437,10 @@ struct TasksPage: View {
         Button {
             viewModel.showingCreateTask = true
         } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "plus")
-                    .scaledFont(size: 12, weight: .semibold)
-                Text("New")
-                    .scaledFont(size: 13, weight: .medium)
-            }
+            Image(systemName: "plus")
+                .scaledFont(size: 12, weight: .semibold)
             .foregroundColor(.black)
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(
                 RoundedRectangle(cornerRadius: 8)
