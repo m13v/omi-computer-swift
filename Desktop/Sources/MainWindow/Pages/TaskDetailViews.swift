@@ -180,7 +180,6 @@ private struct TaskDetailTooltip: View {
             Text(value)
                 .scaledFont(size: 11)
                 .foregroundColor(OmiColors.textPrimary)
-                .lineLimit(2)
         }
     }
 
@@ -194,7 +193,6 @@ private struct TaskDetailTooltip: View {
             Text(value)
                 .scaledFont(size: 11)
                 .foregroundColor(OmiColors.textPrimary)
-                .lineLimit(6)
                 .padding(.leading, 76)
         }
     }
