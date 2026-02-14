@@ -7,9 +7,9 @@ import { RewindComposition } from "./rewind/RewindComposition";
 // Minus 7 transitions * 20 = 140
 // Total: 780 frames = 26 seconds at 30fps
 
-// RewindDemo duration: 140+130+150 = 420 frames
-// Minus 2 transitions * 20 = 40
-// Total: 380 frames ≈ 12.7 seconds at 30fps
+// RewindDemo duration: 140+140+130+130+150 = 690 frames
+// Minus 4 transitions * 20 = 80
+// Total: 610 frames ≈ 20.3 seconds at 30fps
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -25,7 +25,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="RewindDemo"
         component={RewindComposition}
-        durationInFrames={380}
+        durationInFrames={610}
         fps={30}
         width={960}
         height={540}
