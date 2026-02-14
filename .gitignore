@@ -78,6 +78,9 @@ linkedin-*.md
 # Session logs / transcripts
 /*.txt
 
+# Runtime log files
+*.log
+
 # Skills (user-local)
 skills/
 
