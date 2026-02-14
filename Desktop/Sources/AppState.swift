@@ -1415,7 +1415,7 @@ class AppState: ObservableObject {
         do {
             try await APIClient.shared.assignSegmentsBulk(
                 conversationId: conversationId,
-                segmentIds: segmentIds,
+                segmentIds: segmentIds.map(String.init),
                 isUser: isUser,
                 personId: personId
             )
