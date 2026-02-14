@@ -14,6 +14,8 @@ struct ChatInputView: View {
     let isSending: Bool
     var placeholder: String = "Type a message..."
     @Binding var mode: ChatMode
+    /// Optional text to pre-fill the input (e.g. task context). Consumed on change.
+    var pendingText: Binding<String>?
 
     @State private var inputText = ""
     @FocusState private var isInputFocused: Bool
@@ -43,6 +45,16 @@ struct ChatInputView: View {
                 }
                 .onAppear {
                     isInputFocused = true
+                    if let pending = pendingText?.wrappedValue, !pending.isEmpty {
+                        inputText = pending
+                        pendingText?.wrappedValue = ""
+                    }
+                }
+                .onChange(of: pendingText?.wrappedValue ?? "") { _, newValue in
+                    if !newValue.isEmpty {
+                        inputText = newValue
+                        pendingText?.wrappedValue = ""
+                    }
                 }
 
             // Ask/Act mode toggle
