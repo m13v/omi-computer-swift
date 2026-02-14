@@ -310,6 +310,7 @@ struct SettingsContentView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTaskSettings)) { _ in
             selectedSection = .advanced
+            selectedAdvancedSubsection = .taskAssistant
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Refresh notification permission when app becomes active (user may have changed it in System Settings)
