@@ -50,21 +50,28 @@ struct ChatInputView: View {
                 }
             }
 
-            // Input field — scrollable, taller max height
-            ScrollView {
-                TextField(placeholder, text: $inputText, axis: .vertical)
-                    .textFieldStyle(.plain)
+            // Input field — TextEditor with native scrolling
+            ZStack(alignment: .topLeading) {
+                // Placeholder text
+                if inputText.isEmpty {
+                    Text(placeholder)
+                        .scaledFont(size: 14)
+                        .foregroundColor(OmiColors.textTertiary)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 12)
+                        .allowsHitTesting(false)
+                }
+
+                TextEditor(text: $inputText)
                     .scaledFont(size: 14)
                     .foregroundColor(OmiColors.textPrimary)
                     .focused($isInputFocused)
-                    .padding(12)
-                    .lineLimit(1...10)
-                    .onSubmit {
-                        handleSubmit()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .scrollContentBackground(.hidden)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .frame(minHeight: 40, maxHeight: 120)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .frame(maxHeight: 120)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(12)
             .contentShape(Rectangle())
