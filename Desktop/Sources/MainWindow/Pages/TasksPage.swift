@@ -870,6 +870,133 @@ class TasksViewModel: ObservableObject {
         }
     }
 
+    // MARK: - Keyboard Navigation
+
+    /// Find a task by ID across all store arrays
+    private func findTask(_ id: String) -> TaskActionItem? {
+        store.incompleteTasks.first(where: { $0.id == id })
+            ?? store.completedTasks.first(where: { $0.id == id })
+    }
+
+    /// Move keyboard selection up or down
+    func moveSelection(_ direction: Int) {
+        let nav = navigationOrder
+        guard !nav.isEmpty else { return }
+
+        if let currentId = keyboardSelectedTaskId,
+           let currentIndex = nav.firstIndex(where: { $0.id == currentId }) {
+            let newIndex = min(max(currentIndex + direction, 0), nav.count - 1)
+            let newId = nav[newIndex].id
+            keyboardSelectedTaskId = newId
+            scrollProxy?.scrollTo(newId, anchor: .center)
+        } else {
+            let task = direction > 0 ? nav.first : nav.last
+            if let task = task {
+                keyboardSelectedTaskId = task.id
+                scrollProxy?.scrollTo(task.id, anchor: .center)
+            }
+        }
+    }
+
+    /// Handle a key-down event. Returns true if the event was consumed.
+    func handleKeyDown(_ event: NSEvent) -> Bool {
+        // Don't intercept keys when a text field has focus
+        if let firstResponder = NSApp.keyWindow?.firstResponder,
+           firstResponder is NSTextView || firstResponder is NSTextField {
+            return false
+        }
+
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let keyCode = event.keyCode
+
+        // Cmd+N: new task
+        if modifiers == .command && keyCode == 45 {
+            showingCreateTask = true
+            return true
+        }
+
+        // Cmd+D: delete task
+        if modifiers == .command && keyCode == 2 {
+            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId,
+                  let task = findTask(taskId) else { return false }
+            let nav = navigationOrder
+            if let idx = nav.firstIndex(where: { $0.id == taskId }) {
+                let nextIdx = idx + 1 < nav.count ? idx + 1 : max(0, idx - 1)
+                if nav.count > 1 {
+                    keyboardSelectedTaskId = nav[nextIdx].id
+                } else {
+                    keyboardSelectedTaskId = nil
+                }
+            }
+            Task { [weak self] in await self?.deleteTaskWithUndo(task) }
+            return true
+        }
+
+        // Tab / Shift+Tab: indent
+        if keyCode == 48 && modifiers.isEmpty {
+            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId else { return false }
+            incrementIndent(for: taskId)
+            return true
+        }
+        if keyCode == 48 && modifiers == .shift {
+            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId else { return false }
+            decrementIndent(for: taskId)
+            return true
+        }
+
+        // Guard: don't navigate while editing or inline creating
+        guard !isAnyTaskEditing && !isInlineCreating else { return false }
+
+        // Guard: don't navigate in multi-select mode
+        guard !isMultiSelectMode else { return false }
+
+        // Arrow Up/Down navigation
+        if keyCode == 126 && modifiers.isEmpty { // Up
+            moveSelection(-1)
+            return true
+        }
+        if keyCode == 125 && modifiers.isEmpty { // Down
+            moveSelection(1)
+            return true
+        }
+
+        // Enter: inline create or double-enter for edit
+        if keyCode == 36 && modifiers.isEmpty && keyboardSelectedTaskId != nil {
+            if !searchText.isEmpty { return false }
+
+            let now = Date()
+            if let last = lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
+                lastEnterPressTime = nil
+                editingTaskId = keyboardSelectedTaskId
+                return true
+            }
+            lastEnterPressTime = now
+            let capturedTime = now
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                guard self?.lastEnterPressTime == capturedTime else { return }
+                self?.lastEnterPressTime = nil
+                self?.isInlineCreating = true
+                self?.inlineCreateAfterTaskId = self?.keyboardSelectedTaskId
+            }
+            return true
+        }
+
+        // Escape: cancel inline create, or deselect
+        if keyCode == 53 {
+            if isInlineCreating {
+                isInlineCreating = false
+                inlineCreateAfterTaskId = nil
+                return true
+            }
+            if keyboardSelectedTaskId != nil {
+                keyboardSelectedTaskId = nil
+                return true
+            }
+        }
+
+        return false
+    }
+
     // MARK: - Sort Order Sync
 
     /// Debounced sync of sort orders to SQLite + backend API (500ms)
@@ -1965,7 +2092,6 @@ struct TasksPage: View {
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
         .animation(.easeInOut(duration: 0.15), value: viewModel.keyboardSelectedTaskId)
-        .animation(.easeInOut(duration: 0.15), value: viewModel.isAnyTaskEditing)
         .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
         .onAppear {
             installKeyboardMonitor()
@@ -1973,14 +2099,28 @@ struct TasksPage: View {
         .onDisappear {
             removeKeyboardMonitor()
         }
+        .onChange(of: viewModel.isInlineCreating) { _, isCreating in
+            if isCreating {
+                // Keyboard triggered inline create — reset text and focus
+                inlineCreateText = ""
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                    inlineCreateFocused = true
+                }
+            } else {
+                // Cancelled — clear text and unfocus
+                inlineCreateText = ""
+                inlineCreateFocused = false
+            }
+        }
     }
 
     // MARK: - Keyboard Event Monitor
 
     private func installKeyboardMonitor() {
         guard keyboardMonitor == nil else { return }
-        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
-            return handleKeyEvent(event) ? nil : event
+        let vm = viewModel
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            return vm.handleKeyDown(event) ? nil : event
         }
     }
 
@@ -1991,136 +2131,10 @@ struct TasksPage: View {
         }
     }
 
-    /// Returns true if the event was handled (consumed)
-    private func handleKeyEvent(_ event: NSEvent) -> Bool {
-        // Don't intercept keys when a text field has focus (editing task, search, inline create)
-        if let firstResponder = NSApp.keyWindow?.firstResponder,
-           firstResponder is NSTextView || firstResponder is NSTextField {
-            return false
-        }
-
-        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let keyCode = event.keyCode
-
-        // Cmd+N: new task
-        if modifiers == .command && keyCode == 45 { // N
-            viewModel.showingCreateTask = true
-            return true
-        }
-
-        // Cmd+D: delete task
-        if modifiers == .command && keyCode == 2 { // D
-            guard let taskId = viewModel.hoveredTaskId ?? viewModel.keyboardSelectedTaskId,
-                  let task = findTask(taskId) else { return false }
-            let nav = viewModel.navigationOrder
-            if let idx = nav.firstIndex(where: { $0.id == taskId }) {
-                let nextIdx = idx + 1 < nav.count ? idx + 1 : max(0, idx - 1)
-                if nav.count > 1 {
-                    viewModel.keyboardSelectedTaskId = nav[nextIdx].id
-                } else {
-                    viewModel.keyboardSelectedTaskId = nil
-                }
-            }
-            Task { await viewModel.deleteTaskWithUndo(task) }
-            return true
-        }
-
-        // Tab / Shift+Tab: indent
-        if keyCode == 48 && modifiers.isEmpty { // Tab
-            guard let taskId = viewModel.hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
-            viewModel.incrementIndent(for: taskId)
-            return true
-        }
-        if keyCode == 48 && modifiers == .shift { // Shift+Tab
-            guard let taskId = viewModel.hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
-            viewModel.decrementIndent(for: taskId)
-            return true
-        }
-
-        // Guard: don't navigate while editing or inline creating
-        guard !viewModel.isAnyTaskEditing && !viewModel.isInlineCreating else { return false }
-
-        // Guard: don't navigate in multi-select mode
-        guard !viewModel.isMultiSelectMode else { return false }
-
-        // Arrow Up/Down navigation
-        if keyCode == 126 && modifiers.isEmpty { // Up arrow
-            moveSelection(-1)
-            return true
-        }
-        if keyCode == 125 && modifiers.isEmpty { // Down arrow
-            moveSelection(1)
-            return true
-        }
-
-        // Enter: inline create or double-enter for edit
-        if keyCode == 36 && modifiers.isEmpty && viewModel.keyboardSelectedTaskId != nil { // Return
-            if !viewModel.searchText.isEmpty { return false }
-
-            let now = Date()
-            if let last = viewModel.lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
-                viewModel.lastEnterPressTime = nil
-                viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
-                return true
-            }
-            viewModel.lastEnterPressTime = now
-            let capturedTime = now
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak viewModel] in
-                guard viewModel?.lastEnterPressTime == capturedTime else { return }
-                viewModel?.lastEnterPressTime = nil
-                self.beginInlineCreate()
-            }
-            return true
-        }
-
-        // Escape: cancel inline create, or deselect
-        if keyCode == 53 { // Escape
-            if viewModel.isInlineCreating {
-                cancelInlineCreate()
-                return true
-            }
-            if viewModel.keyboardSelectedTaskId != nil {
-                viewModel.keyboardSelectedTaskId = nil
-                return true
-            }
-        }
-
-        return false
-    }
-
     // MARK: - Keyboard Navigation Helpers
-
-    private func moveSelection(_ direction: Int) {
-        let nav = viewModel.navigationOrder
-        guard !nav.isEmpty else { return }
-
-        if let currentId = viewModel.keyboardSelectedTaskId,
-           let currentIndex = nav.firstIndex(where: { $0.id == currentId }) {
-            let newIndex = min(max(currentIndex + direction, 0), nav.count - 1)
-            let newId = nav[newIndex].id
-            viewModel.keyboardSelectedTaskId = newId
-            viewModel.scrollProxy?.scrollTo(newId, anchor: .center)
-        } else {
-            // No current selection: select first (down) or last (up)
-            let task = direction > 0 ? nav.first : nav.last
-            if let task = task {
-                viewModel.keyboardSelectedTaskId = task.id
-                viewModel.scrollProxy?.scrollTo(task.id, anchor: .center)
-            }
-        }
-    }
 
     private func selectTask(_ task: TaskActionItem) {
         viewModel.keyboardSelectedTaskId = task.id
-    }
-
-    private func beginInlineCreate() {
-        viewModel.isInlineCreating = true
-        viewModel.inlineCreateAfterTaskId = viewModel.keyboardSelectedTaskId
-        inlineCreateText = ""
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            inlineCreateFocused = true
-        }
     }
 
     private func cancelInlineCreate() {
