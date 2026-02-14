@@ -33,7 +33,8 @@ class TaskChatCoordinator: ObservableObject {
     /// Creates a new Firestore ChatSession if the task doesn't have one yet.
     func openChat(for task: TaskActionItem) async {
         // If already viewing this task's chat, just ensure panel is open
-        if activeTaskId == task.id && isPanelOpen {
+        if activeTaskId == task.id {
+            isPanelOpen = true
             return
         }
 
