@@ -236,6 +236,15 @@ struct SidebarView: View {
                                     isLoading: pageLoadingState(for: item),
                                     isLocked: locked,
                                     lockTooltip: locked ? "Unlocks at Tier \(item.requiredTier)" : nil,
+                                    onUnlock: {
+                                        TierManager.shared.userDidSetTier(item.requiredTier)
+                                        setPageLoading(for: item, loading: true)
+                                        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+                                            setPageLoading(for: item, loading: false)
+                                        }
+                                        selectedIndex = item.rawValue
+                                        AnalyticsManager.shared.tabChanged(tabName: item.title)
+                                    },
                                     onTap: {
                                         // Show loading immediately when navigating
                                         if selectedIndex != item.rawValue {
@@ -1169,9 +1178,11 @@ struct NavItemView: View {
     var isLoading: Bool = false
     var isLocked: Bool = false
     var lockTooltip: String? = nil
+    var onUnlock: (() -> Void)? = nil
     let onTap: () -> Void
 
     @State private var isHovered = false
+    @State private var isLockHovered = false
 
     /// Foreground color for icon and text when locked
     private var lockedColor: Color { OmiColors.textQuaternary.opacity(0.45) }
@@ -1206,11 +1217,9 @@ struct NavItemView: View {
                         .offset(x: 4, y: -4)
                 }
 
-                // Lock badge when collapsed
+                // Lock badge when collapsed — clickable
                 if isCollapsed && isLocked {
-                    Image(systemName: "lock.fill")
-                        .scaledFont(size: 8)
-                        .foregroundColor(lockedColor)
+                    lockIcon(size: 8)
                         .offset(x: 4, y: -4)
                 }
             }
@@ -1223,10 +1232,8 @@ struct NavItemView: View {
                 Spacer()
 
                 if isLocked {
-                    // Lock icon when expanded
-                    Image(systemName: "lock.fill")
-                        .scaledFont(size: 10)
-                        .foregroundColor(lockedColor)
+                    // Clickable lock icon
+                    lockIcon(size: 10)
                 } else {
                     // Status indicator when expanded (for Focus)
                     if let color = statusColor {
@@ -1266,7 +1273,25 @@ struct NavItemView: View {
             isHovered = isLocked ? false : hovering
         }
         .padding(.bottom, 2)
-        .help(isLocked ? (lockTooltip ?? label) : (isCollapsed ? label : ""))
+        .help(isCollapsed ? label : "")
+    }
+
+    /// Lock icon that reacts on hover and unlocks on click
+    private func lockIcon(size: CGFloat) -> some View {
+        Image(systemName: isLockHovered ? "lock.open.fill" : "lock.fill")
+            .scaledFont(size: size)
+            .foregroundColor(isLockHovered ? OmiColors.purplePrimary : lockedColor)
+            .padding(4)
+            .contentShape(Rectangle())
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isLockHovered = hovering
+                }
+            }
+            .onTapGesture {
+                onUnlock?()
+            }
+            .help("Click to unlock")
     }
 }
 
