@@ -120,6 +120,12 @@ struct OMIApp: App {
                     FontScaleSettings.shared.resetToDefault()
                 }
                 .keyboardShortcut("0", modifiers: .command)
+
+                Divider()
+
+                Button("Reset Window Size") {
+                    resetWindowToDefaultSize()
+                }
             }
         }
 
