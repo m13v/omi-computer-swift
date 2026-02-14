@@ -501,7 +501,7 @@ struct SettingsContentView: View {
                             .scaledFont(size: 12, weight: .medium)
                             .foregroundColor(OmiColors.textTertiary)
 
-                        Slider(value: $fontScaleSettings.scale, in: 0.85...1.3, step: 0.05)
+                        Slider(value: $fontScaleSettings.scale, in: 0.5...2.0, step: 0.05)
                             .tint(OmiColors.purplePrimary)
 
                         Text("A")
