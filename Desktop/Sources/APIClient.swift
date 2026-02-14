@@ -3,9 +3,6 @@ import Foundation
 actor APIClient {
     static let shared = APIClient()
 
-    // OMI Python backend base URL (api.omi.me) — used for People API endpoints
-    static let omiAPIBaseURL = "https://api.omi.me/"
-
     // OMI Backend base URL - loaded from .env file (OMI_API_URL)
     // Production URL is set in .env.app, dev URL is set by run.sh
     var baseURL: String {
@@ -4317,7 +4314,7 @@ extension APIClient {
 
     /// Fetches all people for the current user
     func getPeople() async throws -> [Person] {
-        return try await get("v1/users/people", customBaseURL: APIClient.omiAPIBaseURL)
+        return try await get("v1/users/people")
     }
 
     /// Creates a new person
@@ -4325,13 +4322,13 @@ extension APIClient {
         struct CreatePersonRequest: Encodable {
             let name: String
         }
-        return try await post("v1/users/people", body: CreatePersonRequest(name: name), customBaseURL: APIClient.omiAPIBaseURL)
+        return try await post("v1/users/people", body: CreatePersonRequest(name: name))
     }
 
     /// Updates a person's name
     func updatePersonName(personId: String, newName: String) async throws {
         let encodedName = newName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? newName
-        let url = URL(string: APIClient.omiAPIBaseURL + "v1/users/people/\(personId)/name?value=\(encodedName)")!
+        let url = URL(string: baseURL + "v1/users/people/\(personId)/name?value=\(encodedName)")!
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
@@ -4345,7 +4342,7 @@ extension APIClient {
 
     /// Deletes a person
     func deletePerson(personId: String) async throws {
-        try await delete("v1/users/people/\(personId)", customBaseURL: APIClient.omiAPIBaseURL)
+        try await delete("v1/users/people/\(personId)")
     }
 
     /// Bulk assigns segments to a person or user
@@ -4373,7 +4370,7 @@ extension APIClient {
             segmentIds: segmentIds
         )
 
-        let url = URL(string: APIClient.omiAPIBaseURL + "v1/conversations/\(conversationId)/segments/assign-bulk")!
+        let url = URL(string: baseURL + "v1/conversations/\(conversationId)/segments/assign-bulk")!
         var request = URLRequest(url: url)
         request.httpMethod = "PATCH"
         request.allHTTPHeaderFields = try await buildHeaders(requireAuth: true)
