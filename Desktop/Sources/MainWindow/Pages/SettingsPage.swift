@@ -514,6 +514,28 @@ struct SettingsContentView: View {
                         .foregroundColor(OmiColors.textSecondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 4)
+
+                    HStack {
+                        Spacer()
+                        Button(action: {
+                            resetWindowToDefaultSize()
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "arrow.uturn.backward")
+                                    .scaledFont(size: 11)
+                                Text("Reset Window Size")
+                                    .scaledFont(size: 12, weight: .medium)
+                            }
+                            .foregroundColor(OmiColors.textSecondary)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(OmiColors.backgroundTertiary)
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
                 }
             }
 
