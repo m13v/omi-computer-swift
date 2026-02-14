@@ -66,6 +66,9 @@ struct SettingsContentView: View {
     @State private var isToggling: Bool = false
     @State private var permissionError: String?
 
+    // Ask Omi floating bar state
+    @State private var showAskOmiBar: Bool = false
+
     // Transcription state
     @State private var isTranscribing: Bool
     @State private var isTogglingTranscription: Bool = false
@@ -311,6 +314,8 @@ struct SettingsContentView: View {
             loadBackendSettings()
             // Sync transcription state with appState
             isTranscribing = appState.isTranscribing
+            // Sync floating bar state
+            showAskOmiBar = FloatingControlBarManager.shared.isVisible
             // Refresh notification permission state
             appState.checkNotificationPermission()
         }
@@ -477,6 +482,39 @@ struct SettingsContentView: View {
                                 .fill(OmiColors.warning.opacity(0.1))
                         )
                     }
+                }
+            }
+
+            // Ask Omi floating bar toggle
+            settingsCard {
+                HStack(spacing: 16) {
+                    Circle()
+                        .fill(showAskOmiBar ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
+                        .frame(width: 12, height: 12)
+                        .shadow(color: showAskOmiBar ? OmiColors.success.opacity(0.5) : .clear, radius: 6)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Ask Omi")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text(showAskOmiBar ? "Floating bar is visible (⌘\\)" : "Floating bar is hidden (⌘\\)")
+                            .scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Toggle("", isOn: $showAskOmiBar)
+                        .toggleStyle(.switch)
+                        .labelsHidden()
+                        .onChange(of: showAskOmiBar) { _, newValue in
+                            if newValue {
+                                FloatingControlBarManager.shared.show()
+                            } else {
+                                FloatingControlBarManager.shared.hide()
+                            }
+                        }
                 }
             }
 
