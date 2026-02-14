@@ -77,7 +77,7 @@ struct ChatInputView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .onKeyPress(.return) { keyPress in
+                    .onKeyPress(keys: [.return], phases: .down) { keyPress in
                         if keyPress.modifiers.contains(.shift) {
                             return .ignored // Shift+Enter: newline
                         }
