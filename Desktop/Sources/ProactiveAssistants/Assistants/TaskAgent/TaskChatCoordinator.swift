@@ -69,13 +69,23 @@ class TaskChatCoordinator: ObservableObject {
         // Isolate task messages from the default chat
         chatProvider.overrideAppId = Self.taskChatAppId
 
-        // Check if task already has a chat session
+        // Check if task already has a chat session with messages
+        var needsNewSession = true
         if let sessionId = task.chatSessionId {
-            // Resume existing session
+            // Try to resume existing session
             let session = ChatSession(id: sessionId, title: taskChatTitle(for: task))
             await chatProvider.selectSession(session)
-        } else {
-            // Create a new session for this task
+
+            if !chatProvider.messages.isEmpty {
+                // Session has messages, resume it
+                needsNewSession = false
+            } else {
+                log("TaskChatCoordinator: session \(sessionId) is empty (previous attempt failed), creating new session")
+            }
+        }
+
+        if needsNewSession {
+            // Create a fresh session for this task
             if let session = await chatProvider.createNewSession(title: taskChatTitle(for: task), skipGreeting: true, appId: "task-chat") {
                 // Persist the session ID to the task's local storage
                 try? await ActionItemStorage.shared.updateChatSessionId(
