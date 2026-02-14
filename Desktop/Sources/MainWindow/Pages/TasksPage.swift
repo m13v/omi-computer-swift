@@ -1862,11 +1862,14 @@ struct TasksPage: View {
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
         log("TaskChat: openChatForTask called for task \(task.id) (deleted=\(task.deleted ?? false), completed=\(task.completed))")
-        // Expand window first, then reveal the panel — both animate together
-        adjustWindowWidth(expand: true)
-        withAnimation(.easeInOut(duration: 0.25)) {
-            showChatPanel = true
+        if !showChatPanel {
+            // First open: expand window and reveal the panel together
+            adjustWindowWidth(expand: true)
+            withAnimation(.easeInOut(duration: 0.25)) {
+                showChatPanel = true
+            }
         }
+        // Switch to (or start) chat for this task
         Task {
             await chatCoordinator.openChat(for: task)
         }
@@ -2195,6 +2198,9 @@ struct TasksPage: View {
                 cancelMultiSelectButton
             } else {
                 addTaskButton
+                if chatProvider != nil {
+                    chatToggleButton
+                }
                 taskSettingsButton
             }
         }
@@ -2755,6 +2761,8 @@ struct TasksPage: View {
                                     onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
                                     onHover: { hoveredTaskId = $0 },
+                                    isChatActive: showChatPanel,
+                                    activeChatTaskId: chatCoordinator.activeTaskId,
                                     editingTaskId: viewModel.editingTaskId,
                                     onEditingChanged: { editing in
                                         isAnyTaskEditing = editing
@@ -2789,6 +2797,8 @@ struct TasksPage: View {
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
                                     onHover: { hoveredTaskId = $0 },
+                                    isChatActive: showChatPanel,
+                                    activeChatTaskId: chatCoordinator.activeTaskId,
                                     editingTaskId: viewModel.editingTaskId,
                                     onEditingChanged: { editing in
                                         isAnyTaskEditing = editing
@@ -2899,6 +2909,8 @@ struct TaskCategorySection: View {
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
+    var isChatActive: Bool = false
+    var activeChatTaskId: String?
 
     // Edit mode support
     var editingTaskId: String?
@@ -2962,6 +2974,8 @@ struct TaskCategorySection: View {
                                 onDecrementIndent: onDecrementIndent,
                                 onOpenChat: onOpenChat,
                                 onHover: onHover,
+                                isChatActive: isChatActive,
+                                activeChatTaskId: activeChatTaskId,
                                 editingTaskId: editingTaskId,
                                 onEditingChanged: onEditingChanged
                             )
@@ -3054,6 +3068,8 @@ struct TaskRow: View {
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
+    var isChatActive: Bool = false
+    var activeChatTaskId: String?
 
     // Edit mode support (external trigger from keyboard navigation)
     var editingTaskId: String?
@@ -3099,8 +3115,28 @@ struct TaskRow: View {
         CGFloat(indentLevel) * 28
     }
 
+    /// Whether this task is the one currently shown in the chat sidebar
+    private var isActiveChatTask: Bool {
+        isChatActive && activeChatTaskId == task.id
+    }
+
     var body: some View {
         swipeableContent
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.08) : Color.clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+            )
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    if isChatActive, !isActiveChatTask {
+                        onOpenChat?(task)
+                    }
+                }
+            )
             .sheet(isPresented: $showAgentDetail) {
                 TaskAgentDetailView(
                     task: task,
@@ -3466,20 +3502,6 @@ struct TaskRow: View {
             // Hover actions overlaid on trailing edge (no layout shift)
             if isHovering && !isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
-                    // Chat button (shown on hover when onOpenChat is available)
-                    if onOpenChat != nil && !task.completed {
-                        Button {
-                            onOpenChat?(task)
-                        } label: {
-                            Image(systemName: "bubble.left")
-                                .scaledFont(size: 12)
-                                .foregroundColor(OmiColors.textTertiary)
-                                .frame(width: 24, height: 24)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Chat about this task")
-                    }
-
                     // Add date button (shown on hover when no due date)
                     if task.dueAt == nil && !task.completed {
                         Button {
