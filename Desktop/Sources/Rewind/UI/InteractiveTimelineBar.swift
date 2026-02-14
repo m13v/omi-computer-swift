@@ -72,6 +72,10 @@ struct TimeBasedTimelineView: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: TimeBasedTimelineNSView, context: Context) {
+        let screenshotsChanged = nsView.screenshots.count != screenshots.count
+        let indexChanged = nsView.currentIndex != currentIndex
+        let searchChanged = nsView.searchResultIndices != searchResultIndices
+
         nsView.screenshots = screenshots
         nsView.currentIndex = currentIndex
         nsView.searchResultIndices = searchResultIndices
@@ -79,7 +83,13 @@ struct TimeBasedTimelineView: NSViewRepresentable {
         nsView.hoveredGapIndex = hoveredGapIndex
         nsView.barHeight = barHeight
         nsView.onSelect = onSelect
-        nsView.rebuildSegments()
+
+        // Only rebuild segments when data actually changed — NOT on hover updates.
+        // Rebuilding on every hover triggers a constraint feedback loop:
+        // mouseMoved → onHover binding → updateNSView → rebuildSegments → updateTrackingAreas → crash
+        if screenshotsChanged || indexChanged || searchChanged {
+            nsView.rebuildSegments()
+        }
         nsView.needsDisplay = true
     }
 }
@@ -286,7 +296,7 @@ class TimeBasedTimelineNSView: NSView {
             onHover?(nil)
             onGapHover?(gapIndex)
             showGapTooltip(for: segments[gapIndex], at: location)
-        } else if let index = indexAtPoint(location) {
+        } else if let index = indexAtPoint(location), index >= 0, index < screenshots.count {
             hoveredIndex = index
             hoveredGapIndex = nil
             onHover?(index)
@@ -489,6 +499,7 @@ class TimeBasedTimelineNSView: NSView {
 
         for i in 0..<frameCount {
             let frameIndex = segment.startIndex + i
+            guard frameIndex >= 0, frameIndex < screenshots.count else { continue }
             let screenshot = screenshots[frameIndex]
             let x = rect.minX + CGFloat(i) * blockWidth
             let blockRect = NSRect(x: x, y: rect.minY, width: max(1, blockWidth - 0.5), height: rect.height)
