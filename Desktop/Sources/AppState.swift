@@ -65,6 +65,12 @@ class AppState: ObservableObject {
     @Published var folders: [Folder] = []
     @Published var isLoadingFolders: Bool = false
 
+    // People (speaker voice profiles)
+    @Published var people: [Person] = []
+    var peopleById: [String: Person] {
+        Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0) })
+    }
+
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
     @Published var notificationAlertStyle: UNAlertStyle = .none  // .none, .banner, or .alert
@@ -1312,6 +1318,54 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - People (Speaker Profiles)
+
+    /// Fetches all people from the OMI API
+    func fetchPeople() async {
+        do {
+            let fetchedPeople = try await APIClient.shared.getPeople()
+            people = fetchedPeople
+            log("People: Loaded \(fetchedPeople.count) people")
+        } catch {
+            logError("People: Failed to load", error: error)
+        }
+    }
+
+    /// Creates a new person and adds to local cache
+    func createPerson(name: String) async -> Person? {
+        do {
+            let person = try await APIClient.shared.createPerson(name: name)
+            people.append(person)
+            log("People: Created person '\(name)' with id \(person.id)")
+            return person
+        } catch {
+            logError("People: Failed to create person", error: error)
+            return nil
+        }
+    }
+
+    /// Assigns segments to a person or user via bulk API
+    func assignSpeakerToSegments(
+        conversationId: String,
+        segmentIds: [Int],
+        personId: String?,
+        isUser: Bool
+    ) async -> Bool {
+        do {
+            try await APIClient.shared.assignSegmentsBulk(
+                conversationId: conversationId,
+                segmentIds: segmentIds,
+                isUser: isUser,
+                personId: personId
+            )
+            log("People: Assigned \(segmentIds.count) segments in conversation \(conversationId)")
+            return true
+        } catch {
+            logError("People: Failed to assign segments", error: error)
+            return false
+        }
+    }
+
     /// Finalize and save the current conversation to the backend
     /// Uses DB as source of truth for crash safety
     private func finalizeConversation() async -> FinishConversationResult {
@@ -1664,6 +1718,7 @@ class AppState: ObservableObject {
         let onboardingKeys = [
             "hasCompletedOnboarding",
             "onboardingStep",
+            "hasSeenRewindIntro",
             "hasTriggeredNotification",
             "hasTriggeredAutomation",
             "hasTriggeredScreenRecording",
