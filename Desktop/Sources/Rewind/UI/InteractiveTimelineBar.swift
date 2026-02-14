@@ -166,6 +166,14 @@ class TimeBasedTimelineNSView: NSView {
         addTrackingArea(trackingArea!)
     }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        // Recalculate layout positions when bounds change (safe — not in constraint cycle)
+        if !segments.isEmpty {
+            calculateLayout()
+        }
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let existing = trackingArea {
