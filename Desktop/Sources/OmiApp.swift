@@ -102,6 +102,26 @@ struct OMIApp: App {
         }
         .windowStyle(.titleBar)
         .defaultSize(width: defaultWindowSize.width, height: defaultWindowSize.height)
+        .commands {
+            CommandGroup(after: .textSize) {
+                Button("Increase Font Size") {
+                    let s = FontScaleSettings.shared
+                    s.scale = min(1.3, round((s.scale + 0.05) * 20) / 20)
+                }
+                .keyboardShortcut("+", modifiers: .command)
+
+                Button("Decrease Font Size") {
+                    let s = FontScaleSettings.shared
+                    s.scale = max(0.85, round((s.scale - 0.05) * 20) / 20)
+                }
+                .keyboardShortcut("-", modifiers: .command)
+
+                Button("Reset Font Size") {
+                    FontScaleSettings.shared.resetToDefault()
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
+        }
 
         // Note: Menu bar is now handled by NSStatusBar in AppDelegate.setupMenuBar()
         // for better reliability on macOS Sequoia (SwiftUI MenuBarExtra had rendering issues)
