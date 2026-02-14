@@ -77,6 +77,13 @@ struct ChatInputView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
+                    .onKeyPress(.return) { keyPress in
+                        if keyPress.modifiers.contains(.shift) {
+                            return .ignored // Shift+Enter: newline
+                        }
+                        handleSubmit()
+                        return .handled // Enter: send
+                    }
             }
             .frame(minHeight: 40, maxHeight: 200)
             .background(OmiColors.backgroundSecondary)
