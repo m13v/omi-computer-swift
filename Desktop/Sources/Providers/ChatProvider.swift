@@ -484,8 +484,8 @@ class ChatProvider: ObservableObject {
     }
 
     /// Select a session and load its messages
-    func selectSession(_ session: ChatSession) async {
-        guard currentSession?.id != session.id || isInDefaultChat else { return }
+    func selectSession(_ session: ChatSession, force: Bool = false) async {
+        guard force || currentSession?.id != session.id || isInDefaultChat else { return }
 
         currentSession = session
         isInDefaultChat = false
