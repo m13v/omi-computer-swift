@@ -2086,6 +2086,14 @@ struct TasksPage: View {
         }
     }
 
+    private func selectTask(_ task: TaskActionItem) {
+        viewModel.keyboardSelectedTaskId = task.id
+        // Restore focus to the tasks content so keyboard navigation works
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            isTasksContentFocused = true
+        }
+    }
+
     private func beginInlineCreate() {
         viewModel.isInlineCreating = true
         viewModel.inlineCreateAfterTaskId = viewModel.keyboardSelectedTaskId
@@ -2764,6 +2772,7 @@ struct TasksPage: View {
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onSelect: { task in selectTask(task) },
                                     onHover: { hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
                                     activeChatTaskId: chatCoordinator.activeTaskId,
@@ -2800,6 +2809,7 @@ struct TasksPage: View {
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onSelect: { task in selectTask(task) },
                                     onHover: { hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
                                     activeChatTaskId: chatCoordinator.activeTaskId,
@@ -2912,6 +2922,7 @@ struct TaskCategorySection: View {
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
+    var onSelect: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
     var isChatActive: Bool = false
     var activeChatTaskId: String?
@@ -2977,6 +2988,7 @@ struct TaskCategorySection: View {
                                 onIncrementIndent: onIncrementIndent,
                                 onDecrementIndent: onDecrementIndent,
                                 onOpenChat: onOpenChat,
+                                onSelect: onSelect,
                                 onHover: onHover,
                                 isChatActive: isChatActive,
                                 activeChatTaskId: activeChatTaskId,
@@ -3071,6 +3083,7 @@ struct TaskRow: View {
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
+    var onSelect: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
     var isChatActive: Bool = false
     var activeChatTaskId: String?
@@ -3136,6 +3149,7 @@ struct TaskRow: View {
             )
             .simultaneousGesture(
                 TapGesture().onEnded {
+                    onSelect?(task)
                     if isChatActive, !isActiveChatTask {
                         onOpenChat?(task)
                     }
@@ -3461,10 +3475,8 @@ struct TaskRow: View {
                         AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
                     }
 
-                    // Task detail button for tasks with rich metadata
-                    if task.hasDetailMetadata {
-                        TaskDetailButton(showDetail: $showTaskDetail)
-                    }
+                    // Task detail button
+                    TaskDetailButton(showDetail: $showTaskDetail)
 
                     // Due date badge - clickable
                     if let dueAt = task.dueAt {
