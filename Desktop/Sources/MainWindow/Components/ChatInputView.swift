@@ -25,58 +25,64 @@ struct ChatInputView: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            TextField(placeholder, text: $inputText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .scaledFont(size: 14)
-                .foregroundColor(OmiColors.textPrimary)
-                .focused($isInputFocused)
-                .padding(12)
-                .lineLimit(1...5)
-                .onSubmit {
-                    handleSubmit()
-                }
-                .frame(maxWidth: .infinity)
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(20)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    isInputFocused = true
-                }
-                .onAppear {
-                    isInputFocused = true
-                    if let pending = pendingText?.wrappedValue, !pending.isEmpty {
-                        inputText = pending
-                        pendingText?.wrappedValue = ""
-                    }
-                }
-                .onChange(of: pendingText?.wrappedValue ?? "") { _, newValue in
-                    if !newValue.isEmpty {
-                        inputText = newValue
-                        pendingText?.wrappedValue = ""
-                    }
-                }
+        VStack(spacing: 6) {
+            // Controls row: Ask/Act toggle + Send/Stop button, right-aligned
+            HStack(spacing: 8) {
+                Spacer()
 
-            // Ask/Act mode toggle
-            ChatModeToggle(mode: $mode)
+                ChatModeToggle(mode: $mode)
 
-            if isSending && !hasText {
-                // Stop button — visible when agent is running and input is empty
-                Button(action: { onStop?() }) {
-                    Image(systemName: "stop.circle.fill")
-                        .scaledFont(size: 32)
-                        .foregroundColor(.red.opacity(0.8))
+                if isSending && !hasText {
+                    Button(action: { onStop?() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .scaledFont(size: 24)
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: handleSubmit) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .scaledFont(size: 24)
+                            .foregroundColor(hasText ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!hasText)
                 }
-                .buttonStyle(.plain)
-            } else {
-                // Send / follow-up button
-                Button(action: handleSubmit) {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .scaledFont(size: 32)
-                        .foregroundColor(hasText ? OmiColors.purplePrimary : OmiColors.textTertiary)
+            }
+
+            // Input field — scrollable, taller max height
+            ScrollView {
+                TextField(placeholder, text: $inputText, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .scaledFont(size: 14)
+                    .foregroundColor(OmiColors.textPrimary)
+                    .focused($isInputFocused)
+                    .padding(12)
+                    .lineLimit(1...10)
+                    .onSubmit {
+                        handleSubmit()
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .frame(maxHeight: 120)
+            .background(OmiColors.backgroundSecondary)
+            .cornerRadius(12)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isInputFocused = true
+            }
+            .onAppear {
+                isInputFocused = true
+                if let pending = pendingText?.wrappedValue, !pending.isEmpty {
+                    inputText = pending
+                    pendingText?.wrappedValue = ""
                 }
-                .buttonStyle(.plain)
-                .disabled(!hasText)
+            }
+            .onChange(of: pendingText?.wrappedValue ?? "") { _, newValue in
+                if !newValue.isEmpty {
+                    inputText = newValue
+                    pendingText?.wrappedValue = ""
+                }
             }
         }
     }
