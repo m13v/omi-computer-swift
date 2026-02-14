@@ -50,15 +50,16 @@ struct ChatInputView: View {
                 }
             }
 
-            // Input field — TextEditor with native scrolling
+            // Input field — TextEditor with auto-grow height
             ZStack(alignment: .topLeading) {
-                // Hidden text to drive auto-grow height
-                Text(inputText.isEmpty ? " " : inputText)
+                // Hidden text to calculate content height (drives ZStack size)
+                Text(inputText.isEmpty ? " " : inputText + " ")
                     .scaledFont(size: 14)
                     .padding(.horizontal, 17)
                     .padding(.vertical, 12)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .opacity(0)
+                    .accessibilityHidden(true)
 
                 // Placeholder text
                 if inputText.isEmpty {
@@ -77,6 +78,7 @@ struct ChatInputView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
+                    .frame(maxHeight: .infinity)
                     .onKeyPress(keys: [.return], phases: .down) { keyPress in
                         if keyPress.modifiers.contains(.shift) {
                             return .ignored // Shift+Enter: newline
@@ -85,7 +87,7 @@ struct ChatInputView: View {
                         return .handled // Enter: send
                     }
             }
-            .frame(minHeight: 40, maxHeight: 200)
+            .frame(minHeight: 36, maxHeight: 200)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(12)
             .contentShape(Rectangle())
