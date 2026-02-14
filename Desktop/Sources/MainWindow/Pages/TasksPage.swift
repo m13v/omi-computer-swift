@@ -1766,8 +1766,9 @@ struct TasksPage: View {
             Task { await TaskPrioritizationService.shared.start() }
         }
         .onDisappear {
-            // Reset chat state when navigating away from Tasks tab
+            // Reset chat state and shrink window when navigating away from Tasks tab
             if showChatPanel {
+                adjustWindowWidth(expand: false)
                 showChatPanel = false
                 Task { await chatCoordinator.closeChat() }
             }
@@ -1784,8 +1785,9 @@ struct TasksPage: View {
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
         log("TaskChat: openChatForTask called for task \(task.id) (deleted=\(task.deleted ?? false), completed=\(task.completed))")
-        // Show the panel immediately so the user sees a loading state
-        withAnimation(.easeInOut(duration: 0.2)) {
+        // Expand window first, then reveal the panel — both animate together
+        adjustWindowWidth(expand: true)
+        withAnimation(.easeInOut(duration: 0.25)) {
             showChatPanel = true
         }
         Task {
@@ -1796,8 +1798,13 @@ struct TasksPage: View {
     /// Close the chat panel and shrink window
     private func closeChatPanel() {
         Task { await chatCoordinator.closeChat() }
-        withAnimation(.easeInOut(duration: 0.2)) {
+        // Animate panel out and shrink window together
+        withAnimation(.easeInOut(duration: 0.25)) {
             showChatPanel = false
+        }
+        // Shrink window after a short delay so the slide-out animation is visible
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            adjustWindowWidth(expand: false)
         }
     }
 
@@ -1815,7 +1822,6 @@ struct TasksPage: View {
             if let screen = window.screen {
                 let maxRight = screen.visibleFrame.maxX
                 if frame.maxX > maxRight {
-                    // Shift left if we'd go off-screen
                     frame.origin.x = maxRight - frame.size.width
                 }
             }
@@ -1824,7 +1830,11 @@ struct TasksPage: View {
             frame.size.width = max(900, frame.size.width - expandAmount)
         }
 
-        window.setFrame(frame, display: true, animate: true)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.25
+            context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            window.animator().setFrame(frame, display: true)
+        }
     }
 
     // MARK: - Tasks Content
