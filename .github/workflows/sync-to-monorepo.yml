@@ -3,6 +3,7 @@ name: Sync to OMI monorepo
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 jobs:
   sync:
