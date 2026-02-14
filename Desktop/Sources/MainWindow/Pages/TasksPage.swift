@@ -2445,7 +2445,7 @@ struct TasksPage: View {
             HStack(spacing: 6) {
                 Image(systemName: "plus")
                     .scaledFont(size: 12, weight: .semibold)
-                Text("Add Task")
+                Text("New")
                     .scaledFont(size: 13, weight: .medium)
             }
             .foregroundColor(.black)
