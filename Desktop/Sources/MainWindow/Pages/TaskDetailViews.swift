@@ -2,28 +2,56 @@ import SwiftUI
 
 // MARK: - Task Detail Button
 
-/// Small inline info button with hover preview and click-to-open detail modal
+/// Small inline info button with hover preview and click-to-open detail modal.
+/// Hover shows a popover preview; click opens the full detail sheet.
+/// The popover stays open while the cursor is on the button OR the popover itself.
 struct TaskDetailButton: View {
     let task: TaskActionItem
     @Binding var showDetail: Bool
-    @State private var isHovered = false
+    @State private var showTooltip = false
+    @State private var isButtonHovered = false
+    @State private var isPopoverHovered = false
+    @State private var dismissWork: DispatchWorkItem?
 
     var body: some View {
         Button {
+            dismissNow()
             showDetail = true
         } label: {
             Image(systemName: "info.circle")
                 .scaledFont(size: 10)
-                .foregroundColor(isHovered ? OmiColors.textSecondary : OmiColors.textTertiary)
+                .foregroundColor(showTooltip ? OmiColors.textSecondary : OmiColors.textTertiary)
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
         .onHover { hovering in
-            isHovered = hovering
+            isButtonHovered = hovering
+            scheduleHoverUpdate()
         }
-        .popover(isPresented: $isHovered, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
-            TaskDetailTooltip(task: task)
+        .popover(isPresented: $showTooltip, attachmentAnchor: .rect(.bounds), arrowEdge: .bottom) {
+            TaskDetailTooltip(task: task, isPopoverHovered: $isPopoverHovered)
+                .onHover { hovering in
+                    isPopoverHovered = hovering
+                    scheduleHoverUpdate()
+                }
         }
+    }
+
+    private func scheduleHoverUpdate() {
+        dismissWork?.cancel()
+        if isButtonHovered || isPopoverHovered {
+            showTooltip = true
+        } else {
+            // Short delay so the cursor can travel from button to popover
+            let work = DispatchWorkItem { showTooltip = false }
+            dismissWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25, execute: work)
+        }
+    }
+
+    private func dismissNow() {
+        dismissWork?.cancel()
+        showTooltip = false
     }
 }
 
@@ -32,6 +60,7 @@ struct TaskDetailButton: View {
 /// Compact hover preview showing all task fields
 private struct TaskDetailTooltip: View {
     let task: TaskActionItem
+    @Binding var isPopoverHovered: Bool
 
     private var metadata: [String: Any] {
         task.parsedMetadata ?? [:]
