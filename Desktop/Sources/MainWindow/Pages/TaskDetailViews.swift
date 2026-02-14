@@ -92,6 +92,11 @@ struct TaskDetailView: View {
                     if metadata["source_app"] != nil || metadata["confidence"] != nil || metadata["inferred_deadline"] != nil || metadata["window_title"] != nil {
                         sourceSection
                     }
+
+                    // Catch-all: render any metadata keys not covered by sections above
+                    if !remainingMetadata.isEmpty {
+                        remainingMetadataSection
+                    }
                 }
                 .padding(20)
             }
@@ -181,16 +186,20 @@ struct TaskDetailView: View {
                     return f.string(from: task.createdAt)
                 }())
                 if let dueAt = task.dueAt {
-                    let f = DateFormatter()
-                    f.dateStyle = .medium
-                    f.timeStyle = .short
-                    detailRow("Due", f.string(from: dueAt))
+                    detailRow("Due", {
+                        let f = DateFormatter()
+                        f.dateStyle = .medium
+                        f.timeStyle = .short
+                        return f.string(from: dueAt)
+                    }())
                 }
                 if let completedAt = task.completedAt {
-                    let f = DateFormatter()
-                    f.dateStyle = .medium
-                    f.timeStyle = .short
-                    detailRow("Completed", f.string(from: completedAt))
+                    detailRow("Completed", {
+                        let f = DateFormatter()
+                        f.dateStyle = .medium
+                        f.timeStyle = .short
+                        return f.string(from: completedAt)
+                    }())
                 }
                 if let goalId = task.goalId {
                     detailRow("Goal", goalId)
@@ -413,6 +422,74 @@ struct TaskDetailView: View {
                 }
                 if let window = metadata["window_title"] as? String {
                     detailRow("Window", window)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(OmiColors.backgroundSecondary)
+            )
+        }
+    }
+
+    // MARK: - Remaining Metadata (catch-all)
+
+    /// Keys already rendered by dedicated sections above
+    private static let handledMetadataKeys: Set<String> = [
+        // Core fields section (shown via task properties)
+        "tags", "source_app", "window_title", "confidence",
+        "source_category", "source_subcategory",
+        // Context section
+        "context_summary", "current_activity", "reasoning",
+        // Sentry section
+        "sentry_issue_url", "sentry_issue_id",
+        // Reporter section
+        "reporter_name", "reporter_email", "feedback_type",
+        // Analysis section
+        "original_message", "creation_reason", "key_findings",
+        "search_summary", "relevant_files",
+        // App Info section
+        "app_version", "app_build", "os", "device_model",
+        // Source section
+        "inferred_deadline",
+    ]
+
+    /// Metadata entries not handled by any dedicated section
+    private var remainingMetadata: [(key: String, value: String)] {
+        guard let meta = task.parsedMetadata else { return [] }
+        return meta
+            .filter { !Self.handledMetadataKeys.contains($0.key) }
+            .compactMap { entry in
+                let display: String
+                if let str = entry.value as? String, !str.isEmpty {
+                    display = str
+                } else if let num = entry.value as? NSNumber {
+                    display = num.stringValue
+                } else if let arr = entry.value as? [String] {
+                    display = arr.joined(separator: "\n")
+                } else {
+                    return nil
+                }
+                return (key: entry.key, value: display)
+            }
+            .sorted { $0.key < $1.key }
+    }
+
+    private var remainingMetadataSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Other Info")
+
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(remainingMetadata, id: \.key) { entry in
+                    let label = entry.key
+                        .replacingOccurrences(of: "_", with: " ")
+                        .capitalized
+                    if entry.value.count > 80 || entry.value.contains("\n") {
+                        detailBlock(label, entry.value)
+                    } else {
+                        detailRow(label, entry.value)
+                    }
                 }
             }
             .padding(12)
