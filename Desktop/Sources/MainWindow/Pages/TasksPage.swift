@@ -1898,6 +1898,9 @@ struct TasksPage: View {
     @StateObject private var chatCoordinator: TaskChatCoordinator
     @State private var showChatPanel = false
     @AppStorage("tasksChatPanelWidth") private var chatPanelWidth: Double = 400
+    /// The window width before the chat panel was opened, so we can restore it exactly.
+    /// Persisted so we can restore on app relaunch if the user quit with chat open.
+    @AppStorage("tasksPreChatWindowWidth") private var preChatWindowWidth: Double = 0
 
     // Keyboard navigation state
     @State private var inlineCreateText = ""
@@ -2018,7 +2021,8 @@ struct TasksPage: View {
         }
     }
 
-    /// Expand or shrink the main window to accommodate the chat panel
+    /// Expand or shrink the main window to accommodate the chat panel.
+    /// Saves the user's original width before expanding so it can be restored exactly.
     private func adjustWindowWidth(expand: Bool) {
         guard let window = NSApp.windows.first(where: { $0.title.hasPrefix("Omi") && $0.isVisible }) else { return }
 
@@ -2026,7 +2030,8 @@ struct TasksPage: View {
         var frame = window.frame
 
         if expand {
-            // Expand to the right
+            // Remember the user's current width before we change it
+            preChatWindowWidth = frame.size.width
             frame.size.width += expandAmount
             // Clamp to screen bounds
             if let screen = window.screen {
@@ -2036,8 +2041,13 @@ struct TasksPage: View {
                 }
             }
         } else {
-            // Shrink from the right
-            frame.size.width = max(900, frame.size.width - expandAmount)
+            // Restore to the saved width, or just subtract the expand amount
+            if preChatWindowWidth > 0 {
+                frame.size.width = preChatWindowWidth
+                preChatWindowWidth = 0
+            } else {
+                frame.size.width -= expandAmount
+            }
         }
 
         NSAnimationContext.runAnimationGroup { context in
@@ -2047,17 +2057,15 @@ struct TasksPage: View {
         }
     }
 
-    /// On launch, shrink the window if it was left expanded from a previous chat session.
+    /// On launch, restore the window to its pre-chat width if the user quit with chat open.
     /// Uses no animation since the app is just opening.
     private func shrinkWindowIfNeeded() {
+        guard preChatWindowWidth > 0 else { return }
         guard let window = NSApp.windows.first(where: { $0.title.hasPrefix("Omi") && $0.isVisible }) else { return }
-        // The base width without the chat panel is ≤ 900
-        let expectedMax: CGFloat = 900
-        if window.frame.width > expectedMax + 50 {
-            var frame = window.frame
-            frame.size.width = expectedMax
-            window.setFrame(frame, display: true)
-        }
+        var frame = window.frame
+        frame.size.width = preChatWindowWidth
+        window.setFrame(frame, display: true)
+        preChatWindowWidth = 0
     }
 
     // MARK: - Tasks Content
