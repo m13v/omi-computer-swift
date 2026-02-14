@@ -115,6 +115,14 @@ struct DesktopHomeView: View {
                             // Backend-based check: ensure user has a cloud agent VM
                             await AgentVMService.shared.ensureProvisioned()
                         }
+                        // Refresh conversations when app becomes active (e.g. switching back from another app)
+                        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+                            Task { await appState.loadConversations() }
+                        }
+                        // Periodic refresh every 30s to pick up conversations from other devices (e.g. Omi Glass)
+                        .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
+                            Task { await appState.loadConversations() }
+                        }
 
                     if !viewModelContainer.isInitialLoadComplete {
                         VStack(spacing: 24) {
