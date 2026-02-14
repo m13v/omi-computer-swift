@@ -1007,6 +1007,67 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Finish the current conversation and keep recording for a new one
+    func finishConversation() async -> FinishConversationResult {
+        guard !speakerSegments.isEmpty else {
+            log("Transcription: No segments to finish")
+            return .discarded
+        }
+
+        log("Transcription: Finishing conversation, keeping recording active")
+
+        let result = await finalizeConversation()
+
+        // Clear segments for the next conversation but keep recording
+        speakerSegments = []
+        LiveTranscriptMonitor.shared.clear()
+        LiveNotesMonitor.shared.endSession()
+        LiveNotesMonitor.shared.clear()
+
+        // Reset the recording start time for the next conversation
+        recordingStartTime = Date()
+        RecordingTimer.shared.restart()
+
+        // Restart the 4-hour max recording timer
+        maxRecordingTimer?.invalidate()
+        maxRecordingTimer = Timer.scheduledTimer(withTimeInterval: maxRecordingDuration, repeats: false) { [weak self] _ in
+            Task { @MainActor in
+                guard let self = self, self.isTranscribing else { return }
+                log("Transcription: 4-hour limit reached - finalizing conversation")
+                _ = await self.finalizeConversation()
+                self.stopAudioCapture()
+                self.clearTranscriptionState()
+                self.startTranscription()
+            }
+        }
+
+        // Start a new DB session for the next conversation
+        let lang = AssistantSettings.shared.effectiveTranscriptionLanguage
+        Task {
+            do {
+                let sessionId = try await TranscriptionStorage.shared.startSession(
+                    source: currentConversationSource.rawValue,
+                    language: lang,
+                    timezone: TimeZone.current.identifier,
+                    inputDeviceName: recordingInputDeviceName
+                )
+                await MainActor.run {
+                    self.currentSessionId = sessionId
+                    LiveNotesMonitor.shared.startSession(sessionId: sessionId)
+                }
+                log("Transcription: Created new DB session \(sessionId) for next conversation")
+            } catch {
+                logError("Transcription: Failed to create DB session for next conversation", error: error)
+            }
+        }
+
+        // Refresh the conversations list to show the new conversation
+        await loadConversations()
+
+        log("Transcription: Ready for next conversation")
+        return result
+    }
+
     /// Stop audio capture services (but keep transcript data for saving)
     private func stopAudioCapture() {
         // Cancel timers
