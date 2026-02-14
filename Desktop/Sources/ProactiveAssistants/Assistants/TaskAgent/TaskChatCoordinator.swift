@@ -59,6 +59,12 @@ class TaskChatCoordinator: ObservableObject {
         isOpening = true
         defer { isOpening = false }
 
+        // Stop any in-progress streaming before switching sessions
+        if chatProvider.isSending {
+            log("TaskChatCoordinator: stopping active stream before switching tasks")
+            chatProvider.stopAgent()
+        }
+
         // Save current ChatProvider state on first open
         if activeTaskId == nil {
             savedSession = chatProvider.currentSession
@@ -121,6 +127,12 @@ class TaskChatCoordinator: ObservableObject {
 
     /// Close the task chat panel and restore previous ChatProvider state.
     func closeChat() async {
+        // Stop any in-progress streaming before closing
+        if chatProvider.isSending {
+            log("TaskChatCoordinator: stopping active stream before closing")
+            chatProvider.stopAgent()
+        }
+
         isPanelOpen = false
         activeTaskId = nil
         pendingInputText = ""
