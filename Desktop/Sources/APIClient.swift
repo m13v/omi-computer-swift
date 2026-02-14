@@ -4358,29 +4358,26 @@ extension APIClient {
     /// Bulk assigns segments to a person or user
     func assignSegmentsBulk(
         conversationId: String,
-        segmentIds: [Int],
+        segmentIds: [String],
         isUser: Bool,
         personId: String?
     ) async throws {
         struct AssignBulkRequest: Encodable {
             let assignType: String
-            let value: Bool
-            let segmentsIdx: [Int]
-            let personId: String?
+            let value: String?
+            let segmentIds: [String]
 
             enum CodingKeys: String, CodingKey {
                 case assignType = "assign_type"
                 case value
-                case segmentsIdx = "segments_idx"
-                case personId = "person_id"
+                case segmentIds = "segment_ids"
             }
         }
 
         let body = AssignBulkRequest(
             assignType: isUser ? "is_user" : "person_id",
-            value: true,
-            segmentsIdx: segmentIds,
-            personId: isUser ? nil : personId
+            value: isUser ? "true" : personId,
+            segmentIds: segmentIds
         )
 
         let url = URL(string: APIClient.omiAPIBaseURL + "v1/conversations/\(conversationId)/segments/assign-bulk")!
