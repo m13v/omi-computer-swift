@@ -1966,6 +1966,11 @@ struct TasksPage: View {
             }
             // Ensure prioritization service is running (no-op if already started)
             Task { await TaskPrioritizationService.shared.start() }
+
+            // Shrink window if it was left expanded from a previous session with chat open
+            if !showChatPanel {
+                shrinkWindowIfNeeded()
+            }
         }
         .onDisappear {
             // Reset chat state and shrink window when navigating away from Tasks tab
@@ -2039,6 +2044,19 @@ struct TasksPage: View {
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             window.animator().setFrame(frame, display: true)
+        }
+    }
+
+    /// On launch, shrink the window if it was left expanded from a previous chat session.
+    /// Uses no animation since the app is just opening.
+    private func shrinkWindowIfNeeded() {
+        guard let window = NSApp.windows.first(where: { $0.title.hasPrefix("Omi") && $0.isVisible }) else { return }
+        // The base width without the chat panel is ≤ 900
+        let expectedMax: CGFloat = 900
+        if window.frame.width > expectedMax + 50 {
+            var frame = window.frame
+            frame.size.width = expectedMax
+            window.setFrame(frame, display: true)
         }
     }
 
