@@ -208,19 +208,7 @@ class TaskAgentManager: ObservableObject {
     // MARK: - Private Implementation
 
     private func buildPrompt(for task: TaskActionItem, context: TaskAgentContext) -> String {
-        var prompt = "# Task\n\n\(task.chatContext)"
-
-        // Add custom prefix if configured
-        let customPrefix = TaskAgentSettings.shared.customPromptPrefix
-        if !customPrefix.isEmpty {
-            prompt += "\n\nAdditional context:\n\(customPrefix)"
-        }
-
-        // Add instructions (user-configurable default prompt)
-        let instructions = TaskAgentSettings.shared.defaultPrompt
-        prompt += "\n\n## Instructions\n\n\(instructions)"
-
-        return prompt
+        TaskAgentSettings.shared.buildTaskPrompt(for: task)
     }
 
     private func launchTmuxSession(sessionName: String, prompt: String, workingDir: String) async throws {
