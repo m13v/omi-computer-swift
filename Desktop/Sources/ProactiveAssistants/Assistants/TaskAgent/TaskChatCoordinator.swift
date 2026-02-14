@@ -136,18 +136,9 @@ class TaskChatCoordinator: ObservableObject {
     }
 
     /// Build the initial context prompt for a task chat session.
-    /// Uses task.chatContext which lives on the model itself — add new fields there.
+    /// Uses the same shared prompt as the tmux agent (TaskAgentSettings.buildTaskPrompt).
     private func buildInitialPrompt(for task: TaskActionItem) -> String {
-        var prompt = "I'd like help with this task.\n\n\(task.chatContext)"
-
-        // Live agent output (from running/completed session, not persisted on the model)
-        if let session = TaskAgentManager.shared.getSession(for: task.id),
-           let output = session.output, !output.isEmpty {
-            let truncated = String(output.prefix(2000))
-            prompt += "\n\nAgent output so far:\n\(truncated)"
-        }
-
-        return prompt
+        TaskAgentSettings.shared.buildTaskPrompt(for: task)
     }
 
     private func taskChatTitle(for task: TaskActionItem) -> String {
