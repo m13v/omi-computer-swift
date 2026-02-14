@@ -13,6 +13,7 @@ pub mod goal;
 pub mod knowledge_graph;
 pub mod memory;
 pub mod message;
+pub mod person;
 pub mod persona;
 pub mod request;
 pub mod user_settings;
@@ -65,6 +66,7 @@ pub use goal::{
     GoalHistoryResponse, GoalStatusResponse, GoalType, GoalsListResponse, ScoreData, ScoreResponse,
     UpdateGoalProgressQuery, UpdateGoalRequest,
 };
+pub use person::{BulkAssignSegmentsRequest, CreatePersonRequest, Person};
 pub use persona::{
     CheckUsernameQuery, CreatePersonaRequest, GeneratePromptRequest, GeneratePromptResponse,
     PersonaDB, PersonaResponse, PersonaStatusResponse, UpdatePersonaRequest,
