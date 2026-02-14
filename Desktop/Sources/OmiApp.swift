@@ -106,13 +106,13 @@ struct OMIApp: App {
             CommandGroup(after: .textFormatting) {
                 Button("Increase Font Size") {
                     let s = FontScaleSettings.shared
-                    s.scale = min(1.3, round((s.scale + 0.05) * 20) / 20)
+                    s.scale = min(2.0, round((s.scale + 0.05) * 20) / 20)
                 }
                 .keyboardShortcut("+", modifiers: .command)
 
                 Button("Decrease Font Size") {
                     let s = FontScaleSettings.shared
-                    s.scale = max(0.85, round((s.scale - 0.05) * 20) / 20)
+                    s.scale = max(0.5, round((s.scale - 0.05) * 20) / 20)
                 }
                 .keyboardShortcut("-", modifiers: .command)
 
