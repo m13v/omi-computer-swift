@@ -71,6 +71,9 @@ class AppState: ObservableObject {
         Dictionary(uniqueKeysWithValues: people.map { ($0.id, $0) })
     }
 
+    /// Maps live speaker IDs to person IDs during recording (cleared on finalize)
+    @Published var liveSpeakerPersonMap: [Int: String] = [:]
+
     // Permission states for onboarding
     @Published var hasNotificationPermission = false
     @Published var notificationAlertStyle: UNAlertStyle = .none  // .none, .banner, or .alert
@@ -792,6 +795,7 @@ class AppState: ObservableObject {
             audioSource = effectiveSource
             currentTranscript = ""
             speakerSegments = []
+            liveSpeakerPersonMap = [:]
             LiveTranscriptMonitor.shared.clear()
             recordingStartTime = Date()
             AudioLevelMonitor.shared.reset()
@@ -1020,6 +1024,7 @@ class AppState: ObservableObject {
 
         // Clear segments for the next conversation but keep recording
         speakerSegments = []
+        liveSpeakerPersonMap = [:]
         LiveTranscriptMonitor.shared.clear()
         LiveNotesMonitor.shared.endSession()
         LiveNotesMonitor.shared.clear()
@@ -1118,6 +1123,7 @@ class AppState: ObservableObject {
 
         // Clear segments after finalization
         speakerSegments = []
+        liveSpeakerPersonMap = [:]
         LiveTranscriptMonitor.shared.clear()
         LiveNotesMonitor.shared.clear()
         recordingStartTime = nil
@@ -1477,13 +1483,15 @@ class AppState: ObservableObject {
 
         log("Transcription: Finalizing conversation with \(segmentsToUpload.count) segments")
 
-        // Convert SpeakerSegment to API request format
+        // Convert SpeakerSegment to API request format (include person_id from live naming)
+        let speakerPersonMap = liveSpeakerPersonMap
         let apiSegments = segmentsToUpload.map { segment in
             APIClient.TranscriptSegmentRequest(
                 text: segment.text,
                 speaker: "SPEAKER_\(String(format: "%02d", segment.speaker))",
                 speakerId: segment.speaker,
                 isUser: segment.speaker == 0,  // Assume speaker 0 is the user
+                personId: speakerPersonMap[segment.speaker],
                 start: segment.start,
                 end: segment.end
             )
