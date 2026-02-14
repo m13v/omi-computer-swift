@@ -64,6 +64,7 @@ pub const GOALS_SUBCOLLECTION: &str = "goals";
 pub const KG_NODES_SUBCOLLECTION: &str = "kg_nodes";
 pub const KG_EDGES_SUBCOLLECTION: &str = "kg_edges";
 pub const STAGED_TASKS_SUBCOLLECTION: &str = "staged_tasks";
+pub const PEOPLE_SUBCOLLECTION: &str = "people";
 
 /// Generate a document ID from a seed string using SHA256 hash
 /// Copied from Python document_id_from_seed
@@ -4095,6 +4096,9 @@ impl FirestoreService {
                                                     is_user: seg.get("is_user")
                                                         .and_then(|s| s.as_bool())
                                                         .unwrap_or(false),
+                                                    person_id: seg.get("person_id")
+                                                        .and_then(|s| s.as_str())
+                                                        .map(|s| s.to_string()),
                                                     start: seg.get("start")
                                                         .and_then(|s| s.as_f64())
                                                         .unwrap_or(0.0),
@@ -4137,6 +4141,9 @@ impl FirestoreService {
                                             is_user: seg.get("is_user")
                                                 .and_then(|s| s.as_bool())
                                                 .unwrap_or(false),
+                                            person_id: seg.get("person_id")
+                                                .and_then(|s| s.as_str())
+                                                .map(|s| s.to_string()),
                                             start: seg.get("start")
                                                 .and_then(|s| s.as_f64())
                                                 .unwrap_or(0.0),
@@ -4200,6 +4207,7 @@ impl FirestoreService {
                         speaker: self.parse_string(seg_fields, "speaker").unwrap_or_else(|| "SPEAKER_00".to_string()),
                         speaker_id: self.parse_int(seg_fields, "speaker_id").unwrap_or(0),
                         is_user: self.parse_bool(seg_fields, "is_user").unwrap_or(false),
+                        person_id: self.parse_string(seg_fields, "person_id"),
                         start: self.parse_float(seg_fields, "start").unwrap_or(0.0),
                         end: self.parse_float(seg_fields, "end").unwrap_or(0.0),
                     })
@@ -4251,6 +4259,10 @@ impl FirestoreService {
                         .get("is_user")
                         .and_then(|s| s.as_bool())
                         .unwrap_or(false),
+                    person_id: seg
+                        .get("person_id")
+                        .and_then(|s| s.as_str())
+                        .map(|s| s.to_string()),
                     start: seg
                         .get("start")
                         .and_then(|s| s.as_f64())
