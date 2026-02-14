@@ -2,9 +2,11 @@ import SwiftUI
 
 // MARK: - Task Detail Button
 
-/// Small inline info button shown on task rows that have rich metadata
+/// Small inline info button with hover preview and click-to-open detail modal
 struct TaskDetailButton: View {
+    let task: TaskActionItem
     @Binding var showDetail: Bool
+    @State private var isHovered = false
 
     var body: some View {
         Button {
@@ -12,11 +14,160 @@ struct TaskDetailButton: View {
         } label: {
             Image(systemName: "info.circle")
                 .scaledFont(size: 10)
-                .foregroundColor(OmiColors.textTertiary)
+                .foregroundColor(isHovered ? OmiColors.textSecondary : OmiColors.textTertiary)
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
-        .help("View Task Details")
+        .onHover { hovering in
+            isHovered = hovering
+        }
+        .popover(isPresented: $isHovered, attachmentAnchor: .point(.bottom), arrowEdge: .bottom) {
+            TaskDetailTooltip(task: task)
+        }
+    }
+}
+
+// MARK: - Task Detail Tooltip
+
+/// Compact hover preview showing all task fields
+private struct TaskDetailTooltip: View {
+    let task: TaskActionItem
+
+    private var metadata: [String: Any] {
+        task.parsedMetadata ?? [:]
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                // Core fields
+                tooltipRow("Status", task.completed ? "Completed" : "Active")
+                if let category = task.category {
+                    tooltipRow("Category", category.capitalized)
+                }
+                if !task.tags.isEmpty {
+                    tooltipRow("Tags", task.tags.joined(separator: ", "))
+                }
+                if let priority = task.priority {
+                    tooltipRow("Priority", priority.capitalized)
+                }
+                if let source = task.source {
+                    tooltipRow("Source", "\(task.sourceLabel) (\(source))")
+                }
+                if let app = task.sourceApp {
+                    tooltipRow("App", app)
+                }
+                if let window = task.windowTitle {
+                    tooltipRow("Window", window)
+                }
+                tooltipRow("Created", {
+                    let f = DateFormatter()
+                    f.dateStyle = .medium
+                    f.timeStyle = .short
+                    return f.string(from: task.createdAt)
+                }())
+                if let dueAt = task.dueAt {
+                    tooltipRow("Due", {
+                        let f = DateFormatter()
+                        f.dateStyle = .medium
+                        f.timeStyle = .short
+                        return f.string(from: dueAt)
+                    }())
+                }
+                if let goalId = task.goalId {
+                    tooltipRow("Goal", goalId)
+                }
+
+                // Context
+                if let ctx = task.contextSummary, !ctx.isEmpty {
+                    tooltipBlock("Context", ctx)
+                }
+                if let act = task.currentActivity, !act.isEmpty {
+                    tooltipBlock("Activity", act)
+                }
+
+                // Agent
+                if let status = task.agentStatus {
+                    tooltipRow("Agent", status.capitalized)
+                }
+
+                // All metadata (compact)
+                ForEach(allMetadataEntries, id: \.key) { entry in
+                    if entry.value.count > 60 || entry.value.contains("\n") {
+                        tooltipBlock(entry.label, entry.value)
+                    } else {
+                        tooltipRow(entry.label, entry.value)
+                    }
+                }
+            }
+            .padding(10)
+        }
+        .frame(maxWidth: 350, maxHeight: 400)
+    }
+
+    private struct MetadataEntry: Identifiable {
+        let key: String
+        let label: String
+        let value: String
+        var id: String { key }
+    }
+
+    /// All metadata entries, skipping keys already shown as direct fields
+    private var allMetadataEntries: [MetadataEntry] {
+        let skip: Set<String> = [
+            "tags", "source_app", "window_title", "confidence",
+            "source_category", "source_subcategory",
+            "context_summary", "current_activity",
+        ]
+        guard let meta = task.parsedMetadata else { return [] }
+        return meta
+            .filter { !skip.contains($0.key) }
+            .compactMap { entry in
+                let display: String
+                if let str = entry.value as? String, !str.isEmpty {
+                    display = str
+                } else if let num = entry.value as? NSNumber {
+                    display = num.stringValue
+                } else if let arr = entry.value as? [String] {
+                    display = arr.joined(separator: ", ")
+                } else {
+                    return nil
+                }
+                let label = entry.key
+                    .replacingOccurrences(of: "_", with: " ")
+                    .capitalized
+                return MetadataEntry(key: entry.key, label: label, value: display)
+            }
+            .sorted { $0.key < $1.key }
+    }
+
+    private func tooltipRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            Text(label)
+                .scaledFont(size: 11, weight: .medium)
+                .foregroundColor(OmiColors.textTertiary)
+                .frame(width: 70, alignment: .trailing)
+
+            Text(value)
+                .scaledFont(size: 11)
+                .foregroundColor(OmiColors.textPrimary)
+                .lineLimit(2)
+        }
+    }
+
+    private func tooltipBlock(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .scaledFont(size: 11, weight: .medium)
+                .foregroundColor(OmiColors.textTertiary)
+                .padding(.leading, 76)
+
+            Text(value)
+                .scaledFont(size: 11)
+                .foregroundColor(OmiColors.textPrimary)
+                .lineLimit(6)
+                .padding(.leading, 76)
+        }
     }
 }
 
