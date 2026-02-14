@@ -1783,6 +1783,7 @@ struct TasksPage: View {
 
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
+        log("TaskChat: openChatForTask called for task \(task.id) (deleted=\(task.deleted ?? false), completed=\(task.completed))")
         // Show the panel immediately so the user sees a loading state
         withAnimation(.easeInOut(duration: 0.2)) {
             showChatPanel = true
