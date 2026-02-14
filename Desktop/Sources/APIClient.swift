@@ -1177,6 +1177,7 @@ extension APIClient {
         let speaker: String
         let speakerId: Int
         let isUser: Bool
+        let personId: String?
         let start: Double
         let end: Double
 
@@ -1184,6 +1185,7 @@ extension APIClient {
             case text, speaker
             case speakerId = "speaker_id"
             case isUser = "is_user"
+            case personId = "person_id"
             case start, end
         }
     }
