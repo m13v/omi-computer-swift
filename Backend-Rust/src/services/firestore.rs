@@ -2050,6 +2050,8 @@ impl FirestoreService {
         category: Option<&str>,
         goal_id: Option<&str>,
         relevance_score: Option<i32>,
+        sort_order: Option<i32>,
+        indent_level: Option<i32>,
     ) -> Result<ActionItemDB, Box<dyn std::error::Error + Send + Sync>> {
         // Build update mask and fields
         let mut field_paths: Vec<&str> = vec!["updated_at"];
@@ -2099,6 +2101,16 @@ impl FirestoreService {
         if let Some(score) = relevance_score {
             field_paths.push("relevance_score");
             fields["relevance_score"] = json!({"integerValue": score.to_string()});
+        }
+
+        if let Some(order) = sort_order {
+            field_paths.push("sort_order");
+            fields["sort_order"] = json!({"integerValue": order.to_string()});
+        }
+
+        if let Some(indent) = indent_level {
+            field_paths.push("indent_level");
+            fields["indent_level"] = json!({"integerValue": indent.to_string()});
         }
 
         let update_mask = field_paths
@@ -2433,6 +2445,66 @@ impl FirestoreService {
         tracing::info!(
             "Batch updated {} relevance scores for user {}",
             scores.len(),
+            uid
+        );
+        Ok(())
+    }
+
+    /// Batch update sort orders and indent levels for multiple action items using Firestore commit API.
+    pub async fn batch_update_sort_orders(
+        &self,
+        uid: &str,
+        items: &[(String, i32, i32)], // (item_id, sort_order, indent_level)
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let now = Utc::now();
+
+        for chunk in items.chunks(500) {
+            let writes: Vec<Value> = chunk
+                .iter()
+                .map(|(item_id, sort_order, indent_level)| {
+                    let doc_name = format!(
+                        "projects/{}/databases/(default)/documents/{}/{}/{}/{}",
+                        self.project_id, USERS_COLLECTION, uid, ACTION_ITEMS_SUBCOLLECTION, item_id
+                    );
+                    json!({
+                        "update": {
+                            "name": doc_name,
+                            "fields": {
+                                "sort_order": {"integerValue": sort_order.to_string()},
+                                "indent_level": {"integerValue": indent_level.to_string()},
+                                "updated_at": {"timestampValue": now.to_rfc3339()}
+                            }
+                        },
+                        "updateMask": {
+                            "fieldPaths": ["sort_order", "indent_level", "updated_at"]
+                        }
+                    })
+                })
+                .collect();
+
+            let commit_url = format!(
+                "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:commit",
+                self.project_id
+            );
+
+            let body = json!({ "writes": writes });
+
+            let response = self
+                .build_request(reqwest::Method::POST, &commit_url)
+                .await?
+                .json(&body)
+                .send()
+                .await?;
+
+            if !response.status().is_success() {
+                let error_text = response.text().await?;
+                return Err(format!("Firestore batch commit error: {}", error_text).into());
+            }
+        }
+
+        tracing::info!(
+            "Batch updated {} sort orders for user {}",
+            items.len(),
             uid
         );
         Ok(())
@@ -3761,6 +3833,8 @@ impl FirestoreService {
             category: self.parse_string(fields, "category"),
             goal_id: self.parse_string(fields, "goal_id"),
             relevance_score: self.parse_int(fields, "relevance_score"),
+            sort_order: self.parse_int(fields, "sort_order"),
+            indent_level: self.parse_int(fields, "indent_level"),
         })
     }
 
