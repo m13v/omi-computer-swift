@@ -1970,9 +1970,12 @@ struct TasksPage: View {
             // Ensure prioritization service is running (no-op if already started)
             Task { await TaskPrioritizationService.shared.start() }
 
-            // Shrink window if it was left expanded from a previous session with chat open
+            // Shrink window if it was left expanded from a previous session with chat open.
+            // Delay slightly so the window is fully visible before resizing.
             if !showChatPanel {
-                shrinkWindowIfNeeded()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    shrinkWindowIfNeeded()
+                }
             }
         }
         .onDisappear {
