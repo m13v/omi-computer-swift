@@ -57,6 +57,7 @@ struct ChatInputView: View {
                     .scaledFont(size: 14)
                     .padding(.horizontal, 17)
                     .padding(.vertical, 12)
+                    .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .opacity(0)
                     .accessibilityHidden(true)
@@ -78,7 +79,7 @@ struct ChatInputView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 12)
                     .padding(.vertical, 8)
-                    .frame(maxHeight: .infinity)
+                    .frame(minHeight: 0, maxHeight: .infinity)
                     .onKeyPress(keys: [.return], phases: .down) { keyPress in
                         if keyPress.modifiers.contains(.shift) {
                             return .ignored // Shift+Enter: newline
@@ -87,7 +88,8 @@ struct ChatInputView: View {
                         return .handled // Enter: send
                     }
             }
-            .frame(minHeight: 36, maxHeight: 200)
+            .frame(maxHeight: 200)
+            .fixedSize(horizontal: false, vertical: true)
             .background(OmiColors.backgroundSecondary)
             .cornerRadius(12)
             .contentShape(Rectangle())
