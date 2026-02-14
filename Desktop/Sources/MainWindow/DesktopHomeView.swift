@@ -299,8 +299,9 @@ struct DesktopHomeView: View {
             }
         }
         .onReceive(NotificationCenter.default.publisher(for: .navigateToTaskSettings)) { _ in
-            // Navigate to settings > advanced where Task Agent settings live
+            // Navigate to settings > advanced > task assistant subsection
             selectedSettingsSection = .advanced
+            selectedAdvancedSubsection = .taskAssistant
             withAnimation(.easeInOut(duration: 0.2)) {
                 selectedIndex = SidebarNavItem.settings.rawValue
             }
