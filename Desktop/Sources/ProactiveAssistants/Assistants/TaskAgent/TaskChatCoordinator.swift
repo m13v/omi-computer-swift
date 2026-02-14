@@ -10,6 +10,9 @@ class TaskChatCoordinator: ObservableObject {
     @Published var isPanelOpen = false
     @Published var isOpening = false
 
+    /// Text to pre-fill in the chat input field (consumed by the UI).
+    @Published var pendingInputText: String = ""
+
     /// The workspace path used for file-system tools in task chat
     @Published var workspacePath: String = TaskAgentSettings.shared.workingDirectory
 
@@ -31,6 +34,7 @@ class TaskChatCoordinator: ObservableObject {
 
     /// Open (or resume) a chat panel for a task.
     /// Creates a new Firestore ChatSession if the task doesn't have one yet.
+    /// The initial prompt is placed in `pendingInputText` for the user to review before sending.
     func openChat(for task: TaskActionItem) async {
         log("TaskChatCoordinator: openChat for \(task.id), activeTaskId=\(activeTaskId ?? "nil"), isPanelOpen=\(isPanelOpen), isOpening=\(isOpening)")
 
@@ -95,10 +99,8 @@ class TaskChatCoordinator: ObservableObject {
                 // Also update the in-memory task in the store
                 TasksStore.shared.updateChatSessionId(taskId: task.id, sessionId: session.id)
 
-                // Send initial context message about the task (fire-and-forget so panel opens immediately)
-                let contextMessage = buildInitialPrompt(for: task)
-                let provider = chatProvider
-                Task { await provider.sendMessage(contextMessage) }
+                // Pre-fill the input with context so the user can review before sending
+                pendingInputText = buildInitialPrompt(for: task)
             }
         }
 
@@ -115,6 +117,7 @@ class TaskChatCoordinator: ObservableObject {
     func closeChat() async {
         isPanelOpen = false
         activeTaskId = nil
+        pendingInputText = ""
 
         // Restore previous ChatProvider state
         chatProvider.workingDirectory = savedWorkingDirectory
