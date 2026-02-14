@@ -1,6 +1,7 @@
 // Firestore service - Port from Python backend (database.py)
 // Uses Firestore REST API for simplicity and compatibility
 
+use base64::Engine;
 use chrono::{DateTime, Utc};
 use jsonwebtoken::{encode, Algorithm, EncodingKey, Header};
 use reqwest::Client;
