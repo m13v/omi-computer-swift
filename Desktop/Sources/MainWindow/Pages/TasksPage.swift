@@ -1776,8 +1776,8 @@ struct TasksPage: View {
     @State private var lastEnterPressTime: Date?
     @State private var inlineCreateText = ""
     @FocusState private var inlineCreateFocused: Bool
-    @FocusState private var isTasksContentFocused: Bool
     @State private var scrollProxy: ScrollViewProxy?
+    @State private var keyboardMonitor: Any?
 
     // Filter popover state
     @State private var showFilterPopover = false
@@ -1969,99 +1969,125 @@ struct TasksPage: View {
         .animation(.easeInOut(duration: 0.15), value: viewModel.keyboardSelectedTaskId)
         .animation(.easeInOut(duration: 0.15), value: isAnyTaskEditing)
         .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
-        .focusable()
-        .focused($isTasksContentFocused)
         .onAppear {
-            // Auto-focus the tasks content so arrow keys work immediately
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                isTasksContentFocused = true
-            }
+            installKeyboardMonitor()
         }
-        .onKeyPress(phases: .down) { press in
-            if press.key == KeyEquivalent("n") && press.modifiers == .command {
-                viewModel.showingCreateTask = true
-                return .handled
-            }
-            if press.key == KeyEquivalent("d") && press.modifiers == .command {
-                guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId,
-                      let task = findTask(taskId) else { return .ignored }
-                // Auto-select next task after delete
-                let nav = viewModel.navigationOrder
-                if let idx = nav.firstIndex(where: { $0.id == taskId }) {
-                    let nextIdx = idx + 1 < nav.count ? idx + 1 : max(0, idx - 1)
-                    if nav.count > 1 {
-                        viewModel.keyboardSelectedTaskId = nav[nextIdx].id
-                    } else {
-                        viewModel.keyboardSelectedTaskId = nil
-                    }
-                }
-                Task { await viewModel.deleteTaskWithUndo(task) }
-                return .handled
-            }
-            if press.key == .tab && press.modifiers.isEmpty {
-                guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return .ignored }
-                viewModel.incrementIndent(for: taskId)
-                return .handled
-            }
-            if press.key == .tab && press.modifiers == .shift {
-                guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return .ignored }
-                viewModel.decrementIndent(for: taskId)
-                return .handled
-            }
+        .onDisappear {
+            removeKeyboardMonitor()
+        }
+    }
 
-            // Guard: don't navigate while editing or inline creating
-            guard !isAnyTaskEditing && !viewModel.isInlineCreating else { return .ignored }
+    // MARK: - Keyboard Event Monitor
 
-            // Guard: don't navigate in multi-select mode
-            guard !viewModel.isMultiSelectMode else { return .ignored }
+    private func installKeyboardMonitor() {
+        guard keyboardMonitor == nil else { return }
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [self] event in
+            return handleKeyEvent(event) ? nil : event
+        }
+    }
 
-            // Arrow Up/Down navigation
-            if press.key == .upArrow && press.modifiers.isEmpty {
-                moveSelection(-1)
-                return .handled
-            }
-            if press.key == .downArrow && press.modifiers.isEmpty {
-                moveSelection(1)
-                return .handled
-            }
+    private func removeKeyboardMonitor() {
+        if let monitor = keyboardMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyboardMonitor = nil
+        }
+    }
 
-            // Enter: inline create or double-enter for edit
-            if press.key == .return && press.modifiers.isEmpty && viewModel.keyboardSelectedTaskId != nil {
-                // Don't create inline tasks during search
-                if !viewModel.searchText.isEmpty { return .ignored }
+    /// Returns true if the event was handled (consumed)
+    private func handleKeyEvent(_ event: NSEvent) -> Bool {
+        // Don't intercept keys when a text field has focus (editing task, search, inline create)
+        if let firstResponder = NSApp.keyWindow?.firstResponder,
+           firstResponder is NSTextView || firstResponder is NSTextField {
+            return false
+        }
 
-                let now = Date()
-                if let last = lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
-                    // Double-Enter → edit mode
-                    lastEnterPressTime = nil
-                    viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
-                    return .handled
-                }
-                lastEnterPressTime = now
-                // Delayed single-Enter → inline create (after 400ms if no second Enter)
-                let capturedTime = now
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    guard lastEnterPressTime == capturedTime else { return }
-                    lastEnterPressTime = nil
-                    beginInlineCreate()
-                }
-                return .handled
-            }
+        let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let keyCode = event.keyCode
 
-            // Escape: cancel inline create, or deselect
-            if press.key == .escape {
-                if viewModel.isInlineCreating {
-                    cancelInlineCreate()
-                    return .handled
-                }
-                if viewModel.keyboardSelectedTaskId != nil {
+        // Cmd+N: new task
+        if modifiers == .command && keyCode == 45 { // N
+            viewModel.showingCreateTask = true
+            return true
+        }
+
+        // Cmd+D: delete task
+        if modifiers == .command && keyCode == 2 { // D
+            guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId,
+                  let task = findTask(taskId) else { return false }
+            let nav = viewModel.navigationOrder
+            if let idx = nav.firstIndex(where: { $0.id == taskId }) {
+                let nextIdx = idx + 1 < nav.count ? idx + 1 : max(0, idx - 1)
+                if nav.count > 1 {
+                    viewModel.keyboardSelectedTaskId = nav[nextIdx].id
+                } else {
                     viewModel.keyboardSelectedTaskId = nil
-                    return .handled
                 }
             }
-
-            return .ignored
+            Task { await viewModel.deleteTaskWithUndo(task) }
+            return true
         }
+
+        // Tab / Shift+Tab: indent
+        if keyCode == 48 && modifiers.isEmpty { // Tab
+            guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
+            viewModel.incrementIndent(for: taskId)
+            return true
+        }
+        if keyCode == 48 && modifiers == .shift { // Shift+Tab
+            guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
+            viewModel.decrementIndent(for: taskId)
+            return true
+        }
+
+        // Guard: don't navigate while editing or inline creating
+        guard !isAnyTaskEditing && !viewModel.isInlineCreating else { return false }
+
+        // Guard: don't navigate in multi-select mode
+        guard !viewModel.isMultiSelectMode else { return false }
+
+        // Arrow Up/Down navigation
+        if keyCode == 126 && modifiers.isEmpty { // Up arrow
+            moveSelection(-1)
+            return true
+        }
+        if keyCode == 125 && modifiers.isEmpty { // Down arrow
+            moveSelection(1)
+            return true
+        }
+
+        // Enter: inline create or double-enter for edit
+        if keyCode == 36 && modifiers.isEmpty && viewModel.keyboardSelectedTaskId != nil { // Return
+            if !viewModel.searchText.isEmpty { return false }
+
+            let now = Date()
+            if let last = lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
+                lastEnterPressTime = nil
+                viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
+                return true
+            }
+            lastEnterPressTime = now
+            let capturedTime = now
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                guard lastEnterPressTime == capturedTime else { return }
+                lastEnterPressTime = nil
+                beginInlineCreate()
+            }
+            return true
+        }
+
+        // Escape: cancel inline create, or deselect
+        if keyCode == 53 { // Escape
+            if viewModel.isInlineCreating {
+                cancelInlineCreate()
+                return true
+            }
+            if viewModel.keyboardSelectedTaskId != nil {
+                viewModel.keyboardSelectedTaskId = nil
+                return true
+            }
+        }
+
+        return false
     }
 
     // MARK: - Keyboard Navigation Helpers
@@ -2088,10 +2114,6 @@ struct TasksPage: View {
 
     private func selectTask(_ task: TaskActionItem) {
         viewModel.keyboardSelectedTaskId = task.id
-        // Restore focus to the tasks content so keyboard navigation works
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-            isTasksContentFocused = true
-        }
     }
 
     private func beginInlineCreate() {
@@ -3097,7 +3119,6 @@ struct TaskRow: View {
     @State private var checkmarkScale: CGFloat = 1.0
     @State private var rowOpacity: Double = 1.0
     @State private var rowOffset: CGFloat = 0
-    @State private var showAgentDetail = false
     @State private var showTaskDetail = false
     @State private var isCopyingLink = false
 
@@ -3155,12 +3176,6 @@ struct TaskRow: View {
                     }
                 }
             )
-            .sheet(isPresented: $showAgentDetail) {
-                TaskAgentDetailView(
-                    task: task,
-                    onDismiss: { showAgentDetail = false }
-                )
-            }
             .sheet(isPresented: $showTaskDetail) {
                 TaskDetailView(
                     task: task,
@@ -3472,7 +3487,7 @@ struct TaskRow: View {
 
                     // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                     if TaskAgentSettings.shared.isEnabled {
-                        AgentStatusIndicator(task: task, showAgentDetail: $showAgentDetail, onLaunchWithChat: onOpenChat)
+                        AgentStatusIndicator(task: task)
                     }
 
                     // Task detail button
