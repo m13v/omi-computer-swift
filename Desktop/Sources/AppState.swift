@@ -1570,9 +1570,17 @@ class AppState: ObservableObject {
             }
         }
 
-        // Log current segments summary
+        // Log current segments summary (only last 5 segments when count > 20 to avoid log spam)
         log("Transcript [SEGMENTS] Total: \(speakerSegments.count) segments")
-        for (i, seg) in speakerSegments.enumerated() {
+        let logSegments = speakerSegments.count > 20
+            ? Array(speakerSegments.suffix(5))
+            : speakerSegments
+        let startIdx = speakerSegments.count > 20 ? speakerSegments.count - 5 : 0
+        if speakerSegments.count > 20 {
+            log("  ... (\(speakerSegments.count - 5) earlier segments omitted)")
+        }
+        for (offset, seg) in logSegments.enumerated() {
+            let i = startIdx + offset
             let speakerLabel = seg.speaker == 0 ? "user" : "other"
             log("  [\(i)] Speaker \(seg.speaker)(\(speakerLabel)) [\(String(format: "%.1f", seg.start))s-\(String(format: "%.1f", seg.end))s]: \(seg.text)")
         }
