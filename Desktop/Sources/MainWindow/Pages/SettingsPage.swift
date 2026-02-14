@@ -185,6 +185,7 @@ struct SettingsContentView: View {
     @State private var showFileViewer = false
     @State private var fileViewerContent = ""
     @State private var fileViewerTitle = ""
+    @State private var skillSearchQuery = ""
 
     // Launch at login manager
     @ObservedObject private var launchAtLoginManager = LaunchAtLoginManager.shared
@@ -1444,10 +1445,42 @@ struct SettingsContentView: View {
                             .scaledFont(size: 12)
                             .foregroundColor(OmiColors.textTertiary)
 
+                        // Search field
+                        HStack(spacing: 8) {
+                            Image(systemName: "magnifyingglass")
+                                .scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textTertiary)
+
+                            TextField("Search skills...", text: $skillSearchQuery)
+                                .textFieldStyle(.plain)
+                                .scaledFont(size: 13)
+                                .foregroundColor(OmiColors.textPrimary)
+
+                            if !skillSearchQuery.isEmpty {
+                                Button(action: { skillSearchQuery = "" }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .scaledFont(size: 12)
+                                        .foregroundColor(OmiColors.textTertiary)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                        .padding(8)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(OmiColors.backgroundPrimary.opacity(0.5))
+                        )
+
                         ScrollView {
+                            let filteredSkills = aiChatDiscoveredSkills.enumerated().filter { _, skill in
+                                skillSearchQuery.isEmpty ||
+                                skill.name.localizedCaseInsensitiveContains(skillSearchQuery) ||
+                                skill.description.localizedCaseInsensitiveContains(skillSearchQuery)
+                            }
+
                             VStack(spacing: 0) {
-                                ForEach(aiChatDiscoveredSkills.indices, id: \.self) { index in
-                                    let skill = aiChatDiscoveredSkills[index]
+                                ForEach(Array(filteredSkills.enumerated()), id: \.offset) { filteredIndex, item in
+                                    let skill = item.element
                                     HStack(spacing: 10) {
                                         Toggle("", isOn: Binding(
                                             get: { aiChatEnabledSkills.contains(skill.name) },
@@ -1490,7 +1523,7 @@ struct SettingsContentView: View {
                                     .padding(.vertical, 6)
                                     .padding(.horizontal, 4)
 
-                                    if index < aiChatDiscoveredSkills.count - 1 {
+                                    if filteredIndex < filteredSkills.count - 1 {
                                         Divider()
                                             .opacity(0.3)
                                     }
