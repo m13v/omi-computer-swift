@@ -54,6 +54,20 @@ struct TaskDetailView: View {
                     // Task description
                     taskInfoSection
 
+                    // Core fields (always shown)
+                    coreFieldsSection
+
+                    // Context at extraction time
+                    if task.contextSummary != nil || task.currentActivity != nil ||
+                       metadata["context_summary"] != nil || metadata["current_activity"] != nil || metadata["reasoning"] != nil {
+                        contextSection
+                    }
+
+                    // Agent work
+                    if task.agentStatus != nil || task.agentPlan != nil {
+                        agentSection
+                    }
+
                     // Sentry section
                     if metadata["sentry_issue_url"] != nil || metadata["sentry_issue_id"] != nil {
                         sentrySection
@@ -69,17 +83,12 @@ struct TaskDetailView: View {
                         analysisSection
                     }
 
-                    // Context section (screenshot)
-                    if metadata["context_summary"] != nil || metadata["current_activity"] != nil || metadata["reasoning"] != nil {
-                        contextSection
-                    }
-
                     // App Info section (sentry)
                     if metadata["app_version"] != nil || metadata["os"] != nil || metadata["device_model"] != nil {
                         appInfoSection
                     }
 
-                    // Source section (screenshot)
+                    // Source section (screenshot metadata)
                     if metadata["source_app"] != nil || metadata["confidence"] != nil || metadata["inferred_deadline"] != nil || metadata["window_title"] != nil {
                         sourceSection
                     }
@@ -136,6 +145,92 @@ struct TaskDetailView: View {
                     RoundedRectangle(cornerRadius: 8)
                         .fill(OmiColors.backgroundSecondary)
                 )
+        }
+    }
+
+    // MARK: - Core Fields
+
+    private var coreFieldsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Details")
+
+            VStack(alignment: .leading, spacing: 6) {
+                if let category = task.category {
+                    detailRow("Category", category.capitalized)
+                }
+                if !task.tags.isEmpty {
+                    detailRow("Tags", task.tags.joined(separator: ", "))
+                }
+                if let priority = task.priority {
+                    detailRow("Priority", priority.capitalized)
+                }
+                detailRow("Status", task.completed ? "Completed" : "Active")
+                if let source = task.source {
+                    detailRow("Source", "\(task.sourceLabel) (\(source))")
+                }
+                if let app = task.sourceApp {
+                    detailRow("Source App", app)
+                }
+                if let window = task.windowTitle {
+                    detailRow("Window", window)
+                }
+                detailRow("Created", {
+                    let f = DateFormatter()
+                    f.dateStyle = .medium
+                    f.timeStyle = .short
+                    return f.string(from: task.createdAt)
+                }())
+                if let dueAt = task.dueAt {
+                    let f = DateFormatter()
+                    f.dateStyle = .medium
+                    f.timeStyle = .short
+                    detailRow("Due", f.string(from: dueAt))
+                }
+                if let completedAt = task.completedAt {
+                    let f = DateFormatter()
+                    f.dateStyle = .medium
+                    f.timeStyle = .short
+                    detailRow("Completed", f.string(from: completedAt))
+                }
+                if let goalId = task.goalId {
+                    detailRow("Goal", goalId)
+                }
+                if let convId = task.conversationId {
+                    detailRow("Conversation", convId)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(OmiColors.backgroundSecondary)
+            )
+        }
+    }
+
+    // MARK: - Agent
+
+    private var agentSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            sectionHeader("Agent")
+
+            VStack(alignment: .leading, spacing: 6) {
+                if let status = task.agentStatus {
+                    detailRow("Status", status.capitalized)
+                }
+                if let files = task.agentEditedFiles, !files.isEmpty {
+                    detailBlock("Edited Files", files.joined(separator: "\n"))
+                }
+                if let plan = task.agentPlan, !plan.isEmpty {
+                    detailBlock("Plan", String(plan.prefix(2000)))
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(OmiColors.backgroundSecondary)
+            )
         }
     }
 
@@ -251,10 +346,11 @@ struct TaskDetailView: View {
             sectionHeader("Context")
 
             VStack(alignment: .leading, spacing: 10) {
-                if let summary = metadata["context_summary"] as? String {
+                // Prefer direct task fields, fall back to metadata
+                if let summary = task.contextSummary ?? metadata["context_summary"] as? String {
                     detailBlock("Summary", summary)
                 }
-                if let activity = metadata["current_activity"] as? String {
+                if let activity = task.currentActivity ?? metadata["current_activity"] as? String {
                     detailBlock("Current Activity", activity)
                 }
                 if let reasoning = metadata["reasoning"] as? String {
