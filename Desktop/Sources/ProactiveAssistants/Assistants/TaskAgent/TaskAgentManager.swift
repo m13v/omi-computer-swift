@@ -208,20 +208,7 @@ class TaskAgentManager: ObservableObject {
     // MARK: - Private Implementation
 
     private func buildPrompt(for task: TaskActionItem, context: TaskAgentContext) -> String {
-        var prompt = """
-        # Task: \(task.description)
-
-        Tags: \(task.tags.isEmpty ? "unknown" : task.tags.joined(separator: ", "))
-        Priority: \(task.priority ?? "medium")
-        """
-
-        if let sourceApp = task.sourceApp {
-            prompt += "\nSource App: \(sourceApp)"
-        }
-
-        if let contextSummary = context.contextSummary {
-            prompt += "\n\nContext from screen:\n\(contextSummary)"
-        }
+        var prompt = "# Task\n\n\(task.chatContext)"
 
         // Add custom prefix if configured
         let customPrefix = TaskAgentSettings.shared.customPromptPrefix
@@ -229,19 +216,9 @@ class TaskAgentManager: ObservableObject {
             prompt += "\n\nAdditional context:\n\(customPrefix)"
         }
 
-        prompt += """
-
-
-        ## Instructions
-
-        Analyze this task and create an implementation plan. Consider:
-        1. What files need to be modified
-        2. What is the approach
-        3. Any potential issues or considerations
-        4. Estimated complexity
-
-        After creating the plan, wait for user approval before implementing.
-        """
+        // Add instructions (user-configurable default prompt)
+        let instructions = TaskAgentSettings.shared.defaultPrompt
+        prompt += "\n\n## Instructions\n\n\(instructions)"
 
         return prompt
     }
