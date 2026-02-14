@@ -64,6 +64,28 @@ class TaskAgentSettings: ObservableObject {
         skipPermissions = true
     }
 
+    /// Build the full prompt for a task, shared by both the tmux agent and the chat sidebar.
+    func buildTaskPrompt(for task: TaskActionItem) -> String {
+        var prompt = "# Task\n\n\(task.chatContext)"
+
+        let customPrefix = customPromptPrefix
+        if !customPrefix.isEmpty {
+            prompt += "\n\nAdditional context:\n\(customPrefix)"
+        }
+
+        let instructions = defaultPrompt
+        prompt += "\n\n## Instructions\n\n\(instructions)"
+
+        // Live agent output (from running/completed session)
+        if let session = TaskAgentManager.shared.getSession(for: task.id),
+           let output = session.output, !output.isEmpty {
+            let truncated = String(output.prefix(2000))
+            prompt += "\n\nAgent output so far:\n\(truncated)"
+        }
+
+        return prompt
+    }
+
     /// Validate that required tools are installed
     func validateEnvironment() async -> EnvironmentValidation {
         var result = EnvironmentValidation()
