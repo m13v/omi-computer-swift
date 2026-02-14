@@ -299,6 +299,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     foundOmiWindow = true
                     window.makeKeyAndOrderFront(nil)
                     window.appearance = NSAppearance(named: .darkAqua)
+                    // Ensure fullscreen always creates a dedicated Space
+                    window.collectionBehavior.insert(.fullScreenPrimary)
                     // Show dock icon when main window is visible
                     NSApp.setActivationPolicy(.regular)
                     log("AppDelegate: Dock icon shown on launch")
