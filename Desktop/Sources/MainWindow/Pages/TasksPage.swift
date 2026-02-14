@@ -634,6 +634,10 @@ class TasksViewModel: ObservableObject {
     @Published var isInlineCreating = false
     @Published var inlineCreateAfterTaskId: String?
     @Published var editingTaskId: String?
+    var hoveredTaskId: String?
+    var isAnyTaskEditing = false
+    var lastEnterPressTime: Date?
+    var scrollProxy: ScrollViewProxy?
 
     /// Flat task list matching visual order (for arrow key navigation)
     var navigationOrder: [TaskActionItem] {
@@ -1768,15 +1772,9 @@ struct TasksPage: View {
     @State private var showChatPanel = false
     @AppStorage("tasksChatPanelWidth") private var chatPanelWidth: Double = 400
 
-    // Hover tracking for keyboard shortcuts
-    @State private var hoveredTaskId: String?
-
     // Keyboard navigation state
-    @State private var isAnyTaskEditing = false
-    @State private var lastEnterPressTime: Date?
     @State private var inlineCreateText = ""
     @FocusState private var inlineCreateFocused: Bool
-    @State private var scrollProxy: ScrollViewProxy?
     @State private var keyboardMonitor: Any?
 
     // Filter popover state
@@ -1947,7 +1945,7 @@ struct TasksPage: View {
                 // Keyboard hint bar
                 if !viewModel.displayTasks.isEmpty {
                     KeyboardHintBar(
-                        isAnyTaskEditing: isAnyTaskEditing,
+                        isAnyTaskEditing: viewModel.isAnyTaskEditing,
                         isInlineCreating: viewModel.isInlineCreating,
                         hasSelection: viewModel.keyboardSelectedTaskId != nil
                     )
@@ -1967,7 +1965,7 @@ struct TasksPage: View {
         }
         .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
         .animation(.easeInOut(duration: 0.15), value: viewModel.keyboardSelectedTaskId)
-        .animation(.easeInOut(duration: 0.15), value: isAnyTaskEditing)
+        .animation(.easeInOut(duration: 0.15), value: viewModel.isAnyTaskEditing)
         .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
         .onAppear {
             installKeyboardMonitor()
@@ -2012,7 +2010,7 @@ struct TasksPage: View {
 
         // Cmd+D: delete task
         if modifiers == .command && keyCode == 2 { // D
-            guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId,
+            guard let taskId = viewModel.hoveredTaskId ?? viewModel.keyboardSelectedTaskId,
                   let task = findTask(taskId) else { return false }
             let nav = viewModel.navigationOrder
             if let idx = nav.firstIndex(where: { $0.id == taskId }) {
@@ -2029,18 +2027,18 @@ struct TasksPage: View {
 
         // Tab / Shift+Tab: indent
         if keyCode == 48 && modifiers.isEmpty { // Tab
-            guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
+            guard let taskId = viewModel.hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
             viewModel.incrementIndent(for: taskId)
             return true
         }
         if keyCode == 48 && modifiers == .shift { // Shift+Tab
-            guard let taskId = hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
+            guard let taskId = viewModel.hoveredTaskId ?? viewModel.keyboardSelectedTaskId else { return false }
             viewModel.decrementIndent(for: taskId)
             return true
         }
 
         // Guard: don't navigate while editing or inline creating
-        guard !isAnyTaskEditing && !viewModel.isInlineCreating else { return false }
+        guard !viewModel.isAnyTaskEditing && !viewModel.isInlineCreating else { return false }
 
         // Guard: don't navigate in multi-select mode
         guard !viewModel.isMultiSelectMode else { return false }
@@ -2060,17 +2058,17 @@ struct TasksPage: View {
             if !viewModel.searchText.isEmpty { return false }
 
             let now = Date()
-            if let last = lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
-                lastEnterPressTime = nil
+            if let last = viewModel.lastEnterPressTime, now.timeIntervalSince(last) < 0.4 {
+                viewModel.lastEnterPressTime = nil
                 viewModel.editingTaskId = viewModel.keyboardSelectedTaskId
                 return true
             }
-            lastEnterPressTime = now
+            viewModel.lastEnterPressTime = now
             let capturedTime = now
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                guard lastEnterPressTime == capturedTime else { return }
-                lastEnterPressTime = nil
-                beginInlineCreate()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak viewModel] in
+                guard viewModel?.lastEnterPressTime == capturedTime else { return }
+                viewModel?.lastEnterPressTime = nil
+                self.beginInlineCreate()
             }
             return true
         }
@@ -2101,13 +2099,13 @@ struct TasksPage: View {
             let newIndex = min(max(currentIndex + direction, 0), nav.count - 1)
             let newId = nav[newIndex].id
             viewModel.keyboardSelectedTaskId = newId
-            scrollProxy?.scrollTo(newId, anchor: .center)
+            viewModel.scrollProxy?.scrollTo(newId, anchor: .center)
         } else {
             // No current selection: select first (down) or last (up)
             let task = direction > 0 ? nav.first : nav.last
             if let task = task {
                 viewModel.keyboardSelectedTaskId = task.id
-                scrollProxy?.scrollTo(task.id, anchor: .center)
+                viewModel.scrollProxy?.scrollTo(task.id, anchor: .center)
             }
         }
     }
@@ -2795,12 +2793,12 @@ struct TasksPage: View {
                                     onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
                                     onSelect: { task in selectTask(task) },
-                                    onHover: { hoveredTaskId = $0 },
+                                    onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
                                     activeChatTaskId: chatCoordinator.activeTaskId,
                                     editingTaskId: viewModel.editingTaskId,
                                     onEditingChanged: { editing in
-                                        isAnyTaskEditing = editing
+                                        viewModel.isAnyTaskEditing = editing
                                         if !editing { viewModel.editingTaskId = nil }
                                     },
                                     isInlineCreating: viewModel.isInlineCreating,
@@ -2832,12 +2830,12 @@ struct TasksPage: View {
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
                                     onSelect: { task in selectTask(task) },
-                                    onHover: { hoveredTaskId = $0 },
+                                    onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
                                     activeChatTaskId: chatCoordinator.activeTaskId,
                                     editingTaskId: viewModel.editingTaskId,
                                     onEditingChanged: { editing in
-                                        isAnyTaskEditing = editing
+                                        viewModel.isAnyTaskEditing = editing
                                         if !editing { viewModel.editingTaskId = nil }
                                     }
                                 )
@@ -2920,7 +2918,7 @@ struct TasksPage: View {
             .refreshable {
                 await viewModel.loadTasks()
             }
-            .onAppear { scrollProxy = proxy }
+            .onAppear { viewModel.scrollProxy = proxy }
         }
     }
 }
@@ -3490,8 +3488,8 @@ struct TaskRow: View {
                         AgentStatusIndicator(task: task)
                     }
 
-                    // Task detail button
-                    TaskDetailButton(showDetail: $showTaskDetail)
+                    // Task detail button (hover for preview, click for full detail)
+                    TaskDetailButton(task: task, showDetail: $showTaskDetail)
 
                     // Due date badge - clickable
                     if let dueAt = task.dueAt {
