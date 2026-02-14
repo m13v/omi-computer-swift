@@ -25,6 +25,9 @@ class TaskChatCoordinator: ObservableObject {
     private var savedWorkingDirectory: String?
     private var savedOverrideAppId: String?
 
+    /// Per-task message cache so we don't lose in-flight streaming messages
+    private var taskMessagesCache: [String: [ChatMessage]] = [:]
+
     /// App ID used to isolate task chat messages from the default chat
     static let taskChatAppId = "task-chat"
 
@@ -43,7 +46,14 @@ class TaskChatCoordinator: ObservableObject {
         if activeTaskId == task.id {
             log("TaskChatCoordinator: same task, restoring provider state")
             chatProvider.overrideAppId = Self.taskChatAppId
-            if let sessionId = task.chatSessionId {
+
+            // If bridge is still streaming for this task, restore cached messages
+            // so the live updates continue showing. Otherwise reload from backend.
+            if chatProvider.isSending, let cached = taskMessagesCache[task.id] {
+                log("TaskChatCoordinator: restoring cached messages (bridge still streaming)")
+                chatProvider.messages = cached
+                taskMessagesCache.removeValue(forKey: task.id)
+            } else if let sessionId = task.chatSessionId {
                 let session = ChatSession(id: sessionId, title: taskChatTitle(for: task))
                 await chatProvider.selectSession(session, force: true)
             }
@@ -59,10 +69,9 @@ class TaskChatCoordinator: ObservableObject {
         isOpening = true
         defer { isOpening = false }
 
-        // Stop any in-progress streaming before switching sessions
-        if chatProvider.isSending {
-            log("TaskChatCoordinator: stopping active stream before switching tasks")
-            chatProvider.stopAgent()
+        // Cache current task's messages before switching (preserves in-flight streaming)
+        if let currentTaskId = activeTaskId, !chatProvider.messages.isEmpty {
+            taskMessagesCache[currentTaskId] = chatProvider.messages
         }
 
         // Save current ChatProvider state on first open
@@ -84,6 +93,19 @@ class TaskChatCoordinator: ObservableObject {
         }
         // Isolate task messages from the default chat
         chatProvider.overrideAppId = Self.taskChatAppId
+
+        // Check if we have cached messages for this task (e.g. switching back while streaming)
+        if let cached = taskMessagesCache[task.id] {
+            log("TaskChatCoordinator: restoring \(cached.count) cached messages for task \(task.id)")
+            chatProvider.messages = cached
+            if let sessionId = task.chatSessionId {
+                chatProvider.currentSession = ChatSession(id: sessionId, title: taskChatTitle(for: task))
+                chatProvider.isInDefaultChat = false
+            }
+            taskMessagesCache.removeValue(forKey: task.id)
+            isPanelOpen = true
+            return
+        }
 
         // Check if task already has a chat session with messages
         var needsNewSession = true
@@ -127,10 +149,9 @@ class TaskChatCoordinator: ObservableObject {
 
     /// Close the task chat panel and restore previous ChatProvider state.
     func closeChat() async {
-        // Stop any in-progress streaming before closing
-        if chatProvider.isSending {
-            log("TaskChatCoordinator: stopping active stream before closing")
-            chatProvider.stopAgent()
+        // Cache current task's messages (preserves in-flight streaming)
+        if let currentTaskId = activeTaskId, !chatProvider.messages.isEmpty {
+            taskMessagesCache[currentTaskId] = chatProvider.messages
         }
 
         isPanelOpen = false
