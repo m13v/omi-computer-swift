@@ -610,7 +610,7 @@ impl FirestoreService {
             conversation.id
         );
 
-        let doc = self.conversation_to_firestore(conversation);
+        let doc = self.conversation_to_firestore(conversation, uid);
 
         let response = self
             .build_request(reqwest::Method::PATCH, &url)
@@ -4264,7 +4264,9 @@ impl FirestoreService {
     }
 
     /// Convert conversation to Firestore document format
-    fn conversation_to_firestore(&self, conv: &Conversation) -> Value {
+    /// Compresses transcript_segments with zlib to match Python backend format.
+    /// If encryption_secret is available, also encrypts (enhanced protection).
+    fn conversation_to_firestore(&self, conv: &Conversation, uid: &str) -> Value {
         // Build action_items array for structured
         let action_items_values: Vec<Value> = conv.structured.action_items.iter().map(|item| {
             let mut fields = serde_json::Map::new();
@@ -4367,22 +4369,52 @@ impl FirestoreService {
 
         fields.insert("structured".to_string(), json!({"mapValue": {"fields": structured_fields}}));
 
-        // Add transcript_segments
-        let transcript_values: Vec<Value> = conv.transcript_segments.iter().map(|seg| {
-            json!({
-                "mapValue": {
-                    "fields": {
-                        "text": {"stringValue": seg.text},
-                        "speaker": {"stringValue": seg.speaker},
-                        "speaker_id": {"integerValue": seg.speaker_id.to_string()},
-                        "is_user": {"booleanValue": seg.is_user},
-                        "start": {"doubleValue": seg.start},
-                        "end": {"doubleValue": seg.end}
+        // Add transcript_segments — compressed (and optionally encrypted) to match Python backend
+        {
+            use flate2::write::ZlibEncoder;
+            use flate2::Compression;
+            use std::io::Write;
+
+            // Step 1: Serialize segments to JSON array (matching Python's json.dumps format)
+            let segments_json: Vec<serde_json::Value> = conv.transcript_segments.iter().map(|seg| {
+                json!({
+                    "text": seg.text,
+                    "speaker": seg.speaker,
+                    "speaker_id": seg.speaker_id,
+                    "is_user": seg.is_user,
+                    "start": seg.start,
+                    "end": seg.end
+                })
+            }).collect();
+            let json_str = serde_json::to_string(&segments_json).unwrap_or_else(|_| "[]".to_string());
+
+            // Step 2: Zlib compress
+            let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+            let _ = encoder.write_all(json_str.as_bytes());
+            let compressed_bytes = encoder.finish().unwrap_or_default();
+
+            // Step 3: Store as compressed bytes or encrypt if secret is available
+            if let Some(ref secret) = self.encryption_secret {
+                // Enhanced: hex encode compressed bytes → encrypt → store as stringValue
+                let hex_str = hex::encode(&compressed_bytes);
+                match encryption::encrypt(&hex_str, uid, secret) {
+                    Ok(encrypted) => {
+                        fields.insert("transcript_segments".to_string(), json!({"stringValue": encrypted}));
+                        fields.insert("data_protection_level".to_string(), json!({"stringValue": "enhanced"}));
+                    }
+                    Err(e) => {
+                        tracing::warn!("Failed to encrypt transcript segments: {}, falling back to compressed bytes", e);
+                        let b64 = base64::engine::general_purpose::STANDARD.encode(&compressed_bytes);
+                        fields.insert("transcript_segments".to_string(), json!({"bytesValue": b64}));
                     }
                 }
-            })
-        }).collect();
-        fields.insert("transcript_segments".to_string(), json!({"arrayValue": {"values": transcript_values}}));
+            } else {
+                // Standard: store as bytesValue (Firestore REST API expects base64 for bytes)
+                let b64 = base64::engine::general_purpose::STANDARD.encode(&compressed_bytes);
+                fields.insert("transcript_segments".to_string(), json!({"bytesValue": b64}));
+            }
+            fields.insert("transcript_segments_compressed".to_string(), json!({"booleanValue": true}));
+        }
 
         // Add apps_results
         fields.insert("apps_results".to_string(), json!({"arrayValue": {"values": apps_results_values}}));
