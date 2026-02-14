@@ -1800,7 +1800,7 @@ struct TasksPage: View {
     }
 
     var body: some View {
-        let isChatVisible = showChatPanel && (chatCoordinator.activeTaskId != nil || chatCoordinator.isOpening) && chatProvider != nil
+        let isChatVisible = showChatPanel && chatProvider != nil
 
         HStack(spacing: 0) {
             // Left panel: Tasks content (always full width)
@@ -2638,8 +2638,12 @@ struct TasksPage: View {
         Button {
             if showChatPanel {
                 closeChatPanel()
-            } else if let firstTask = viewModel.displayTasks.first {
-                openChatForTask(firstTask)
+            } else {
+                // Open empty sidebar — user picks a task to chat about
+                adjustWindowWidth(expand: true)
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    showChatPanel = true
+                }
             }
         } label: {
             Image(systemName: showChatPanel ? "bubble.left.and.bubble.right.fill" : "bubble.left.and.bubble.right")
