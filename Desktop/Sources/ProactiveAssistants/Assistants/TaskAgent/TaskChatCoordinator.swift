@@ -38,9 +38,15 @@ class TaskChatCoordinator: ObservableObject {
     func openChat(for task: TaskActionItem) async {
         log("TaskChatCoordinator: openChat for \(task.id), activeTaskId=\(activeTaskId ?? "nil"), isPanelOpen=\(isPanelOpen), isOpening=\(isOpening)")
 
-        // If already viewing this task's chat, just ensure panel is open
+        // If already viewing this task's chat, re-establish ChatProvider state
+        // (another page may have changed the shared provider while we were away)
         if activeTaskId == task.id {
-            log("TaskChatCoordinator: same task, ensuring panel open")
+            log("TaskChatCoordinator: same task, restoring provider state")
+            chatProvider.overrideAppId = Self.taskChatAppId
+            if let sessionId = task.chatSessionId {
+                let session = ChatSession(id: sessionId, title: taskChatTitle(for: task))
+                await chatProvider.selectSession(session, force: true)
+            }
             isPanelOpen = true
             return
         }
