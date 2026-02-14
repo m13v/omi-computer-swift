@@ -511,6 +511,11 @@ class FloatingControlBarManager {
         self.window = barWindow
     }
 
+    /// Whether the floating bar window is currently visible.
+    var isVisible: Bool {
+        window?.isVisible ?? false
+    }
+
     /// Show the floating bar.
     func show() {
         log("FloatingControlBarManager: show() called, window=\(window != nil), isVisible=\(window?.isVisible ?? false)")
