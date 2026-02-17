@@ -621,10 +621,20 @@ actor TaskAssistant: ProactiveAssistant {
 
         var prompt = "Screenshot from \(appName). Today is \(todayStr). Analyze this screenshot for any unaddressed request directed at the user.\n\n"
 
-        // For messaging apps, add an extra reminder about sidebars and outgoing vs incoming messages
+        // For messaging apps, add an extra reminder about conversation analysis
         let messagingApps: Set<String> = ["Telegram", "WhatsApp", "\u{200E}WhatsApp", "Messages", "Slack", "Discord"]
         if messagingApps.contains(appName) {
-            prompt += "REMINDER: If this screenshot shows a chat sidebar/conversation list rather than an open conversation, SKIP entirely — do not extract tasks from sidebar previews. If it shows an open conversation, only left-side/incoming messages from others can be requests; right-side/colored bubbles are the user's own messages.\n\n"
+            prompt += """
+            REMINDER — THIS IS A MESSAGING APP:
+            - If this screenshot shows a chat sidebar/conversation list rather than an open conversation, SKIP entirely.
+            - If it shows an open conversation, read the FULL conversation flow between the user and the other person.
+            - LEFT-SIDE messages = from the other person. RIGHT-SIDE/colored = from the user.
+            - PRIORITY: Look for where the user AGREED or COMMITTED to doing something the other person asked.
+              Example: Other person says "Can you send me the report?" → User replies "Sure, will do" → Extract task: "Send [person] the report"
+            - ALSO: Look for incoming requests the user hasn't responded to yet.
+            - The task title should describe what was asked for, naming the other person in the conversation.
+
+            """
         }
 
         // Inject AI user profile for context
