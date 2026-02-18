@@ -92,8 +92,9 @@ actor ActionItemStorage {
                 query = query.filter(Column("priority") == priority)
             }
 
+            // Sort matching Python backend: due_at ASC (nulls last), created_at DESC
             let records = try query
-                .order(Column("createdAt").desc)
+                .order(Column("dueAt").ascNullsLast, Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
