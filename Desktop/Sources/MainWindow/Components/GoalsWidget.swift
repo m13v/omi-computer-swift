@@ -46,8 +46,6 @@ struct GoalsWidget: View {
                 }
             }
 
-            // Number emojis for goal indices
-            let numberEmojis = ["1️⃣", "2️⃣", "3️⃣"]
 
             if goals.isEmpty {
                 // Empty state with AI suggestion
@@ -101,7 +99,6 @@ struct GoalsWidget: View {
                         GoalRowView(
                             goal: goal,
                             index: index,
-                            numberEmoji: index < numberEmojis.count ? numberEmojis[index] : "\(index + 1)",
                             onTap: { editingGoal = goal },
                             onUpdateProgress: { value in onUpdateProgress(goal, value) },
                             onDelete: { onDeleteGoal(goal) },
@@ -171,7 +168,6 @@ struct GoalsWidget: View {
 struct GoalRowView: View {
     let goal: Goal
     let index: Int
-    let numberEmoji: String
     let onTap: () -> Void
     let onUpdateProgress: (Double) -> Void
     let onDelete: () -> Void
@@ -220,12 +216,12 @@ struct GoalRowView: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            // Number icon - tapping opens edit sheet
+            // Emoji icon - tapping opens edit sheet
             ZStack {
                 RoundedRectangle(cornerRadius: 8)
                     .fill(OmiColors.backgroundTertiary.opacity(0.6))
                     .frame(width: 32, height: 32)
-                Text(numberEmoji)
+                Text(goalEmoji)
                     .scaledFont(size: 16)
             }
             .onTapGesture { onTap() }
