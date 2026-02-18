@@ -806,7 +806,14 @@ class AppState: ObservableObject {
     /// so we also do a functional AX test to detect the "broken" state.
     func checkAccessibilityPermission() {
         let tccGranted = AXIsProcessTrusted()
+        let previouslyGranted = hasAccessibilityPermission
         hasAccessibilityPermission = tccGranted
+
+        // Log transitions
+        if tccGranted != previouslyGranted {
+            let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+            log("ACCESSIBILITY_CHECK: TCC state changed \(previouslyGranted) → \(tccGranted) (bundleId=\(bundleId))")
+        }
 
         if tccGranted {
             // TCC says yes — verify with an actual AX call
@@ -843,13 +850,13 @@ class AppState: ObservableObject {
         case .success, .noValue, .notImplemented, .attributeUnsupported:
             return true
         case .apiDisabled:
-            log("ACCESSIBILITY_CHECK: AXError.apiDisabled — permission stuck")
+            log("ACCESSIBILITY_CHECK: AXError.apiDisabled — permission stuck (tested against pid \(frontApp.processIdentifier), app: \(frontApp.localizedName ?? "unknown"))")
             return false
         case .cannotComplete:
-            log("ACCESSIBILITY_CHECK: AXError.cannotComplete — permission may be stuck")
+            log("ACCESSIBILITY_CHECK: AXError.cannotComplete — permission may be stuck (tested against pid \(frontApp.processIdentifier), app: \(frontApp.localizedName ?? "unknown"))")
             return false
         default:
-            // Other errors (parameterizedAttributeUnsupported, etc.) aren't permission-related
+            log("ACCESSIBILITY_CHECK: AXError code \(result.rawValue) from app \(frontApp.localizedName ?? "unknown") — not permission-related, treating as OK")
             return true
         }
     }
@@ -861,14 +868,20 @@ class AppState: ObservableObject {
 
     /// Trigger accessibility permission prompt
     func triggerAccessibilityPermission() {
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+        log("ACCESSIBILITY_TRIGGER: User clicked Grant Access — bundleId=\(bundleId), macOS \(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion)")
+
         // This will prompt the user if not already trusted
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
         hasAccessibilityPermission = trusted
+        log("ACCESSIBILITY_TRIGGER: AXIsProcessTrustedWithOptions returned \(trusted)")
 
         // On macOS Sequoia+, AXIsProcessTrustedWithOptions no longer shows a visible dialog,
         // so explicitly open System Settings to the Accessibility pane
         if !trusted {
+            log("ACCESSIBILITY_TRIGGER: Not trusted, opening System Settings Accessibility pane")
             openAccessibilityPreferences()
         }
     }
