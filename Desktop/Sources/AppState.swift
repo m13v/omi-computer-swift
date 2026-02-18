@@ -586,6 +586,10 @@ class AppState: ObservableObject {
         checkMicrophonePermission()
         checkSystemAudioPermission()
         checkAccessibilityPermission()
+        // One-time startup diagnostic for accessibility
+        let osVersion = ProcessInfo.processInfo.operatingSystemVersion
+        let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+        log("ACCESSIBILITY_STARTUP: bundleId=\(bundleId), macOS=\(osVersion.majorVersion).\(osVersion.minorVersion).\(osVersion.patchVersion), TCC=\(hasAccessibilityPermission), broken=\(isAccessibilityBroken), onboarded=\(hasCompletedOnboarding)")
         // Only check Bluetooth if already initialized (to avoid triggering permission prompt early)
         if bluetoothStateCancellable != nil {
             checkBluetoothPermission()
