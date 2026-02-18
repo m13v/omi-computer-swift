@@ -24,6 +24,7 @@ struct OnboardingView: View {
 
     // State for file indexing step (step 4)
     @State private var fileIndexingDone = false
+    @StateObject private var onboardingChatProvider = ChatProvider()
 
     // Track whether we've initialized bluetooth on the permissions step
     @State private var hasInitializedBluetoothForPermissions = false
