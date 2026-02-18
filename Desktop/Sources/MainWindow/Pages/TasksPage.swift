@@ -1568,7 +1568,8 @@ class TasksViewModel: ObservableObject {
         let startOfToday = calendar.startOfDay(for: Date())
         let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
         let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
-        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday) ?? startOfToday
+        // Use exact 7-day offset from current time (matches Flutter: now.subtract(Duration(days: 7)))
+        let sevenDaysAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
         for task in displayTasks {
             // Skip incomplete tasks older than 7 days (matches Flutter _categorizeItems)
             if !task.completed {
@@ -1603,7 +1604,8 @@ class TasksViewModel: ObservableObject {
         let startOfToday = calendar.startOfDay(for: Date())
         let startOfTomorrow = calendar.date(byAdding: .day, value: 1, to: startOfToday)!
         let startOfDayAfterTomorrow = calendar.date(byAdding: .day, value: 2, to: startOfToday)!
-        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: startOfToday) ?? startOfToday
+        // Use exact 7-day offset from current time (matches Flutter: now.subtract(Duration(days: 7)))
+        let sevenDaysAgo = Date().addingTimeInterval(-7 * 24 * 60 * 60)
         for task in displayTasks {
             // Skip incomplete tasks older than 7 days (matches Flutter _categorizeItems)
             if !task.completed {
