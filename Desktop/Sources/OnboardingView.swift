@@ -379,7 +379,7 @@ struct OnboardingView: View {
         case 3:
             permissionsStepView
         case 4:
-            FileIndexingView { fileCount in
+            FileIndexingView(chatProvider: onboardingChatProvider) { fileCount in
                 handleFileIndexingComplete(fileCount: fileCount)
             }
         default:
