@@ -52,6 +52,8 @@ actor ClaudeAgentBridge {
     private var pendingMessages: [InboundMessage] = []
     private var messageContinuation: CheckedContinuation<InboundMessage, Error>?
     private var messageGeneration: UInt64 = 0
+    /// Set when stderr indicates OOM so handleTermination can throw the right error
+    private var lastExitWasOOM = false
 
     /// Whether the bridge subprocess is alive and ready
     var isAlive: Bool { isRunning }
@@ -71,6 +73,7 @@ actor ClaudeAgentBridge {
         stderrPipe = nil
         pendingMessages.removeAll()
         messageContinuation = nil
+        lastExitWasOOM = false
 
         let nodePath = findNodeBinary()
         guard let nodePath else {
@@ -124,11 +127,14 @@ actor ClaudeAgentBridge {
         self.stderrPipe = stderr
         self.process = proc
 
-        // Read stderr for logging
-        stderr.fileHandleForReading.readabilityHandler = { handle in
+        // Read stderr for logging and OOM detection
+        stderr.fileHandleForReading.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
                 log("ClaudeAgentBridge stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                if text.contains("FatalProcessOutOfMemory") || text.contains("JavaScript heap out of memory") {
+                    Task { await self?.markOOM() }
+                }
             }
         }
 
@@ -422,10 +428,16 @@ actor ClaudeAgentBridge {
         }
     }
 
+    private func markOOM() {
+        lastExitWasOOM = true
+    }
+
     private func handleTermination() {
-        log("ClaudeAgentBridge: process terminated")
+        let error: BridgeError = lastExitWasOOM ? .outOfMemory : .processExited
+        lastExitWasOOM = false
+        log("ClaudeAgentBridge: process terminated (\(error))")
         isRunning = false
-        messageContinuation?.resume(throwing: BridgeError.processExited)
+        messageContinuation?.resume(throwing: error)
         messageContinuation = nil
     }
 
@@ -562,25 +574,28 @@ enum BridgeError: LocalizedError {
     case encodingError
     case timeout
     case processExited
+    case outOfMemory
     case stopped
     case agentError(String)
 
     var errorDescription: String? {
         switch self {
         case .nodeNotFound:
-            return "Node.js not found. Install via: brew install node"
+            return "Node.js not found. Please reinstall the app."
         case .bridgeScriptNotFound:
-            return "Agent bridge script not found"
+            return "AI components missing. Please reinstall the app."
         case .notRunning:
-            return "Agent bridge is not running"
+            return "AI is not running. Try sending your message again."
         case .encodingError:
             return "Failed to encode message"
         case .timeout:
-            return "Agent bridge timed out"
+            return "AI took too long to respond. Try again."
         case .processExited:
-            return "Agent bridge process exited unexpectedly"
+            return "AI stopped unexpectedly. Try sending your message again."
+        case .outOfMemory:
+            return "Not enough memory for AI chat. Close some apps and try again."
         case .stopped:
-            return "Agent bridge was stopped"
+            return "Response stopped."
         case .agentError(let msg):
             return "Agent error: \(msg)"
         }
