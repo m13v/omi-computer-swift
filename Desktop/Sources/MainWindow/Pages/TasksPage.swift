@@ -3072,25 +3072,14 @@ struct TaskCategorySection: View {
                                 onEditingChanged: onEditingChanged
                             )
                             .id(task.id)
-                            .if(!isMultiSelectMode) { view in
-                                view
-                                    .draggable(task.id) {
-                                        // Drag preview
-                                        TaskDragPreview(task: task)
-                                    }
-                                    .dropDestination(for: String.self) { droppedIds, _ in
-                                        guard let droppedId = droppedIds.first,
-                                              orderedTasks.contains(where: { $0.id == droppedId }),
-                                              let targetIndex = orderedTasks.firstIndex(where: { $0.id == task.id }) else {
-                                            return false
-                                        }
-                                        // Move the task
-                                        if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
-                                            onMoveTask?(droppedTask, targetIndex, category)
-                                        }
-                                        return true
-                                    }
-                            }
+                            .modifier(TaskDragDropModifier(
+                                isEnabled: !isMultiSelectMode,
+                                taskId: task.id,
+                                orderedTasks: orderedTasks,
+                                onMoveTask: { droppedTask, targetIndex in
+                                    onMoveTask?(droppedTask, targetIndex, category)
+                                }
+                            ))
                             .transition(.asymmetric(
                                 insertion: .opacity.combined(with: .move(edge: .top)),
                                 removal: .opacity.combined(with: .move(edge: .trailing))
@@ -3111,6 +3100,39 @@ struct TaskCategorySection: View {
 
                 }
             }
+        }
+    }
+}
+
+// MARK: - Conditional Drag & Drop (reduces gesture graph depth when disabled)
+
+/// Conditionally applies .draggable + .dropDestination to avoid deep ExclusiveGesture nesting.
+/// When disabled (e.g. multi-select mode), the view has fewer gesture modifiers, preventing hangs.
+struct TaskDragDropModifier: ViewModifier {
+    let isEnabled: Bool
+    let taskId: String
+    let orderedTasks: [TaskActionItem]
+    var onMoveTask: ((TaskActionItem, Int) -> Void)?
+
+    func body(content: Content) -> some View {
+        if isEnabled, let task = orderedTasks.first(where: { $0.id == taskId }) {
+            content
+                .draggable(taskId) {
+                    TaskDragPreview(task: task)
+                }
+                .dropDestination(for: String.self) { droppedIds, _ in
+                    guard let droppedId = droppedIds.first,
+                          orderedTasks.contains(where: { $0.id == droppedId }),
+                          let targetIndex = orderedTasks.firstIndex(where: { $0.id == taskId }) else {
+                        return false
+                    }
+                    if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
+                        onMoveTask?(droppedTask, targetIndex)
+                    }
+                    return true
+                }
+        } else {
+            content
         }
     }
 }
