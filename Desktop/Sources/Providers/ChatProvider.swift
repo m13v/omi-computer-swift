@@ -1642,6 +1642,13 @@ class ChatProvider: ObservableObject {
 
             logError("Failed to get AI response", error: error)
             AnalyticsManager.shared.chatAgentError(error: error.localizedDescription)
+
+            // Show error to user (unless they intentionally stopped)
+            if let bridgeError = error as? BridgeError, bridgeError == .stopped {
+                // User stopped — no error to show
+            } else {
+                errorMessage = error.localizedDescription
+            }
         }
 
         isSending = false
