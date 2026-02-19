@@ -93,8 +93,8 @@ struct BrowserExtensionSetup: View {
             .padding(.horizontal, 40)
             .padding(.bottom, 24)
         }
-        .frame(width: 480)
-        .frame(minHeight: 400)
+        .frame(width: phase == .connect ? 880 : 480)
+        .frame(minHeight: phase == .connect ? 520 : 400)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(OmiColors.backgroundSecondary)
@@ -103,6 +103,7 @@ struct BrowserExtensionSetup: View {
                         .stroke(OmiColors.backgroundTertiary.opacity(0.5), lineWidth: 1)
                 )
         )
+        .animation(.easeInOut(duration: 0.3), value: phase)
     }
 
     // MARK: - Phase Views
@@ -136,150 +137,159 @@ struct BrowserExtensionSetup: View {
 
     private static let chromeWebStoreURL = "https://chromewebstore.google.com/detail/playwright-mcp-bridge/mmlmfjhmonkocbjadbfplnigmagldckm"
 
+    /// Which GIF to show based on the current active step.
+    private var activeGifName: String? {
+        if !chromeInstalled { return nil }
+        if !extensionStepDone { return "installing_extension" }
+        return "enabling_token"
+    }
+
     private var connectPhase: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "puzzlepiece.extension")
-                .scaledFont(size: 48)
-                .foregroundColor(OmiColors.purplePrimary)
+        HStack(spacing: 16) {
+            // Left side: steps
+            VStack(spacing: 16) {
+                Text("Connect the extension")
+                    .scaledFont(size: 20, weight: .semibold)
+                    .foregroundColor(OmiColors.textPrimary)
 
-            Text("Connect the extension")
-                .scaledFont(size: 20, weight: .semibold)
-                .foregroundColor(OmiColors.textPrimary)
+                // Step 1: Install Chrome
+                HStack(alignment: .top, spacing: 12) {
+                    stepBadge("1", done: chromeInstalled)
 
-            // Step 1: Install Chrome
-            HStack(alignment: .top, spacing: 12) {
-                stepBadge("1", done: chromeInstalled)
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(chromeInstalled ? "Google Chrome is installed" : "Install Google Chrome")
+                            .scaledFont(size: 13, weight: .medium)
+                            .foregroundColor(chromeInstalled ? OmiColors.textTertiary : OmiColors.textPrimary)
 
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(chromeInstalled ? "Google Chrome is installed" : "Install Google Chrome")
-                        .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(chromeInstalled ? OmiColors.textTertiary : OmiColors.textPrimary)
-
-                    if !chromeInstalled {
-                        Button(action: {
-                            if let url = URL(string: "https://www.google.com/chrome/") {
-                                NSWorkspace.shared.open(url)
+                        if !chromeInstalled {
+                            Button(action: {
+                                if let url = URL(string: "https://www.google.com/chrome/") {
+                                    NSWorkspace.shared.open(url)
+                                }
+                                startChromeCheckTimer()
+                            }) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "arrow.down.circle")
+                                        .scaledFont(size: 11)
+                                    Text("Download Chrome")
+                                        .scaledFont(size: 12)
+                                }
                             }
-                            startChromeCheckTimer()
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Step 2: Install extension from Chrome Web Store
+                HStack(alignment: .top, spacing: 12) {
+                    stepBadge("2", done: extensionStepDone)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Install the extension from Chrome Web Store")
+                            .scaledFont(size: 13, weight: .medium)
+                            .foregroundColor(extensionStepDone ? OmiColors.textTertiary : OmiColors.textPrimary)
+
+                        Button(action: {
+                            Self.openURLInChrome(Self.chromeWebStoreURL)
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                extensionStepDone = true
+                            }
                         }) {
                             HStack(spacing: 5) {
-                                Image(systemName: "arrow.down.circle")
+                                Image(systemName: extensionStepDone ? "checkmark" : "arrow.up.right.square")
                                     .scaledFont(size: 11)
-                                Text("Download Chrome")
+                                Text(extensionStepDone ? "Opened" : "Add to Chrome")
                                     .scaledFont(size: 12)
                             }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 40)
-
-            // Step 2: Install extension from Chrome Web Store
-            HStack(alignment: .top, spacing: 12) {
-                stepBadge("2", done: extensionStepDone)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Install the extension from Chrome Web Store")
-                        .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(extensionStepDone ? OmiColors.textTertiary : OmiColors.textPrimary)
-
-                    Button(action: {
-                        Self.openURLInChrome(Self.chromeWebStoreURL)
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            extensionStepDone = true
-                        }
-                    }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: extensionStepDone ? "checkmark" : "arrow.up.right.square")
-                                .scaledFont(size: 11)
-                            Text(extensionStepDone ? "Opened" : "Add to Chrome")
-                                .scaledFont(size: 12)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!chromeInstalled)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 40)
-
-            // Step 3: Open extension settings & copy token
-            HStack(alignment: .top, spacing: 12) {
-                stepBadge("3", done: tokenStepDone)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Open the extension and copy the auth token")
-                        .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(tokenStepDone ? OmiColors.textTertiary : OmiColors.textPrimary)
-
-                    Button(action: {
-                        Self.openExtensionInChrome()
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            tokenStepDone = true
-                        }
-                    }) {
-                        HStack(spacing: 5) {
-                            Image(systemName: tokenStepDone ? "checkmark" : "key")
-                                .scaledFont(size: 11)
-                            Text(tokenStepDone ? "Opened" : "Open Extension Settings")
-                                .scaledFont(size: 12)
-                        }
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.small)
-                    .disabled(!chromeInstalled)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 40)
-
-            // Step 4: Paste token
-            HStack(alignment: .top, spacing: 12) {
-                stepBadge("4", done: isTokenValid)
-
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Paste it here")
-                        .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(isTokenValid ? OmiColors.textTertiary : OmiColors.textPrimary)
-
-                    TextField("Paste token here...", text: $tokenInput)
-                        .textFieldStyle(.plain)
-                        .scaledFont(size: 13)
-                        .foregroundColor(OmiColors.textPrimary)
-                        .padding(8)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8)
-                                .fill(OmiColors.backgroundPrimary.opacity(0.5))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(
-                                            tokenError != nil ? OmiColors.error.opacity(0.5) :
-                                            isTokenValid ? Color.green.opacity(0.5) :
-                                            OmiColors.textTertiary.opacity(0.3),
-                                            lineWidth: 1
-                                        )
-                                )
-                        )
                         .disabled(!chromeInstalled)
-                        .onChange(of: tokenInput) { _, _ in
-                            tokenError = nil
-                        }
-
-                    if let error = tokenError {
-                        Text(error)
-                            .scaledFont(size: 11)
-                            .foregroundColor(OmiColors.error)
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Step 3: Open extension settings & copy token
+                HStack(alignment: .top, spacing: 12) {
+                    stepBadge("3", done: tokenStepDone)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Open the extension and copy the auth token")
+                            .scaledFont(size: 13, weight: .medium)
+                            .foregroundColor(tokenStepDone ? OmiColors.textTertiary : OmiColors.textPrimary)
+
+                        Button(action: {
+                            Self.openExtensionInChrome()
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                tokenStepDone = true
+                            }
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: tokenStepDone ? "checkmark" : "key")
+                                    .scaledFont(size: 11)
+                                Text(tokenStepDone ? "Opened" : "Open Extension Settings")
+                                    .scaledFont(size: 12)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(!chromeInstalled)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Step 4: Paste token
+                HStack(alignment: .top, spacing: 12) {
+                    stepBadge("4", done: isTokenValid)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Paste it here")
+                            .scaledFont(size: 13, weight: .medium)
+                            .foregroundColor(isTokenValid ? OmiColors.textTertiary : OmiColors.textPrimary)
+
+                        TextField("Paste token here...", text: $tokenInput)
+                            .textFieldStyle(.plain)
+                            .scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textPrimary)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 8)
+                                    .fill(OmiColors.backgroundPrimary.opacity(0.5))
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 8)
+                                            .stroke(
+                                                tokenError != nil ? OmiColors.error.opacity(0.5) :
+                                                isTokenValid ? Color.green.opacity(0.5) :
+                                                OmiColors.textTertiary.opacity(0.3),
+                                                lineWidth: 1
+                                            )
+                                    )
+                            )
+                            .disabled(!chromeInstalled)
+                            .onChange(of: tokenInput) { _, _ in
+                                tokenError = nil
+                            }
+
+                        if let error = tokenError {
+                            Text(error)
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.error)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 40)
+            .padding(.leading, 40)
+            .padding(.trailing, 8)
+            .frame(maxWidth: .infinity)
+
+            // Right side: GIF guide
+            guidePanel
+                .frame(maxWidth: .infinity)
+                .padding(.trailing, 24)
         }
-        .padding(.horizontal, 20)
         .onAppear {
             chromeInstalled = Self.isChromeInstalled
         }
@@ -287,6 +297,38 @@ struct BrowserExtensionSetup: View {
             chromeCheckTimer?.invalidate()
             chromeCheckTimer = nil
         }
+    }
+
+    /// Right-side guide panel showing the appropriate GIF for the current step.
+    private var guidePanel: some View {
+        VStack(spacing: 12) {
+            if let gifName = activeGifName {
+                AnimatedGIFView(gifName: gifName)
+                    .id(gifName)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(OmiColors.textTertiary.opacity(0.2), lineWidth: 1)
+                    )
+            } else if !chromeInstalled {
+                VStack(spacing: 12) {
+                    Image(systemName: "desktopcomputer")
+                        .scaledFont(size: 40)
+                        .foregroundColor(OmiColors.textTertiary.opacity(0.5))
+                    Text("Install Chrome to get started")
+                        .scaledFont(size: 13)
+                        .foregroundColor(OmiColors.textTertiary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(maxHeight: .infinity)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(OmiColors.backgroundPrimary.opacity(0.5))
+        )
     }
 
     private var verifyPhase: some View {
