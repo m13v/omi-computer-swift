@@ -28,6 +28,10 @@ actor RewindDatabase {
     /// Static user ID for nonisolated markCleanShutdown (set by configure(userId:))
     nonisolated(unsafe) static var currentUserId: String?
 
+    /// Monotonic counter incremented by configure(). Used by closeIfStale() to detect
+    /// whether a new sign-in session has started since the close was requested.
+    nonisolated(unsafe) static var configureGeneration: Int = 0
+
     /// Runtime error tracking: consecutive SQLITE_IOERR/CORRUPT errors during normal queries.
     /// When this hits the threshold, we close the database so the next initialize() attempt
     /// goes through the full recovery path (WAL cleanup, corruption detection, fresh DB).
@@ -82,7 +86,18 @@ actor RewindDatabase {
         let resolvedId = (userId?.isEmpty == false) ? userId! : "anonymous"
         configuredUserId = resolvedId
         RewindDatabase.currentUserId = resolvedId
-        log("RewindDatabase: Configured for user \(resolvedId)")
+        RewindDatabase.configureGeneration += 1
+        log("RewindDatabase: Configured for user \(resolvedId) (generation \(RewindDatabase.configureGeneration))")
+    }
+
+    /// Close the database only if no new session has started (configure() not called since).
+    /// Prevents a stale sign-out Task from closing a freshly opened database.
+    func closeIfStale(generation: Int) {
+        guard generation == RewindDatabase.configureGeneration else {
+            log("RewindDatabase: Skipping stale close (requested gen \(generation), current gen \(RewindDatabase.configureGeneration))")
+            return
+        }
+        close()
     }
 
     /// Close the database, allowing re-initialization for a different user.
