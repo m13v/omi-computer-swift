@@ -100,6 +100,8 @@ actor ClaudeAgentBridge {
         // with --jitless. The bundled node binary crashes with SIGTRAP without it
         // because V8 JIT fails on the code-signed binary.
         env["NODE_OPTIONS"] = "--jitless"
+        // Enable debug output from Claude Code SDK subprocess
+        env["DEBUG_CLAUDE_AGENT_SDK"] = "1"
         // Ensure the directory containing node is in PATH so child processes (e.g. claude-agent-sdk) can find it
         let nodeDir = (nodePath as NSString).deletingLastPathComponent
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
