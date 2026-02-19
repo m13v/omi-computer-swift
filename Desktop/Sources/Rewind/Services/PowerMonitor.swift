@@ -63,8 +63,8 @@ class PowerMonitor: ObservableObject {
         // IOPSCopyPowerSourcesInfo can block on Mach IPC — check off main thread
         Task.detached(priority: .utility) { [weak self] in
             let nowOnBattery = Self.checkBatteryState()
+            guard let self else { return }
             await MainActor.run {
-                guard let self else { return }
                 self.isOnBattery = nowOnBattery
 
                 if wasOnBattery != nowOnBattery {
