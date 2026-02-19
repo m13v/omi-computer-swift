@@ -147,6 +147,9 @@ struct DesktopHomeView: View {
                                 await FileIndexerService.shared.backgroundRescan()
                             }
                         }
+                        .onReceive(NotificationCenter.default.publisher(for: .triggerFileIndexing)) { _ in
+                            showFileIndexingSheet = true
+                        }
                         .dismissableSheet(isPresented: $showFileIndexingSheet) {
                             FileIndexingView(
                                 chatProvider: viewModelContainer.chatProvider,
