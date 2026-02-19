@@ -264,6 +264,7 @@ class ChatProvider: ObservableObject {
     @Published var isLoading = false
     @Published var isLoadingSessions = true  // Start true since we load sessions on init
     @Published var isSending = false
+    @Published var isStopping = false
     @Published var isClearing = false
     @Published var errorMessage: String?
     @Published var sessionsLoadError: String?
@@ -1198,6 +1199,7 @@ class ChatProvider: ObservableObject {
     /// Stop the running agent, keeping partial response
     func stopAgent() {
         guard isSending else { return }
+        isStopping = true
         Task {
             await claudeBridge.interrupt()
         }
@@ -1504,6 +1506,7 @@ class ChatProvider: ObservableObject {
         }
 
         isSending = false
+        isStopping = false
 
         // If a follow-up was queued while we were running, chain it as a new full query
         if let followUp = pendingFollowUpText {
