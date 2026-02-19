@@ -28,6 +28,7 @@ struct BrowserExtensionSetup: View {
     @State private var extensionStepDone = false
     @State private var tokenStepDone = false
     @State private var chromeCheckTimer: Timer? = nil
+    @State private var extensionCheckTimer: Timer? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -192,20 +193,18 @@ struct BrowserExtensionSetup: View {
 
                         Button(action: {
                             Self.openURLInChrome(Self.chromeWebStoreURL)
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                extensionStepDone = true
-                            }
+                            startExtensionCheckTimer()
                         }) {
                             HStack(spacing: 5) {
                                 Image(systemName: extensionStepDone ? "checkmark" : "arrow.up.right.square")
                                     .scaledFont(size: 11)
-                                Text(extensionStepDone ? "Opened" : "Add to Chrome")
+                                Text(extensionStepDone ? "Installed" : "Add to Chrome")
                                     .scaledFont(size: 12)
                             }
                         }
                         .buttonStyle(.bordered)
                         .controlSize(.small)
-                        .disabled(!chromeInstalled)
+                        .disabled(!chromeInstalled || extensionStepDone)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -291,10 +290,13 @@ struct BrowserExtensionSetup: View {
         }
         .onAppear {
             chromeInstalled = Self.isChromeInstalled
+            extensionStepDone = Self.isExtensionInstalled
         }
         .onDisappear {
             chromeCheckTimer?.invalidate()
             chromeCheckTimer = nil
+            extensionCheckTimer?.invalidate()
+            extensionCheckTimer = nil
         }
     }
 
@@ -322,7 +324,6 @@ struct BrowserExtensionSetup: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .frame(maxHeight: .infinity)
         .padding(.vertical, 8)
         .background(
             RoundedRectangle(cornerRadius: 12)
@@ -489,6 +490,24 @@ struct BrowserExtensionSetup: View {
         openURLInChrome("chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html")
     }
 
+    private static let extensionId = "mmlmfjhmonkocbjadbfplnigmagldckm"
+
+    /// Check if the Playwright MCP Bridge extension is installed in any Chrome profile.
+    static var isExtensionInstalled: Bool {
+        let chromeSupport = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/Google/Chrome")
+        guard let profiles = try? FileManager.default.contentsOfDirectory(
+            at: chromeSupport, includingPropertiesForKeys: nil
+        ) else { return false }
+        for profile in profiles {
+            let extDir = profile.appendingPathComponent("Extensions/\(extensionId)")
+            if FileManager.default.fileExists(atPath: extDir.path) {
+                return true
+            }
+        }
+        return false
+    }
+
     /// Poll every 2 seconds to detect Chrome installation.
     private func startChromeCheckTimer() {
         guard chromeCheckTimer == nil else { return }
@@ -499,6 +518,20 @@ struct BrowserExtensionSetup: View {
                 }
                 chromeCheckTimer?.invalidate()
                 chromeCheckTimer = nil
+            }
+        }
+    }
+
+    /// Poll every 2 seconds to detect extension installation.
+    private func startExtensionCheckTimer() {
+        guard extensionCheckTimer == nil else { return }
+        extensionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            if Self.isExtensionInstalled {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    extensionStepDone = true
+                }
+                extensionCheckTimer?.invalidate()
+                extensionCheckTimer = nil
             }
         }
     }
