@@ -447,7 +447,23 @@ actor ClaudeAgentBridge {
             }
         }
 
-        // 3. Try `which node`
+        // 3. Check NVM installations (~/.nvm/versions/node/*)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        let nvmDir = (home as NSString).appendingPathComponent(".nvm/versions/node")
+        if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvmDir) {
+            // Sort versions descending to prefer the latest
+            let sorted = versions.sorted { v1, v2 in
+                v1.compare(v2, options: .numeric) == .orderedDescending
+            }
+            for version in sorted {
+                let nodePath = (nvmDir as NSString).appendingPathComponent("\(version)/bin/node")
+                if FileManager.default.isExecutableFile(atPath: nodePath) {
+                    return nodePath
+                }
+            }
+        }
+
+        // 4. Try `which node`
         let whichProcess = Process()
         whichProcess.executableURL = URL(fileURLWithPath: "/usr/bin/which")
         whichProcess.arguments = ["node"]
