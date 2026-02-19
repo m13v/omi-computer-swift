@@ -363,6 +363,21 @@ process.on("unhandledRejection", (reason) => {
   logErr(`Unhandled rejection: ${reason}`);
 });
 
+// Prevent uncaught exceptions from crashing the bridge process.
+// This catches unhandled 'error' events on Sockets (e.g. EPIPE on a child
+// process pipe when the Playwright MCP subprocess crashes during init).
+process.on("uncaughtException", (err) => {
+  const code = (err as NodeJS.ErrnoException).code;
+  if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
+    logErr(`Caught ${code} in uncaughtException (subprocess pipe closed)`);
+    return; // Swallow — the query will fail via the Agent SDK's own error path
+  }
+  logErr(`Uncaught exception: ${err.message}\n${err.stack ?? ""}`);
+  // For non-pipe errors, send error to Swift and exit
+  send({ type: "error", message: `Uncaught: ${err.message}` });
+  process.exit(1);
+});
+
 // Handle stdout pipe errors (EPIPE = Swift closed its end of the pipe)
 process.stdout.on("error", (err) => {
   if ((err as NodeJS.ErrnoException).code === "EPIPE") {
