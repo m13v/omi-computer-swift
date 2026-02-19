@@ -51,6 +51,19 @@ actor FileIndexerService {
         _dbQueue = nil
     }
 
+    /// Returns the total number of indexed files in the database
+    func getIndexedFileCount() async -> Int {
+        guard let db = try? await ensureDB() else { return 0 }
+        do {
+            return try await db.read { database in
+                try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM indexed_files") ?? 0
+            }
+        } catch {
+            log("FileIndexer: Failed to get indexed file count: \(error)")
+            return 0
+        }
+    }
+
     // MARK: - Onboarding Pipeline
 
     /// Main entry point: scan files → post notification → chat AI does the analysis
