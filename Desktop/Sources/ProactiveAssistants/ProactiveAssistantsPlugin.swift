@@ -320,6 +320,8 @@ public class ProactiveAssistantsPlugin: NSObject {
             }
 
         } catch {
+            log("ProactiveAssistantsPlugin: Failed to initialize assistants: \(error.localizedDescription)")
+            logError("ProactiveAssistantsPlugin: Assistant initialization failed", error: error)
             isStartingMonitoring = false
             completion(false, error.localizedDescription)
             return
