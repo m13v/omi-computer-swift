@@ -382,6 +382,54 @@ actor FileIndexerService {
         }
     }
 
+    // MARK: - Incremental Scan Helpers
+
+    /// Load all existing indexed file paths and their modifiedAt dates for O(1) lookup
+    private func loadExistingIndex(from db: DatabasePool) -> [String: Date?] {
+        do {
+            return try db.read { database in
+                var index: [String: Date?] = [:]
+                let rows = try Row.fetchAll(database, sql: "SELECT path, modifiedAt FROM indexed_files")
+                for row in rows {
+                    guard let path: String = row["path"] else { continue }
+                    let modifiedAt: Date? = row["modifiedAt"]
+                    index[path] = modifiedAt
+                }
+                return index
+            }
+        } catch {
+            log("FileIndexer: Failed to load existing index: \(error.localizedDescription)")
+            return [:]
+        }
+    }
+
+    /// Delete files from the index that no longer exist on disk
+    private func deleteRemovedFiles(scannedPaths: Set<String>, existingPaths: Set<String>, db: DatabasePool) {
+        let removed = existingPaths.subtracting(scannedPaths)
+        guard !removed.isEmpty else { return }
+
+        log("FileIndexer: Removing \(removed.count) deleted files from index")
+
+        let removedArray = Array(removed)
+        var offset = 0
+        while offset < removedArray.count {
+            let end = min(offset + 500, removedArray.count)
+            let chunk = Array(removedArray[offset..<end])
+            do {
+                try db.write { database in
+                    let placeholders = chunk.map { _ in "?" }.joined(separator: ", ")
+                    try database.execute(
+                        sql: "DELETE FROM indexed_files WHERE path IN (\(placeholders))",
+                        arguments: StatementArguments(chunk)
+                    )
+                }
+            } catch {
+                log("FileIndexer: Batch delete error: \(error.localizedDescription)")
+            }
+            offset = end
+        }
+    }
+
     // MARK: - Summary Generation
 
     /// Generate a compact text summary of the indexed files for AI analysis
