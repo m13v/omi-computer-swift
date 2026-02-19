@@ -13,6 +13,7 @@ struct ChatInputView: View {
     var onFollowUp: ((String) -> Void)? = nil
     var onStop: (() -> Void)? = nil
     let isSending: Bool
+    var isStopping: Bool = false
     var placeholder: String = "Type a message..."
     @Binding var mode: ChatMode
     /// Optional text to pre-fill the input (e.g. task context). Consumed on change.
@@ -84,12 +85,18 @@ struct ChatInputView: View {
 
             // Send/Stop button — inline to the right of the input
             if isSending && !hasText {
-                Button(action: { onStop?() }) {
-                    Image(systemName: "stop.circle.fill")
-                        .scaledFont(size: 24)
-                        .foregroundColor(.red.opacity(0.8))
+                if isStopping {
+                    ProgressView()
+                        .controlSize(.small)
+                        .frame(width: 24, height: 24)
+                } else {
+                    Button(action: { onStop?() }) {
+                        Image(systemName: "stop.circle.fill")
+                            .scaledFont(size: 24)
+                            .foregroundColor(.red.opacity(0.8))
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             } else {
                 Button(action: handleSubmit) {
                     Image(systemName: "arrow.up.circle.fill")
