@@ -20,6 +20,7 @@ struct BrowserExtensionSetup: View {
 
     @State private var phase: Phase = .welcome
     @State private var tokenInput: String = ""
+    @State private var tokenError: String? = nil
     @State private var isVerifying = false
     @State private var verifyError: String? = nil
     @State private var verifySuccess = false
@@ -196,9 +197,18 @@ struct BrowserExtensionSetup: View {
                                 .fill(OmiColors.backgroundPrimary.opacity(0.5))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(OmiColors.textTertiary.opacity(0.3), lineWidth: 1)
+                                        .stroke(tokenError != nil ? OmiColors.error.opacity(0.5) : OmiColors.textTertiary.opacity(0.3), lineWidth: 1)
                                 )
                         )
+                        .onChange(of: tokenInput) { _, _ in
+                            tokenError = nil
+                        }
+
+                    if let error = tokenError {
+                        Text(error)
+                            .scaledFont(size: 11)
+                            .foregroundColor(OmiColors.error)
+                    }
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
