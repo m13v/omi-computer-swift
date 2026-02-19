@@ -152,9 +152,7 @@ struct BrowserExtensionSetup: View {
                         .foregroundColor(OmiColors.textPrimary)
 
                     Button(action: {
-                        if let url = URL(string: Self.chromeWebStoreURL) {
-                            NSWorkspace.shared.open(url)
-                        }
+                        Self.openURLInChrome(Self.chromeWebStoreURL)
                     }) {
                         HStack(spacing: 5) {
                             Image(systemName: "arrow.up.right.square")
@@ -357,21 +355,26 @@ struct BrowserExtensionSetup: View {
         return nil
     }
 
-    /// Open the extension status page explicitly in Chrome (macOS doesn't handle chrome-extension:// URLs natively)
-    static func openExtensionInChrome() {
-        let extensionURL = URL(string: "chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html")!
+    /// Open a URL explicitly in Chrome (not the default browser).
+    static func openURLInChrome(_ urlString: String) {
+        guard let url = URL(string: urlString) else { return }
         let chromeURL = URL(fileURLWithPath: "/Applications/Google Chrome.app")
 
         if FileManager.default.fileExists(atPath: chromeURL.path) {
             NSWorkspace.shared.open(
-                [extensionURL],
+                [url],
                 withApplicationAt: chromeURL,
                 configuration: NSWorkspace.OpenConfiguration()
             )
         } else {
-            // Fallback: try default browser (unlikely to work for chrome-extension:// but better than nothing)
-            NSWorkspace.shared.open(extensionURL)
+            // Fallback: try default browser
+            NSWorkspace.shared.open(url)
         }
+    }
+
+    /// Open the extension status page in Chrome.
+    static func openExtensionInChrome() {
+        openURLInChrome("chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html")
     }
 
     private func dismissSheet() {
