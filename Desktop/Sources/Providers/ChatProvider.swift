@@ -354,12 +354,19 @@ class ChatProvider: ObservableObject {
     private var cachedDatabaseSchema: String = ""
     private var schemaLoaded = false
 
-    // MARK: - CLAUDE.md & Skills
+    // MARK: - CLAUDE.md & Skills (Global)
     @Published var claudeMdContent: String?
     @Published var claudeMdPath: String?
     @Published var discoveredSkills: [(name: String, description: String, path: String)] = []
     @AppStorage("claudeMdEnabled") var claudeMdEnabled = true
     @AppStorage("enabledSkillsJSON") private var enabledSkillsJSON: String = "[]"
+
+    // MARK: - Project-level CLAUDE.md & Skills
+    @AppStorage("aiChatWorkingDirectory") var aiChatWorkingDirectory: String = ""
+    @Published var projectClaudeMdContent: String?
+    @Published var projectClaudeMdPath: String?
+    @Published var projectDiscoveredSkills: [(name: String, description: String, path: String)] = []
+    @AppStorage("projectClaudeMdEnabled") var projectClaudeMdEnabled = true
 
     // MARK: - Current Session ID
     var currentSessionId: String? {
