@@ -104,6 +104,12 @@ actor FocusAssistant: ProactiveAssistant {
 
         for await frame in frameStream {
             guard isRunning else { break }
+
+            // Backpressure: skip frame if too many analyses in flight
+            if pendingTasks.count >= maxPendingTasks {
+                continue
+            }
+
             // Fire off analysis in background (don't wait) - like Python version
             let task = Task { [weak self] () -> Void in
                 await self?.processFrame(frame)
