@@ -24,6 +24,8 @@ struct BrowserExtensionSetup: View {
     @State private var isVerifying = false
     @State private var verifyError: String? = nil
     @State private var verifySuccess = false
+    @State private var step1Done = false
+    @State private var step2Done = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,20 +146,23 @@ struct BrowserExtensionSetup: View {
 
             // Step 1: Install extension from Chrome Web Store
             HStack(alignment: .top, spacing: 12) {
-                stepBadge("1")
+                stepBadge("1", done: step1Done)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Install the extension from Chrome Web Store")
                         .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(OmiColors.textPrimary)
+                        .foregroundColor(step1Done ? OmiColors.textTertiary : OmiColors.textPrimary)
 
                     Button(action: {
                         Self.openURLInChrome(Self.chromeWebStoreURL)
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            step1Done = true
+                        }
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: "arrow.up.right.square")
+                            Image(systemName: step1Done ? "checkmark" : "arrow.up.right.square")
                                 .scaledFont(size: 11)
-                            Text("Add to Chrome")
+                            Text(step1Done ? "Opened" : "Add to Chrome")
                                 .scaledFont(size: 12)
                         }
                     }
@@ -170,20 +175,23 @@ struct BrowserExtensionSetup: View {
 
             // Step 2: Open extension settings & copy token
             HStack(alignment: .top, spacing: 12) {
-                stepBadge("2")
+                stepBadge("2", done: step2Done)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Open the extension and copy the auth token")
                         .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(OmiColors.textPrimary)
+                        .foregroundColor(step2Done ? OmiColors.textTertiary : OmiColors.textPrimary)
 
                     Button(action: {
                         Self.openExtensionInChrome()
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            step2Done = true
+                        }
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: "key")
+                            Image(systemName: step2Done ? "checkmark" : "key")
                                 .scaledFont(size: 11)
-                            Text("Open Extension Settings")
+                            Text(step2Done ? "Opened" : "Open Extension Settings")
                                 .scaledFont(size: 12)
                         }
                     }
@@ -196,12 +204,12 @@ struct BrowserExtensionSetup: View {
 
             // Step 3: Paste token
             HStack(alignment: .top, spacing: 12) {
-                stepBadge("3")
+                stepBadge("3", done: isTokenValid)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Paste it here")
                         .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(OmiColors.textPrimary)
+                        .foregroundColor(isTokenValid ? OmiColors.textTertiary : OmiColors.textPrimary)
 
                     TextField("Paste token here...", text: $tokenInput)
                         .textFieldStyle(.plain)
@@ -213,7 +221,12 @@ struct BrowserExtensionSetup: View {
                                 .fill(OmiColors.backgroundPrimary.opacity(0.5))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
-                                        .stroke(tokenError != nil ? OmiColors.error.opacity(0.5) : OmiColors.textTertiary.opacity(0.3), lineWidth: 1)
+                                        .stroke(
+                                            tokenError != nil ? OmiColors.error.opacity(0.5) :
+                                            isTokenValid ? Color.green.opacity(0.5) :
+                                            OmiColors.textTertiary.opacity(0.3),
+                                            lineWidth: 1
+                                        )
                                 )
                         )
                         .onChange(of: tokenInput) { _, _ in
@@ -321,12 +334,22 @@ struct BrowserExtensionSetup: View {
         }
     }
 
-    private func stepBadge(_ number: String) -> some View {
-        Text(number)
-            .scaledFont(size: 11, weight: .bold)
-            .foregroundColor(.white)
-            .frame(width: 22, height: 22)
-            .background(Circle().fill(OmiColors.textTertiary.opacity(0.5)))
+    private func stepBadge(_ number: String, done: Bool = false) -> some View {
+        Group {
+            if done {
+                Image(systemName: "checkmark")
+                    .scaledFont(size: 11, weight: .bold)
+                    .foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color.green))
+            } else {
+                Text(number)
+                    .scaledFont(size: 11, weight: .bold)
+                    .foregroundColor(.white)
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(OmiColors.textTertiary.opacity(0.5)))
+            }
+        }
     }
 
     /// Strip the "PLAYWRIGHT_MCP_EXTENSION_TOKEN=" prefix if the user copied the full env var line.
@@ -400,6 +423,12 @@ struct BrowserExtensionSetup: View {
         case .done:
             return "Done"
         }
+    }
+
+    /// Whether the current token input parses and validates successfully.
+    private var isTokenValid: Bool {
+        let token = Self.parseToken(tokenInput)
+        return Self.validateToken(token) == nil
     }
 
     private var isPrimaryDisabled: Bool {
