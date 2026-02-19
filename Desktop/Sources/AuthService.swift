@@ -305,7 +305,10 @@ class AuthService {
             saveTokens(idToken: idToken, refreshToken: refreshToken, expiresIn: expiresIn, userId: userId)
         } catch {
             // Fall back to REST API (works when Firebase SDK has keychain issues)
-            NSLog("OMI AUTH: Firebase SDK sign-in failed (%@), trying REST API...", error.localizedDescription)
+            let nsError = error as NSError
+            NSLog("OMI AUTH: Firebase SDK Apple sign-in failed (domain=%@ code=%d): %@", nsError.domain, nsError.code, error.localizedDescription)
+            logError("AUTH: Firebase SDK Apple sign-in failed (domain=\(nsError.domain) code=\(nsError.code))", error: error)
+            NSLog("OMI AUTH: Falling back to REST API for Apple sign-in...")
             let firebaseTokens = try await signInWithAppleIdentityToken(identityToken: identityToken, nonce: nonce)
             userId = firebaseTokens.localId
             saveTokens(idToken: firebaseTokens.idToken, refreshToken: firebaseTokens.refreshToken, expiresIn: firebaseTokens.expiresIn, userId: userId)
