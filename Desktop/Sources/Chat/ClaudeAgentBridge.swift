@@ -96,14 +96,11 @@ actor ClaudeAgentBridge {
         // Inherit environment (includes ANTHROPIC_API_KEY from .env)
         var env = ProcessInfo.processInfo.environment
         env["NODE_NO_WARNINGS"] = "1"
-        // Ensure all child Node.js processes (SDK subprocess, MCP servers) also run
-        // with --jitless. The bundled node binary crashes with SIGTRAP without it
-        // because V8 JIT fails on the code-signed binary.
-        // Note: do NOT set NODE_OPTIONS=--jitless here. While --jitless is needed
-        // for the bridge process itself (passed via proc.arguments), the Claude Code
-        // CLI subprocess needs WebAssembly for Node.js fetch (undici/llhttp).
-        // Enable debug output from Claude Code SDK subprocess
-        env["DEBUG_CLAUDE_AGENT_SDK"] = "1"
+        // Note: do NOT set NODE_OPTIONS=--jitless here. The bridge process gets
+        // --jitless via proc.arguments (it only does stdin/stdout, no HTTP).
+        // Child processes (Claude Code CLI, MCP servers) need WebAssembly for
+        // Node.js fetch (undici/llhttp). Instead, the node binary is signed with
+        // JIT entitlements in release.sh to allow V8 JIT under Hardened Runtime.
         // Ensure the directory containing node is in PATH so child processes (e.g. claude-agent-sdk) can find it
         let nodeDir = (nodePath as NSString).deletingLastPathComponent
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
