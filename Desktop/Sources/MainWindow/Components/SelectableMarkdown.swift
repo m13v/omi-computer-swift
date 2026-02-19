@@ -10,62 +10,67 @@ struct SelectableMarkdown: View {
 
     var body: some View {
         let fontSize = round(14 * fontScale)
-        let codeFontSize = round(13 * fontScale)
         let processed = Self.preprocess(text)
 
-        if var attributed = try? AttributedString(
-            markdown: processed,
-            options: .init(
-                allowsExtendedAttributes: true,
-                interpretedSyntax: .inlineOnlyPreservingWhitespace
-            )
+        if let styled = Self.styledAttributedString(
+            from: processed, sender: sender, fontSize: fontSize, fontScale: fontScale
         ) {
-            // Apply base styling
-            let baseColor: Color = sender == .user ? .white : OmiColors.textPrimary
-            let linkColor: Color = sender == .user ? .white.opacity(0.9) : OmiColors.purplePrimary
-            let codeBgColor: Color = sender == .user
-                ? .white.opacity(0.15)
-                : OmiColors.backgroundTertiary
-
-            attributed.font = .system(size: fontSize)
-            attributed.foregroundColor = baseColor
-
-            // Collect ranges that need custom styling (code, links)
-            var codeRanges = [Range<AttributedString.Index>]()
-            var linkRanges = [Range<AttributedString.Index>]()
-
-            for run in attributed.runs {
-                if let intent = run.inlinePresentationIntent, intent.contains(.code) {
-                    codeRanges.append(run.range)
-                }
-                if run.link != nil {
-                    linkRanges.append(run.range)
-                }
-            }
-
-            // Style inline code
-            for range in codeRanges {
-                attributed[range].font = .system(size: codeFontSize, design: .monospaced)
-                attributed[range].backgroundColor = codeBgColor
-            }
-
-            // Style links
-            for range in linkRanges {
-                attributed[range].foregroundColor = linkColor
-                if sender == .user {
-                    attributed[range].underlineStyle = .single
-                }
-            }
-
-            Text(attributed)
+            Text(styled)
                 .if_available_writingToolsNone()
         } else {
-            // Fallback: plain text if markdown parsing fails
             Text(text)
                 .font(.system(size: fontSize))
                 .foregroundColor(sender == .user ? .white : OmiColors.textPrimary)
                 .if_available_writingToolsNone()
         }
+    }
+
+    private static func styledAttributedString(
+        from processed: String, sender: ChatSender, fontSize: CGFloat, fontScale: CGFloat
+    ) -> AttributedString? {
+        guard var attributed = try? AttributedString(
+            markdown: processed,
+            options: .init(
+                allowsExtendedAttributes: true,
+                interpretedSyntax: .inlineOnlyPreservingWhitespace
+            )
+        ) else { return nil }
+
+        let codeFontSize = round(13 * fontScale)
+        let baseColor: Color = sender == .user ? .white : OmiColors.textPrimary
+        let linkColor: Color = sender == .user ? .white.opacity(0.9) : OmiColors.purplePrimary
+        let codeBgColor: Color = sender == .user
+            ? .white.opacity(0.15)
+            : OmiColors.backgroundTertiary
+
+        attributed.font = .system(size: fontSize)
+        attributed.foregroundColor = baseColor
+
+        var codeRanges = [Range<AttributedString.Index>]()
+        var linkRanges = [Range<AttributedString.Index>]()
+
+        for run in attributed.runs {
+            if let intent = run.inlinePresentationIntent, intent.contains(.code) {
+                codeRanges.append(run.range)
+            }
+            if run.link != nil {
+                linkRanges.append(run.range)
+            }
+        }
+
+        for range in codeRanges {
+            attributed[range].font = .system(size: codeFontSize, design: .monospaced)
+            attributed[range].backgroundColor = codeBgColor
+        }
+
+        for range in linkRanges {
+            attributed[range].foregroundColor = linkColor
+            if sender == .user {
+                attributed[range].underlineStyle = .single
+            }
+        }
+
+        return attributed
     }
 
     /// Pre-processes markdown to convert block-level elements into inline-compatible
