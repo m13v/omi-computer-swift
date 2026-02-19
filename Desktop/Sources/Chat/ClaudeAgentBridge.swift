@@ -96,6 +96,10 @@ actor ClaudeAgentBridge {
         // Inherit environment (includes ANTHROPIC_API_KEY from .env)
         var env = ProcessInfo.processInfo.environment
         env["NODE_NO_WARNINGS"] = "1"
+        // Ensure all child Node.js processes (SDK subprocess, MCP servers) also run
+        // with --jitless. The bundled node binary crashes with SIGTRAP without it
+        // because V8 JIT fails on the code-signed binary.
+        env["NODE_OPTIONS"] = "--jitless"
         // Ensure the directory containing node is in PATH so child processes (e.g. claude-agent-sdk) can find it
         let nodeDir = (nodePath as NSString).deletingLastPathComponent
         let existingPath = env["PATH"] ?? "/usr/bin:/bin"
