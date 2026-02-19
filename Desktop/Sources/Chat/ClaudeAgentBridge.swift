@@ -233,7 +233,7 @@ actor ClaudeAgentBridge {
 
         // Read messages until we get a result or error
         while true {
-            let message = try await waitForMessage()
+            let message = try await waitForMessage(timeout: 90.0)
 
             switch message {
             case .`init`:
