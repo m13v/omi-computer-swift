@@ -210,6 +210,11 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                                 )
                                 .id(message.id)
                             }
+
+                            // Invisible anchor for reliable scroll-to-bottom
+                            Color.clear
+                                .frame(height: 1)
+                                .id("bottom-anchor")
                         }
                     }
                     .padding()
@@ -320,13 +325,12 @@ struct ChatMessagesView<WelcomeContent: View>: View {
     private func scrollToBottom(proxy: ScrollViewProxy) {
         // Don't fight the user — skip if they're actively scrolling up
         guard !userIsScrolling else { return }
-        if let lastMessage = messages.last {
-            isProgrammaticScroll = true
-            proxy.scrollTo(lastMessage.id, anchor: .bottom)
-            // Reset after a short delay to allow the scroll to settle
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                isProgrammaticScroll = false
-            }
+        guard !messages.isEmpty else { return }
+        isProgrammaticScroll = true
+        proxy.scrollTo("bottom-anchor", anchor: .bottom)
+        // Reset after a short delay to allow the scroll to settle
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            isProgrammaticScroll = false
         }
     }
 
