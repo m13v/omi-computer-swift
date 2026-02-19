@@ -64,6 +64,15 @@ class TaskChatCoordinator: ObservableObject {
                     if !self.isPanelOpen || self.activeTaskId != taskId {
                         self.unreadTaskIds.insert(taskId)
                     }
+                    // Clean stale isStreaming flags in cache for the completed task
+                    if let cached = self.taskMessagesCache[taskId] {
+                        self.taskMessagesCache[taskId] = cached.map { msg in
+                            guard msg.isStreaming else { return msg }
+                            var updated = msg
+                            updated.isStreaming = false
+                            return updated
+                        }
+                    }
                     self.streamingTaskId = nil
                     self.streamingStatus = ""
                 }
@@ -120,10 +129,18 @@ class TaskChatCoordinator: ObservableObject {
 
             // If bridge is still streaming for this task, restore cached messages
             // so the live updates continue showing. Otherwise reload from backend.
-            if chatProvider.isSending, let cached = taskMessagesCache[task.id] {
+            if chatProvider.isSending, streamingTaskId == task.id, let cached = taskMessagesCache[task.id] {
                 log("TaskChatCoordinator: restoring cached messages (bridge still streaming)")
                 chatProvider.messages = cached
                 taskMessagesCache.removeValue(forKey: task.id)
+            } else if let cached = taskMessagesCache[task.id] {
+                // Stale cache from a completed stream — clean and discard, reload from backend
+                log("TaskChatCoordinator: discarding stale cached messages, reloading from backend")
+                taskMessagesCache.removeValue(forKey: task.id)
+                if let sessionId = task.chatSessionId {
+                    let session = ChatSession(id: sessionId, title: taskChatTitle(for: task))
+                    await chatProvider.selectSession(session, force: true)
+                }
             } else if let sessionId = task.chatSessionId {
                 let session = ChatSession(id: sessionId, title: taskChatTitle(for: task))
                 await chatProvider.selectSession(session, force: true)
