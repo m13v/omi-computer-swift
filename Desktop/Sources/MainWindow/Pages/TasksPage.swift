@@ -923,6 +923,14 @@ class TasksViewModel: ObservableObject {
             return true
         }
 
+        // Space: toggle task complete
+        if keyCode == 49 && modifiers.isEmpty {
+            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId,
+                  let task = findTask(taskId) else { return false }
+            Task { [weak self] in await self?.toggleTask(task) }
+            return true
+        }
+
         // Tab / Shift+Tab: indent
         if keyCode == 48 && modifiers.isEmpty {
             guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId else { return false }
@@ -4382,19 +4390,20 @@ struct KeyboardHintBar: View {
             } else if isAnyTaskEditing {
                 keyboardHint("esc", label: "Save & exit")
             } else if hasSelection {
-                keyboardHint("\u{2191}\u{2193}", label: "Navigate")
+                keyboardHint("\u{2191} \u{2193}", label: "Navigate")
                 keyboardHint("\u{21A9}", label: "New below")
-                keyboardHint("\u{21A9}\u{21A9}", label: "Edit")
+                keyboardHint("\u{21A9} \u{21A9}", label: "Edit")
+                keyboardHint("\u{2423}", label: "Done")
                 keyboardHint("esc", label: "Deselect")
                 keyboardHint("\u{2318}D", label: "Delete")
                 keyboardHint("\u{21E5}", label: "Indent")
-                keyboardHint("\u{21E7}\u{21E5}", label: "Outdent")
+                keyboardHint("\u{21E7} \u{21E5}", label: "Outdent")
             } else {
-                keyboardHint("\u{2191}\u{2193}", label: "Navigate")
+                keyboardHint("\u{2191} \u{2193}", label: "Navigate")
                 keyboardHint("\u{2318}N", label: "New")
                 keyboardHint("\u{2318}D", label: "Delete")
                 keyboardHint("\u{21E5}", label: "Indent")
-                keyboardHint("\u{21E7}\u{21E5}", label: "Outdent")
+                keyboardHint("\u{21E7} \u{21E5}", label: "Outdent")
             }
         }
         .padding(.horizontal, 16)
@@ -4407,17 +4416,17 @@ struct KeyboardHintBar: View {
     }
 
     private func keyboardHint(_ key: String, label: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             Text(key)
-                .scaledFont(size: 10, weight: .medium, design: .monospaced)
+                .scaledFont(size: 11, weight: .medium, design: .monospaced)
                 .foregroundColor(OmiColors.textSecondary)
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 4)
                 .background(OmiColors.backgroundTertiary)
                 .cornerRadius(4)
 
             Text(label)
-                .scaledFont(size: 10)
+                .scaledFont(size: 11)
                 .foregroundColor(OmiColors.textTertiary)
         }
     }
