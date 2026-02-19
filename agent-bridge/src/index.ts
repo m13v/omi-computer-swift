@@ -16,7 +16,11 @@ const playwrightCli = join(__dirname, "..", "node_modules", "@playwright", "mcp"
 // --- Helpers ---
 
 function send(msg: OutboundMessage): void {
-  process.stdout.write(JSON.stringify(msg) + "\n");
+  try {
+    process.stdout.write(JSON.stringify(msg) + "\n");
+  } catch (err) {
+    logErr(`Failed to write to stdout: ${err}`);
+  }
 }
 
 function logErr(msg: string): void {
@@ -357,6 +361,15 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 // Prevent unhandled rejections from crashing the bridge process
 process.on("unhandledRejection", (reason) => {
   logErr(`Unhandled rejection: ${reason}`);
+});
+
+// Handle stdout pipe errors (EPIPE = Swift closed its end of the pipe)
+process.stdout.on("error", (err) => {
+  if ((err as NodeJS.ErrnoException).code === "EPIPE") {
+    logErr("stdout pipe closed (parent process disconnected)");
+    process.exit(0);
+  }
+  logErr(`stdout error: ${err.message}`);
 });
 
 // --- Main: read JSON lines from stdin ---
