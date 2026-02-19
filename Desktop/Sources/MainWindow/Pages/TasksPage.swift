@@ -629,6 +629,7 @@ class TasksViewModel: ObservableObject {
     @Published var inlineCreateAfterTaskId: String?
     @Published var editingTaskId: String?
     var hoveredTaskId: String?
+    @Published var animateToggleTaskId: String?
     @Published var isAnyTaskEditing = false
     var lastEnterPressTime: Date?
     var scrollProxy: ScrollViewProxy?
@@ -923,11 +924,11 @@ class TasksViewModel: ObservableObject {
             return true
         }
 
-        // Space: toggle task complete
+        // Space: toggle task complete (triggers animation in TaskRow)
         if keyCode == 49 && modifiers.isEmpty {
             guard let taskId = keyboardSelectedTaskId ?? hoveredTaskId,
-                  let task = findTask(taskId) else { return false }
-            Task { [weak self] in await self?.toggleTask(task) }
+                  findTask(taskId) != nil else { return false }
+            animateToggleTaskId = taskId
             return true
         }
 
