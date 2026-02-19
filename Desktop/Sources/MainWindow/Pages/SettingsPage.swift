@@ -265,6 +265,7 @@ struct SettingsContentView: View {
     }
 
     @State private var showResetOnboardingAlert: Bool = false
+    @State private var showRescanFilesAlert: Bool = false
 
     init(
         appState: AppState,
@@ -3199,6 +3200,50 @@ struct SettingsContentView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+
+            // Rescan Files
+            settingsCard(settingId: "advanced.troubleshooting.rescanfiles") {
+                HStack(spacing: 16) {
+                    Image(systemName: "folder.badge.gearshape")
+                        .scaledFont(size: 16)
+                        .foregroundColor(OmiColors.textSecondary)
+                        .frame(width: 24, height: 24)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Rescan Files")
+                            .scaledFont(size: 16, weight: .semibold)
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Text("Re-index your files and update your AI profile")
+                            .scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer()
+
+                    Button(action: { showRescanFilesAlert = true }) {
+                        Text("Rescan")
+                            .scaledFont(size: 13, weight: .medium)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 6)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(OmiColors.purplePrimary)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .alert("Rescan Files?", isPresented: $showRescanFilesAlert) {
+                Button("Cancel", role: .cancel) { }
+                Button("Rescan") {
+                    UserDefaults.standard.set(false, forKey: "hasCompletedFileIndexing")
+                    NotificationCenter.default.post(name: .triggerFileIndexing, object: nil)
+                }
+            } message: {
+                Text("This will re-scan your files and update your AI profile with the latest information about your projects and interests.")
             }
 
             // Reset Onboarding
