@@ -643,7 +643,7 @@ class AudioCaptureService {
         )
 
         let formatBlock: AudioObjectPropertyListenerBlock = { [weak self] numberAddresses, addresses in
-            DispatchQueue.main.async {
+            self?.audioQueue.async {
                 self?.handleConfigurationChange()
             }
         }
@@ -664,7 +664,7 @@ class AudioCaptureService {
         if retryCount < Self.maxRetries {
             let delay = Double(retryCount + 1) * 1.0  // 1s, 2s, 3s backoff
             log("AudioCapture: Retrying in \(delay)s...")
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            audioQueue.asyncAfter(deadline: .now() + delay) { [weak self] in
                 self?.reconfigureAfterChange(retryCount: retryCount + 1)
             }
         } else {
@@ -677,8 +677,11 @@ class AudioCaptureService {
         if isCapturing {
             removePropertyListeners()
             if let procID = ioProcID, deviceID != kAudioObjectUnknown {
-                AudioDeviceStop(deviceID, procID)
-                AudioDeviceDestroyIOProcID(deviceID, procID)
+                // Use sync in deinit to ensure cleanup completes before deallocation
+                audioQueue.sync {
+                    AudioDeviceStop(deviceID, procID)
+                    AudioDeviceDestroyIOProcID(deviceID, procID)
+                }
             }
         }
     }
