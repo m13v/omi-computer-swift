@@ -130,6 +130,8 @@ struct BrowserExtensionSetup: View {
         .padding(.horizontal, 20)
     }
 
+    private static let chromeWebStoreURL = "https://chromewebstore.google.com/detail/playwright-mcp-bridge/mmlmfjhmonkocbjadbfplnigmagldckm"
+
     private var connectPhase: some View {
         VStack(spacing: 16) {
             Image(systemName: "puzzlepiece.extension")
@@ -140,23 +142,24 @@ struct BrowserExtensionSetup: View {
                 .scaledFont(size: 20, weight: .semibold)
                 .foregroundColor(OmiColors.textPrimary)
 
-            // Step 1: Open extension
+            // Step 1: Install extension from Chrome Web Store
             HStack(alignment: .top, spacing: 12) {
                 stepBadge("1")
 
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Open the extension settings in Chrome")
+                    Text("Install the extension from Chrome Web Store")
                         .scaledFont(size: 13, weight: .medium)
                         .foregroundColor(OmiColors.textPrimary)
 
                     Button(action: {
-                        ClaudeAgentBridge.ensureChromeExtensionInstalled()
-                        Self.openExtensionInChrome()
+                        if let url = URL(string: Self.chromeWebStoreURL) {
+                            NSWorkspace.shared.open(url)
+                        }
                     }) {
                         HStack(spacing: 5) {
                             Image(systemName: "arrow.up.right.square")
                                 .scaledFont(size: 11)
-                            Text("Open Extension Settings")
+                            Text("Add to Chrome")
                                 .scaledFont(size: 12)
                         }
                     }
@@ -167,13 +170,28 @@ struct BrowserExtensionSetup: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 40)
 
-            // Step 2: Copy token
+            // Step 2: Open extension settings & copy token
             HStack(alignment: .top, spacing: 12) {
                 stepBadge("2")
 
-                Text("Copy the auth token shown on that page")
-                    .scaledFont(size: 13, weight: .medium)
-                    .foregroundColor(OmiColors.textPrimary)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Open the extension and copy the auth token")
+                        .scaledFont(size: 13, weight: .medium)
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Button(action: {
+                        Self.openExtensionInChrome()
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "key")
+                                .scaledFont(size: 11)
+                            Text("Open Extension Settings")
+                                .scaledFont(size: 12)
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 40)
@@ -395,7 +413,6 @@ struct BrowserExtensionSetup: View {
     private func handlePrimaryAction() {
         switch phase {
         case .welcome:
-            ClaudeAgentBridge.ensureChromeExtensionInstalled()
             withAnimation(.easeInOut(duration: 0.2)) {
                 phase = .connect
             }
