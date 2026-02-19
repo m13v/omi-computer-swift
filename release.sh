@@ -7,6 +7,15 @@ unset TOOLCHAINS
 # Track release timing
 START_TIME=$(date +%s)
 
+# =============================================================================
+# Release log — all stdout/stderr is tee'd to this file for post-mortem review
+# =============================================================================
+RELEASE_LOG="/private/tmp/omi-release.log"
+exec > >(tee -a "$RELEASE_LOG") 2>&1
+echo ""
+echo "=== Release started at $(date -u '+%Y-%m-%d %H:%M:%S UTC') ==="
+echo "Log file: $RELEASE_LOG"
+
 # Load .env if present (for RELEASE_SECRET, SPARKLE_PRIVATE_KEY, etc.)
 # Using set -a/source instead of xargs to handle multiline values (APPLE_PRIVATE_KEY)
 if [ -f ".env" ]; then
