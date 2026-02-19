@@ -359,7 +359,7 @@ class ChatProvider: ObservableObject {
     @Published var claudeMdPath: String?
     @Published var discoveredSkills: [(name: String, description: String, path: String)] = []
     @AppStorage("claudeMdEnabled") var claudeMdEnabled = true
-    @AppStorage("enabledSkillsJSON") private var enabledSkillsJSON: String = "[]"
+    @AppStorage("enabledSkillsJSON") private var enabledSkillsJSON: String = ""
 
     // MARK: - Project-level CLAUDE.md & Skills
     @AppStorage("aiChatWorkingDirectory") var aiChatWorkingDirectory: String = ""
