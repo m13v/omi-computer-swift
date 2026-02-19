@@ -99,7 +99,9 @@ actor ClaudeAgentBridge {
         // Ensure all child Node.js processes (SDK subprocess, MCP servers) also run
         // with --jitless. The bundled node binary crashes with SIGTRAP without it
         // because V8 JIT fails on the code-signed binary.
-        env["NODE_OPTIONS"] = "--jitless"
+        // Note: do NOT set NODE_OPTIONS=--jitless here. While --jitless is needed
+        // for the bridge process itself (passed via proc.arguments), the Claude Code
+        // CLI subprocess needs WebAssembly for Node.js fetch (undici/llhttp).
         // Enable debug output from Claude Code SDK subprocess
         env["DEBUG_CLAUDE_AGENT_SDK"] = "1"
         // Ensure the directory containing node is in PATH so child processes (e.g. claude-agent-sdk) can find it
