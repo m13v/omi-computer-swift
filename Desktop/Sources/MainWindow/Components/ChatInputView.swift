@@ -21,7 +21,7 @@ struct ChatInputView: View {
 
     @AppStorage("askModeEnabled") private var askModeEnabled = false
     @Environment(\.fontScale) private var fontScale
-    @State private var inputText = ""
+    @Binding var inputText: String
 
     private var hasText: Bool {
         !inputText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
