@@ -289,7 +289,11 @@ actor ClaudeAgentBridge {
         guard let pipe = stdinPipe else { return }
         let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
         if let data = (trimmed + "\n").data(using: .utf8) {
-            pipe.fileHandleForWriting.write(data)
+            do {
+                try pipe.fileHandleForWriting.write(contentsOf: data)
+            } catch {
+                log("ClaudeAgentBridge: Failed to write to stdin pipe: \(error.localizedDescription)")
+            }
         }
     }
 
