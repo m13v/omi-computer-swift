@@ -1644,7 +1644,7 @@ class ChatProvider: ObservableObject {
             AnalyticsManager.shared.chatAgentError(error: error.localizedDescription)
 
             // Show error to user (unless they intentionally stopped)
-            if let bridgeError = error as? BridgeError, bridgeError == .stopped {
+            if let bridgeError = error as? BridgeError, case .stopped = bridgeError {
                 // User stopped — no error to show
             } else {
                 errorMessage = error.localizedDescription
