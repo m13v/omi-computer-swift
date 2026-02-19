@@ -120,6 +120,31 @@ struct OnboardingView: View {
                 log("OnboardingView onAppear: on permissions step, checking all permissions immediately")
                 appState.checkAllPermissions()
             }
+
+            // Handle relaunch case: if app restarts on step 4 or 5, the background scan task is lost.
+            // Re-launch it if scanning hasn't completed yet, or restore file count if it has.
+            if (currentStep == 4 || currentStep == 5) && backgroundScanTask == nil && !fileIndexingSkipped {
+                let alreadyCompleted = UserDefaults.standard.bool(forKey: "hasCompletedFileIndexing")
+                if alreadyCompleted {
+                    // Scan finished before restart — restore file count from DB
+                    log("OnboardingView onAppear: file indexing already completed, restoring count")
+                    Task {
+                        let count = await FileIndexerService.shared.getIndexedFileCount()
+                        await MainActor.run {
+                            totalFilesScanned = count
+                        }
+                        // If chat is empty, re-start the exploration chat
+                        if chatProvider.messages.isEmpty {
+                            log("OnboardingView onAppear: chat empty after restart, re-starting exploration")
+                            await startExplorationChat()
+                        }
+                    }
+                } else {
+                    // Scan was interrupted — re-launch the full pipeline
+                    log("OnboardingView onAppear: scan interrupted by restart, re-launching background indexing")
+                    startBackgroundFileIndexing()
+                }
+            }
         }
     }
 
