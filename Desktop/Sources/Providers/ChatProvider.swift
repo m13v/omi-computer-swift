@@ -1372,7 +1372,7 @@ class ChatProvider: ObservableObject {
     /// - Parameters:
     ///   - text: The message text
     ///   - model: Optional model override for this query (e.g. "claude-sonnet-4-5-20250929" for floating bar)
-    func sendMessage(_ text: String, model: String? = nil) async {
+    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
@@ -1409,40 +1409,42 @@ class ChatProvider: ObservableObject {
         isSending = true
         errorMessage = nil
 
-        // Save user message to backend (fire and forget - don't block UI)
+        // Save user message to backend and add to UI
+        // (skip for follow-ups — sendFollowUp already did both)
         let userMessageId = UUID().uuidString
         let isFirstMessage = messages.isEmpty
         let capturedSessionId = sessionId
         let capturedAppId = overrideAppId ?? selectedAppId
-        Task { [weak self] in
-            do {
-                let response = try await APIClient.shared.saveMessage(
-                    text: trimmedText,
-                    sender: "human",
-                    appId: capturedAppId,
-                    sessionId: capturedSessionId
-                )
-                // Sync local message ID with server ID
-                await MainActor.run {
-                    if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
-                        self?.messages[index].id = response.id
-                        self?.messages[index].isSynced = true
+        if !isFollowUp {
+            Task { [weak self] in
+                do {
+                    let response = try await APIClient.shared.saveMessage(
+                        text: trimmedText,
+                        sender: "human",
+                        appId: capturedAppId,
+                        sessionId: capturedSessionId
+                    )
+                    // Sync local message ID with server ID
+                    await MainActor.run {
+                        if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
+                            self?.messages[index].id = response.id
+                            self?.messages[index].isSynced = true
+                        }
                     }
+                    log("Saved user message to backend: \(response.id)")
+                } catch {
+                    logError("Failed to persist user message", error: error)
+                    // Non-critical - continue with chat
                 }
-                log("Saved user message to backend: \(response.id)")
-            } catch {
-                logError("Failed to persist user message", error: error)
-                // Non-critical - continue with chat
             }
-        }
 
-        // Add user message to UI
-        let userMessage = ChatMessage(
-            id: userMessageId,
-            text: trimmedText,
-            sender: .user
-        )
-        messages.append(userMessage)
+            let userMessage = ChatMessage(
+                id: userMessageId,
+                text: trimmedText,
+                sender: .user
+            )
+            messages.append(userMessage)
+        }
 
         // Create placeholder AI message
         let aiMessageId = UUID().uuidString
@@ -1658,7 +1660,7 @@ class ChatProvider: ObservableObject {
         if let followUp = pendingFollowUpText {
             pendingFollowUpText = nil
             log("ChatProvider: chaining follow-up query")
-            await sendMessage(followUp)
+            await sendMessage(followUp, isFollowUp: true)
         }
     }
 
