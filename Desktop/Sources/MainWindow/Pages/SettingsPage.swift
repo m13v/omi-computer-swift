@@ -7,38 +7,50 @@ struct SettingsPage: View {
     @ObservedObject var appState: AppState
     @Binding var selectedSection: SettingsContentView.SettingsSection
     @Binding var selectedAdvancedSubsection: SettingsContentView.AdvancedSubsection?
+    @Binding var highlightedSettingId: String?
     var chatProvider: ChatProvider? = nil
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Section header
-                HStack {
-                    Text(selectedSection == .advanced && selectedAdvancedSubsection != nil
-                         ? selectedAdvancedSubsection!.rawValue
-                         : selectedSection.rawValue)
-                        .scaledFont(size: 28, weight: .bold)
-                        .foregroundColor(OmiColors.textPrimary)
-                        .id(selectedSection)
-                        .transition(.opacity)
-                        .animation(.easeInOut(duration: 0.15), value: selectedSection)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(spacing: 0) {
+                    // Section header
+                    HStack {
+                        Text(selectedSection == .advanced && selectedAdvancedSubsection != nil
+                             ? selectedAdvancedSubsection!.rawValue
+                             : selectedSection.rawValue)
+                            .scaledFont(size: 28, weight: .bold)
+                            .foregroundColor(OmiColors.textPrimary)
+                            .id(selectedSection)
+                            .transition(.opacity)
+                            .animation(.easeInOut(duration: 0.15), value: selectedSection)
+
+                        Spacer()
+                    }
+                    .padding(.horizontal, 32)
+                    .padding(.top, 32)
+                    .padding(.bottom, 24)
+
+                    // Settings content - embedded SettingsView with dark theme override
+                    SettingsContentView(
+                        appState: appState,
+                        selectedSection: $selectedSection,
+                        selectedAdvancedSubsection: $selectedAdvancedSubsection,
+                        highlightedSettingId: $highlightedSettingId,
+                        chatProvider: chatProvider
+                    )
+                    .padding(.horizontal, 32)
 
                     Spacer()
                 }
-                .padding(.horizontal, 32)
-                .padding(.top, 32)
-                .padding(.bottom, 24)
-
-                // Settings content - embedded SettingsView with dark theme override
-                SettingsContentView(
-                    appState: appState,
-                    selectedSection: $selectedSection,
-                    selectedAdvancedSubsection: $selectedAdvancedSubsection,
-                    chatProvider: chatProvider
-                )
-                .padding(.horizontal, 32)
-
-                Spacer()
+            }
+            .onChange(of: highlightedSettingId) { _, newId in
+                guard let newId = newId else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(newId, anchor: .center)
+                    }
+                }
             }
         }
         .background(OmiColors.backgroundSecondary.opacity(0.3))
@@ -137,6 +149,7 @@ struct SettingsContentView: View {
     // Selected section (passed in from parent)
     @Binding var selectedSection: SettingsSection
     @Binding var selectedAdvancedSubsection: AdvancedSubsection?
+    @Binding var highlightedSettingId: String?
 
     // Notification settings (from backend)
     @State private var dailySummaryEnabled: Bool = true
@@ -257,11 +270,13 @@ struct SettingsContentView: View {
         appState: AppState,
         selectedSection: Binding<SettingsSection>,
         selectedAdvancedSubsection: Binding<AdvancedSubsection?>,
+        highlightedSettingId: Binding<String?> = .constant(nil),
         chatProvider: ChatProvider? = nil
     ) {
         self.appState = appState
         self._selectedSection = selectedSection
         self._selectedAdvancedSubsection = selectedAdvancedSubsection
+        self._highlightedSettingId = highlightedSettingId
         self.chatProvider = chatProvider
         let settings = AssistantSettings.shared
         _isMonitoring = State(initialValue: ProactiveAssistantsPlugin.shared.isMonitoring)
