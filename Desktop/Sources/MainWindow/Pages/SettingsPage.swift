@@ -1695,16 +1695,11 @@ struct SettingsContentView: View {
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
-                            .onChange(of: playwrightUseExtension) { _, enabled in
-                                if enabled {
-                                    ClaudeAgentBridge.ensureChromeExtensionInstalled()
-                                } else {
-                                    ClaudeAgentBridge.removeChromeExtensionPolicy()
-                                }
+                            .onChange(of: playwrightUseExtension) { _, _ in
                             }
                     }
 
-                    Text("Lets the AI use your Chrome browser with all your logged-in sessions. The extension is auto-installed when Chrome restarts.")
+                    Text("Lets the AI use your Chrome browser with all your logged-in sessions.")
                         .scaledFont(size: 12)
                         .foregroundColor(OmiColors.textTertiary)
 
