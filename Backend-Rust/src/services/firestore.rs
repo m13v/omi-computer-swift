@@ -5486,6 +5486,9 @@ impl FirestoreService {
         );
 
         let mut fields = json!({
+            // CRITICAL: id field required - Python ChatSession model requires it
+            // and chat.py accesses chat_session['id'] directly
+            "id": {"stringValue": &session_id},
             "title": {"stringValue": title.unwrap_or("New Chat")},
             "created_at": {"timestampValue": now.to_rfc3339()},
             "updated_at": {"timestampValue": now.to_rfc3339()},
