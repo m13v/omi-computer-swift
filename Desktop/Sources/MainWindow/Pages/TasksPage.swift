@@ -929,6 +929,10 @@ class TasksViewModel: ObservableObject {
             guard let taskId = keyboardSelectedTaskId ?? hoveredTaskId,
                   findTask(taskId) != nil else { return false }
             animateToggleTaskId = taskId
+            // Reset so pressing space on the same task again triggers onChange
+            DispatchQueue.main.async { [weak self] in
+                self?.animateToggleTaskId = nil
+            }
             return true
         }
 
@@ -2863,6 +2867,7 @@ struct TasksPage: View {
                                         viewModel.isAnyTaskEditing = editing
                                         if !editing { viewModel.editingTaskId = nil }
                                     },
+                                    animateToggleTaskId: viewModel.animateToggleTaskId,
                                     isInlineCreating: viewModel.isInlineCreating,
                                     inlineCreateAfterTaskId: viewModel.inlineCreateAfterTaskId,
                                     inlineCreateText: $inlineCreateText,
@@ -2900,7 +2905,8 @@ struct TasksPage: View {
                                     onEditingChanged: { editing in
                                         viewModel.isAnyTaskEditing = editing
                                         if !editing { viewModel.editingTaskId = nil }
-                                    }
+                                    },
+                                    animateToggleTaskId: viewModel.animateToggleTaskId
                                 )
                                 .id(task.id)
 
@@ -3015,6 +3021,9 @@ struct TaskCategorySection: View {
     var editingTaskId: String?
     var onEditingChanged: ((Bool) -> Void)?
 
+    // Space-key animated toggle
+    var animateToggleTaskId: String?
+
     // Inline creation support
     var isInlineCreating: Bool = false
     var inlineCreateAfterTaskId: String?
@@ -3078,7 +3087,8 @@ struct TaskCategorySection: View {
                                 activeChatTaskId: activeChatTaskId,
                                 chatCoordinator: chatCoordinator,
                                 editingTaskId: editingTaskId,
-                                onEditingChanged: onEditingChanged
+                                onEditingChanged: onEditingChanged,
+                                animateToggleTaskId: animateToggleTaskId
                             )
                             .id(task.id)
                             .modifier(TaskDragDropModifier(
@@ -3245,6 +3255,9 @@ struct TaskRow: View {
     // Edit mode support (external trigger from keyboard navigation)
     var editingTaskId: String?
     var onEditingChanged: ((Bool) -> Void)?
+
+    // Space-key animated toggle (set by parent when space is pressed)
+    var animateToggleTaskId: String?
 
     @State private var isHovering = false
     @State private var isCompletingAnimation = false
@@ -3760,6 +3773,11 @@ struct TaskRow: View {
             rowOffset = 0
             isCompletingAnimation = false
             checkmarkScale = 1.0
+        }
+        .onChange(of: animateToggleTaskId) { _, newValue in
+            if newValue == task.id {
+                handleToggle()
+            }
         }
         .onHover { hovering in
             isHovering = hovering
