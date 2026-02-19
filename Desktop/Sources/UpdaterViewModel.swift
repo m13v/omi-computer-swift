@@ -8,26 +8,28 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
     /// Back-reference to the view model (set after init)
     weak var viewModel: UpdaterViewModel?
 
+    // NOTE: All delegate methods use logSync() to write synchronously to disk.
+    // Sparkle may terminate the app immediately after willInstallUpdate / didAbortWithError,
+    // so async logging (Task + logQueue.async) would be lost.
+
     /// Called when Sparkle is about to check for updates (permission gate)
     func updater(_ updater: SPUUpdater, mayPerform check: SPUUpdateCheck) throws {
+        logSync("Sparkle: Starting update check")
         Task { @MainActor in
-            log("Sparkle: Starting update check")
             AnalyticsManager.shared.updateCheckStarted()
         }
     }
 
     /// Called when Sparkle finishes loading the appcast
     func updater(_ updater: SPUUpdater, didFinishLoading appcast: SUAppcast) {
-        Task { @MainActor in
-            log("Sparkle: Appcast loaded (\(appcast.items.count) items)")
-        }
+        logSync("Sparkle: Appcast loaded (\(appcast.items.count) items)")
     }
 
     /// Called when Sparkle finds a valid update
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
+        logSync("Sparkle: Found update v\(version)")
         Task { @MainActor in
-            log("Sparkle: Found update v\(version)")
             AnalyticsManager.shared.updateAvailable(version: version)
             self.viewModel?.updateAvailable = true
             self.viewModel?.availableVersion = version
@@ -36,8 +38,8 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
     /// Called when no update is available
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        logSync("Sparkle: No update available")
         Task { @MainActor in
-            log("Sparkle: No update available")
             AnalyticsManager.shared.updateNotFound()
             self.viewModel?.updateAvailable = false
         }
@@ -51,21 +53,21 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         let nsError = error as NSError
         let isUpToDate = nsError.domain == SUSparkleErrorDomain
             && nsError.code == 1001 /* SUNoUpdateError */
-        Task { @MainActor in
-            if isUpToDate {
-                log("Sparkle: Already up to date")
-            } else {
-                log("Sparkle: Update check failed - \(message)")
+        if isUpToDate {
+            logSync("Sparkle: Already up to date")
+        } else {
+            logSync("Sparkle: Update check failed - \(message)")
+            Task { @MainActor in
                 AnalyticsManager.shared.updateCheckFailed(error: message)
             }
         }
     }
 
-    /// Called when an update will be installed
+    /// Called when an update will be installed (app may terminate immediately after)
     func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
+        logSync("Sparkle: Installing update v\(version)")
         Task { @MainActor in
-            log("Sparkle: Installing update v\(version)")
             AnalyticsManager.shared.updateInstalled(version: version)
             self.viewModel?.updateAvailable = false
         }
