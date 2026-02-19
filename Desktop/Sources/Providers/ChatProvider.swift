@@ -1369,12 +1369,13 @@ class ChatProvider: ObservableObject {
                             toolNames.append(name)
                             toolStartTimes[name] = Date()
 
-                            // Detect browser tool calls without extension token
+                            // Detect browser tool calls without extension token — abort query and prompt setup
                             if (name.contains("browser") || name.contains("playwright")) {
                                 let token = UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? ""
                                 if token.isEmpty {
-                                    log("ChatProvider: Browser tool \(name) called without extension token — prompting setup")
+                                    log("ChatProvider: Browser tool \(name) called without extension token — aborting query and prompting setup")
                                     self?.needsBrowserExtensionSetup = true
+                                    self?.stopAgent()
                                 }
                             }
                         } else if status == "completed", let startTime = toolStartTimes.removeValue(forKey: name) {
