@@ -13,15 +13,29 @@ private let dateFormatter: DateFormatter = {
 private func appendToLogFile(_ line: String) {
     guard let data = (line + "\n").data(using: .utf8) else { return }
     logQueue.async {
-        if FileManager.default.fileExists(atPath: logFile) {
-            if let handle = FileHandle(forWritingAtPath: logFile) {
-                handle.seekToEndOfFile()
-                handle.write(data)
-                handle.closeFile()
-            }
-        } else {
-            FileManager.default.createFile(atPath: logFile, contents: data)
+        writeToLogFile(data)
+    }
+}
+
+/// Append data to the log file synchronously (blocks caller until written).
+/// Use for critical events that must survive imminent app termination (e.g. Sparkle updates).
+private func appendToLogFileSync(_ line: String) {
+    guard let data = (line + "\n").data(using: .utf8) else { return }
+    logQueue.sync {
+        writeToLogFile(data)
+    }
+}
+
+/// Shared file-write implementation (must be called on logQueue)
+private func writeToLogFile(_ data: Data) {
+    if FileManager.default.fileExists(atPath: logFile) {
+        if let handle = FileHandle(forWritingAtPath: logFile) {
+            handle.seekToEndOfFile()
+            handle.write(data)
+            handle.closeFile()
         }
+    } else {
+        FileManager.default.createFile(atPath: logFile, contents: data)
     }
 }
 
