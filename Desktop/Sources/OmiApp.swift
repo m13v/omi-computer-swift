@@ -188,6 +188,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let urlTag = event.tags?["url"], urlTag.contains("m13v.com") {
                     return nil
                 }
+                // Filter out NSURLErrorCancelled (-999) — these are intentional cancellations
+                // (e.g. proactive assistants cancelling in-flight Gemini requests on context switch)
+                if let exceptions = event.exceptions, exceptions.contains(where: { exc in
+                    exc.type == "NSURLErrorDomain" && exc.value?.contains("Code=-999") == true ||
+                    exc.type == "NSURLErrorDomain" && exc.value?.contains("Code: -999") == true
+                }) {
+                    return nil
+                }
                 return event
             }
         }
