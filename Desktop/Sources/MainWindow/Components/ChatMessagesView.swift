@@ -257,6 +257,24 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                         shouldFollowContent = true
                     }
                 }
+                .background(
+                    UserScrollDetector {
+                        guard !isSettlingAfterAppear else { return }
+                        // Immediately break out of follow mode — no delay
+                        shouldFollowContent = false
+                        userIsScrolling = true
+                        // Cancel any pending programmatic scroll
+                        scrollThrottleWorkItem?.cancel()
+                        scrollThrottleWorkItem = nil
+                        // Clear the scrolling flag after a short idle period
+                        userScrollEndWorkItem?.cancel()
+                        let endWork = DispatchWorkItem {
+                            userIsScrolling = false
+                        }
+                        userScrollEndWorkItem = endWork
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: endWork)
+                    }
+                )
                 .onAppear {
                     // Suppress scroll-detection false positives while content settles
                     isSettlingAfterAppear = true
@@ -300,6 +318,8 @@ struct ChatMessagesView<WelcomeContent: View>: View {
     }
 
     private func scrollToBottom(proxy: ScrollViewProxy) {
+        // Don't fight the user — skip if they're actively scrolling up
+        guard !userIsScrolling else { return }
         if let lastMessage = messages.last {
             isProgrammaticScroll = true
             proxy.scrollTo(lastMessage.id, anchor: .bottom)
@@ -315,6 +335,7 @@ struct ChatMessagesView<WelcomeContent: View>: View {
     /// This prevents the scroll → notify → state update → re-render → scroll
     /// feedback loop from saturating the main thread.
     private func throttledScrollToBottom(proxy: ScrollViewProxy) {
+        guard !userIsScrolling else { return }
         // Cancel any pending scroll — we'll schedule a fresh one
         scrollThrottleWorkItem?.cancel()
         let workItem = DispatchWorkItem { [self] in
