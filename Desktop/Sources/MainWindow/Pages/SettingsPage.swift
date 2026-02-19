@@ -201,9 +201,14 @@ struct SettingsContentView: View {
     // AI Chat settings
     @AppStorage("askModeEnabled") private var askModeEnabled = false
     @AppStorage("claudeMdEnabled") private var claudeMdEnabled = true
+    @AppStorage("projectClaudeMdEnabled") private var projectClaudeMdEnabled = true
+    @AppStorage("aiChatWorkingDirectory") private var aiChatWorkingDirectory: String = ""
     @State private var aiChatClaudeMdContent: String?
     @State private var aiChatClaudeMdPath: String?
+    @State private var aiChatProjectClaudeMdContent: String?
+    @State private var aiChatProjectClaudeMdPath: String?
     @State private var aiChatDiscoveredSkills: [(name: String, description: String, path: String)] = []
+    @State private var aiChatProjectDiscoveredSkills: [(name: String, description: String, path: String)] = []
     @State private var aiChatEnabledSkills: Set<String> = []
     @State private var showFileViewer = false
     @State private var fileViewerContent = ""
