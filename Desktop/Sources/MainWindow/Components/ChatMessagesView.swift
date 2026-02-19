@@ -251,11 +251,6 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                         throttledScrollToBottom(proxy: proxy)
                     }
                 }
-                .onChange(of: messages.last?.contentBlocks.count) { _, _ in
-                    if shouldFollowContent {
-                        throttledScrollToBottom(proxy: proxy)
-                    }
-                }
                 .onChange(of: isSending) { oldValue, newValue in
                     // When streaming starts, follow if we're at/near bottom
                     if newValue && !oldValue && isUserAtBottom {
