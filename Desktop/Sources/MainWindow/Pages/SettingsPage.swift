@@ -638,7 +638,7 @@ struct SettingsContentView: View {
     private var rewindSection: some View {
         VStack(spacing: 20) {
             // Storage Stats
-            settingsCard {
+            settingsCard(settingId: "rewind.storage") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "internaldrive.fill")
@@ -670,7 +670,7 @@ struct SettingsContentView: View {
             }
 
             // Excluded Apps
-            settingsCard {
+            settingsCard(settingId: "rewind.excludedapps") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "eye.slash.fill")
@@ -741,7 +741,7 @@ struct SettingsContentView: View {
             }
 
             // Battery Settings
-            settingsCard {
+            settingsCard(settingId: "rewind.battery") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "battery.75percent")
@@ -768,7 +768,7 @@ struct SettingsContentView: View {
             }
 
             // Retention Settings
-            settingsCard {
+            settingsCard(settingId: "rewind.retention") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "clock.fill")
@@ -806,7 +806,7 @@ struct SettingsContentView: View {
     private var transcriptionSection: some View {
         VStack(spacing: 20) {
             // Language Mode
-            settingsCard {
+            settingsCard(settingId: "transcription.languagemode") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "globe")
@@ -935,7 +935,7 @@ struct SettingsContentView: View {
             }
 
             // Custom Vocabulary
-            settingsCard {
+            settingsCard(settingId: "transcription.vocabulary") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "text.book.closed")
@@ -1068,7 +1068,7 @@ struct SettingsContentView: View {
     private var notificationsSection: some View {
         VStack(spacing: 20) {
             // Notifications
-            settingsCard {
+            settingsCard(settingId: "notifications.settings") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "bell.badge.fill")
@@ -1097,7 +1097,7 @@ struct SettingsContentView: View {
                         Divider()
                             .background(OmiColors.backgroundQuaternary)
 
-                        settingRow(title: "Frequency", subtitle: "How often to receive notifications") {
+                        settingRow(title: "Frequency", subtitle: "How often to receive notifications", settingId: "notifications.frequency") {
                             Picker("", selection: $notificationFrequency) {
                                 ForEach(frequencyOptions, id: \.0) { option in
                                     Text(option.1).tag(option.0)
@@ -1110,7 +1110,7 @@ struct SettingsContentView: View {
                             }
                         }
 
-                        settingRow(title: "Focus Notifications", subtitle: "Show notification on focus changes") {
+                        settingRow(title: "Focus Notifications", subtitle: "Show notification on focus changes", settingId: "notifications.focus") {
                             Toggle("", isOn: $focusNotificationsEnabled)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
@@ -1120,7 +1120,7 @@ struct SettingsContentView: View {
                                 }
                         }
 
-                        settingRow(title: "Task Notifications", subtitle: "Show notification when a task is extracted") {
+                        settingRow(title: "Task Notifications", subtitle: "Show notification when a task is extracted", settingId: "notifications.task") {
                             Toggle("", isOn: $taskNotificationsEnabled)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
@@ -1130,7 +1130,7 @@ struct SettingsContentView: View {
                                 }
                         }
 
-                        settingRow(title: "Advice Notifications", subtitle: "Show notification when advice is generated") {
+                        settingRow(title: "Advice Notifications", subtitle: "Show notification when advice is generated", settingId: "notifications.advice") {
                             Toggle("", isOn: $adviceNotificationsEnabled)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
@@ -1154,7 +1154,7 @@ struct SettingsContentView: View {
             }
 
             // Daily Summary
-            settingsCard {
+            settingsCard(settingId: "notifications.dailysummary") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "text.badge.checkmark")
@@ -1207,7 +1207,7 @@ struct SettingsContentView: View {
     private var privacySection: some View {
         VStack(spacing: 16) {
             // Data Controls
-            settingsCard {
+            settingsCard(settingId: "privacy.storerecordings") {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack {
                         Image(systemName: "mic.fill")
@@ -1269,7 +1269,7 @@ struct SettingsContentView: View {
             }
 
             // Encryption
-            settingsCard {
+            settingsCard(settingId: "privacy.encryption") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack(spacing: 10) {
                         Image(systemName: "shield.lefthalf.filled")
@@ -1330,7 +1330,7 @@ struct SettingsContentView: View {
             }
 
             // What We Track
-            settingsCard {
+            settingsCard(settingId: "privacy.tracking") {
                 VStack(alignment: .leading, spacing: 0) {
                     Button(action: {
                         withAnimation(.easeInOut(duration: 0.2)) {
@@ -1379,7 +1379,7 @@ struct SettingsContentView: View {
             }
 
             // Privacy Guarantees
-            settingsCard {
+            settingsCard(settingId: "privacy.privacy") {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
                         Image(systemName: "hand.raised.fill")
