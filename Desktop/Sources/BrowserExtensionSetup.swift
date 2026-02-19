@@ -24,8 +24,10 @@ struct BrowserExtensionSetup: View {
     @State private var isVerifying = false
     @State private var verifyError: String? = nil
     @State private var verifySuccess = false
-    @State private var step1Done = false
-    @State private var step2Done = false
+    @State private var chromeInstalled = false
+    @State private var extensionStepDone = false
+    @State private var tokenStepDone = false
+    @State private var chromeCheckTimer: Timer? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -144,67 +146,100 @@ struct BrowserExtensionSetup: View {
                 .scaledFont(size: 20, weight: .semibold)
                 .foregroundColor(OmiColors.textPrimary)
 
-            // Step 1: Install extension from Chrome Web Store
+            // Step 1: Install Chrome
             HStack(alignment: .top, spacing: 12) {
-                stepBadge("1", done: step1Done)
+                stepBadge("1", done: chromeInstalled)
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(chromeInstalled ? "Google Chrome is installed" : "Install Google Chrome")
+                        .scaledFont(size: 13, weight: .medium)
+                        .foregroundColor(chromeInstalled ? OmiColors.textTertiary : OmiColors.textPrimary)
+
+                    if !chromeInstalled {
+                        Button(action: {
+                            if let url = URL(string: "https://www.google.com/chrome/") {
+                                NSWorkspace.shared.open(url)
+                            }
+                            startChromeCheckTimer()
+                        }) {
+                            HStack(spacing: 5) {
+                                Image(systemName: "arrow.down.circle")
+                                    .scaledFont(size: 11)
+                                Text("Download Chrome")
+                                    .scaledFont(size: 12)
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 40)
+
+            // Step 2: Install extension from Chrome Web Store
+            HStack(alignment: .top, spacing: 12) {
+                stepBadge("2", done: extensionStepDone)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Install the extension from Chrome Web Store")
                         .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(step1Done ? OmiColors.textTertiary : OmiColors.textPrimary)
+                        .foregroundColor(extensionStepDone ? OmiColors.textTertiary : OmiColors.textPrimary)
 
                     Button(action: {
                         Self.openURLInChrome(Self.chromeWebStoreURL)
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            step1Done = true
+                            extensionStepDone = true
                         }
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: step1Done ? "checkmark" : "arrow.up.right.square")
+                            Image(systemName: extensionStepDone ? "checkmark" : "arrow.up.right.square")
                                 .scaledFont(size: 11)
-                            Text(step1Done ? "Opened" : "Add to Chrome")
+                            Text(extensionStepDone ? "Opened" : "Add to Chrome")
                                 .scaledFont(size: 12)
                         }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .disabled(!chromeInstalled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 40)
 
-            // Step 2: Open extension settings & copy token
+            // Step 3: Open extension settings & copy token
             HStack(alignment: .top, spacing: 12) {
-                stepBadge("2", done: step2Done)
+                stepBadge("3", done: tokenStepDone)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Open the extension and copy the auth token")
                         .scaledFont(size: 13, weight: .medium)
-                        .foregroundColor(step2Done ? OmiColors.textTertiary : OmiColors.textPrimary)
+                        .foregroundColor(tokenStepDone ? OmiColors.textTertiary : OmiColors.textPrimary)
 
                     Button(action: {
                         Self.openExtensionInChrome()
                         withAnimation(.easeInOut(duration: 0.2)) {
-                            step2Done = true
+                            tokenStepDone = true
                         }
                     }) {
                         HStack(spacing: 5) {
-                            Image(systemName: step2Done ? "checkmark" : "key")
+                            Image(systemName: tokenStepDone ? "checkmark" : "key")
                                 .scaledFont(size: 11)
-                            Text(step2Done ? "Opened" : "Open Extension Settings")
+                            Text(tokenStepDone ? "Opened" : "Open Extension Settings")
                                 .scaledFont(size: 12)
                         }
                     }
                     .buttonStyle(.bordered)
                     .controlSize(.small)
+                    .disabled(!chromeInstalled)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 40)
 
-            // Step 3: Paste token
+            // Step 4: Paste token
             HStack(alignment: .top, spacing: 12) {
-                stepBadge("3", done: isTokenValid)
+                stepBadge("4", done: isTokenValid)
 
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Paste it here")
@@ -229,6 +264,7 @@ struct BrowserExtensionSetup: View {
                                         )
                                 )
                         )
+                        .disabled(!chromeInstalled)
                         .onChange(of: tokenInput) { _, _ in
                             tokenError = nil
                         }
@@ -244,6 +280,13 @@ struct BrowserExtensionSetup: View {
             .padding(.horizontal, 40)
         }
         .padding(.horizontal, 20)
+        .onAppear {
+            chromeInstalled = Self.isChromeInstalled
+        }
+        .onDisappear {
+            chromeCheckTimer?.invalidate()
+            chromeCheckTimer = nil
+        }
     }
 
     private var verifyPhase: some View {
@@ -378,6 +421,11 @@ struct BrowserExtensionSetup: View {
         return nil
     }
 
+    /// Check if Google Chrome is installed.
+    static var isChromeInstalled: Bool {
+        FileManager.default.fileExists(atPath: "/Applications/Google Chrome.app")
+    }
+
     /// Open a URL explicitly in Chrome (not the default browser).
     static func openURLInChrome(_ urlString: String) {
         guard let url = URL(string: urlString) else { return }
@@ -398,6 +446,20 @@ struct BrowserExtensionSetup: View {
     /// Open the extension status page in Chrome.
     static func openExtensionInChrome() {
         openURLInChrome("chrome-extension://mmlmfjhmonkocbjadbfplnigmagldckm/status.html")
+    }
+
+    /// Poll every 2 seconds to detect Chrome installation.
+    private func startChromeCheckTimer() {
+        guard chromeCheckTimer == nil else { return }
+        chromeCheckTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { _ in
+            if Self.isChromeInstalled {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    chromeInstalled = true
+                }
+                chromeCheckTimer?.invalidate()
+                chromeCheckTimer = nil
+            }
+        }
     }
 
     private func dismissSheet() {
