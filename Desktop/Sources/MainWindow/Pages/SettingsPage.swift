@@ -2068,7 +2068,7 @@ struct SettingsContentView: View {
     }
 
     private func loadEnabledSkills() {
-        let json = UserDefaults.standard.string(forKey: "enabledSkillsJSON") ?? "[]"
+        let json = UserDefaults.standard.string(forKey: "enabledSkillsJSON") ?? ""
         guard let data = json.data(using: .utf8),
               let names = try? JSONDecoder().decode([String].self, from: data) else {
             // Default: all skills enabled (global + project)
