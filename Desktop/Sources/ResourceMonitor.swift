@@ -281,19 +281,29 @@ class ResourceMonitor {
     private func triggerMemoryRemediation() {
         log("ResourceMonitor: Triggering memory remediation — flushing video encoder and clearing assistant pending work")
 
-        // Flush VideoChunkEncoder to release ffmpeg process + H.265 hardware encoder context
-        Task {
-            _ = try? await VideoChunkEncoder.shared.flushCurrentChunk()
-        }
+        let memoryBefore = getMemoryFootprintMB()
 
         // Clear queued frames in assistant coordinator
         AssistantCoordinator.shared.clearAllPendingWork()
+
+        Task {
+            // Flush VideoChunkEncoder and await completion
+            _ = try? await VideoChunkEncoder.shared.flushCurrentChunk()
+
+            // Clear focus assistant pending tasks specifically
+            if let focusAssistant = ProactiveAssistantsPlugin.shared.currentFocusAssistant {
+                await focusAssistant.clearPendingWork()
+            }
+
+            let memoryAfter = await MainActor.run { self.getMemoryFootprintMB() }
+            log("ResourceMonitor: Memory remediation completed — \(memoryBefore)MB -> \(memoryAfter)MB")
+        }
 
         if !isDevBuild {
             let breadcrumb = Breadcrumb(level: .warning, category: "memory_remediation")
             breadcrumb.message = "Memory remediation triggered at critical threshold"
             breadcrumb.data = [
-                "memory_footprint_mb": getMemoryFootprintMB(),
+                "memory_footprint_mb": memoryBefore,
                 "threshold_mb": memoryCriticalThreshold
             ]
             SentrySDK.addBreadcrumb(breadcrumb)
