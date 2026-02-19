@@ -1341,17 +1341,25 @@ class ChatProvider: ObservableObject {
         )
         messages.append(userMessage)
 
-        // Persist to backend (fire-and-forget)
+        // Persist to backend and sync server ID back to prevent poll duplicates
         let capturedSessionId = isInDefaultChat ? nil : currentSessionId
         let capturedAppId = overrideAppId ?? selectedAppId
-        Task {
+        let localId = userMessage.id
+        Task { [weak self] in
             do {
-                _ = try await APIClient.shared.saveMessage(
+                let response = try await APIClient.shared.saveMessage(
                     text: trimmedText,
                     sender: "human",
                     appId: capturedAppId,
                     sessionId: capturedSessionId
                 )
+                await MainActor.run {
+                    if let index = self?.messages.firstIndex(where: { $0.id == localId }) {
+                        self?.messages[index].id = response.id
+                        self?.messages[index].isSynced = true
+                    }
+                }
+                log("Saved follow-up message to backend: \(response.id)")
             } catch {
                 logError("Failed to persist follow-up message", error: error)
             }
