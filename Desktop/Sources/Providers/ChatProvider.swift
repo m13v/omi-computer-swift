@@ -1371,6 +1371,14 @@ class ChatProvider: ObservableObject {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
+        // Guard against concurrent sendMessage calls.
+        // The bridge uses a single message continuation, so concurrent queries
+        // would cause responses to be consumed by the wrong caller.
+        guard !isSending else {
+            log("ChatProvider: sendMessage called while already sending, ignoring")
+            return
+        }
+
         // Ensure bridge is running
         guard await ensureBridgeStarted() else {
             errorMessage = "AI not available"
@@ -1527,14 +1535,17 @@ class ChatProvider: ObservableObject {
                 completeRemainingToolCalls(messageId: aiMessageId)
             } else {
                 // Message no longer in memory (user switched away from this session).
-                // Still need to persist the response to the backend.
                 messageText = queryResult.text
-                log("Chat response arrived after session switch, persisting to backend only")
+                log("Chat response arrived after session switch")
             }
 
-            // Always save AI response to backend (even if the user navigated away)
+            // Verify the session hasn't changed before persisting.
+            // If the session switched, this response may contain content from the
+            // wrong conversation context (the bridge shares a single message pipe,
+            // so a concurrent query could have mixed responses).
+            let sessionStillActive = currentSessionId == capturedSessionId
             let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
-            if !textToSave.isEmpty {
+            if !textToSave.isEmpty, sessionStillActive {
                 do {
                     let toolMetadata = serializeToolCallMetadata(messageId: aiMessageId)
                     let response = try await APIClient.shared.saveMessage(
@@ -1552,6 +1563,8 @@ class ChatProvider: ObservableObject {
                 } catch {
                     logError("Failed to persist AI response", error: error)
                 }
+            } else if !textToSave.isEmpty {
+                log("Skipping AI response persistence — session changed (captured=\(capturedSessionId ?? "nil"), current=\(currentSessionId ?? "nil"))")
             }
 
             // Auto-generate title after first exchange (user message + AI response)
@@ -1592,9 +1605,12 @@ class ChatProvider: ObservableObject {
                     messages[index].isStreaming = false
                     completeRemainingToolCalls(messageId: aiMessageId)
                     log("Bridge error after partial response — keeping \(messages[index].text.count) chars of streamed text")
-                    // Still try to persist the partial response
+                    // Still try to persist the partial response (only if session hasn't changed)
                     let partialText = messages[index].text
                     let partialToolMetadata = self.serializeToolCallMetadata(messageId: aiMessageId)
+                    if currentSessionId != capturedSessionId {
+                        log("Skipping partial response persistence — session changed")
+                    } else {
                     Task { [weak self] in
                         do {
                             let response = try await APIClient.shared.saveMessage(
@@ -1615,6 +1631,7 @@ class ChatProvider: ObservableObject {
                             logError("Failed to persist partial AI response", error: error)
                         }
                     }
+                    } // else (session still active)
                 }
             }
 
