@@ -476,9 +476,22 @@ actor ClaudeAgentBridge {
 
     private func findNodeBinary() -> String? {
         // 1. Check bundled node binary in app resources (preferred — no external dependency)
-        if let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil),
-           FileManager.default.isExecutableFile(atPath: bundledNode) {
+        let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil)
+        if let bundledNode, FileManager.default.isExecutableFile(atPath: bundledNode) {
+            log("Bridge: Found bundled node at \(bundledNode)")
             return bundledNode
+        }
+        // Log why bundled node failed
+        let bundleURL = Bundle.resourceBundle.bundleURL.path
+        let mainBundleURL = Bundle.main.bundleURL.path
+        if let bundledNode {
+            log("Bridge: Bundled node at \(bundledNode) is not executable")
+        } else {
+            log("Bridge: No bundled node found in resourceBundle (\(bundleURL)), main bundle (\(mainBundleURL))")
+            // List what's actually in the resource bundle for debugging
+            if let contents = try? FileManager.default.contentsOfDirectory(atPath: bundleURL) {
+                log("Bridge: resourceBundle contents: \(contents.prefix(20))")
+            }
         }
 
         // 2. Fall back to system-installed node
@@ -490,9 +503,11 @@ actor ClaudeAgentBridge {
 
         for path in candidates {
             if FileManager.default.isExecutableFile(atPath: path) {
+                log("Bridge: Found system node at \(path)")
                 return path
             }
         }
+        log("Bridge: No system node found at \(candidates)")
 
         // 3. Check NVM installations (~/.nvm/versions/node/*)
         let home = FileManager.default.homeDirectoryForCurrentUser.path
@@ -505,6 +520,7 @@ actor ClaudeAgentBridge {
             for version in sorted {
                 let nodePath = (nvmDir as NSString).appendingPathComponent("\(version)/bin/node")
                 if FileManager.default.isExecutableFile(atPath: nodePath) {
+                    log("Bridge: Found NVM node at \(nodePath)")
                     return nodePath
                 }
             }
@@ -522,9 +538,11 @@ actor ClaudeAgentBridge {
         if let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines),
            !path.isEmpty,
            FileManager.default.isExecutableFile(atPath: path) {
+            log("Bridge: Found node via 'which' at \(path)")
             return path
         }
 
+        logError("Bridge: Node.js not found anywhere. Bundle: \(bundleURL), main: \(mainBundleURL)")
         return nil
     }
 
