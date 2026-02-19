@@ -653,7 +653,7 @@ struct ChatBubble: View {
                             Button(action: { isExpanded.toggle() }) {
                                 Text(isExpanded ? "Show less" : "Show more")
                                     .scaledFont(size: 11)
-                                    .foregroundColor(.white.opacity(0.5))
+                                    .foregroundColor(.white)
                             }
                             .buttonStyle(.plain)
                         }
