@@ -1,9 +1,10 @@
 {
   "releases": [
     {
-      "version": "0.9.7",
+      "version": "0.9.8",
       "date": "2026-02-19",
       "changes": [
+        "Fixed AI agent crash caused by JIT conflicts with code-signed Node.js binary",
         "Bundled Node.js: AI chat works out of the box on any Mac without Node.js installed",
         "Project workspace: set a project directory in Settings to use its CLAUDE.md and project-specific skills",
         "Task chat: chat about specific tasks with scoped AI conversations",
@@ -12,10 +13,16 @@
         "Faster file indexing with incremental scans that skip unchanged files",
         "Follow-up messages sync to backend, preventing duplicate messages in chat",
         "Memories deletion and undo works correctly across filters and search results",
-        "Fixed AI chat crash on macOS VMs and low-memory machines",
         "Fixed Tasks page hang when switching to multi-select mode",
         "Performance: mic capture, screenshots, battery checks, and date formatting moved off the main thread",
         "Fixed broken-pipe crashes and eliminated noise from intentional cancellations in crash reporting"
+      ]
+    },
+    {
+      "version": "0.9.7",
+      "date": "2026-02-19",
+      "changes": [
+        "Rolled back due to agent crash"
       ]
     },
     {
