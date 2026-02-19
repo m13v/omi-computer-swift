@@ -153,7 +153,7 @@ struct ChatPage: View {
                 },
                 chatProvider: chatProvider
             )
-            .frame(width: 480, height: 460)
+            .fixedSize()
         }
         .overlay {
             // Loading overlay when fetching citation
