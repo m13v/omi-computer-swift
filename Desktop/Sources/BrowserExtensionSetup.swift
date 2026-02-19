@@ -93,8 +93,7 @@ struct BrowserExtensionSetup: View {
             .padding(.horizontal, 40)
             .padding(.bottom, 24)
         }
-        .frame(width: phase == .connect ? 880 : 480)
-        .frame(minHeight: phase == .connect ? 520 : 400)
+        .frame(width: phase == .connect ? 880 : 480, height: phase == .connect ? 520 : 420)
         .background(
             RoundedRectangle(cornerRadius: 16)
                 .fill(OmiColors.backgroundSecondary)
@@ -320,7 +319,7 @@ struct BrowserExtensionSetup: View {
                         .foregroundColor(OmiColors.textTertiary)
                         .multilineTextAlignment(.center)
                 }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .frame(maxWidth: .infinity)
             }
         }
         .frame(maxHeight: .infinity)
