@@ -1611,27 +1611,27 @@ class ChatProvider: ObservableObject {
                     if currentSessionId != capturedSessionId {
                         log("Skipping partial response persistence — session changed")
                     } else {
-                    Task { [weak self] in
-                        do {
-                            let response = try await APIClient.shared.saveMessage(
-                                text: partialText,
-                                sender: "ai",
-                                appId: capturedAppId,
-                                sessionId: capturedSessionId,
-                                metadata: partialToolMetadata
-                            )
-                            await MainActor.run {
-                                if let syncIndex = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
-                                    self?.messages[syncIndex].id = response.id
-                                    self?.messages[syncIndex].isSynced = true
+                        Task { [weak self] in
+                            do {
+                                let response = try await APIClient.shared.saveMessage(
+                                    text: partialText,
+                                    sender: "ai",
+                                    appId: capturedAppId,
+                                    sessionId: capturedSessionId,
+                                    metadata: partialToolMetadata
+                                )
+                                await MainActor.run {
+                                    if let syncIndex = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                        self?.messages[syncIndex].id = response.id
+                                        self?.messages[syncIndex].isSynced = true
+                                    }
                                 }
+                                log("Saved partial AI response to backend: \(response.id)")
+                            } catch {
+                                logError("Failed to persist partial AI response", error: error)
                             }
-                            log("Saved partial AI response to backend: \(response.id)")
-                        } catch {
-                            logError("Failed to persist partial AI response", error: error)
                         }
                     }
-                    } // else (session still active)
                 }
             }
 
