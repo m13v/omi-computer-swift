@@ -110,6 +110,21 @@ func measurePerfAsync<T>(_ name: String, logCPU: Bool = false, _ block: () async
 /// Check if this is a development build
 private let isDevBuild: Bool = Bundle.main.bundleIdentifier?.hasSuffix("-dev") == true
 
+/// Write to log file synchronously — guaranteed to persist even if the app terminates immediately after.
+/// Use sparingly (blocks the calling thread); prefer `log()` for normal logging.
+func logSync(_ message: String) {
+    let timestamp = dateFormatter.string(from: Date())
+    let line = "[\(timestamp)] [app] \(message)"
+    print(line)
+    fflush(stdout)
+
+    let breadcrumb = Breadcrumb(level: .info, category: "app")
+    breadcrumb.message = message
+    SentrySDK.addBreadcrumb(breadcrumb)
+
+    appendToLogFileSync(line)
+}
+
 /// Write to log file, stdout, and Sentry breadcrumbs
 func log(_ message: String) {
     let timestamp = dateFormatter.string(from: Date())
