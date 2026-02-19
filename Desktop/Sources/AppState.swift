@@ -811,15 +811,16 @@ class AppState: ObservableObject {
     func checkAccessibilityPermission() {
         let tccGranted = AXIsProcessTrusted()
         let previouslyGranted = hasAccessibilityPermission
-        hasAccessibilityPermission = tccGranted
-
-        // Log transitions
-        if tccGranted != previouslyGranted {
-            let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
-            log("ACCESSIBILITY_CHECK: TCC state changed \(previouslyGranted) → \(tccGranted) (bundleId=\(bundleId))")
-        }
 
         if tccGranted {
+            hasAccessibilityPermission = true
+
+            // Log transitions
+            if !previouslyGranted {
+                let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+                log("ACCESSIBILITY_CHECK: Permission granted (bundleId=\(bundleId))")
+            }
+
             // TCC says yes — verify with an actual AX call
             let broken = !testAccessibilityPermission()
             if broken != isAccessibilityBroken {
@@ -846,6 +847,11 @@ class AppState: ObservableObject {
                 }
             } else {
                 // Event tap also failed — permission genuinely not granted
+                if previouslyGranted {
+                    let bundleId = Bundle.main.bundleIdentifier ?? "unknown"
+                    log("ACCESSIBILITY_CHECK: Permission revoked (bundleId=\(bundleId))")
+                }
+                hasAccessibilityPermission = false
                 isAccessibilityBroken = false
             }
         }
@@ -913,7 +919,12 @@ class AppState: ObservableObject {
         // This will prompt the user if not already trusted
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         let trusted = AXIsProcessTrustedWithOptions(options)
-        hasAccessibilityPermission = trusted
+        if trusted {
+            hasAccessibilityPermission = true
+        }
+        // Don't set hasAccessibilityPermission = false here — the API may return
+        // stale data on macOS 26. Let checkAccessibilityPermission() handle detection
+        // via the event tap probe on the next poll cycle.
         log("ACCESSIBILITY_TRIGGER: AXIsProcessTrustedWithOptions returned \(trusted)")
 
         // On macOS Sequoia+, AXIsProcessTrustedWithOptions no longer shows a visible dialog,
