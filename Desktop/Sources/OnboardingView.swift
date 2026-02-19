@@ -575,19 +575,6 @@ struct OnboardingView: View {
                             appState.triggerAutomationPermission()
                         }
                     )
-                    permissionRow(
-                        number: 6,
-                        icon: "antenna.radiowaves.left.and.right",
-                        name: "Bluetooth",
-                        isGranted: appState.hasBluetoothPermission || isBluetoothUnsupported || isBluetoothPermissionDenied,
-                        isActive: activePermissionIndex == 5,
-                        action: {
-                            AnalyticsManager.shared.permissionRequested(permission: "bluetooth")
-                            appState.initializeBluetoothIfNeeded()
-                            appState.triggerBluetoothPermission()
-                        }
-                    )
-
                     // Privacy link
                     Button(action: { showPrivacySheet = true }) {
                         HStack(spacing: 6) {
@@ -705,14 +692,6 @@ struct OnboardingView: View {
         )
     }
 
-    private var isBluetoothPermissionDenied: Bool {
-        appState.isBluetoothPermissionDenied()
-    }
-
-    private var isBluetoothUnsupported: Bool {
-        appState.isBluetoothUnsupported()
-    }
-
     @ViewBuilder
     private var buttonSection: some View {
         VStack(spacing: 8) {
@@ -809,9 +788,6 @@ struct OnboardingView: View {
             }
             if appState.hasAutomationPermission {
                 AnalyticsManager.shared.permissionGranted(permission: "automation")
-            }
-            if appState.hasBluetoothPermission {
-                AnalyticsManager.shared.permissionGranted(permission: "bluetooth")
             }
             // Log skipped permissions
             if !appState.hasScreenRecordingPermission {
