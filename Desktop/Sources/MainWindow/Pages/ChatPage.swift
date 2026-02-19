@@ -585,9 +585,10 @@ struct ChatBubble: View {
                     // Show typing indicator for empty streaming message
                     TypingIndicator()
                 } else if message.sender == .ai && !message.contentBlocks.isEmpty {
-                    // Render structured content blocks (text interspersed with tool calls)
-                    ForEach(message.contentBlocks) { block in
-                        switch block {
+                    // Render structured content blocks, grouping consecutive tool calls
+                    let groupedBlocks = ContentBlockGroup.group(message.contentBlocks)
+                    ForEach(groupedBlocks) { group in
+                        switch group {
                         case .text(_, let text):
                             if !text.isEmpty {
                                 Markdown(text)
@@ -598,17 +599,21 @@ struct ChatBubble: View {
                                     .background(OmiColors.backgroundSecondary)
                                     .cornerRadius(18)
                             }
-                        case .toolCall(_, let name, let status, _, let input, let output):
-                            ToolCallCard(name: name, status: status, input: input, output: output)
+                        case .toolCalls(_, let calls):
+                            ToolCallsGroup(calls: calls)
                         case .thinking(_, let text):
                             ThinkingBlock(text: text)
                         }
                     }
                     // Show typing indicator at end if still streaming
-                    // (skip only when last block is a running tool — it already has a spinner)
+                    // (skip only when last group is tool calls with a running tool — it already has a spinner)
                     if message.isStreaming {
-                        if case .toolCall(_, _, .running, _, _, _) = message.contentBlocks.last {
-                            // Tool is running — its card already shows a spinner
+                        if case .toolCalls(_, let calls) = groupedBlocks.last,
+                           calls.contains(where: { block in
+                               if case .toolCall(_, _, .running, _, _, _) = block { return true }
+                               return false
+                           }) {
+                            // Tool group has a running tool — its card already shows a spinner
                         } else {
                             TypingIndicator()
                         }
@@ -721,6 +726,153 @@ struct ChatBubble: View {
             .buttonStyle(.plain)
             .help("Not helpful")
         }
+    }
+}
+
+// MARK: - Content Block Grouping
+
+/// Groups consecutive tool call blocks into a single collapsible group
+enum ContentBlockGroup: Identifiable {
+    case text(id: String, text: String)
+    case toolCalls(id: String, calls: [ChatContentBlock])
+    case thinking(id: String, text: String)
+
+    var id: String {
+        switch self {
+        case .text(let id, _): return id
+        case .toolCalls(let id, _): return id
+        case .thinking(let id, _): return id
+        }
+    }
+
+    /// Groups consecutive `.toolCall` blocks together; passes `.text` and `.thinking` through
+    static func group(_ blocks: [ChatContentBlock]) -> [ContentBlockGroup] {
+        var groups: [ContentBlockGroup] = []
+        var pendingToolCalls: [ChatContentBlock] = []
+
+        func flushToolCalls() {
+            guard !pendingToolCalls.isEmpty else { return }
+            let groupId = "toolgroup_\(pendingToolCalls.first!.id)"
+            groups.append(.toolCalls(id: groupId, calls: pendingToolCalls))
+            pendingToolCalls = []
+        }
+
+        for block in blocks {
+            switch block {
+            case .text(let id, let text):
+                flushToolCalls()
+                groups.append(.text(id: id, text: text))
+            case .toolCall:
+                pendingToolCalls.append(block)
+            case .thinking(let id, let text):
+                flushToolCalls()
+                groups.append(.thinking(id: id, text: text))
+            }
+        }
+        flushToolCalls()
+        return groups
+    }
+}
+
+// MARK: - Tool Calls Group
+
+/// Renders a group of consecutive tool calls as a single collapsed summary line
+struct ToolCallsGroup: View {
+    let calls: [ChatContentBlock]
+
+    @State private var isExpanded = false
+
+    /// Whether any tool in the group is still running
+    private var hasRunningTool: Bool {
+        calls.contains { block in
+            if case .toolCall(_, _, .running, _, _, _) = block { return true }
+            return false
+        }
+    }
+
+    /// Display name of the currently running tool (last running one), or last tool if all done
+    private var currentToolName: String {
+        // Find the last running tool
+        if let lastRunning = calls.last(where: { block in
+            if case .toolCall(_, _, .running, _, _, _) = block { return true }
+            return false
+        }) {
+            if case .toolCall(_, let name, _, _, _, _) = lastRunning {
+                return ChatContentBlock.displayName(for: name)
+            }
+        }
+        // All done — show last tool name
+        if case .toolCall(_, let name, _, _, _, _) = calls.last {
+            return ChatContentBlock.displayName(for: name)
+        }
+        return "Working"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            // Summary header
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    isExpanded.toggle()
+                }
+            }) {
+                HStack(spacing: 6) {
+                    // Status indicator
+                    if hasRunningTool {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .frame(width: 12, height: 12)
+                    } else {
+                        Image(systemName: "checkmark.circle.fill")
+                            .scaledFont(size: 12)
+                            .foregroundColor(.green)
+                    }
+
+                    // Current/last tool action
+                    Text(currentToolName)
+                        .scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textSecondary)
+
+                    // Step count (only show when > 1)
+                    if calls.count > 1 {
+                        Text("·")
+                            .scaledFont(size: 12)
+                            .foregroundColor(OmiColors.textTertiary)
+                        Text("\(calls.count) steps")
+                            .scaledFont(size: 11)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+
+                    Spacer(minLength: 4)
+
+                    // Expand chevron
+                    Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                        .scaledFont(size: 9)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+            }
+            .buttonStyle(.plain)
+
+            // Expanded: show individual tool call cards
+            if isExpanded {
+                Divider()
+                    .padding(.horizontal, 8)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(calls) { block in
+                        if case .toolCall(_, let name, let status, _, let input, let output) = block {
+                            ToolCallCard(name: name, status: status, input: input, output: output)
+                        }
+                    }
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 6)
+            }
+        }
+        .background(OmiColors.backgroundTertiary.opacity(0.5))
+        .cornerRadius(8)
     }
 }
 
