@@ -141,21 +141,23 @@ actor AIUserProfileService {
             return false
         }
         let generatedAt = Date()
-        var record = AIUserProfileRecord(
+        let record = AIUserProfileRecord(
             profileText: String(text.prefix(maxProfileLength)),
             dataSourcesUsed: 1,
             backendSynced: false,
             generatedAt: generatedAt
         )
         do {
-            try await db.write { database in
-                try record.insert(database)
+            let insertedId = try await db.write { database -> Int64? in
+                var mutableRecord = record
+                try mutableRecord.insert(database)
+                return mutableRecord.id
             }
             log("AIUserProfileService: Saved exploration as new profile (\(record.profileText.count) chars)")
 
             // Sync to backend (fire-and-forget)
             let profileText = record.profileText
-            let recordId = record.id
+            let recordId = insertedId
             Task {
                 do {
                     try await APIClient.shared.syncAIUserProfile(
