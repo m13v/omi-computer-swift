@@ -469,6 +469,7 @@ struct ChatPage: View {
                 chatProvider.stopAgent()
             },
             isSending: chatProvider.isSending,
+            isStopping: chatProvider.isStopping,
             mode: $chatProvider.chatMode
         )
     }
