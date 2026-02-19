@@ -1784,7 +1784,7 @@ struct SettingsContentView: View {
                 },
                 chatProvider: chatProvider
             )
-            .frame(width: 480, height: 460)
+            .fixedSize()
         }
     }
 
