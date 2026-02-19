@@ -32,6 +32,7 @@ actor FocusAssistant: ProactiveAssistant {
     private var lastProcessedFrameNum = 0
     private var processingTask: Task<Void, Never>?
     private var pendingTasks: Set<Task<Void, Never>> = []
+    private let maxPendingTasks = 3
     private var currentApp: String?
 
     // MARK: - Smart Analysis Filtering
@@ -132,6 +133,12 @@ actor FocusAssistant: ProactiveAssistant {
     }
 
     func analyze(frame: CapturedFrame) async -> AssistantResult? {
+        // Skip lock screen / login screen — no useful content to analyze
+        let skipApps = ["loginwindow", "ScreenSaverEngine"]
+        if skipApps.contains(frame.appName) {
+            return nil
+        }
+
         // Skip apps excluded from focus analysis
         let excluded = await MainActor.run { FocusAssistantSettings.shared.isAppExcluded(frame.appName) }
         if excluded {
