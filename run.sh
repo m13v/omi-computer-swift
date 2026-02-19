@@ -230,7 +230,11 @@ substep "Creating PkgInfo"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 # Embed provisioning profile (required for Sign In with Apple entitlement)
-if [ -f "Desktop/embedded.provisionprofile" ]; then
+# Use dev profile for dev builds, production profile for release builds
+if [ -f "Desktop/embedded-dev.provisionprofile" ]; then
+    substep "Copying dev provisioning profile"
+    cp "Desktop/embedded-dev.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
+elif [ -f "Desktop/embedded.provisionprofile" ]; then
     substep "Copying provisioning profile"
     cp "Desktop/embedded.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
 fi
