@@ -229,6 +229,12 @@ cp -f omi_icon.icns "$APP_BUNDLE/Contents/Resources/OmiIcon.icns" 2>/dev/null ||
 substep "Creating PkgInfo"
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# Embed provisioning profile (required for Sign In with Apple entitlement)
+if [ -f "Desktop/embedded.provisionprofile" ]; then
+    substep "Copying provisioning profile"
+    cp "Desktop/embedded.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
+fi
+
 auth_debug "BEFORE signing: $(defaults read "$BUNDLE_ID" auth_isSignedIn 2>&1 || true)"
 
 step "Removing extended attributes (xattr -cr)..."
