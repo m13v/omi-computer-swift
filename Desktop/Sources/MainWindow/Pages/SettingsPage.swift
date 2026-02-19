@@ -1502,6 +1502,71 @@ struct SettingsContentView: View {
                 }
             }
 
+            // Workspace card
+            settingsCard(settingId: "aichat.workspace") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "folder")
+                            .scaledFont(size: 16)
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Text("Workspace")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Button("Browse...") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseFiles = false
+                            panel.canChooseDirectories = true
+                            panel.allowsMultipleSelection = false
+                            panel.message = "Select a project directory"
+                            if panel.runModal() == .OK, let url = panel.url {
+                                aiChatWorkingDirectory = url.path
+                                refreshAIChatConfig()
+                                // Update ChatProvider
+                                chatProvider.aiChatWorkingDirectory = url.path
+                                chatProvider.discoverClaudeConfig()
+                                if chatProvider.workingDirectory == nil {
+                                    chatProvider.workingDirectory = url.path
+                                }
+                            }
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+
+                        if !aiChatWorkingDirectory.isEmpty {
+                            Button("Clear") {
+                                aiChatWorkingDirectory = ""
+                                refreshAIChatConfig()
+                                chatProvider.aiChatWorkingDirectory = ""
+                                chatProvider.discoverClaudeConfig()
+                                chatProvider.workingDirectory = nil
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+                        }
+                    }
+
+                    if !aiChatWorkingDirectory.isEmpty {
+                        Text(aiChatWorkingDirectory)
+                            .scaledFont(size: 12)
+                            .foregroundColor(OmiColors.textTertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+
+                        Text("Project-level CLAUDE.md and skills will be discovered from this directory")
+                            .scaledFont(size: 12)
+                            .foregroundColor(OmiColors.textTertiary)
+                    } else {
+                        Text("No workspace set. Set a project directory to discover project-level CLAUDE.md and skills.")
+                            .scaledFont(size: 12)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                }
+            }
+
             // CLAUDE.md card
             settingsCard(settingId: "aichat.claudemd") {
                 VStack(alignment: .leading, spacing: 12) {
@@ -1515,38 +1580,100 @@ struct SettingsContentView: View {
                             .foregroundColor(OmiColors.textPrimary)
 
                         Spacer()
+                    }
 
-                        if aiChatClaudeMdContent != nil {
-                            Button("View") {
-                                fileViewerTitle = "CLAUDE.md"
-                                fileViewerContent = aiChatClaudeMdContent ?? ""
-                                showFileViewer = true
-                            }
-                            .buttonStyle(.bordered)
-                            .controlSize(.small)
+                    // Global CLAUDE.md
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Text("Global")
+                                .scaledFont(size: 11, weight: .medium)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 2)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 4)
+                                        .fill(OmiColors.backgroundPrimary.opacity(0.5))
+                                )
 
-                            Toggle("", isOn: $claudeMdEnabled)
-                                .toggleStyle(.switch)
+                            Spacer()
+
+                            if aiChatClaudeMdContent != nil {
+                                Button("View") {
+                                    fileViewerTitle = "Global CLAUDE.md"
+                                    fileViewerContent = aiChatClaudeMdContent ?? ""
+                                    showFileViewer = true
+                                }
+                                .buttonStyle(.bordered)
                                 .controlSize(.small)
-                                .labelsHidden()
+
+                                Toggle("", isOn: $claudeMdEnabled)
+                                    .toggleStyle(.switch)
+                                    .controlSize(.small)
+                                    .labelsHidden()
+                            }
+                        }
+
+                        if let path = aiChatClaudeMdPath, let content = aiChatClaudeMdContent {
+                            let sizeKB = Double(content.utf8.count) / 1024.0
+                            Text("\(path) (\(String(format: "%.1f", sizeKB)) KB)")
+                                .scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        } else {
+                            Text("No CLAUDE.md found at ~/.claude/CLAUDE.md")
+                                .scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textTertiary)
                         }
                     }
 
-                    if let path = aiChatClaudeMdPath, let content = aiChatClaudeMdContent {
-                        let sizeKB = Double(content.utf8.count) / 1024.0
-                        Text("\(path) (\(String(format: "%.1f", sizeKB)) KB)")
-                            .scaledFont(size: 12)
-                            .foregroundColor(OmiColors.textTertiary)
-                            .lineLimit(1)
-                            .truncationMode(.middle)
+                    // Project CLAUDE.md (only show if workspace is set)
+                    if !aiChatWorkingDirectory.isEmpty {
+                        Divider().opacity(0.3)
 
-                        Text("Personal instructions loaded into AI chat")
-                            .scaledFont(size: 12)
-                            .foregroundColor(OmiColors.textTertiary)
-                    } else {
-                        Text("No CLAUDE.md found at ~/.claude/CLAUDE.md")
-                            .scaledFont(size: 12)
-                            .foregroundColor(OmiColors.textTertiary)
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Project")
+                                    .scaledFont(size: 11, weight: .medium)
+                                    .foregroundColor(OmiColors.purplePrimary)
+                                    .padding(.horizontal, 6)
+                                    .padding(.vertical, 2)
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(OmiColors.purplePrimary.opacity(0.1))
+                                    )
+
+                                Spacer()
+
+                                if aiChatProjectClaudeMdContent != nil {
+                                    Button("View") {
+                                        fileViewerTitle = "Project CLAUDE.md"
+                                        fileViewerContent = aiChatProjectClaudeMdContent ?? ""
+                                        showFileViewer = true
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+
+                                    Toggle("", isOn: $projectClaudeMdEnabled)
+                                        .toggleStyle(.switch)
+                                        .controlSize(.small)
+                                        .labelsHidden()
+                                }
+                            }
+
+                            if let path = aiChatProjectClaudeMdPath, let content = aiChatProjectClaudeMdContent {
+                                let sizeKB = Double(content.utf8.count) / 1024.0
+                                Text("\(path) (\(String(format: "%.1f", sizeKB)) KB)")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(OmiColors.textTertiary)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            } else {
+                                Text("No CLAUDE.md found at \(aiChatWorkingDirectory)/CLAUDE.md")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(OmiColors.textTertiary)
+                            }
+                        }
                     }
                 }
             }
@@ -1559,9 +1686,15 @@ struct SettingsContentView: View {
                             .scaledFont(size: 16)
                             .foregroundColor(OmiColors.textTertiary)
 
-                        Text("Skills (\(aiChatDiscoveredSkills.count) discovered)")
-                            .scaledFont(size: 15, weight: .semibold)
-                            .foregroundColor(OmiColors.textPrimary)
+                        if aiChatProjectDiscoveredSkills.isEmpty {
+                            Text("Skills (\(aiChatDiscoveredSkills.count) discovered)")
+                                .scaledFont(size: 15, weight: .semibold)
+                                .foregroundColor(OmiColors.textPrimary)
+                        } else {
+                            Text("Skills (\(aiChatDiscoveredSkills.count) global + \(aiChatProjectDiscoveredSkills.count) project)")
+                                .scaledFont(size: 15, weight: .semibold)
+                                .foregroundColor(OmiColors.textPrimary)
+                        }
 
                         Spacer()
 
@@ -1573,7 +1706,11 @@ struct SettingsContentView: View {
                         .controlSize(.small)
                     }
 
-                    if aiChatDiscoveredSkills.isEmpty {
+                    let allSkills: [(skill: (name: String, description: String, path: String), origin: String)] =
+                        aiChatDiscoveredSkills.map { ($0, "Global") } +
+                        aiChatProjectDiscoveredSkills.map { ($0, "Project") }
+
+                    if allSkills.isEmpty {
                         Text("No skills found in ~/.claude/skills/")
                             .scaledFont(size: 12)
                             .foregroundColor(OmiColors.textTertiary)
@@ -1609,15 +1746,16 @@ struct SettingsContentView: View {
                         )
 
                         ScrollView {
-                            let filteredSkills = aiChatDiscoveredSkills.enumerated().filter { _, skill in
+                            let filteredSkills = allSkills.enumerated().filter { _, item in
                                 skillSearchQuery.isEmpty ||
-                                skill.name.localizedCaseInsensitiveContains(skillSearchQuery) ||
-                                skill.description.localizedCaseInsensitiveContains(skillSearchQuery)
+                                item.skill.name.localizedCaseInsensitiveContains(skillSearchQuery) ||
+                                item.skill.description.localizedCaseInsensitiveContains(skillSearchQuery)
                             }
 
                             VStack(spacing: 0) {
                                 ForEach(Array(filteredSkills.enumerated()), id: \.offset) { filteredIndex, item in
-                                    let skill = item.element
+                                    let skill = item.element.skill
+                                    let origin = item.element.origin
                                     HStack(spacing: 10) {
                                         Toggle("", isOn: Binding(
                                             get: { aiChatEnabledSkills.contains(skill.name) },
@@ -1634,9 +1772,21 @@ struct SettingsContentView: View {
                                         .labelsHidden()
 
                                         VStack(alignment: .leading, spacing: 2) {
-                                            Text(skill.name)
-                                                .scaledFont(size: 13, weight: .medium)
-                                                .foregroundColor(OmiColors.textPrimary)
+                                            HStack(spacing: 6) {
+                                                Text(skill.name)
+                                                    .scaledFont(size: 13, weight: .medium)
+                                                    .foregroundColor(OmiColors.textPrimary)
+
+                                                Text(origin)
+                                                    .scaledFont(size: 9, weight: .medium)
+                                                    .foregroundColor(origin == "Project" ? OmiColors.purplePrimary : OmiColors.textTertiary)
+                                                    .padding(.horizontal, 4)
+                                                    .padding(.vertical, 1)
+                                                    .background(
+                                                        RoundedRectangle(cornerRadius: 3)
+                                                            .fill(origin == "Project" ? OmiColors.purplePrimary.opacity(0.1) : OmiColors.backgroundPrimary.opacity(0.5))
+                                                    )
+                                            }
 
                                             if !skill.description.isEmpty {
                                                 Text(skill.description)
