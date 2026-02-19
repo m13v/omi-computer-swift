@@ -177,8 +177,13 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
         // Small delay to let the window disappear before capture
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            let url = ScreenCaptureManager.captureScreen()
-            self?.state.screenshotURL = url
+            // Capture screenshot off main thread — PNG encoding + file write can block
+            Task.detached {
+                let url = ScreenCaptureManager.captureScreen()
+                await MainActor.run {
+                    self?.state.screenshotURL = url
+                }
+            }
 
             if wasVisible {
                 self?.orderFront(nil)
