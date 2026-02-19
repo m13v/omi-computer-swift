@@ -531,6 +531,7 @@ struct ChatBubble: View {
 
     @State private var isHovering = false
     @State private var isExpanded = false
+    @State private var showCopied = false
 
     /// Messages longer than this are truncated with a "Show more" button
     private static let truncationThreshold = 500
@@ -667,10 +668,19 @@ struct ChatBubble: View {
                     .frame(maxWidth: 280)
                 }
 
-                // Rating buttons and timestamp row for AI messages (only when synced with backend)
+                // Rating buttons, copy button, and timestamp row for AI messages
                 if message.sender == .ai && !message.isStreaming && message.isSynced {
                     HStack(spacing: 8) {
                         ratingButtons
+                        copyButton
+
+                        Text(message.createdAt, style: .time)
+                            .scaledFont(size: 10)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                } else if message.sender == .ai && !message.isStreaming && !message.text.isEmpty {
+                    HStack(spacing: 8) {
+                        copyButton
 
                         Text(message.createdAt, style: .time)
                             .scaledFont(size: 10)
@@ -726,6 +736,24 @@ struct ChatBubble: View {
             .buttonStyle(.plain)
             .help("Not helpful")
         }
+    }
+
+    @ViewBuilder
+    private var copyButton: some View {
+        Button(action: {
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(message.text, forType: .string)
+            showCopied = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                showCopied = false
+            }
+        }) {
+            Image(systemName: showCopied ? "checkmark" : "doc.on.doc")
+                .scaledFont(size: 11)
+                .foregroundColor(showCopied ? .green : OmiColors.textTertiary)
+        }
+        .buttonStyle(.plain)
+        .help("Copy message")
     }
 }
 
