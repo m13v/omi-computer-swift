@@ -249,10 +249,11 @@ step "Signing app with hardened runtime..."
 # Ad-hoc signing (--sign -) generates a new CDHash each build, causing macOS to
 # reset Screen Recording, Accessibility, and Notification permissions every time.
 if [ -z "$SIGN_IDENTITY" ]; then
-    # Try Developer ID first, then Apple Development, then self-signed
-    SIGN_IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')
+    # For dev builds: prefer Apple Development (matches Mac Development provisioning profile,
+    # required for native Sign In with Apple). Fall back to Developer ID if unavailable.
+    SIGN_IDENTITY=$(security find-identity -v -p codesigning | grep "Apple Development" | head -1 | sed 's/.*"\(.*\)"/\1/')
     if [ -z "$SIGN_IDENTITY" ]; then
-        SIGN_IDENTITY=$(security find-identity -v -p codesigning | grep "Apple Development" | head -1 | sed 's/.*"\(.*\)"/\1/')
+        SIGN_IDENTITY=$(security find-identity -v -p codesigning | grep "Developer ID Application" | head -1 | sed 's/.*"\(.*\)"/\1/')
     fi
 fi
 
