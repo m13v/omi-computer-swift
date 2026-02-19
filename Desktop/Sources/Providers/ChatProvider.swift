@@ -305,6 +305,12 @@ class ChatProvider: ObservableObject {
     private var multiChatObserver: AnyCancellable?
     private var playwrightExtensionObserver: AnyCancellable?
 
+    // MARK: - Cross-Platform Message Polling
+    /// Polls for new messages from other platforms (mobile) every 15 seconds.
+    /// Similar to TasksStore's 30-second polling pattern.
+    private var messagePollTimer: AnyCancellable?
+    private static let messagePollInterval: TimeInterval = 15.0
+
     // MARK: - Streaming Buffer
     /// Accumulates text deltas during streaming and flushes them to the published
     /// messages array at most once per ~100ms, reducing SwiftUI re-render frequency.
@@ -377,6 +383,15 @@ class ChatProvider: ObservableObject {
             .sink { [weak self] _ in
                 Task { @MainActor in
                     await self?.reinitialize()
+                }
+            }
+
+        // Poll for new messages from other platforms (mobile) every 15 seconds
+        messagePollTimer = Timer.publish(every: Self.messagePollInterval, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                Task { @MainActor in
+                    await self?.pollForNewMessages()
                 }
             }
 
@@ -1188,6 +1203,51 @@ class ChatProvider: ObservableObject {
         messages = []
         sessionsLoadError = lastError?.localizedDescription ?? "Unknown error"
         isLoading = false
+    }
+
+    // MARK: - Cross-Platform Message Polling
+
+    /// Poll for new messages from other platforms (e.g. mobile).
+    /// Merges new messages into the existing array without disrupting the UI.
+    private func pollForNewMessages() async {
+        // Skip if we're in the middle of sending, loading, or streaming
+        guard !isSending, !isLoading, !isLoadingSessions else { return }
+        // Skip if messages haven't been loaded yet (initial load not done)
+        guard !messages.isEmpty || sessionsLoadError != nil else { return }
+        // Skip if there's an active streaming message
+        guard !messages.contains(where: { $0.isStreaming }) else { return }
+
+        do {
+            let persistedMessages: [ChatMessageDB]
+
+            if let session = currentSession {
+                // Multi-chat: fetch for current session
+                persistedMessages = try await APIClient.shared.getMessages(
+                    sessionId: session.id,
+                    limit: messagesPageSize
+                )
+            } else {
+                // Default chat
+                persistedMessages = try await APIClient.shared.getMessages(
+                    appId: selectedAppId,
+                    limit: messagesPageSize
+                )
+            }
+
+            let existingIds = Set(messages.map(\.id))
+            let newMessages = persistedMessages
+                .filter { !existingIds.contains($0.id) }
+                .map(ChatMessage.init(from:))
+
+            if !newMessages.isEmpty {
+                log("ChatProvider poll: found \(newMessages.count) new message(s) from other platforms")
+                messages.append(contentsOf: newMessages)
+                messages.sort(by: { $0.createdAt < $1.createdAt })
+            }
+        } catch {
+            // Silent failure — polling errors shouldn't disrupt the user
+            logError("ChatProvider poll failed", error: error)
+        }
     }
 
     // MARK: - Stop / Follow-Up
