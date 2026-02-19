@@ -74,6 +74,7 @@ struct SettingsSearchItem: Identifiable {
         SettingsSearchItem(name: "CLAUDE.md", subtitle: "Personal instructions loaded into AI chat", keywords: ["claude md", "claude config", "instructions", "view"], section: .aiChat, advancedSubsection: nil, icon: "cpu", settingId: "aichat.claudemd"),
         SettingsSearchItem(name: "Skills", subtitle: "Enable or disable discovered AI skills", keywords: ["skills", "plugins", "abilities", "view"], section: .aiChat, advancedSubsection: nil, icon: "cpu", settingId: "aichat.skills"),
         SettingsSearchItem(name: "Browser Extension", subtitle: "Lets the AI use your Chrome browser with all your logged-in sessions", keywords: ["playwright", "chrome", "browser extension", "browser", "set up", "reconfigure", "token"], section: .aiChat, advancedSubsection: nil, icon: "cpu", settingId: "aichat.browserextension"),
+        SettingsSearchItem(name: "Workspace", subtitle: "Set a project directory for AI chat context", keywords: ["workspace", "project", "directory", "folder", "working directory", "claude.md"], section: .aiChat, advancedSubsection: nil, icon: "cpu", settingId: "aichat.workspace"),
 
         // About
         SettingsSearchItem(name: "Software Updates", subtitle: "Check for and manage app updates", keywords: ["update", "auto update", "sparkle", "version", "check for updates", "check now"], section: .about, advancedSubsection: nil, icon: "info.circle", settingId: "about.updates"),
