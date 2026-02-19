@@ -28,7 +28,7 @@ actor AIUserProfileService {
     static let shared = AIUserProfileService()
 
     private let model = "gemini-3-pro-preview"
-    private let maxProfileLength = 2000
+    private let maxProfileLength = 10000
 
     /// Whether profile generation is currently in progress
     private var isGenerating = false
@@ -149,7 +149,7 @@ actor AIUserProfileService {
         )
         do {
             let insertedId = try await db.write { database -> Int64? in
-                var mutableRecord = record
+                let mutableRecord = record
                 try mutableRecord.insert(database)
                 return mutableRecord.id
             }
