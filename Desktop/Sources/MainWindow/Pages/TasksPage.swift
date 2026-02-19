@@ -3072,21 +3072,24 @@ struct TaskCategorySection: View {
                                 onEditingChanged: onEditingChanged
                             )
                             .id(task.id)
-                            .draggable(task.id) {
-                                // Drag preview
-                                TaskDragPreview(task: task)
-                            }
-                            .dropDestination(for: String.self) { droppedIds, _ in
-                                guard let droppedId = droppedIds.first,
-                                      orderedTasks.contains(where: { $0.id == droppedId }),
-                                      let targetIndex = orderedTasks.firstIndex(where: { $0.id == task.id }) else {
-                                    return false
-                                }
-                                // Move the task
-                                if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
-                                    onMoveTask?(droppedTask, targetIndex, category)
-                                }
-                                return true
+                            .if(!isMultiSelectMode) { view in
+                                view
+                                    .draggable(task.id) {
+                                        // Drag preview
+                                        TaskDragPreview(task: task)
+                                    }
+                                    .dropDestination(for: String.self) { droppedIds, _ in
+                                        guard let droppedId = droppedIds.first,
+                                              orderedTasks.contains(where: { $0.id == droppedId }),
+                                              let targetIndex = orderedTasks.firstIndex(where: { $0.id == task.id }) else {
+                                            return false
+                                        }
+                                        // Move the task
+                                        if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
+                                            onMoveTask?(droppedTask, targetIndex, category)
+                                        }
+                                        return true
+                                    }
                             }
                             .transition(.asymmetric(
                                 insertion: .opacity.combined(with: .move(edge: .top)),
@@ -3263,14 +3266,13 @@ struct TaskRow: View {
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
             )
-            .simultaneousGesture(
-                TapGesture().onEnded {
-                    onSelect?(task)
-                    if isChatActive, !isActiveChatTask {
-                        onOpenChat?(task)
-                    }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                onSelect?(task)
+                if isChatActive, !isActiveChatTask {
+                    onOpenChat?(task)
                 }
-            )
+            }
             .sheet(isPresented: $showTaskDetail) {
                 TaskDetailView(
                     task: task,
