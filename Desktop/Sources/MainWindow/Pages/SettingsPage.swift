@@ -1140,7 +1140,7 @@ struct SettingsContentView: View {
                                 }
                         }
 
-                        settingRow(title: "Memory Notifications", subtitle: "Show notification when a memory is extracted") {
+                        settingRow(title: "Memory Notifications", subtitle: "Show notification when a memory is extracted", settingId: "notifications.memory") {
                             Toggle("", isOn: $memoryNotificationsEnabled)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
@@ -1183,7 +1183,7 @@ struct SettingsContentView: View {
                         Divider()
                             .background(OmiColors.backgroundQuaternary)
 
-                        settingRow(title: "Summary Time", subtitle: "When to send your daily summary") {
+                        settingRow(title: "Summary Time", subtitle: "When to send your daily summary", settingId: "notifications.summarytime") {
                             Picker("", selection: $dailySummaryHour) {
                                 ForEach(hourOptions, id: \.self) { hour in
                                     Text(formatHour(hour)).tag(hour)
@@ -1471,7 +1471,7 @@ struct SettingsContentView: View {
     private var aiChatSection: some View {
         VStack(spacing: 20) {
             // Ask Mode card
-            settingsCard {
+            settingsCard(settingId: "aichat.askmode") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "bubble.left.and.bubble.right")
@@ -1497,7 +1497,7 @@ struct SettingsContentView: View {
             }
 
             // CLAUDE.md card
-            settingsCard {
+            settingsCard(settingId: "aichat.claudemd") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "doc.text")
@@ -1546,7 +1546,7 @@ struct SettingsContentView: View {
             }
 
             // Skills card
-            settingsCard {
+            settingsCard(settingId: "aichat.skills") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "sparkles")
@@ -1667,7 +1667,7 @@ struct SettingsContentView: View {
             }
 
             // Browser Extension card
-            settingsCard {
+            settingsCard(settingId: "aichat.browserextension") {
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {
                         Image(systemName: "globe")
@@ -1951,7 +1951,7 @@ struct SettingsContentView: View {
 
     private var aiUserProfileSubsection: some View {
         VStack(spacing: 20) {
-            settingsCard {
+            settingsCard(settingId: "advanced.aiuserprofile") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) {
                         Image(systemName: "brain")
@@ -2107,7 +2107,7 @@ struct SettingsContentView: View {
 
     private var statsSubsection: some View {
         VStack(spacing: 20) {
-            settingsCard {
+            settingsCard(settingId: "advanced.stats") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) {
                         Image(systemName: "chart.bar")
@@ -2175,7 +2175,7 @@ struct SettingsContentView: View {
 
     private var featureTiersSubsection: some View {
         VStack(spacing: 20) {
-            settingsCard {
+            settingsCard(settingId: "advanced.featuretiers") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 10) {
                         Image(systemName: "lock.shield")
@@ -2265,7 +2265,7 @@ struct SettingsContentView: View {
 
     private var focusAssistantSubsection: some View {
         VStack(spacing: 20) {
-            settingsCard {
+            settingsCard(settingId: "advanced.focusassistant") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "eye.fill")
@@ -3469,7 +3469,7 @@ struct SettingsContentView: View {
             }
 
             // Software Updates
-            settingsCard {
+            settingsCard(settingId: "about.updates") {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack {
                         Image(systemName: "arrow.triangle.2.circlepath")
@@ -3498,14 +3498,14 @@ struct SettingsContentView: View {
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
-                    settingRow(title: "Automatic Updates", subtitle: "Check for updates automatically in the background") {
+                    settingRow(title: "Automatic Updates", subtitle: "Check for updates automatically in the background", settingId: "about.autoupdates") {
                         Toggle("", isOn: $updaterViewModel.automaticallyChecksForUpdates)
                             .toggleStyle(.switch)
                             .labelsHidden()
                     }
 
                     if updaterViewModel.automaticallyChecksForUpdates {
-                        settingRow(title: "Auto-Install Updates", subtitle: "Automatically download and install updates when available") {
+                        settingRow(title: "Auto-Install Updates", subtitle: "Automatically download and install updates when available", settingId: "about.autoinstall") {
                             Toggle("", isOn: $updaterViewModel.automaticallyDownloadsUpdates)
                                 .toggleStyle(.switch)
                                 .labelsHidden()
