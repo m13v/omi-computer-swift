@@ -2564,4 +2564,6 @@ extension Notification.Name {
     static let navigateToTasks = Notification.Name("navigateToTasks")
     /// Posted when file indexing completes (userInfo: ["totalFiles": Int])
     static let fileIndexingComplete = Notification.Name("fileIndexingComplete")
+    /// Posted from Settings to trigger the file indexing sheet
+    static let triggerFileIndexing = Notification.Name("triggerFileIndexing")
 }
