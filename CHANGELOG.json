@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.9.3",
+      "date": "2026-02-18",
+      "changes": [
+        "Browser extension setup: auto-detects Chrome installation and extension with live polling, clearer step-by-step flow",
+        "Grouped tool calls in chat: multi-step AI actions collapse into a single summary with progress indicator",
+        "Fixed chat scroll: messages now reliably stay pinned to bottom during streaming",
+        "Sleeker floating control bar: thinner, more minimal default appearance",
+        "Simplified onboarding: Bluetooth permission no longer required during setup",
+        "Screen analysis toggle fix: setting now stays in sync with actual monitoring state across restarts",
+        "AI profile save retries: file indexing insights saved reliably with automatic retry on failure",
+        "Rewind database session safety: prevents stale sign-out tasks from closing freshly opened databases",
+        "Stop button shows spinner while processing stop request",
+        "Settings analytics: tracking added to all major settings sections for usage insights"
+      ]
+    },
+    {
       "version": "0.9.2",
       "date": "2026-02-18",
       "changes": [
