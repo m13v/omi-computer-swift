@@ -143,6 +143,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var toggleBarObserver: NSObjectProtocol?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Ignore SIGPIPE so broken-pipe writes return errors instead of crashing the app.
+        // Without this, writing to a dead FFmpeg stdin or agent-bridge pipe kills the process.
+        signal(SIGPIPE, SIG_IGN)
+
         log("AppDelegate: applicationDidFinishLaunching started (mode: \(OMIApp.launchMode.rawValue))")
         log("AppDelegate: AuthState.isSignedIn=\(AuthState.shared.isSignedIn)")
 
