@@ -1113,19 +1113,33 @@ struct OnboardingView: View {
             return
         }
 
+        let explorationText = lastAIMessage.text
         let service = AIUserProfileService.shared
-        let existingProfile = await service.getLatestProfile()
 
-        if let existing = existingProfile, let profileId = existing.id {
-            // Append to existing profile
-            let updated = existing.profileText + "\n\n--- File Exploration Insights ---\n" + lastAIMessage.text
-            let success = await service.updateProfileText(id: profileId, newText: updated)
-            log("OnboardingView: Appended exploration to AI profile (success=\(success))")
-        } else {
-            // No profile exists yet — create one via generation
-            log("OnboardingView: No existing AI profile, triggering generation")
-            _ = try? await service.generateProfile()
+        // Retry up to 3 times for transient SQLite/network failures
+        for attempt in 1...3 {
+            let existingProfile = await service.getLatestProfile()
+
+            if let existing = existingProfile, let profileId = existing.id {
+                // Append to existing profile
+                let updated = existing.profileText + "\n\n--- File Exploration Insights ---\n" + explorationText
+                let success = await service.updateProfileText(id: profileId, newText: updated)
+                log("OnboardingView: Appended exploration to AI profile (success=\(success), attempt=\(attempt))")
+                if success { return }
+            } else {
+                // No profile exists yet — save exploration text directly as a new profile
+                let success = await service.saveExplorationAsProfile(text: "--- File Exploration Insights ---\n" + explorationText)
+                log("OnboardingView: Saved exploration as new AI profile (success=\(success), attempt=\(attempt))")
+                if success { return }
+            }
+
+            // Wait before retrying (2s, 4s)
+            if attempt < 3 {
+                log("OnboardingView: Retrying profile save (attempt \(attempt) failed)")
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+            }
         }
+        log("OnboardingView: Failed to save exploration to AI profile after 3 attempts")
     }
 
     private func handleSkipFileIndexing() {
