@@ -118,10 +118,6 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       cwd: msg.cwd || process.env.HOME || "/",
       mcpServers,
       includePartialMessages: true,
-      // Pass --jitless to the child node process spawned by the SDK.
-      // The bundled node binary crashes with SIGTRAP without this flag
-      // because V8 JIT fails on the code-signed binary.
-      executableArgs: ["--jitless"],
     };
 
     // Track tool_use block index → {id, name, inputChunks} for accumulating input_json_delta
