@@ -273,6 +273,10 @@ class ChatProvider: ObservableObject {
     @Published var showStarredOnly = false
     @Published var searchQuery = ""
 
+    /// Triggered when a browser tool is called but the extension token isn't configured.
+    /// The UI should observe this and present BrowserExtensionSetup.
+    @Published var needsBrowserExtensionSetup = false
+
     /// Whether the user is currently viewing the default chat (syncs with Flutter app)
     @Published var isInDefaultChat = true
 
@@ -1362,6 +1366,15 @@ class ChatProvider: ObservableObject {
                         if status == "started" {
                             toolNames.append(name)
                             toolStartTimes[name] = Date()
+
+                            // Detect browser tool calls without extension token
+                            if (name.contains("browser") || name.contains("playwright")) {
+                                let token = UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? ""
+                                if token.isEmpty {
+                                    log("ChatProvider: Browser tool \(name) called without extension token — prompting setup")
+                                    self?.needsBrowserExtensionSetup = true
+                                }
+                            }
                         } else if status == "completed", let startTime = toolStartTimes.removeValue(forKey: name) {
                             let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
                             AnalyticsManager.shared.chatToolCallCompleted(toolName: name, durationMs: durationMs)
