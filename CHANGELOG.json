@@ -1,10 +1,12 @@
 {
   "releases": [
     {
-      "version": "0.9.4",
+      "version": "0.9.5",
       "date": "2026-02-19",
       "changes": [
         "AI chat works without Node.js installed: app now bundles Node.js so AI chat runs out of the box on any Mac",
+        "AI chat now shows error messages when something goes wrong instead of silently failing",
+        "Fixed AI chat crash on macOS VMs and low-memory machines (V8 JIT memory reservation failure)",
         "Project workspace for AI chat: set a project directory in Settings to load its CLAUDE.md and discover project-specific skills",
         "Skills panel shows Global vs Project badges so you can tell where each skill comes from",
         "Fixed Tasks page hang when switching to multi-select mode",
