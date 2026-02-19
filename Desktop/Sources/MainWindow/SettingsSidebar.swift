@@ -24,7 +24,7 @@ struct SettingsSearchItem: Identifiable {
         SettingsSearchItem(name: "Rewind", subtitle: "Screen capture and audio recording", keywords: ["monitor", "screenshot", "capture", "audio", "recording", "microphone", "speech"], section: .general, advancedSubsection: nil, icon: "gearshape", settingId: "general.rewind"),
         SettingsSearchItem(name: "Notifications", subtitle: "Proactive alerts and status", keywords: ["alerts", "notify"], section: .general, advancedSubsection: nil, icon: "gearshape", settingId: "general.notifications"),
         SettingsSearchItem(name: "Ask Omi", subtitle: "Show or hide the floating chat bar", keywords: ["floating bar", "chat bar"], section: .general, advancedSubsection: nil, icon: "gearshape", settingId: "general.askomi"),
-        SettingsSearchItem(name: "Font Size", subtitle: "Adjust text size across the app", keywords: ["text size", "zoom", "scale"], section: .general, advancedSubsection: nil, icon: "gearshape", settingId: "general.fontsize"),
+        SettingsSearchItem(name: "Font Size", subtitle: "Adjust text size across the app", keywords: ["text size", "zoom", "scale", "reset"], section: .general, advancedSubsection: nil, icon: "gearshape", settingId: "general.fontsize"),
         SettingsSearchItem(name: "Reset Window Size", subtitle: "Restore the default window dimensions", keywords: ["resize", "window", "default size"], section: .general, advancedSubsection: nil, icon: "gearshape", settingId: "general.resetwindow"),
 
         // Device
