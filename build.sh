@@ -10,8 +10,8 @@ APP_BUNDLE="$BUILD_DIR/$APP_NAME.app"
 
 echo "Building $APP_NAME..."
 
-# Clean and create build directory
-rm -rf "$BUILD_DIR"
+# Clean only the release app bundle (preserve other bundles like Omi Dev.app from run.sh)
+rm -rf "$APP_BUNDLE"
 mkdir -p "$BUILD_DIR"
 
 # Build agent-bridge
