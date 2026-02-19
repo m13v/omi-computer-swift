@@ -12,7 +12,7 @@ struct OnboardingView: View {
     // Timer to periodically check permission status when on permissions step
     let permissionCheckTimer = Timer.publish(every: 1.0, on: .main, in: .common).autoconnect()
 
-    let steps = ["Video", "Name", "Language", "Permissions", "Get to Know You"]
+    let steps = ["Video", "Name", "Language", "Get to Know You", "Permissions", "Explore"]
 
     // State for name input
     @State private var nameInput: String = ""
@@ -23,8 +23,12 @@ struct OnboardingView: View {
     @State private var selectedLanguage: String = "en"
     @State private var autoDetectEnabled: Bool = false
 
-    // State for file indexing step (step 4)
+    // State for file indexing (now step 3 consent, background scan, step 5 chat reveal)
     @State private var fileIndexingDone = false
+    @State private var fileIndexingSkipped = false
+    @State private var backgroundScanTask: Task<Void, Never>?
+    @State private var totalFilesScanned: Int = 0
+    @State private var scanningInProgress: Bool = false
 
 
     // Privacy sheet
