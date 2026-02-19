@@ -431,7 +431,7 @@ async fn update_ai_profile(
     // Truncate to 10000 chars if needed (don't reject)
     let profile_text = if request.profile_text.len() > 10000 {
         tracing::warn!("Profile text truncated: {} chars -> 10000", request.profile_text.len());
-        &request.profile_text[..request.profile_text.floor_char_boundary(10000)]
+        &request.profile_text[..request.profile_text.char_indices().take_while(|&(i, _)| i < 10000).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)]
     } else {
         &request.profile_text
     };
