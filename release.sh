@@ -369,6 +369,12 @@ fi
 
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
+# Embed provisioning profile (required for Sign In with Apple entitlement)
+if [ -f "Desktop/embedded.provisionprofile" ]; then
+    cp "Desktop/embedded.provisionprofile" "$APP_BUNDLE/Contents/embedded.provisionprofile"
+    echo "  Copied provisioning profile"
+fi
+
 echo "  ✓ Build complete"
 
 # -----------------------------------------------------------------------------
