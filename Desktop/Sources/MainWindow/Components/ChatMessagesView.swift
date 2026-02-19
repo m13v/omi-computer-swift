@@ -1,6 +1,71 @@
 import SwiftUI
 import MarkdownUI
 
+/// Detects user scroll-wheel / trackpad gestures on the enclosing NSScrollView
+/// and fires a callback immediately — before the scroll position settles.
+/// This wins the race against throttled programmatic scrolls during streaming.
+private struct UserScrollDetector: NSViewRepresentable {
+    let onUserScrollUp: () -> Void
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            context.coordinator.install(for: view)
+        }
+        return view
+    }
+
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onUserScrollUp: onUserScrollUp)
+    }
+
+    class Coordinator: NSObject {
+        let onUserScrollUp: () -> Void
+        private var monitor: Any?
+
+        init(onUserScrollUp: @escaping () -> Void) {
+            self.onUserScrollUp = onUserScrollUp
+        }
+
+        func install(for view: NSView) {
+            // Find the enclosing NSScrollView so we can scope the monitor
+            var scrollView: NSScrollView?
+            var current: NSView? = view
+            while let v = current {
+                if let sv = v as? NSScrollView {
+                    scrollView = sv
+                    break
+                }
+                current = v.superview
+            }
+            let targetScrollView = scrollView
+
+            monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+                guard let self = self, let targetScrollView = targetScrollView else { return event }
+                // Only respond to events in our scroll view's window
+                guard event.window == targetScrollView.window else { return event }
+                // Check if the event location is inside our scroll view
+                let locationInWindow = event.locationInWindow
+                let locationInScrollView = targetScrollView.convert(locationInWindow, from: nil)
+                guard targetScrollView.bounds.contains(locationInScrollView) else { return event }
+                // deltaY > 0 means scrolling up (towards earlier content)
+                if event.scrollingDeltaY > 0 {
+                    self.onUserScrollUp()
+                }
+                return event
+            }
+        }
+
+        deinit {
+            if let monitor = monitor {
+                NSEvent.removeMonitor(monitor)
+            }
+        }
+    }
+}
+
 /// Reusable chat messages scroll view extracted from ChatPage.
 /// Used by both ChatPage (main chat) and TaskChatPanel (task sidebar chat).
 struct ChatMessagesView<WelcomeContent: View>: View {
@@ -50,6 +115,11 @@ struct ChatMessagesView<WelcomeContent: View>: View {
     /// Throttle token for scrollToBottom — prevents the streaming + scroll
     /// detection feedback loop from saturating the main thread.
     @State private var scrollThrottleWorkItem: DispatchWorkItem?
+    /// True when the user is actively scrolling via scroll wheel/trackpad.
+    /// Set immediately by the scroll wheel monitor to win the race against
+    /// throttled programmatic scrolls during streaming.
+    @State private var userIsScrolling = false
+    @State private var userScrollEndWorkItem: DispatchWorkItem?
 
     var body: some View {
         ScrollViewReader { proxy in
