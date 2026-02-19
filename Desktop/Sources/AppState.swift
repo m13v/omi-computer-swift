@@ -831,8 +831,23 @@ class AppState: ObservableObject {
                 }
             }
         } else {
-            // TCC not granted, clear broken flag
-            isAccessibilityBroken = false
+            // AXIsProcessTrusted() says not granted — but on macOS 26 this may be stale.
+            // Probe via event tap which checks the live TCC database.
+            if probeAccessibilityViaEventTap() {
+                log("ACCESSIBILITY_CHECK: AXIsProcessTrusted() returned false but event tap succeeded — stale cache detected")
+                let axWorks = testAccessibilityPermission()
+                hasAccessibilityPermission = true
+                if !axWorks {
+                    isAccessibilityBroken = true
+                    log("ACCESSIBILITY_CHECK: Event tap OK but AX calls fail — marking as broken")
+                } else {
+                    isAccessibilityBroken = false
+                    log("ACCESSIBILITY_CHECK: Permission confirmed via event tap probe, AX calls working")
+                }
+            } else {
+                // Event tap also failed — permission genuinely not granted
+                isAccessibilityBroken = false
+            }
         }
     }
 
@@ -865,9 +880,28 @@ class AppState: ObservableObject {
         }
     }
 
+    /// Probe accessibility permission by attempting to create a CGEvent tap.
+    /// Unlike AXIsProcessTrusted(), event tap creation checks the live TCC database,
+    /// bypassing the per-process cache that can go stale on macOS 26 (Tahoe).
+    private func probeAccessibilityViaEventTap() -> Bool {
+        let tap = CGEvent.tapCreate(
+            tap: .cgSessionEventTap,
+            place: .tailAppendEventTap,
+            options: .listenOnly,
+            eventsOfInterest: CGEventMask(1 << CGEventType.mouseMoved.rawValue),
+            callback: { _, _, event, _ in Unmanaged.passRetained(event) },
+            userInfo: nil
+        )
+        if let tap = tap {
+            CFMachPortInvalidate(tap)
+            return true
+        }
+        return false
+    }
+
     /// Check if accessibility permission was explicitly denied
     func isAccessibilityPermissionDenied() -> Bool {
-        return hasCompletedOnboarding && (!AXIsProcessTrusted() || isAccessibilityBroken)
+        return hasCompletedOnboarding && (!hasAccessibilityPermission || isAccessibilityBroken)
     }
 
     /// Trigger accessibility permission prompt
