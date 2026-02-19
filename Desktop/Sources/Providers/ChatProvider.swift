@@ -1001,15 +1001,21 @@ class ChatProvider: ObservableObject {
             prompt += "\n\n<conversation_history>\n\(history)\n</conversation_history>"
         }
 
-        // Append CLAUDE.md instructions if enabled
+        // Append global CLAUDE.md instructions if enabled
         if claudeMdEnabled, let claudeMd = claudeMdContent {
             prompt += "\n\n<claude_md>\n\(claudeMd)\n</claude_md>"
         }
 
-        // Append enabled skills as available context
+        // Append project CLAUDE.md instructions if enabled
+        if projectClaudeMdEnabled, let projectClaudeMd = projectClaudeMdContent {
+            prompt += "\n\n<project_claude_md>\n\(projectClaudeMd)\n</project_claude_md>"
+        }
+
+        // Append enabled skills as available context (global + project)
         let enabledSkillNames = getEnabledSkillNames()
         if !enabledSkillNames.isEmpty {
-            let skillDescriptions = discoveredSkills
+            let allSkills = discoveredSkills + projectDiscoveredSkills
+            let skillDescriptions = allSkills
                 .filter { enabledSkillNames.contains($0.name) }
                 .map { "- \($0.name): \($0.description)" }
                 .joined(separator: "\n")
@@ -1020,7 +1026,7 @@ class ChatProvider: ObservableObject {
 
         // Log prompt context summary
         let activeGoalCount = cachedGoals.filter { $0.isActive }.count
-        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyCount) msgs, claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), prompt_length: \(prompt.count) chars")
+        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyCount) msgs, claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), prompt_length: \(prompt.count) chars")
 
         return prompt
     }
@@ -1074,6 +1080,11 @@ class ChatProvider: ObservableObject {
         await loadAIProfileIfNeeded()
         await loadSchemaIfNeeded()
         discoverClaudeConfig()
+
+        // Set working directory for Claude Agent SDK if workspace is configured
+        if workingDirectory == nil, !aiChatWorkingDirectory.isEmpty {
+            workingDirectory = aiChatWorkingDirectory
+        }
     }
 
     /// Reinitialize after settings change
@@ -1093,12 +1104,12 @@ class ChatProvider: ObservableObject {
 
     // MARK: - CLAUDE.md & Skills Discovery
 
-    /// Discover ~/.claude/CLAUDE.md and skills from ~/.claude/skills/
+    /// Discover ~/.claude/CLAUDE.md, skills from ~/.claude/skills/, and project-level equivalents
     func discoverClaudeConfig() {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let claudeDir = "\(home)/.claude"
 
-        // Discover CLAUDE.md
+        // Discover global CLAUDE.md
         let mdPath = "\(claudeDir)/CLAUDE.md"
         if FileManager.default.fileExists(atPath: mdPath),
            let content = try? String(contentsOfFile: mdPath, encoding: .utf8) {
@@ -1109,7 +1120,7 @@ class ChatProvider: ObservableObject {
             claudeMdPath = nil
         }
 
-        // Discover skills
+        // Discover global skills
         var skills: [(name: String, description: String, path: String)] = []
         let skillsDir = "\(claudeDir)/skills"
         if let skillDirs = try? FileManager.default.contentsOfDirectory(atPath: skillsDir) {
@@ -1123,7 +1134,42 @@ class ChatProvider: ObservableObject {
             }
         }
         discoveredSkills = skills
-        log("ChatProvider: discovered CLAUDE.md=\(claudeMdContent != nil), skills=\(skills.count)")
+
+        // Discover project-level config from workspace directory
+        let workspace = aiChatWorkingDirectory
+        if !workspace.isEmpty, FileManager.default.fileExists(atPath: workspace) {
+            // Project CLAUDE.md at <workspace>/CLAUDE.md
+            let projectMdPath = "\(workspace)/CLAUDE.md"
+            if FileManager.default.fileExists(atPath: projectMdPath),
+               let content = try? String(contentsOfFile: projectMdPath, encoding: .utf8) {
+                projectClaudeMdContent = content
+                projectClaudeMdPath = projectMdPath
+            } else {
+                projectClaudeMdContent = nil
+                projectClaudeMdPath = nil
+            }
+
+            // Project skills at <workspace>/.claude/skills/
+            var projectSkills: [(name: String, description: String, path: String)] = []
+            let projectSkillsDir = "\(workspace)/.claude/skills"
+            if let skillDirs = try? FileManager.default.contentsOfDirectory(atPath: projectSkillsDir) {
+                for dir in skillDirs.sorted() {
+                    let skillPath = "\(projectSkillsDir)/\(dir)/SKILL.md"
+                    if FileManager.default.fileExists(atPath: skillPath),
+                       let content = try? String(contentsOfFile: skillPath, encoding: .utf8) {
+                        let desc = extractSkillDescription(from: content)
+                        projectSkills.append((name: dir, description: desc, path: skillPath))
+                    }
+                }
+            }
+            projectDiscoveredSkills = projectSkills
+        } else {
+            projectClaudeMdContent = nil
+            projectClaudeMdPath = nil
+            projectDiscoveredSkills = []
+        }
+
+        log("ChatProvider: discovered global CLAUDE.md=\(claudeMdContent != nil), global skills=\(skills.count), project CLAUDE.md=\(projectClaudeMdContent != nil), project skills=\(projectDiscoveredSkills.count)")
     }
 
     /// Extract description from YAML frontmatter in SKILL.md
@@ -1154,7 +1200,9 @@ class ChatProvider: ObservableObject {
     func getEnabledSkillNames() -> Set<String> {
         guard let data = enabledSkillsJSON.data(using: .utf8),
               let names = try? JSONDecoder().decode([String].self, from: data) else {
-            return Set(discoveredSkills.map { $0.name }) // Default: all enabled
+            // Default: all skills enabled (global + project)
+            let allSkillNames = discoveredSkills.map { $0.name } + projectDiscoveredSkills.map { $0.name }
+            return Set(allSkillNames)
         }
         return Set(names)
     }
