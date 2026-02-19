@@ -90,7 +90,10 @@ actor ClaudeAgentBridge {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: nodePath)
-        proc.arguments = [bridgePath]
+        // Use --jitless to avoid V8 CodeRange virtual memory reservation failures
+        // on constrained environments (macOS VMs, low-memory machines).
+        // The agent-bridge is I/O-bound so JIT makes no noticeable difference.
+        proc.arguments = ["--jitless", bridgePath]
 
         // Inherit environment (includes ANTHROPIC_API_KEY from .env)
         var env = ProcessInfo.processInfo.environment
