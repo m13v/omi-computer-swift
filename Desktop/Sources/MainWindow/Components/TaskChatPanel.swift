@@ -49,6 +49,30 @@ struct TaskChatPanel: View {
                     welcomeContent: { taskWelcome }
                 )
 
+                // Error banner
+                if let error = chatProvider.errorMessage {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundColor(OmiColors.warning)
+                            .scaledFont(size: 14)
+                        Text(error)
+                            .scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textSecondary)
+                        Spacer()
+                        Button {
+                            chatProvider.errorMessage = nil
+                        } label: {
+                            Image(systemName: "xmark")
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(OmiColors.backgroundSecondary)
+                }
+
                 // Input area
                 ChatInputView(
                     onSend: { text in
