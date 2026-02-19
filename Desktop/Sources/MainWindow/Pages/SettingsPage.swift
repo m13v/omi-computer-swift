@@ -3070,7 +3070,7 @@ struct SettingsContentView: View {
 
     private var askOmiFloatingBarSubsection: some View {
         VStack(spacing: 20) {
-            ShortcutsSettingsSection()
+            ShortcutsSettingsSection(highlightedSettingId: $highlightedSettingId)
         }
     }
 
@@ -3514,7 +3514,7 @@ struct SettingsContentView: View {
                 }
             }
 
-            settingsCard {
+            settingsCard(settingId: "about.reportissue") {
                 HStack(spacing: 16) {
                     Image(systemName: "exclamationmark.bubble.fill")
                         .scaledFont(size: 16)
