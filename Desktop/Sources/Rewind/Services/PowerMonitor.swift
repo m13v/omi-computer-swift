@@ -59,14 +59,22 @@ class PowerMonitor: ObservableObject {
 
     private func handlePowerSourceChanged() {
         let wasOnBattery = isOnBattery
-        isOnBattery = Self.checkBatteryState()
 
-        if wasOnBattery != isOnBattery {
-            log("PowerMonitor: Power source changed — \(isOnBattery ? "battery" : "AC power")")
+        // IOPSCopyPowerSourcesInfo can block on Mach IPC — check off main thread
+        Task.detached(priority: .utility) { [weak self] in
+            let nowOnBattery = Self.checkBatteryState()
+            await MainActor.run {
+                guard let self else { return }
+                self.isOnBattery = nowOnBattery
 
-            if wasOnBattery && !isOnBattery {
-                // Switched from battery → AC: trigger OCR backfill
-                onACReconnected?()
+                if wasOnBattery != nowOnBattery {
+                    log("PowerMonitor: Power source changed — \(nowOnBattery ? "battery" : "AC power")")
+
+                    if wasOnBattery && !nowOnBattery {
+                        // Switched from battery → AC: trigger OCR backfill
+                        self.onACReconnected?()
+                    }
+                }
             }
         }
     }
