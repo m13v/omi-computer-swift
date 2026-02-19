@@ -151,7 +151,7 @@ actor FileIndexerService {
             home.appendingPathComponent("Applications"),
         ]
 
-        let count = await scanFolders(folders)
+        let count = await scanFolders(folders, incremental: true)
         log("FileIndexer: Background rescan complete, \(count) files indexed")
     }
 
@@ -160,13 +160,21 @@ actor FileIndexerService {
     /// Scan folders and store file metadata in indexed_files table
     /// Returns total number of files indexed
     @discardableResult
-    func scanFolders(_ folders: [URL]) async -> Int {
+    func scanFolders(_ folders: [URL], incremental: Bool = false) async -> Int {
         let db: DatabasePool
         do {
             db = try await ensureDB()
         } catch {
             log("FileIndexer: DB init failed: \(error.localizedDescription)")
             return 0
+        }
+
+        // For incremental scans, load existing index for O(1) lookup
+        let existingIndex: [String: Date?] = incremental ? loadExistingIndex(from: db) : [:]
+        var scannedPaths = Set<String>()
+
+        if incremental {
+            log("FileIndexer: Loaded \(existingIndex.count) existing paths for incremental scan")
         }
 
         let fm = FileManager.default
@@ -194,13 +202,20 @@ actor FileIndexerService {
                 fm: fm,
                 batch: &batch,
                 totalFiles: &totalFiles,
-                db: db
+                db: db,
+                existingIndex: existingIndex,
+                scannedPaths: &scannedPaths
             )
         }
 
         // Flush remaining batch
         if !batch.isEmpty {
             insertBatch(batch, into: db)
+        }
+
+        // For incremental scans, remove files that no longer exist on disk
+        if incremental && !existingIndex.isEmpty {
+            deleteRemovedFiles(scannedPaths: scannedPaths, existingPaths: Set(existingIndex.keys), db: db)
         }
 
         return totalFiles
@@ -215,7 +230,9 @@ actor FileIndexerService {
         fm: FileManager,
         batch: inout [IndexedFileRecord],
         totalFiles: inout Int,
-        db: DatabasePool
+        db: DatabasePool,
+        existingIndex: [String: Date?],
+        scannedPaths: inout Set<String>
     ) {
         guard depth <= maxDepth else { return }
 
@@ -248,6 +265,14 @@ actor FileIndexerService {
                     if relativePath.hasPrefix(homePath) {
                         relativePath = "~" + relativePath.dropFirst(homePath.count)
                     }
+                    scannedPaths.insert(relativePath)
+                    // Skip unchanged files (incremental scan)
+                    if let existingModified = existingIndex[relativePath],
+                       let newModified = resourceValues?.contentModificationDate,
+                       let existing = existingModified,
+                       abs(existing.timeIntervalSince(newModified)) < 1.0 {
+                        continue
+                    }
                     let record = IndexedFileRecord(
                         path: relativePath,
                         filename: name,
@@ -277,7 +302,9 @@ actor FileIndexerService {
                     fm: fm,
                     batch: &batch,
                     totalFiles: &totalFiles,
-                    db: db
+                    db: db,
+                    existingIndex: existingIndex,
+                    scannedPaths: &scannedPaths
                 )
                 continue
             }
@@ -295,6 +322,15 @@ actor FileIndexerService {
             var relativePath = item.path
             if relativePath.hasPrefix(homePath) {
                 relativePath = "~" + relativePath.dropFirst(homePath.count)
+            }
+
+            scannedPaths.insert(relativePath)
+            // Skip unchanged files (incremental scan)
+            if let existingModified = existingIndex[relativePath],
+               let newModified = resourceValues?.contentModificationDate,
+               let existing = existingModified,
+               abs(existing.timeIntervalSince(newModified)) < 1.0 {
+                continue
             }
 
             let record = IndexedFileRecord(
