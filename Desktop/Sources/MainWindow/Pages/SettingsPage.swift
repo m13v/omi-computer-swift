@@ -209,7 +209,7 @@ struct SettingsContentView: View {
     @State private var aiChatProjectClaudeMdPath: String?
     @State private var aiChatDiscoveredSkills: [(name: String, description: String, path: String)] = []
     @State private var aiChatProjectDiscoveredSkills: [(name: String, description: String, path: String)] = []
-    @State private var aiChatEnabledSkills: Set<String> = []
+    @State private var aiChatDisabledSkills: Set<String> = []
     @State private var showFileViewer = false
     @State private var fileViewerContent = ""
     @State private var fileViewerTitle = ""
@@ -1758,14 +1758,14 @@ struct SettingsContentView: View {
                                     let origin = item.element.origin
                                     HStack(spacing: 10) {
                                         Toggle("", isOn: Binding(
-                                            get: { aiChatEnabledSkills.contains(skill.name) },
+                                            get: { !aiChatDisabledSkills.contains(skill.name) },
                                             set: { enabled in
                                                 if enabled {
-                                                    aiChatEnabledSkills.insert(skill.name)
+                                                    aiChatDisabledSkills.remove(skill.name)
                                                 } else {
-                                                    aiChatEnabledSkills.remove(skill.name)
+                                                    aiChatDisabledSkills.insert(skill.name)
                                                 }
-                                                saveEnabledSkills()
+                                                saveDisabledSkills()
                                             }
                                         ))
                                         .toggleStyle(.checkbox)
@@ -2043,7 +2043,7 @@ struct SettingsContentView: View {
         }
 
         // Load enabled skills from UserDefaults
-        loadEnabledSkills()
+        loadDisabledSkills()
     }
 
     private func extractSkillDescription(from content: String) -> String {
@@ -2067,29 +2067,20 @@ struct SettingsContentView: View {
         return ""
     }
 
-    private func loadEnabledSkills() {
-        let json = UserDefaults.standard.string(forKey: "enabledSkillsJSON") ?? ""
+    private func loadDisabledSkills() {
+        let json = UserDefaults.standard.string(forKey: "disabledSkillsJSON") ?? ""
         guard let data = json.data(using: .utf8),
               let names = try? JSONDecoder().decode([String].self, from: data) else {
-            // Default: all skills enabled (global + project)
-            let allNames = aiChatDiscoveredSkills.map { $0.name } + aiChatProjectDiscoveredSkills.map { $0.name }
-            aiChatEnabledSkills = Set(allNames)
+            aiChatDisabledSkills = [] // Default: nothing disabled = all enabled
             return
         }
-        // Merge saved names with any newly discovered project skills (so new project skills default to enabled)
-        var enabled = Set(names)
-        for skill in aiChatProjectDiscoveredSkills {
-            if !enabled.contains(skill.name) && !names.contains(skill.name) {
-                enabled.insert(skill.name)
-            }
-        }
-        aiChatEnabledSkills = enabled
+        aiChatDisabledSkills = Set(names)
     }
 
-    private func saveEnabledSkills() {
-        if let data = try? JSONEncoder().encode(Array(aiChatEnabledSkills)),
+    private func saveDisabledSkills() {
+        if let data = try? JSONEncoder().encode(Array(aiChatDisabledSkills)),
            let json = String(data: data, encoding: .utf8) {
-            UserDefaults.standard.set(json, forKey: "enabledSkillsJSON")
+            UserDefaults.standard.set(json, forKey: "disabledSkillsJSON")
         }
     }
 
