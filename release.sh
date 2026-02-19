@@ -703,6 +703,12 @@ EOF
 
 # Check if gh CLI is available
 if command -v gh &> /dev/null; then
+    # Delete existing release if it exists (ensures re-runs are safe)
+    if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPO" &>/dev/null; then
+        echo "  Deleting existing GitHub release $RELEASE_TAG..."
+        gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPO" --yes 2>/dev/null
+    fi
+
     # Create GitHub release with both Omi.zip and DMG
     gh release create "$RELEASE_TAG" \
         --repo "$GITHUB_REPO" \
