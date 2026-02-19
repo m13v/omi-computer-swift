@@ -143,6 +143,18 @@ struct ChatPage: View {
             )
             .frame(minWidth: 500, minHeight: 500)
         }
+        .sheet(isPresented: $chatProvider.needsBrowserExtensionSetup) {
+            BrowserExtensionSetup(
+                onComplete: {
+                    chatProvider.needsBrowserExtensionSetup = false
+                },
+                onDismiss: {
+                    chatProvider.needsBrowserExtensionSetup = false
+                },
+                chatProvider: chatProvider
+            )
+            .frame(width: 480, height: 460)
+        }
         .overlay {
             // Loading overlay when fetching citation
             if isLoadingCitation {
