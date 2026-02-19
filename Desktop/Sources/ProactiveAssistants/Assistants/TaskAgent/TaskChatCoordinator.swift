@@ -146,7 +146,7 @@ class TaskChatCoordinator: ObservableObject {
         // message contamination.
         if chatProvider.isSending {
             log("TaskChatCoordinator: interrupting in-flight query before switching tasks")
-            await chatProvider.claudeBridge.interrupt()
+            chatProvider.stopAgent()
         }
 
         // Cache current task's messages before switching (preserves in-flight streaming)
