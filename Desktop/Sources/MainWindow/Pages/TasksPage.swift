@@ -908,7 +908,7 @@ class TasksViewModel: ObservableObject {
 
         // Cmd+D: delete task
         if modifiers == .command && keyCode == 2 {
-            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId,
+            guard let taskId = keyboardSelectedTaskId ?? hoveredTaskId,
                   let task = findTask(taskId) else { return false }
             let nav = navigationOrder
             if let idx = nav.firstIndex(where: { $0.id == taskId }) {
@@ -925,7 +925,7 @@ class TasksViewModel: ObservableObject {
 
         // Space: toggle task complete
         if keyCode == 49 && modifiers.isEmpty {
-            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId,
+            guard let taskId = keyboardSelectedTaskId ?? hoveredTaskId,
                   let task = findTask(taskId) else { return false }
             Task { [weak self] in await self?.toggleTask(task) }
             return true
@@ -933,12 +933,12 @@ class TasksViewModel: ObservableObject {
 
         // Tab / Shift+Tab: indent
         if keyCode == 48 && modifiers.isEmpty {
-            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId else { return false }
+            guard let taskId = keyboardSelectedTaskId ?? hoveredTaskId else { return false }
             incrementIndent(for: taskId)
             return true
         }
         if keyCode == 48 && modifiers == .shift {
-            guard let taskId = hoveredTaskId ?? keyboardSelectedTaskId else { return false }
+            guard let taskId = keyboardSelectedTaskId ?? hoveredTaskId else { return false }
             decrementIndent(for: taskId)
             return true
         }
