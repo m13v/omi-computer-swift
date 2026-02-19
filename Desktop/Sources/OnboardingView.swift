@@ -67,7 +67,7 @@ struct OnboardingView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onReceive(permissionCheckTimer) { _ in
             // Poll all permissions when on the permissions step
-            if currentStep == 3 {
+            if currentStep == 4 {
                 appState.checkNotificationPermission()
                 appState.checkScreenRecordingPermission()
                 appState.checkMicrophonePermission()
@@ -79,13 +79,13 @@ struct OnboardingView: View {
         }
         // Bring app to front when any permission is granted while on the permissions step
         .onChange(of: appState.hasNotificationPermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Notification permission granted on permissions step, bringing to front")
                 bringToFront()
             }
         }
         .onChange(of: appState.hasScreenRecordingPermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Screen recording permission granted on permissions step, bringing to front")
                 bringToFront()
                 // Silently trigger system audio permission (piggybacks on screen recording)
@@ -95,28 +95,28 @@ struct OnboardingView: View {
             }
         }
         .onChange(of: appState.hasMicrophonePermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Microphone permission granted on permissions step, bringing to front")
                 bringToFront()
             }
         }
         .onChange(of: appState.hasAccessibilityPermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Accessibility permission granted on permissions step, bringing to front")
                 bringToFront()
             }
         }
         .onChange(of: appState.hasAutomationPermission) { _, granted in
-            if granted && currentStep == 3 {
+            if granted && currentStep == 4 {
                 log("Automation permission granted on permissions step, bringing to front")
                 bringToFront()
             }
         }
         .onAppear {
-            // Handle relaunch case: if app restarts on step 3 (e.g., after Screen Recording quit & reopen),
+            // Handle relaunch case: if app restarts on step 4 (e.g., after Screen Recording quit & reopen),
             // immediately check all permissions.
             // onChange(of: currentStep) won't fire since the value didn't change.
-            if currentStep == 3 {
+            if currentStep == 4 {
                 log("OnboardingView onAppear: on permissions step, checking all permissions immediately")
                 appState.checkAllPermissions()
             }
@@ -159,8 +159,9 @@ struct OnboardingView: View {
         case 0: return true // Video step - always valid
         case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step - valid if name entered
         case 2: return true // Language step - always valid (has default)
-        case 3: return requiredPermissionsGranted
-        case 4: return fileIndexingDone // File indexing step
+        case 3: return true // File indexing consent - always valid (has buttons)
+        case 4: return requiredPermissionsGranted // Permissions step
+        case 5: return fileIndexingDone // Chat reveal step
         default: return true
         }
     }
@@ -296,8 +297,8 @@ struct OnboardingView: View {
 
                         buttonSection
                     }
-                    .frame(width: currentStep == 3 ? 720 : (currentStep == 4 ? 600 : 420))
-                    .frame(height: currentStep == 3 ? 560 : (currentStep == 4 ? 650 : 420))
+                    .frame(width: currentStep == 4 ? 720 : (currentStep == 5 ? 600 : 420))
+                    .frame(height: currentStep == 4 ? 560 : (currentStep == 5 ? 650 : 420))
                     .background(
                         RoundedRectangle(cornerRadius: 16)
                             .fill(OmiColors.backgroundSecondary)
@@ -341,8 +342,9 @@ struct OnboardingView: View {
         case 0: return true // Video - always "granted"
         case 1: return !nameInput.trimmingCharacters(in: .whitespaces).isEmpty // Name step
         case 2: return true // Language step - always "granted" (has default)
-        case 3: return allPermissionsGranted // Permissions step
-        case 4: return fileIndexingDone // File indexing step
+        case 3: return true // File indexing consent - always "granted"
+        case 4: return allPermissionsGranted // Permissions step
+        case 5: return fileIndexingDone // Chat reveal step
         default: return false
         }
     }
@@ -357,11 +359,11 @@ struct OnboardingView: View {
         case 2:
             languageStepView
         case 3:
-            permissionsStepView
+            fileIndexingConsentView
         case 4:
-            FileIndexingView(chatProvider: chatProvider) { fileCount in
-                handleFileIndexingComplete(fileCount: fileCount)
-            }
+            permissionsStepView
+        case 5:
+            onboardingChatRevealView
         default:
             EmptyView()
         }
@@ -476,6 +478,135 @@ struct OnboardingView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - File Indexing Consent View (Step 3)
+
+    private var fileIndexingConsentView: some View {
+        VStack(spacing: 16) {
+            Spacer()
+
+            Image(systemName: "folder.badge.gearshape")
+                .scaledFont(size: 48)
+                .foregroundColor(OmiColors.purplePrimary)
+
+            Text("Get to Know You")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("Let Omi look at your files to understand what you work on, your projects, and interests.")
+                .font(.body)
+                .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+                .fixedSize(horizontal: false, vertical: true)
+
+            VStack(spacing: 4) {
+                HStack(spacing: 8) {
+                    Image(systemName: "lock.shield")
+                        .scaledFont(size: 12)
+                        .foregroundColor(.secondary)
+                    Text("Scans common folders for file names only")
+                        .scaledFont(size: 12)
+                        .foregroundColor(.secondary)
+                }
+
+                HStack(spacing: 8) {
+                    Image(systemName: "eye.slash")
+                        .scaledFont(size: 12)
+                        .foregroundColor(.secondary)
+                    Text("File contents are never uploaded")
+                        .scaledFont(size: 12)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .padding(.top, 4)
+
+            Spacer()
+        }
+    }
+
+    // MARK: - Chat Reveal View (Step 5)
+
+    private var onboardingChatRevealView: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                if let logoURL = Bundle.resourceBundle.url(forResource: "herologo", withExtension: "png"),
+                   let logoImage = NSImage(contentsOf: logoURL) {
+                    Image(nsImage: logoImage)
+                        .resizable()
+                        .scaledToFit()
+                        .frame(width: 24, height: 24)
+                }
+
+                if scanningInProgress {
+                    Text("Scanning your files...")
+                        .scaledFont(size: 14, weight: .medium)
+                        .foregroundColor(OmiColors.textPrimary)
+                } else {
+                    Text("Exploring \(totalFilesScanned.formatted()) files...")
+                        .scaledFont(size: 14, weight: .medium)
+                        .foregroundColor(OmiColors.textPrimary)
+                }
+
+                Spacer()
+
+                Button(action: { handleFileIndexingComplete(fileCount: totalFilesScanned) }) {
+                    Text("Done")
+                        .scaledFont(size: 13, weight: .medium)
+                        .foregroundColor(OmiColors.purplePrimary)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(OmiColors.purplePrimary.opacity(0.1))
+                        .cornerRadius(6)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+
+            Divider()
+
+            // Messages
+            ChatMessagesView(
+                messages: chatProvider.messages,
+                isSending: chatProvider.isSending,
+                hasMoreMessages: false,
+                isLoadingMoreMessages: false,
+                isLoadingInitial: chatProvider.isLoading,
+                app: nil,
+                onLoadMore: {},
+                onRate: { _, _ in },
+                welcomeContent: {
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                        Text("Analyzing your files...")
+                            .scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            )
+
+            // Input
+            ChatInputView(
+                onSend: { text in
+                    Task { await chatProvider.sendMessage(text) }
+                },
+                onFollowUp: { text in
+                    Task { await chatProvider.sendFollowUp(text) }
+                },
+                onStop: {
+                    chatProvider.stopAgent()
+                },
+                isSending: chatProvider.isSending,
+                isStopping: chatProvider.isStopping,
+                mode: $chatProvider.chatMode
+            )
+            .padding()
         }
     }
 
