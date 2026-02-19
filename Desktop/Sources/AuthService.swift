@@ -1016,14 +1016,22 @@ class AuthService {
             await AIUserProfileService.shared.invalidateCache()
         }
 
-        // Clear onboarding step/trigger flags but keep hasCompletedOnboarding
-        // Permissions are per-app on macOS, so no need to re-show onboarding after logout
+        // Clear onboarding so a different user goes through setup (which force-starts monitoring).
+        // Permissions are per-app on macOS and don't need re-granting, but onboarding also
+        // initializes screen analysis which won't start otherwise.
+        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
         UserDefaults.standard.removeObject(forKey: "onboardingStep")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredNotification")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredAutomation")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredScreenRecording")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredMicrophone")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredSystemAudio")
+
+        // Clear screen analysis setting so it reverts to registered default (true).
+        // Without this, a server-synced "false" value persists through sign-out/sign-in
+        // and prevents monitoring from starting for the next user.
+        UserDefaults.standard.removeObject(forKey: "screenAnalysisEnabled")
+        UserDefaults.standard.removeObject(forKey: "transcriptionEnabled")
 
         NSLog("OMI AUTH: Signed out and cleared saved state + onboarding")
     }
