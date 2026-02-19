@@ -65,7 +65,8 @@ struct TaskChatPanel: View {
                     isStopping: chatProvider.isStopping,
                     placeholder: "Ask about this task...",
                     mode: $chatProvider.chatMode,
-                    pendingText: $coordinator.pendingInputText
+                    pendingText: $coordinator.pendingInputText,
+                    inputText: $chatProvider.draftText
                 )
                 .padding(12)
             }
