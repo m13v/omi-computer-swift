@@ -199,7 +199,8 @@ struct FileIndexingView: View {
                 },
                 isSending: chatProvider.isSending,
                 isStopping: chatProvider.isStopping,
-                mode: $chatProvider.chatMode
+                mode: $chatProvider.chatMode,
+                inputText: $chatProvider.draftText
             )
             .padding()
         }
