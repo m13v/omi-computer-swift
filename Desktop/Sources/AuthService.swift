@@ -222,12 +222,19 @@ class AuthService {
             return
         } catch let error as ASAuthorizationError where error.code == .canceled {
             NSLog("OMI AUTH: User cancelled Apple Sign In")
+            log("AUTH: User cancelled native Apple Sign In")
             return
         } catch let error as ASAuthorizationError where error.code == .unknown {
             // Error 1000 = missing entitlement (dev builds signed with Developer ID)
             NSLog("OMI AUTH: Native Apple Sign In unavailable (error 1000), falling back to web OAuth")
+            logError("AUTH: Native Apple Sign In failed with ASAuthorizationError.unknown (code \(error.code.rawValue))", error: error)
+        } catch let error as ASAuthorizationError {
+            NSLog("OMI AUTH: Native Apple Sign In ASAuthorizationError (code %d), falling back to web OAuth", error.code.rawValue)
+            logError("AUTH: Native Apple Sign In failed with ASAuthorizationError code \(error.code.rawValue)", error: error)
         } catch {
-            NSLog("OMI AUTH: Native Apple Sign In failed (%@), falling back to web OAuth", error.localizedDescription)
+            let nsError = error as NSError
+            NSLog("OMI AUTH: Native Apple Sign In failed (domain=%@ code=%d desc=%@), falling back to web OAuth", nsError.domain, nsError.code, error.localizedDescription)
+            logError("AUTH: Native Apple Sign In failed (domain=\(nsError.domain) code=\(nsError.code))", error: error)
         }
 
         // Fall back to web OAuth flow (browser-based, works without special entitlements)
@@ -438,7 +445,9 @@ class AuthService {
             fetchConversations()
 
         } catch {
+            let nsError = error as NSError
             NSLog("OMI AUTH: Error during sign in: %@", error.localizedDescription)
+            logError("AUTH: \(provider) web OAuth sign-in failed (domain=\(nsError.domain) code=\(nsError.code))", error: error)
             AnalyticsManager.shared.signInFailed(provider: provider, error: error.localizedDescription)
             self.error = error.localizedDescription
             throw error
