@@ -482,11 +482,14 @@ if [ -f "$FFMPEG_PATH" ]; then
 fi
 
 # Sign node binary in resource bundle (if present)
+# Node.js requires JIT entitlements for V8 and WebAssembly (used by fetch/undici).
+# Without these, Hardened Runtime blocks MAP_JIT causing SIGTRAP on launch.
 NODE_BUNDLE_PATH="$APP_BUNDLE/Contents/Resources/Omi Computer_Omi Computer.bundle/node"
 if [ -f "$NODE_BUNDLE_PATH" ]; then
-    echo "  Signing node binary..."
+    echo "  Signing node binary (with JIT entitlements)..."
     codesign --force --options runtime --timestamp \
         --sign "$SIGN_IDENTITY" \
+        --entitlements Desktop/Node.entitlements \
         "$NODE_BUNDLE_PATH"
 fi
 
