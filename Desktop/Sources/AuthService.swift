@@ -990,9 +990,13 @@ class AuthService {
         clearTokens()
 
         // Close database and invalidate all storage caches so the next sign-in
-        // opens a fresh per-user database
+        // opens a fresh per-user database.
+        // Capture the current configureGeneration so closeIfStale() can detect if
+        // a new sign-in session has already called configure() by the time this runs.
+        let closeGeneration = RewindDatabase.configureGeneration
         Task {
-            await RewindDatabase.shared.close()
+            await RewindDatabase.shared.closeIfStale(generation: closeGeneration)
+            await RewindIndexer.shared.reset()
             await RewindStorage.shared.reset()
             await TranscriptionStorage.shared.invalidateCache()
             await MemoryStorage.shared.invalidateCache()
