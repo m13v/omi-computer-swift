@@ -177,8 +177,31 @@ class TaskChatCoordinator: ObservableObject {
 
         // Check if we have cached messages for this task (e.g. switching back while streaming)
         if let cached = taskMessagesCache[task.id] {
-            log("TaskChatCoordinator: restoring \(cached.count) cached messages for task \(task.id)")
-            chatProvider.messages = cached
+            // If this task is NOT actively streaming, clear stale isStreaming flags
+            // to prevent ghost typing indicators from appearing
+            let cleaned: [ChatMessage]
+            if streamingTaskId == task.id {
+                cleaned = cached
+            } else {
+                cleaned = cached.map { msg in
+                    guard msg.isStreaming else { return msg }
+                    var updated = msg
+                    updated.isStreaming = false
+                    // Also mark any running tool calls as completed
+                    for i in updated.contentBlocks.indices {
+                        if case .toolCall(let id, let name, .running, let toolUseId, let input, let output) = updated.contentBlocks[i] {
+                            updated.contentBlocks[i] = .toolCall(
+                                id: id, name: name, status: .completed,
+                                toolUseId: toolUseId, input: input, output: output
+                            )
+                        }
+                    }
+                    return updated
+                }
+                log("TaskChatCoordinator: cleaned stale streaming flags from cached messages")
+            }
+            log("TaskChatCoordinator: restoring \(cleaned.count) cached messages for task \(task.id)")
+            chatProvider.messages = cleaned
             if let sessionId = task.chatSessionId {
                 chatProvider.currentSession = ChatSession(id: sessionId, title: taskChatTitle(for: task))
                 chatProvider.isInDefaultChat = false
