@@ -385,7 +385,7 @@ struct SettingsContentView: View {
     private var generalSection: some View {
         VStack(spacing: 20) {
             // Rewind toggle (controls both screen + audio)
-            settingsCard {
+            settingsCard(settingId: "general.rewind") {
                 HStack(spacing: 16) {
                     Circle()
                         .fill((isMonitoring || isTranscribing) ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
@@ -424,7 +424,7 @@ struct SettingsContentView: View {
             }
 
             // Notifications toggle
-            settingsCard {
+            settingsCard(settingId: "general.notifications") {
                 VStack(spacing: 12) {
                     HStack(spacing: 16) {
                         Circle()
@@ -511,7 +511,7 @@ struct SettingsContentView: View {
             }
 
             // Ask Omi floating bar toggle
-            settingsCard {
+            settingsCard(settingId: "general.askomi") {
                 HStack(spacing: 16) {
                     Circle()
                         .fill(showAskOmiBar ? OmiColors.success : OmiColors.textTertiary.opacity(0.3))
@@ -544,7 +544,7 @@ struct SettingsContentView: View {
             }
 
             // Font Size
-            settingsCard {
+            settingsCard(settingId: "general.fontsize") {
                 VStack(spacing: 12) {
                     HStack(spacing: 16) {
                         Image(systemName: "textformat.size")
@@ -3559,8 +3559,8 @@ struct SettingsContentView: View {
         }
     }
 
-    private func settingsCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
+    private func settingsCard<Content: View>(settingId: String? = nil, @ViewBuilder content: () -> Content) -> some View {
+        let card = content()
             .padding(20)
             .background(
                 RoundedRectangle(cornerRadius: 12)
@@ -3570,10 +3570,17 @@ struct SettingsContentView: View {
                             .stroke(OmiColors.backgroundQuaternary.opacity(0.3), lineWidth: 1)
                     )
             )
+        return Group {
+            if let settingId = settingId {
+                card.modifier(SettingHighlightModifier(settingId: settingId, highlightedSettingId: $highlightedSettingId))
+            } else {
+                card
+            }
+        }
     }
 
-    private func settingRow<Content: View>(title: String, subtitle: String, @ViewBuilder control: () -> Content) -> some View {
-        HStack {
+    private func settingRow<Content: View>(title: String, subtitle: String, settingId: String? = nil, @ViewBuilder control: () -> Content) -> some View {
+        let row = HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
                     .scaledFont(size: 14)
@@ -3586,6 +3593,13 @@ struct SettingsContentView: View {
             Spacer()
 
             control()
+        }
+        return Group {
+            if let settingId = settingId {
+                row.modifier(SettingHighlightModifier(settingId: settingId, highlightedSettingId: $highlightedSettingId))
+            } else {
+                row
+            }
         }
     }
 
