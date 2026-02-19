@@ -224,6 +224,10 @@ class TaskChatCoordinator: ObservableObject {
                 chatProvider.isInDefaultChat = false
             }
             taskMessagesCache.removeValue(forKey: task.id)
+            // Inject the initial prompt if the chat is still empty
+            if cleaned.isEmpty {
+                pendingInputText = buildInitialPrompt(for: task)
+            }
             isPanelOpen = true
             return
         }
@@ -253,10 +257,12 @@ class TaskChatCoordinator: ObservableObject {
                 )
                 // Also update the in-memory task in the store
                 TasksStore.shared.updateChatSessionId(taskId: task.id, sessionId: session.id)
-
-                // Pre-fill the input with context so the user can review before sending
-                pendingInputText = buildInitialPrompt(for: task)
             }
+        }
+
+        // Inject the initial prompt whenever the chat has no messages yet
+        if chatProvider.messages.isEmpty {
+            pendingInputText = buildInitialPrompt(for: task)
         }
 
         isPanelOpen = true
