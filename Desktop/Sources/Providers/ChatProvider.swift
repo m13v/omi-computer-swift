@@ -1546,13 +1546,12 @@ class ChatProvider: ObservableObject {
                 log("Chat response arrived after session switch")
             }
 
-            // Verify the session hasn't changed before persisting.
-            // If the session switched, this response may contain content from the
-            // wrong conversation context (the bridge shares a single message pipe,
-            // so a concurrent query could have mixed responses).
-            let sessionStillActive = currentSessionId == capturedSessionId
+            // Always save AI response to backend with the captured session ID.
+            // Even if the user switched to a different task, this response belongs
+            // to the original session (concurrent queries are prevented by the
+            // isSending guard, so the response is always correct for its session).
             let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
-            if !textToSave.isEmpty, sessionStillActive {
+            if !textToSave.isEmpty {
                 do {
                     let toolMetadata = serializeToolCallMetadata(messageId: aiMessageId)
                     let response = try await APIClient.shared.saveMessage(
@@ -1566,12 +1565,10 @@ class ChatProvider: ObservableObject {
                         messages[syncIndex].id = response.id
                         messages[syncIndex].isSynced = true
                     }
-                    log("Saved and synced AI response: \(response.id) (tool_calls=\(toolMetadata != nil ? "yes" : "none"))")
+                    log("Saved and synced AI response: \(response.id) (session=\(capturedSessionId ?? "nil"), tool_calls=\(toolMetadata != nil ? "yes" : "none"))")
                 } catch {
                     logError("Failed to persist AI response", error: error)
                 }
-            } else if !textToSave.isEmpty {
-                log("Skipping AI response persistence — session changed (captured=\(capturedSessionId ?? "nil"), current=\(currentSessionId ?? "nil"))")
             }
 
             // Auto-generate title after first exchange (user message + AI response)
@@ -1612,31 +1609,27 @@ class ChatProvider: ObservableObject {
                     messages[index].isStreaming = false
                     completeRemainingToolCalls(messageId: aiMessageId)
                     log("Bridge error after partial response — keeping \(messages[index].text.count) chars of streamed text")
-                    // Still try to persist the partial response (only if session hasn't changed)
+                    // Still try to persist the partial response
                     let partialText = messages[index].text
                     let partialToolMetadata = self.serializeToolCallMetadata(messageId: aiMessageId)
-                    if currentSessionId != capturedSessionId {
-                        log("Skipping partial response persistence — session changed")
-                    } else {
-                        Task { [weak self] in
-                            do {
-                                let response = try await APIClient.shared.saveMessage(
-                                    text: partialText,
-                                    sender: "ai",
-                                    appId: capturedAppId,
-                                    sessionId: capturedSessionId,
-                                    metadata: partialToolMetadata
-                                )
-                                await MainActor.run {
-                                    if let syncIndex = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
-                                        self?.messages[syncIndex].id = response.id
-                                        self?.messages[syncIndex].isSynced = true
-                                    }
+                    Task { [weak self] in
+                        do {
+                            let response = try await APIClient.shared.saveMessage(
+                                text: partialText,
+                                sender: "ai",
+                                appId: capturedAppId,
+                                sessionId: capturedSessionId,
+                                metadata: partialToolMetadata
+                            )
+                            await MainActor.run {
+                                if let syncIndex = self?.messages.firstIndex(where: { $0.id == aiMessageId }) {
+                                    self?.messages[syncIndex].id = response.id
+                                    self?.messages[syncIndex].isSynced = true
                                 }
-                                log("Saved partial AI response to backend: \(response.id)")
-                            } catch {
-                                logError("Failed to persist partial AI response", error: error)
                             }
+                            log("Saved partial AI response to backend: \(response.id)")
+                        } catch {
+                            logError("Failed to persist partial AI response", error: error)
                         }
                     }
                 }
