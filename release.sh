@@ -251,6 +251,84 @@ fi
 echo "  ffmpeg: $(file "$FFMPEG_RESOURCE" | sed 's/.*: //')"
 
 # -----------------------------------------------------------------------------
+# Step 1.6: Prepare Universal Node.js binary (for AI chat / Claude Agent Bridge)
+# -----------------------------------------------------------------------------
+echo "[1.6/12] Preparing universal Node.js binary..."
+
+NODE_RESOURCE="Desktop/Sources/Resources/node"
+NODE_TEMP_DIR="/tmp/node-universal-$$"
+NODE_VERSION="v22.14.0"
+
+# Check if current node is already universal
+if file "$NODE_RESOURCE" 2>/dev/null | grep -q "universal binary"; then
+    echo "  Node.js is already universal, skipping download"
+else
+    echo "  Creating universal Node.js binary..."
+
+    mkdir -p "$NODE_TEMP_DIR"
+
+    # Backup current node if exists
+    if [ -f "$NODE_RESOURCE" ]; then
+        cp "$NODE_RESOURCE" "$NODE_TEMP_DIR/node.backup"
+    fi
+
+    # Download arm64 Node.js
+    echo "  Downloading arm64 Node.js $NODE_VERSION..."
+    curl -L -o "$NODE_TEMP_DIR/node-arm64.tar.gz" \
+        "https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-darwin-arm64.tar.gz" || {
+        echo "Error: Failed to download arm64 Node.js"
+        exit 1
+    }
+    tar -xzf "$NODE_TEMP_DIR/node-arm64.tar.gz" -C "$NODE_TEMP_DIR" --strip-components=1 --include="*/bin/node" 2>/dev/null || \
+    tar -xzf "$NODE_TEMP_DIR/node-arm64.tar.gz" -C "$NODE_TEMP_DIR"
+    ARM64_NODE=$(find "$NODE_TEMP_DIR" -name "node" -type f | head -1)
+    # Move arm64 node aside so x86_64 extraction doesn't overwrite
+    mv "$ARM64_NODE" "$NODE_TEMP_DIR/node-arm64"
+
+    # Download x86_64 Node.js
+    echo "  Downloading x86_64 Node.js $NODE_VERSION..."
+    curl -L -o "$NODE_TEMP_DIR/node-x86_64.tar.gz" \
+        "https://nodejs.org/dist/$NODE_VERSION/node-$NODE_VERSION-darwin-x64.tar.gz" || {
+        echo "Error: Failed to download x86_64 Node.js"
+        exit 1
+    }
+    tar -xzf "$NODE_TEMP_DIR/node-x86_64.tar.gz" -C "$NODE_TEMP_DIR" --strip-components=1 --include="*/bin/node" 2>/dev/null || \
+    tar -xzf "$NODE_TEMP_DIR/node-x86_64.tar.gz" -C "$NODE_TEMP_DIR"
+    X86_64_NODE=$(find "$NODE_TEMP_DIR" -name "node" -type f ! -name "node-arm64" | head -1)
+
+    if [ -z "$NODE_TEMP_DIR/node-arm64" ] || [ ! -f "$NODE_TEMP_DIR/node-arm64" ] || [ -z "$X86_64_NODE" ]; then
+        echo "Error: Could not find Node.js binaries in downloaded archives"
+        exit 1
+    fi
+
+    # Create universal binary with lipo
+    echo "  Creating universal Node.js with lipo..."
+    lipo -create "$NODE_TEMP_DIR/node-arm64" "$X86_64_NODE" -output "$NODE_RESOURCE"
+
+    # Make executable and ad-hoc sign
+    chmod +x "$NODE_RESOURCE"
+    xattr -cr "$NODE_RESOURCE"
+    codesign -f -s - "$NODE_RESOURCE"
+
+    # Verify it's universal
+    if file "$NODE_RESOURCE" | grep -q "universal binary"; then
+        echo "  ✓ Universal Node.js created successfully"
+    else
+        echo "Error: Failed to create universal Node.js"
+        if [ -f "$NODE_TEMP_DIR/node.backup" ]; then
+            mv "$NODE_TEMP_DIR/node.backup" "$NODE_RESOURCE"
+        fi
+        exit 1
+    fi
+
+    # Cleanup temp files
+    rm -rf "$NODE_TEMP_DIR"
+fi
+
+# Show node architectures
+echo "  node: $(file "$NODE_RESOURCE" | sed 's/.*: //')"
+
+# -----------------------------------------------------------------------------
 # Step 2: Build Desktop App (Universal Binary: arm64 + x86_64)
 # -----------------------------------------------------------------------------
 echo "[2/12] Building $APP_NAME (Universal Binary)..."
@@ -392,6 +470,15 @@ if [ -f "$FFMPEG_PATH" ]; then
     codesign --force --options runtime --timestamp \
         --sign "$SIGN_IDENTITY" \
         "$FFMPEG_PATH"
+fi
+
+# Sign node binary in resource bundle (if present)
+NODE_BUNDLE_PATH="$APP_BUNDLE/Contents/Resources/Omi Computer_Omi Computer.bundle/node"
+if [ -f "$NODE_BUNDLE_PATH" ]; then
+    echo "  Signing node binary..."
+    codesign --force --options runtime --timestamp \
+        --sign "$SIGN_IDENTITY" \
+        "$NODE_BUNDLE_PATH"
 fi
 
 # Sign native binaries in agent-bridge node_modules
