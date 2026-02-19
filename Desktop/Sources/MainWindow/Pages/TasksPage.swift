@@ -629,7 +629,7 @@ class TasksViewModel: ObservableObject {
     @Published var inlineCreateAfterTaskId: String?
     @Published var editingTaskId: String?
     var hoveredTaskId: String?
-    var isAnyTaskEditing = false
+    @Published var isAnyTaskEditing = false
     var lastEnterPressTime: Date?
     var scrollProxy: ScrollViewProxy?
 
