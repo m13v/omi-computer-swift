@@ -93,6 +93,9 @@ struct OmiTextEditor: NSViewRepresentable {
             }
         }
 
+        // Keep closures fresh so they capture the latest SwiftUI state
+        context.coordinator.onSubmit = onSubmit
+
         let newFont = NSFont.systemFont(ofSize: fontSize)
         if textView.font != newFont {
             textView.font = newFont
@@ -111,7 +114,7 @@ struct OmiTextEditor: NSViewRepresentable {
 
     class Coordinator: NSObject, NSTextViewDelegate {
         @Binding var text: String
-        let onSubmit: (() -> Void)?
+        var onSubmit: (() -> Void)?
         var isUpdating = false
 
         // Height tracking (only used when onHeightChange is provided)
