@@ -541,10 +541,10 @@ struct ChatBubble: View {
         !message.isStreaming && message.text.count > Self.truncationThreshold && !isExpanded
     }
 
-    /// The text to display (truncated or full)
+    /// The text to display (truncated or full) — shows the END of the message
     private var displayText: String {
         if shouldTruncate {
-            return String(message.text.prefix(Self.truncationThreshold)) + "…"
+            return "…" + String(message.text.suffix(Self.truncationThreshold))
         }
         return message.text
     }
@@ -651,9 +651,9 @@ struct ChatBubble: View {
                         // Show more / Show less toggle for long messages
                         if message.text.count > Self.truncationThreshold {
                             Button(action: { isExpanded.toggle() }) {
-                                Text(isExpanded ? "Show less" : "Show more (\(message.text.count) chars)")
+                                Text(isExpanded ? "Show less" : "Show more")
                                     .scaledFont(size: 11)
-                                    .foregroundColor(OmiColors.purplePrimary)
+                                    .foregroundColor(.white.opacity(0.5))
                             }
                             .buttonStyle(.plain)
                         }
