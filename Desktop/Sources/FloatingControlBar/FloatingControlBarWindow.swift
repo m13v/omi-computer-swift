@@ -536,6 +536,13 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// Called when monitors are connected/disconnected. Re-center if the bar is no longer
     /// fully visible on any screen.
     private func validatePositionOnScreenChange() {
+        // Non-draggable mode: always restore to default position on screen change
+        if !ShortcutSettings.shared.draggableBarEnabled {
+            log("FloatingControlBarWindow: non-draggable mode, re-centering after monitor change")
+            centerOnMainScreen()
+            return
+        }
+
         let barFrame = self.frame
         // Check if the bar's center point is on any visible screen
         let center = NSPoint(x: barFrame.midX, y: barFrame.midY)
