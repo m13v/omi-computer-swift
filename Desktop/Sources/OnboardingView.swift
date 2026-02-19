@@ -617,11 +617,15 @@ struct OnboardingView: View {
 
         if fileCount > 0 {
             log("OnboardingView: File indexing completed with \(fileCount) files")
-            AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "FileIndexing")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 5, stepName: "FileIndexing")
         } else {
             log("OnboardingView: File indexing skipped")
-            AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "FileIndexing_Skipped")
+            AnalyticsManager.shared.onboardingStepCompleted(step: 5, stepName: "FileIndexing_Skipped")
         }
+
+        // Cancel background scan task if still running
+        backgroundScanTask?.cancel()
+        backgroundScanTask = nil
 
         AnalyticsManager.shared.onboardingCompleted()
         appState.hasCompletedOnboarding = true
@@ -830,11 +834,31 @@ struct OnboardingView: View {
     @ViewBuilder
     private var buttonSection: some View {
         VStack(spacing: 8) {
-            // Step 4 has its own buttons inside FileIndexingView
-            if currentStep != 4 {
+            // Step 5 (chat reveal) has its own Done button in the header
+            if currentStep == 5 {
+                EmptyView()
+            } else if currentStep == 3 {
+                // File indexing consent: custom Get Started + Skip buttons
+                VStack(spacing: 8) {
+                    Button(action: handleMainAction) {
+                        Text("Get Started")
+                            .frame(maxWidth: 200)
+                            .padding(.vertical, 8)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+
+                    Button(action: handleSkipFileIndexing) {
+                        Text("Skip")
+                            .scaledFont(size: 13)
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
                 HStack(spacing: 16) {
-                    // Back button (not shown on first step or name step)
-                    if currentStep > 0 && currentStep != 1 {
+                    // Back button (not shown on first step, name step, or permissions step if scan started)
+                    if currentStep > 0 && currentStep != 1 && !(currentStep == 4 && scanningInProgress) {
                         Button(action: {
                             currentStep -= 1
                         }) {
@@ -857,7 +881,7 @@ struct OnboardingView: View {
                 }
             }
 
-            if currentStep == 3 && !requiredPermissionsGranted {
+            if currentStep == 4 && !requiredPermissionsGranted {
                 Text("You can grant permissions later in Settings")
                     .scaledFont(size: 12)
                     .foregroundColor(.secondary)
@@ -906,8 +930,13 @@ struct OnboardingView: View {
             AnalyticsManager.shared.languageChanged(language: selectedLanguage)
             currentStep += 1
         case 3:
-            // Permissions step - advance to Done
-            AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "Permissions")
+            // File indexing consent - start background scan and advance to permissions
+            AnalyticsManager.shared.onboardingStepCompleted(step: 3, stepName: "FileIndexingConsent")
+            startBackgroundFileIndexing()
+            currentStep += 1
+        case 4:
+            // Permissions step - advance to chat reveal (or complete if file indexing was skipped)
+            AnalyticsManager.shared.onboardingStepCompleted(step: 4, stepName: "Permissions")
             // Log granted permissions
             if appState.hasScreenRecordingPermission {
                 AnalyticsManager.shared.permissionGranted(permission: "screen_recording")
@@ -944,9 +973,14 @@ struct OnboardingView: View {
             if appState.hasScreenRecordingPermission {
                 ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
             }
-            currentStep += 1
-        case 4:
-            break // FileIndexingView handles step 4 actions via handleFileIndexingComplete
+            // If file indexing was skipped, complete onboarding directly
+            if fileIndexingSkipped {
+                handleFileIndexingComplete(fileCount: 0)
+            } else {
+                currentStep += 1
+            }
+        case 5:
+            break // Chat reveal view has its own Done button
         default:
             break
         }
