@@ -212,30 +212,37 @@ actor GeminiClient {
 
         for attempt in 0...maxRetries {
             do {
-                let base64Data = imageData.base64EncodedString()
+                // Wrap base64 encoding + JSON serialization in autoreleasepool.
+                // These create bridged Obj-C objects (NSString, NSData) that accumulate
+                // in Swift concurrency's cooperative thread pool without being drained.
+                let requestBody: Data = try autoreleasepool {
+                    let base64Data = imageData.base64EncodedString()
 
-                let request = GeminiRequest(
-                    contents: [
-                        GeminiRequest.Content(parts: [
-                            GeminiRequest.Part(text: prompt),
-                            GeminiRequest.Part(mimeType: "image/jpeg", data: base64Data)
-                        ])
-                    ],
-                    systemInstruction: GeminiRequest.SystemInstruction(
-                        parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
-                    ),
-                    generationConfig: GeminiRequest.GenerationConfig(
-                        responseMimeType: "application/json",
-                        responseSchema: responseSchema
+                    let request = GeminiRequest(
+                        contents: [
+                            GeminiRequest.Content(parts: [
+                                GeminiRequest.Part(text: prompt),
+                                GeminiRequest.Part(mimeType: "image/jpeg", data: base64Data)
+                            ])
+                        ],
+                        systemInstruction: GeminiRequest.SystemInstruction(
+                            parts: [GeminiRequest.SystemInstruction.TextPart(text: systemPrompt)]
+                        ),
+                        generationConfig: GeminiRequest.GenerationConfig(
+                            responseMimeType: "application/json",
+                            responseSchema: responseSchema
+                        )
                     )
-                )
+
+                    return try JSONEncoder().encode(request)
+                }
 
                 let url = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(apiKey)")!
                 var urlRequest = URLRequest(url: url)
                 urlRequest.httpMethod = "POST"
                 urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
                 urlRequest.timeoutInterval = 300
-                urlRequest.httpBody = try JSONEncoder().encode(request)
+                urlRequest.httpBody = requestBody
 
                 let (data, _) = try await URLSession.shared.data(for: urlRequest)
 
