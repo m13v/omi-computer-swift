@@ -157,15 +157,6 @@ class TaskChatCoordinator: ObservableObject {
         isOpening = true
         defer { isOpening = false }
 
-        // Cancel any in-flight bridge query before switching tasks.
-        // Without this, the old query's response can be consumed by the new task's
-        // query (the bridge uses a single message continuation), causing cross-task
-        // message contamination.
-        if chatProvider.isSending {
-            log("TaskChatCoordinator: interrupting in-flight query before switching tasks")
-            chatProvider.stopAgent()
-        }
-
         // Cache current task's messages before switching (preserves in-flight streaming)
         if let currentTaskId = activeTaskId, !chatProvider.messages.isEmpty {
             taskMessagesCache[currentTaskId] = chatProvider.messages
