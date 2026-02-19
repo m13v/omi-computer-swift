@@ -359,7 +359,7 @@ class ChatProvider: ObservableObject {
     @Published var claudeMdPath: String?
     @Published var discoveredSkills: [(name: String, description: String, path: String)] = []
     @AppStorage("claudeMdEnabled") var claudeMdEnabled = true
-    @AppStorage("enabledSkillsJSON") private var enabledSkillsJSON: String = ""
+    @AppStorage("disabledSkillsJSON") private var disabledSkillsJSON: String = ""
 
     // MARK: - Project-level CLAUDE.md & Skills
     @AppStorage("aiChatWorkingDirectory") var aiChatWorkingDirectory: String = ""
@@ -1196,22 +1196,27 @@ class ChatProvider: ObservableObject {
         return ""
     }
 
-    /// Get the set of enabled skill names from UserDefaults
+    /// Get the set of enabled skill names (all skills minus explicitly disabled ones)
     func getEnabledSkillNames() -> Set<String> {
-        guard let data = enabledSkillsJSON.data(using: .utf8),
+        let allSkillNames = Set(discoveredSkills.map { $0.name } + projectDiscoveredSkills.map { $0.name })
+        let disabled = getDisabledSkillNames()
+        return allSkillNames.subtracting(disabled)
+    }
+
+    /// Get the set of explicitly disabled skill names from UserDefaults
+    func getDisabledSkillNames() -> Set<String> {
+        guard let data = disabledSkillsJSON.data(using: .utf8),
               let names = try? JSONDecoder().decode([String].self, from: data) else {
-            // Default: all skills enabled (global + project)
-            let allSkillNames = discoveredSkills.map { $0.name } + projectDiscoveredSkills.map { $0.name }
-            return Set(allSkillNames)
+            return [] // Default: nothing disabled = all enabled
         }
         return Set(names)
     }
 
-    /// Save the set of enabled skill names to UserDefaults
-    func setEnabledSkillNames(_ names: Set<String>) {
+    /// Save the set of disabled skill names to UserDefaults
+    func setDisabledSkillNames(_ names: Set<String>) {
         if let data = try? JSONEncoder().encode(Array(names)),
            let json = String(data: data, encoding: .utf8) {
-            enabledSkillsJSON = json
+            disabledSkillsJSON = json
         }
     }
 
