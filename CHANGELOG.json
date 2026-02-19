@@ -1,17 +1,21 @@
 {
   "releases": [
     {
-      "version": "0.9.5",
+      "version": "0.9.6",
       "date": "2026-02-19",
       "changes": [
-        "AI chat works without Node.js installed: app now bundles Node.js so AI chat runs out of the box on any Mac",
-        "AI chat now shows error messages when something goes wrong instead of silently failing",
-        "Fixed AI chat crash on macOS VMs and low-memory machines (V8 JIT memory reservation failure)",
-        "Project workspace for AI chat: set a project directory in Settings to load its CLAUDE.md and discover project-specific skills",
-        "Skills panel shows Global vs Project badges so you can tell where each skill comes from",
+        "Bundled Node.js: AI chat now works out of the box on any Mac without Node.js installed",
+        "AI chat error messages: errors are now shown in a banner instead of silently failing",
+        "Fixed AI chat crash on macOS VMs and low-memory machines",
+        "Project workspace: set a project directory in Settings to use its CLAUDE.md and project-specific skills",
+        "Task chat: chat about specific tasks with scoped AI conversations",
+        "Space key toggles task completion, keyboard shortcuts prioritize selected task",
+        "Faster file indexing: incremental scans skip unchanged files",
+        "Follow-up messages sync to backend, preventing duplicate messages in chat",
+        "Memories deletion and undo now works correctly across filters and search results",
         "Fixed Tasks page hang when switching to multi-select mode",
-        "Smoother UI: mic capture, system audio teardown, screenshot encoding, and battery checks moved off the main thread",
-        "Fixed rare crashes from broken-pipe writes to subprocesses and eliminated noise from intentional cancellations in crash reporting"
+        "Performance: mic capture, screenshots, battery checks, and date formatting moved off the main thread",
+        "Fixed broken-pipe crashes and eliminated noise from intentional cancellations in crash reporting"
       ]
     },
     {
