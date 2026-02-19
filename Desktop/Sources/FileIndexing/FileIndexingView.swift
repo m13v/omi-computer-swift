@@ -305,7 +305,7 @@ struct FileIndexingView: View {
         await chatProvider.sendMessage("Now based on everything you discovered, find something that you can actually help me with to get done. Something that is clearly not done yet and something that you as an AI agent can execute upon.")
     }
 
-    /// Append the AI's file exploration response to the latest AI user profile
+    /// Append the AI's file exploration response to the latest AI user profile (with retry)
     private func appendExplorationToProfile() async {
         // Get the last AI message (the exploration response)
         guard let lastAIMessage = chatProvider.messages.last(where: { $0.sender == .ai }),
@@ -314,20 +314,33 @@ struct FileIndexingView: View {
             return
         }
 
+        let explorationText = lastAIMessage.text
         let service = AIUserProfileService.shared
-        let existingProfile = await service.getLatestProfile()
 
-        if let existing = existingProfile, let profileId = existing.id {
-            // Append to existing profile
-            let updated = existing.profileText + "\n\n--- File Exploration Insights ---\n" + lastAIMessage.text
-            let success = await service.updateProfileText(id: profileId, newText: updated)
-            log("FileIndexingView: Appended exploration to AI profile (success=\(success))")
-        } else {
-            // No profile exists yet — create one via generation, or save directly
-            // For now, trigger a full generation which will pick up the new data
-            log("FileIndexingView: No existing AI profile, triggering generation")
-            _ = try? await service.generateProfile()
+        // Retry up to 3 times for transient SQLite/network failures
+        for attempt in 1...3 {
+            let existingProfile = await service.getLatestProfile()
+
+            if let existing = existingProfile, let profileId = existing.id {
+                // Append to existing profile
+                let updated = existing.profileText + "\n\n--- File Exploration Insights ---\n" + explorationText
+                let success = await service.updateProfileText(id: profileId, newText: updated)
+                log("FileIndexingView: Appended exploration to AI profile (success=\(success), attempt=\(attempt))")
+                if success { return }
+            } else {
+                // No profile exists yet — save exploration text directly as a new profile
+                let success = await service.saveExplorationAsProfile(text: "--- File Exploration Insights ---\n" + explorationText)
+                log("FileIndexingView: Saved exploration as new AI profile (success=\(success), attempt=\(attempt))")
+                if success { return }
+            }
+
+            // Wait before retrying (2s, 4s)
+            if attempt < 3 {
+                log("FileIndexingView: Retrying profile save (attempt \(attempt) failed)")
+                try? await Task.sleep(nanoseconds: UInt64(attempt) * 2_000_000_000)
+            }
         }
+        log("FileIndexingView: Failed to save exploration to AI profile after 3 attempts")
     }
 
     private func skip() {
