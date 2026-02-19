@@ -618,8 +618,12 @@ public class ProactiveAssistantsPlugin: NSObject {
                 frameCount += 1
                 let captureTime = Date()
 
-                // Encode JPEG once for assistants
-                if let jpegData = screenCaptureService.encodeJPEG(from: cgImage) {
+                // Encode JPEG off main actor — CGImageDestinationFinalize is CPU-heavy
+                let captureService = screenCaptureService
+                let jpegData = await Task.detached(priority: .userInitiated) {
+                    captureService.encodeJPEG(from: cgImage)
+                }.value
+                if let jpegData = jpegData {
                     let frame = CapturedFrame(
                         jpegData: jpegData,
                         appName: appName,
