@@ -142,10 +142,10 @@ struct DesktopHomeView: View {
                         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
                             Task { await appState.refreshConversations() }
                         }
-                        // Periodic file re-scan (every 3 hours) — temporarily 2 min for testing
+                        // Periodic file re-scan (every 3 hours)
                         .task {
                             while !Task.isCancelled {
-                                try? await Task.sleep(for: .seconds(2 * 60))
+                                try? await Task.sleep(for: .seconds(3 * 60 * 60))
                                 guard !Task.isCancelled else { break }
                                 guard UserDefaults.standard.bool(forKey: "hasCompletedFileIndexing") else { continue }
                                 log("DesktopHomeView: Triggering background file rescan")
