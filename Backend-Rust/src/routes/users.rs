@@ -428,10 +428,14 @@ async fn update_ai_profile(
 ) -> Result<Json<AIUserProfile>, StatusCode> {
     tracing::info!("Updating AI user profile for user {}", user.uid);
 
-    // Truncate to 10000 chars if needed (don't reject)
+    // Truncate to 10000 bytes if needed (don't reject), respecting char boundaries
     let profile_text = if request.profile_text.len() > 10000 {
         tracing::warn!("Profile text truncated: {} chars -> 10000", request.profile_text.len());
-        &request.profile_text[..request.profile_text.char_indices().take_while(|&(i, _)| i < 10000).last().map(|(i, c)| i + c.len_utf8()).unwrap_or(0)]
+        let mut end = 10000;
+        while !request.profile_text.is_char_boundary(end) {
+            end -= 1;
+        }
+        &request.profile_text[..end]
     } else {
         &request.profile_text
     };
