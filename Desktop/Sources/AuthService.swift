@@ -221,9 +221,10 @@ class AuthService {
             try await signInWithAppleNative()
             return
         } catch let error as ASAuthorizationError where error.code == .canceled {
-            NSLog("OMI AUTH: User cancelled Apple Sign In")
-            log("AUTH: User cancelled native Apple Sign In")
-            return
+            // Don't return here — on some macOS versions, missing entitlements surface as .canceled
+            // instead of .unknown. Fall back to web OAuth so the user can still sign in.
+            NSLog("OMI AUTH: Native Apple Sign In canceled (may be user or missing entitlement), falling back to web OAuth")
+            log("AUTH: Native Apple Sign In canceled, falling back to web OAuth")
         } catch let error as ASAuthorizationError where error.code == .unknown {
             // Error 1000 = missing entitlement (dev builds signed with Developer ID)
             NSLog("OMI AUTH: Native Apple Sign In unavailable (error 1000), falling back to web OAuth")
