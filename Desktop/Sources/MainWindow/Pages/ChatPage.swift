@@ -593,9 +593,7 @@ struct ChatBubble: View {
                         switch group {
                         case .text(_, let text):
                             if !text.isEmpty {
-                                Markdown(text)
-                                    .scaledMarkdownTheme(.ai)
-                                    .if_available_writingToolsNone()
+                                SelectableMarkdown(text: text, sender: .ai)
                                     .padding(.horizontal, 14)
                                     .padding(.vertical, 10)
                                     .background(OmiColors.backgroundSecondary)
@@ -641,9 +639,7 @@ struct ChatBubble: View {
                 } else {
                     // User messages or AI messages without content blocks (loaded from Firestore)
                     VStack(alignment: message.sender == .user ? .trailing : .leading, spacing: 4) {
-                        Markdown(displayText)
-                            .scaledMarkdownTheme(message.sender)
-                            .if_available_writingToolsNone()
+                        SelectableMarkdown(text: displayText, sender: message.sender)
                             .padding(.horizontal, 14)
                             .padding(.vertical, 10)
                             .background(message.sender == .user ? OmiColors.purplePrimary : OmiColors.backgroundSecondary)
