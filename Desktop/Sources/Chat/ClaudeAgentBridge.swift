@@ -68,9 +68,7 @@ actor ClaudeAgentBridge {
         readTask?.cancel()
         readTask = nil
         process = nil
-        stdinPipe = nil
-        stdoutPipe = nil
-        stderrPipe = nil
+        closePipes()
         pendingMessages.removeAll()
         messageContinuation = nil
         lastExitWasOOM = false
@@ -172,16 +170,16 @@ actor ClaudeAgentBridge {
         readTask?.cancel()
         readTask = nil
 
-        // Send stop message
+        // Send stop message, then close stdin so Node sees EOF
         sendLine("""
         {"type":"stop"}
         """)
+        try? stdinPipe?.fileHandleForWriting.close()
 
         process?.terminate()
         process = nil
-        stdinPipe = nil
-        stdoutPipe = nil
-        stderrPipe = nil
+        // Close remaining pipe handles before releasing
+        closePipes()
         isRunning = false
 
         // Cancel any pending continuation
@@ -440,8 +438,30 @@ actor ClaudeAgentBridge {
         lastExitWasOOM = false
         log("ClaudeAgentBridge: process terminated (\(error))")
         isRunning = false
+        closePipes()
         messageContinuation?.resume(throwing: error)
         messageContinuation = nil
+    }
+
+    /// Close all pipe file handles to prevent fd leaks and EPIPE in the child
+    private func closePipes() {
+        if let stdin = stdinPipe {
+            try? stdin.fileHandleForWriting.close()
+            try? stdin.fileHandleForReading.close()
+        }
+        if let stdout = stdoutPipe {
+            stdout.fileHandleForReading.readabilityHandler = nil
+            try? stdout.fileHandleForReading.close()
+            try? stdout.fileHandleForWriting.close()
+        }
+        if let stderr = stderrPipe {
+            stderr.fileHandleForReading.readabilityHandler = nil
+            try? stderr.fileHandleForReading.close()
+            try? stderr.fileHandleForWriting.close()
+        }
+        stdinPipe = nil
+        stdoutPipe = nil
+        stderrPipe = nil
     }
 
     // MARK: - Node.js Discovery
