@@ -1526,10 +1526,10 @@ struct SettingsContentView: View {
                                 aiChatWorkingDirectory = url.path
                                 refreshAIChatConfig()
                                 // Update ChatProvider
-                                chatProvider.aiChatWorkingDirectory = url.path
-                                chatProvider.discoverClaudeConfig()
-                                if chatProvider.workingDirectory == nil {
-                                    chatProvider.workingDirectory = url.path
+                                chatProvider?.aiChatWorkingDirectory = url.path
+                                chatProvider?.discoverClaudeConfig()
+                                if chatProvider?.workingDirectory == nil {
+                                    chatProvider?.workingDirectory = url.path
                                 }
                             }
                         }
@@ -1540,9 +1540,9 @@ struct SettingsContentView: View {
                             Button("Clear") {
                                 aiChatWorkingDirectory = ""
                                 refreshAIChatConfig()
-                                chatProvider.aiChatWorkingDirectory = ""
-                                chatProvider.discoverClaudeConfig()
-                                chatProvider.workingDirectory = nil
+                                chatProvider?.aiChatWorkingDirectory = ""
+                                chatProvider?.discoverClaudeConfig()
+                                chatProvider?.workingDirectory = nil
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -1982,7 +1982,7 @@ struct SettingsContentView: View {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let claudeDir = "\(home)/.claude"
 
-        // Discover CLAUDE.md
+        // Discover global CLAUDE.md
         let mdPath = "\(claudeDir)/CLAUDE.md"
         if FileManager.default.fileExists(atPath: mdPath),
            let content = try? String(contentsOfFile: mdPath, encoding: .utf8) {
@@ -1993,7 +1993,7 @@ struct SettingsContentView: View {
             aiChatClaudeMdPath = nil
         }
 
-        // Discover skills
+        // Discover global skills
         var skills: [(name: String, description: String, path: String)] = []
         let skillsDir = "\(claudeDir)/skills"
         if let skillDirs = try? FileManager.default.contentsOfDirectory(atPath: skillsDir) {
@@ -2007,6 +2007,40 @@ struct SettingsContentView: View {
             }
         }
         aiChatDiscoveredSkills = skills
+
+        // Discover project-level config from workspace directory
+        let workspace = aiChatWorkingDirectory
+        if !workspace.isEmpty, FileManager.default.fileExists(atPath: workspace) {
+            // Project CLAUDE.md
+            let projectMdPath = "\(workspace)/CLAUDE.md"
+            if FileManager.default.fileExists(atPath: projectMdPath),
+               let content = try? String(contentsOfFile: projectMdPath, encoding: .utf8) {
+                aiChatProjectClaudeMdContent = content
+                aiChatProjectClaudeMdPath = projectMdPath
+            } else {
+                aiChatProjectClaudeMdContent = nil
+                aiChatProjectClaudeMdPath = nil
+            }
+
+            // Project skills
+            var projectSkills: [(name: String, description: String, path: String)] = []
+            let projectSkillsDir = "\(workspace)/.claude/skills"
+            if let skillDirs = try? FileManager.default.contentsOfDirectory(atPath: projectSkillsDir) {
+                for dir in skillDirs.sorted() {
+                    let skillPath = "\(projectSkillsDir)/\(dir)/SKILL.md"
+                    if FileManager.default.fileExists(atPath: skillPath),
+                       let content = try? String(contentsOfFile: skillPath, encoding: .utf8) {
+                        let desc = extractSkillDescription(from: content)
+                        projectSkills.append((name: dir, description: desc, path: skillPath))
+                    }
+                }
+            }
+            aiChatProjectDiscoveredSkills = projectSkills
+        } else {
+            aiChatProjectClaudeMdContent = nil
+            aiChatProjectClaudeMdPath = nil
+            aiChatProjectDiscoveredSkills = []
+        }
 
         // Load enabled skills from UserDefaults
         loadEnabledSkills()
@@ -2037,11 +2071,19 @@ struct SettingsContentView: View {
         let json = UserDefaults.standard.string(forKey: "enabledSkillsJSON") ?? "[]"
         guard let data = json.data(using: .utf8),
               let names = try? JSONDecoder().decode([String].self, from: data) else {
-            // Default: all enabled
-            aiChatEnabledSkills = Set(aiChatDiscoveredSkills.map { $0.name })
+            // Default: all skills enabled (global + project)
+            let allNames = aiChatDiscoveredSkills.map { $0.name } + aiChatProjectDiscoveredSkills.map { $0.name }
+            aiChatEnabledSkills = Set(allNames)
             return
         }
-        aiChatEnabledSkills = Set(names)
+        // Merge saved names with any newly discovered project skills (so new project skills default to enabled)
+        var enabled = Set(names)
+        for skill in aiChatProjectDiscoveredSkills {
+            if !enabled.contains(skill.name) && !names.contains(skill.name) {
+                enabled.insert(skill.name)
+            }
+        }
+        aiChatEnabledSkills = enabled
     }
 
     private func saveEnabledSkills() {
