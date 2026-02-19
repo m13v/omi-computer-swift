@@ -282,20 +282,33 @@ class AuthService {
             AuthState.shared.userEmail = email
         }
 
-        // Step 4: Sign in with Firebase using Apple identity token (REST API)
+        // Step 4: Sign in with Firebase using Apple credential
+        // Use Firebase SDK first (handles native bundle ID audience correctly),
+        // fall back to REST API (for web OAuth audience 'me.omi.web')
         NSLog("OMI AUTH: Signing in with Firebase using Apple identity token...")
-        let firebaseTokens = try await signInWithAppleIdentityToken(identityToken: identityToken, nonce: nonce)
 
-        // Step 5: Store tokens
-        saveTokens(idToken: firebaseTokens.idToken, refreshToken: firebaseTokens.refreshToken, expiresIn: firebaseTokens.expiresIn, userId: firebaseTokens.localId)
+        let credential = OAuthProvider.credential(providerID: .apple, idToken: identityToken, rawNonce: nonce)
+        var userId = ""
 
-        // Also try Firebase SDK sign-in (best effort for other Firebase features)
         do {
-            let credential = OAuthProvider.credential(providerID: .apple, idToken: identityToken, rawNonce: nonce)
+            // Firebase SDK sign-in (works with native bundle ID as token audience)
             let authResult = try await Auth.auth().signIn(with: credential)
             NSLog("OMI AUTH: Firebase SDK sign-in SUCCESS - uid: %@", authResult.user.uid)
-        } catch let firebaseError as NSError {
-            NSLog("OMI AUTH: Firebase SDK sign-in failed (using REST API tokens): %@", firebaseError.localizedDescription)
+            userId = authResult.user.uid
+
+            // Get ID token from Firebase SDK for API calls
+            let tokenResult = try await authResult.user.getIDTokenResult()
+            let idToken = tokenResult.token
+            let refreshToken = authResult.user.refreshToken ?? ""
+            let expiresIn = Int(tokenResult.expirationDate.timeIntervalSinceNow)
+
+            saveTokens(idToken: idToken, refreshToken: refreshToken, expiresIn: expiresIn, userId: userId)
+        } catch {
+            // Fall back to REST API (works when Firebase SDK has keychain issues)
+            NSLog("OMI AUTH: Firebase SDK sign-in failed (%@), trying REST API...", error.localizedDescription)
+            let firebaseTokens = try await signInWithAppleIdentityToken(identityToken: identityToken, nonce: nonce)
+            userId = firebaseTokens.localId
+            saveTokens(idToken: firebaseTokens.idToken, refreshToken: firebaseTokens.refreshToken, expiresIn: firebaseTokens.expiresIn, userId: userId)
         }
 
         isSignedIn = true
@@ -308,7 +321,6 @@ class AuthService {
             }
         }
 
-        let userId = firebaseTokens.localId
         saveAuthState(isSignedIn: true, email: AuthState.shared.userEmail, userId: userId)
 
         if givenName.isEmpty {
