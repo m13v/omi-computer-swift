@@ -3,7 +3,7 @@
  * Agent Client Protocol (ACP) used by claude-code-acp.
  *
  * Flow:
- * 1. Start omi-tools HTTP MCP server
+ * 1. Create Unix socket server for omi-tools relay
  * 2. Spawn claude-code-acp as subprocess (JSON-RPC over stdio)
  * 3. Initialize ACP connection
  * 4. Handle auth if required (forward to Swift, wait for user action)
@@ -14,10 +14,13 @@ import { spawn } from "child_process";
 import { createInterface } from "readline";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import { startOmiToolsServer, resolveToolCall, setQueryMode, } from "./omi-tools-http.js";
+import { createServer as createNetServer } from "net";
+import { tmpdir } from "os";
+import { unlinkSync } from "fs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
-// Resolve path to bundled playwright MCP CLI
+// Resolve paths to bundled tools
 const playwrightCli = join(__dirname, "..", "node_modules", "@playwright", "mcp", "cli.js");
+const omiToolsStdioScript = join(__dirname, "omi-tools-stdio.js");
 // --- Helpers ---
 function send(msg) {
     try {
@@ -29,6 +32,103 @@ function send(msg) {
 }
 function logErr(msg) {
     process.stderr.write(`[acp-bridge] ${msg}\n`);
+}
+// --- OMI tools relay via Unix socket ---
+let omiToolsPipePath = "";
+let omiToolsClients = [];
+// Pending tool call promises — resolved when Swift sends back results
+const pendingToolCalls = new Map();
+let currentMode = "act";
+/** Resolve a pending tool call with a result from Swift */
+function resolveToolCall(msg) {
+    const pending = pendingToolCalls.get(msg.callId);
+    if (pending) {
+        pending.resolve(msg.result);
+        pendingToolCalls.delete(msg.callId);
+    }
+    else {
+        logErr(`Warning: no pending tool call for callId=${msg.callId}`);
+    }
+}
+/** Start Unix socket server for omi-tools stdio processes to connect to */
+function startOmiToolsRelay() {
+    const pipePath = join(tmpdir(), `omi-tools-${process.pid}.sock`);
+    // Clean up any stale socket
+    try {
+        unlinkSync(pipePath);
+    }
+    catch {
+        // ignore
+    }
+    return new Promise((resolve, reject) => {
+        const server = createNetServer((client) => {
+            omiToolsClients.push(client);
+            let buffer = "";
+            client.on("data", (data) => {
+                buffer += data.toString();
+                let newlineIdx;
+                while ((newlineIdx = buffer.indexOf("\n")) >= 0) {
+                    const line = buffer.slice(0, newlineIdx);
+                    buffer = buffer.slice(newlineIdx + 1);
+                    if (!line.trim())
+                        continue;
+                    try {
+                        const msg = JSON.parse(line);
+                        if (msg.type === "tool_use") {
+                            // Forward tool call to Swift via stdout
+                            send({
+                                type: "tool_use",
+                                callId: msg.callId,
+                                name: msg.name,
+                                input: msg.input,
+                            });
+                            // Create a promise that will be resolved when Swift responds
+                            const callId = msg.callId;
+                            pendingToolCalls.set(callId, {
+                                resolve: (result) => {
+                                    // Send result back to the omi-tools stdio process
+                                    try {
+                                        client.write(JSON.stringify({
+                                            type: "tool_result",
+                                            callId,
+                                            result,
+                                        }) + "\n");
+                                    }
+                                    catch (err) {
+                                        logErr(`Failed to send tool result to omi-tools: ${err}`);
+                                    }
+                                },
+                            });
+                        }
+                    }
+                    catch {
+                        logErr(`Failed to parse omi-tools message: ${line.slice(0, 200)}`);
+                    }
+                }
+            });
+            client.on("close", () => {
+                omiToolsClients = omiToolsClients.filter((c) => c !== client);
+            });
+            client.on("error", (err) => {
+                logErr(`omi-tools client error: ${err.message}`);
+            });
+        });
+        server.listen(pipePath, () => {
+            logErr(`omi-tools relay socket: ${pipePath}`);
+            resolve(pipePath);
+        });
+        server.on("error", reject);
+        // Clean up on exit
+        process.on("exit", () => {
+            server.close();
+            try {
+                unlinkSync(pipePath);
+            }
+            catch {
+                // ignore
+            }
+        });
+    });
 }
 // --- ACP subprocess management ---
 let acpProcess = null;
@@ -110,7 +210,7 @@ function startAcpProcess() {
                 }
             }
             else if ("method" in msg) {
-                // JSON-RPC notification
+                // JSON-RPC notification from agent → we handle it
                 if (acpNotificationHandler) {
                     acpNotificationHandler(msg.method, msg.params);
                 }
@@ -131,8 +231,7 @@ function startAcpProcess() {
         logErr(`ACP process exited with code ${code}`);
         acpProcess = null;
         acpStdinWriter = null;
-        // Reject any pending requests
-        for (const [id, handler] of acpResponseHandlers) {
+        for (const [, handler] of acpResponseHandlers) {
             handler.reject(new Error(`ACP process exited (code ${code})`));
         }
         acpResponseHandlers.clear();
@@ -148,7 +247,6 @@ class AcpError extends Error {
     }
 }
 // --- State ---
-let omiToolsUrl = "";
 let sessionId = "";
 let activeAbort = null;
 let interruptRequested = false;
@@ -160,49 +258,32 @@ async function initializeAcp() {
     if (isInitialized)
         return;
     try {
-        // Build client capabilities
-        const capabilities = {};
-        // Playwright extension support
-        const playwrightArgs = [playwrightCli];
-        if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
-            playwrightArgs.push("--extension");
-        }
         const result = (await acpRequest("initialize", {
             protocolVersion: 1,
-            clientCapabilities: capabilities,
-            clientInfo: {
-                name: "omi-desktop",
-                title: "Omi Desktop",
-                version: "1.0.0",
-            },
         }));
-        logErr(`ACP initialized: protocol=${result.protocolVersion}, agent=${JSON.stringify(result.agentInfo)}`);
-        // Check for auth methods
+        logErr(`ACP initialized: protocol=${result.protocolVersion}, capabilities=${JSON.stringify(result.agentCapabilities)}`);
+        // Store auth methods for potential later use
         if (result.authMethods && result.authMethods.length > 0) {
-            authMethods = result.authMethods.map((m, i) => ({
-                id: `auth-${i}`,
-                type: m.type,
-                displayName: m.type === "agent_auth" ? "Sign in with Claude" : m.type,
+            authMethods = result.authMethods.map((m) => ({
+                id: m.id,
+                type: (m.type ?? "agent_auth"),
+                displayName: m.name || m.description || m.id,
                 args: m.args,
                 env: m.env,
             }));
-            logErr(`Auth methods available: ${authMethods.map((m) => m.type).join(", ")}`);
+            logErr(`Auth methods: ${authMethods.map((m) => `${m.id}(${m.displayName})`).join(", ")}`);
         }
-        // Send initialized notification
-        acpNotify("notifications/initialized");
         isInitialized = true;
     }
     catch (err) {
         if (err instanceof AcpError && err.code === -32000) {
-            // AUTH_REQUIRED — extract auth methods from error data
+            // AUTH_REQUIRED
             const data = err.data;
             if (data?.authMethods) {
-                authMethods = data.authMethods.map((m, i) => ({
-                    id: `auth-${i}`,
-                    type: m.type,
-                    displayName: m.type === "agent_auth" ? "Sign in with Claude" : m.type,
-                    args: m.args,
-                    env: m.env,
+                authMethods = data.authMethods.map((m) => ({
+                    id: m.id,
+                    type: (m.type ?? "agent_auth"),
+                    displayName: m.name || m.description || m.id,
                 }));
             }
             logErr(`ACP requires authentication: ${JSON.stringify(authMethods)}`);
@@ -221,7 +302,6 @@ async function initializeAcp() {
 }
 // --- Handle query from Swift ---
 async function handleQuery(msg) {
-    // Cancel any prior query
     if (activeAbort) {
         activeAbort.abort();
         activeAbort = null;
@@ -233,20 +313,24 @@ async function handleQuery(msg) {
     const pendingTools = [];
     try {
         const mode = msg.mode ?? "act";
-        setQueryMode(mode);
+        currentMode = mode;
         logErr(`Query mode: ${mode}`);
         // Ensure ACP is initialized
         await initializeAcp();
-        // Build MCP servers array for session
-        const mcpServers = [
-            {
-                type: "http",
-                name: "omi-tools",
-                url: omiToolsUrl,
-                headers: [],
-            },
-        ];
-        // Add Playwright MCP server as stdio transport
+        // Build MCP servers array for session (stdio format only)
+        // Schema: { name: string, command: string, args: string[], env: {name,value}[] }
+        const mcpServers = [];
+        // Add omi-tools as stdio MCP server (spawned by ACP, connects back via Unix socket)
+        mcpServers.push({
+            name: "omi-tools",
+            command: process.execPath,
+            args: [omiToolsStdioScript],
+            env: [
+                { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
+                { name: "OMI_QUERY_MODE", value: mode },
+            ],
+        });
+        // Add Playwright MCP server
         const playwrightArgs = [playwrightCli];
         if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
             playwrightArgs.push("--extension");
@@ -280,8 +364,8 @@ async function handleQuery(msg) {
         acpNotificationHandler = (method, params) => {
             if (abortController.signal.aborted)
                 return;
-            const p = params;
             if (method === "session/update") {
+                const p = params;
                 handleSessionUpdate(p, pendingTools, (text) => {
                     fullText += text;
                 });
@@ -299,9 +383,7 @@ async function handleQuery(msg) {
                 send({ type: "tool_activity", name, status: "completed" });
             }
             pendingTools.length = 0;
-            // Estimate cost (ACP doesn't provide cost directly)
-            const costUsd = 0;
-            send({ type: "result", text: fullText, sessionId, costUsd });
+            send({ type: "result", text: fullText, sessionId, costUsd: 0 });
         }
         catch (err) {
             if (abortController.signal.aborted) {
@@ -343,13 +425,26 @@ async function handleQuery(msg) {
         acpNotificationHandler = null;
     }
 }
-/** Translate ACP session/update notifications into our JSON-lines protocol */
+/** Translate ACP session/update notifications into our JSON-lines protocol.
+ *
+ * ACP uses `params.update.sessionUpdate` as the discriminator field:
+ *   - "agent_message_chunk" → text delta (content.text)
+ *   - "agent_thought_chunk" → thinking delta (content.text)
+ *   - "tool_call" → tool started (title, toolCallId, kind, status)
+ *   - "tool_call_update" → tool completed (toolCallId, status, content)
+ *   - "plan" → plan entries (entries[].content)
+ */
 function handleSessionUpdate(params, pendingTools, onText) {
-    const update = params;
-    const updateType = update.type ?? params.type;
-    switch (updateType) {
+    const update = params.update;
+    if (!update) {
+        logErr(`session/update missing 'update' field: ${JSON.stringify(params).slice(0, 200)}`);
+        return;
+    }
+    const sessionUpdate = update.sessionUpdate;
+    switch (sessionUpdate) {
         case "agent_message_chunk": {
-            const text = update.text ?? "";
+            const content = update.content;
+            const text = content?.text ?? "";
             if (text) {
                 // If tools were pending, they're now complete
                 if (pendingTools.length > 0) {
@@ -360,6 +455,14 @@ function handleSessionUpdate(params, pendingTools, onText) {
                 }
                 onText(text);
                 send({ type: "text_delta", text });
+            }
+            break;
+        }
+        case "agent_thought_chunk": {
+            const content = update.content;
+            const text = content?.text ?? "";
+            if (text) {
+                send({ type: "thinking_delta", text });
             }
             break;
         }
@@ -376,6 +479,17 @@ function handleSessionUpdate(params, pendingTools, onText) {
                     status: "started",
                     toolUseId: toolCallId,
                 });
+                // Extract input from rawInput if available
+                const rawInput = update.rawInput;
+                if (rawInput && Object.keys(rawInput).length > 0) {
+                    send({
+                        type: "tool_activity",
+                        name: title,
+                        status: "started",
+                        toolUseId: toolCallId,
+                        input: rawInput,
+                    });
+                }
                 logErr(`Tool started: ${title} (id=${toolCallId}, kind=${kind})`);
             }
             break;
@@ -383,9 +497,8 @@ function handleSessionUpdate(params, pendingTools, onText) {
         case "tool_call_update": {
             const toolCallId = update.toolCallId ?? "";
             const status = update.status ?? "";
-            const content = update.content ?? "";
             const title = update.title ?? "unknown";
-            if (status === "completed" || status === "cancelled") {
+            if (status === "completed" || status === "failed" || status === "cancelled") {
                 // Remove from pending
                 const idx = pendingTools.indexOf(title);
                 if (idx >= 0)
@@ -396,11 +509,25 @@ function handleSessionUpdate(params, pendingTools, onText) {
                     status: "completed",
                     toolUseId: toolCallId,
                 });
-                if (content) {
-                    // Truncate to ~2000 chars for display
-                    const truncated = content.length > 2000
-                        ? content.slice(0, 2000) + "\n... (truncated)"
-                        : content;
+                // Extract output from content array or rawOutput
+                let output = "";
+                const contentArr = update.content;
+                if (contentArr && Array.isArray(contentArr)) {
+                    output = contentArr
+                        .filter((c) => c.type === "text" && c.text)
+                        .map((c) => c.text)
+                        .join("\n");
+                }
+                if (!output) {
+                    const rawOutput = update.rawOutput;
+                    if (rawOutput) {
+                        output = JSON.stringify(rawOutput);
+                    }
+                }
+                if (output) {
+                    const truncated = output.length > 2000
+                        ? output.slice(0, 2000) + "\n... (truncated)"
+                        : output;
                     send({
                         type: "tool_result_display",
                         toolUseId: toolCallId,
@@ -408,14 +535,14 @@ function handleSessionUpdate(params, pendingTools, onText) {
                         output: truncated,
                     });
                 }
-                logErr(`Tool completed: ${title} (id=${toolCallId}) output=${content ? content.length + " chars" : "none"}`);
+                logErr(`Tool completed: ${title} (id=${toolCallId}) output=${output ? output.length + " chars" : "none"}`);
             }
             break;
         }
         case "plan": {
-            // Plan entries can be shown as thinking
-            if (update.entries && Array.isArray(update.entries)) {
-                for (const entry of update.entries) {
+            const entries = update.entries;
+            if (entries && Array.isArray(entries)) {
+                for (const entry of entries) {
                     if (entry.content) {
                         send({ type: "thinking_delta", text: entry.content + "\n" });
                     }
@@ -424,7 +551,7 @@ function handleSessionUpdate(params, pendingTools, onText) {
             break;
         }
         default:
-            logErr(`Unknown session update type: ${updateType}`);
+            logErr(`Unknown session update type: ${sessionUpdate} — ${JSON.stringify(update).slice(0, 200)}`);
     }
 }
 // --- Error handling ---
@@ -448,11 +575,10 @@ process.stdout.on("error", (err) => {
     }
     logErr(`stdout error: ${err.message}`);
 });
-// --- Main: read JSON lines from stdin ---
+// --- Main ---
 async function main() {
-    // 1. Start omi-tools HTTP MCP server
-    omiToolsUrl = await startOmiToolsServer();
-    logErr(`omi-tools URL: ${omiToolsUrl}`);
+    // 1. Start Unix socket for omi-tools relay
+    omiToolsPipePath = await startOmiToolsRelay();
     // 2. Start the ACP subprocess
     startAcpProcess();
     // 3. Signal readiness
@@ -486,21 +612,30 @@ async function main() {
                 interruptRequested = true;
                 if (activeAbort)
                     activeAbort.abort();
-                // Also cancel the ACP session
                 if (sessionId) {
                     acpNotify("session/cancel", { sessionId });
                 }
                 break;
             case "authenticate": {
                 logErr(`Authentication method selected: ${msg.methodId}`);
-                // For agent_auth (the primary case), the ACP process handles it
-                // We just need to signal that auth was completed
-                // In practice, the ACP subprocess manages its own OAuth
-                if (authResolve) {
-                    authResolve();
-                    authResolve = null;
-                }
-                send({ type: "auth_success" });
+                // Actually call ACP to perform the OAuth flow
+                acpRequest("authenticate", { methodId: msg.methodId })
+                    .then(() => {
+                    logErr("ACP authentication succeeded");
+                    send({ type: "auth_success" });
+                    if (authResolve) {
+                        authResolve();
+                        authResolve = null;
+                    }
+                })
+                    .catch((err) => {
+                    const errMsg = err instanceof Error ? err.message : String(err);
+                    logErr(`ACP authentication failed: ${errMsg}`);
+                    send({
+                        type: "error",
+                        message: `Authentication failed: ${errMsg}`,
+                    });
+                });
                 break;
             }
             case "stop":
