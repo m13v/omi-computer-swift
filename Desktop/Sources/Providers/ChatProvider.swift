@@ -384,6 +384,10 @@ class ChatProvider: ObservableObject {
     @Published var projectDiscoveredSkills: [(name: String, description: String, path: String)] = []
     @AppStorage("projectClaudeMdEnabled") var projectClaudeMdEnabled = true
 
+    // MARK: - Dev Mode
+    @AppStorage("devModeEnabled") var devModeEnabled = false
+    private var devModeContext: String?
+
     // MARK: - Current Session ID
     var currentSessionId: String? {
         currentSession?.id
@@ -1300,7 +1304,38 @@ class ChatProvider: ObservableObject {
             projectDiscoveredSkills = []
         }
 
-        log("ChatProvider: discovered global CLAUDE.md=\(claudeMdContent != nil), global skills=\(skills.count), project CLAUDE.md=\(projectClaudeMdContent != nil), project skills=\(projectDiscoveredSkills.count)")
+        // Load dev-mode skill content (full SKILL.md, not just description)
+        let devModeSkillPath = "\(skillsDir)/dev-mode/SKILL.md"
+        if FileManager.default.fileExists(atPath: devModeSkillPath),
+           let content = try? String(contentsOfFile: devModeSkillPath, encoding: .utf8) {
+            // Strip YAML frontmatter, keep the markdown body
+            var body = content
+            if body.hasPrefix("---") {
+                let lines = body.components(separatedBy: "\n")
+                if let endIdx = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("---") }) {
+                    body = lines[(endIdx + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            }
+            devModeContext = body
+        } else {
+            // Also check project skills directory
+            let projectDevModePath = "\(workspace)/.claude/skills/dev-mode/SKILL.md"
+            if !workspace.isEmpty, FileManager.default.fileExists(atPath: projectDevModePath),
+               let content = try? String(contentsOfFile: projectDevModePath, encoding: .utf8) {
+                var body = content
+                if body.hasPrefix("---") {
+                    let lines = body.components(separatedBy: "\n")
+                    if let endIdx = lines.dropFirst().firstIndex(where: { $0.trimmingCharacters(in: .whitespaces).hasPrefix("---") }) {
+                        body = lines[(endIdx + 1)...].joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                    }
+                }
+                devModeContext = body
+            } else {
+                devModeContext = nil
+            }
+        }
+
+        log("ChatProvider: discovered global CLAUDE.md=\(claudeMdContent != nil), global skills=\(skills.count), project CLAUDE.md=\(projectClaudeMdContent != nil), project skills=\(projectDiscoveredSkills.count), dev_mode_skill=\(devModeContext != nil)")
     }
 
     /// Extract description from YAML frontmatter in SKILL.md
