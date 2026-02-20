@@ -1536,7 +1536,8 @@ extension APIClient {
         priority: String? = nil,
         metadata: [String: Any]? = nil,
         goalId: String? = nil,
-        relevanceScore: Int? = nil
+        relevanceScore: Int? = nil,
+        recurrenceRule: String? = nil
     ) async throws -> TaskActionItem {
         struct UpdateRequest: Encodable {
             let completed: Bool?
@@ -1546,12 +1547,14 @@ extension APIClient {
             let metadata: String?
             let goalId: String?
             let relevanceScore: Int?
+            let recurrenceRule: String?
 
             enum CodingKeys: String, CodingKey {
                 case completed, description, priority, metadata
                 case dueAt = "due_at"
                 case goalId = "goal_id"
                 case relevanceScore = "relevance_score"
+                case recurrenceRule = "recurrence_rule"
             }
         }
 
@@ -1573,7 +1576,8 @@ extension APIClient {
             priority: priority,
             metadata: metadataString,
             goalId: goalId,
-            relevanceScore: relevanceScore
+            relevanceScore: relevanceScore,
+            recurrenceRule: recurrenceRule
         )
 
         return try await patch("v1/action-items/\(id)", body: request)
@@ -1610,7 +1614,9 @@ extension APIClient {
         priority: String? = nil,
         category: String? = nil,
         metadata: [String: Any]? = nil,
-        relevanceScore: Int? = nil
+        relevanceScore: Int? = nil,
+        recurrenceRule: String? = nil,
+        recurrenceParentId: String? = nil
     ) async throws -> TaskActionItem {
         struct CreateRequest: Encodable {
             let description: String
@@ -1620,12 +1626,16 @@ extension APIClient {
             let category: String?
             let metadata: String?
             let relevanceScore: Int?
+            let recurrenceRule: String?
+            let recurrenceParentId: String?
 
             enum CodingKeys: String, CodingKey {
                 case description
                 case dueAt = "due_at"
                 case source, priority, category, metadata
                 case relevanceScore = "relevance_score"
+                case recurrenceRule = "recurrence_rule"
+                case recurrenceParentId = "recurrence_parent_id"
             }
         }
 
@@ -1647,7 +1657,9 @@ extension APIClient {
             priority: priority,
             category: category,
             metadata: metadataString,
-            relevanceScore: relevanceScore
+            relevanceScore: relevanceScore,
+            recurrenceRule: recurrenceRule,
+            recurrenceParentId: recurrenceParentId
         )
 
         return try await post("v1/action-items", body: request)
