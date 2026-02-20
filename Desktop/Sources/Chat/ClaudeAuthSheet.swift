@@ -33,7 +33,7 @@ struct ClaudeAuthSheet: View {
             .padding(.bottom, 16)
 
             Divider()
-                .foregroundColor(OmiColors.borderPrimary)
+                .foregroundColor(OmiColors.border)
 
             // Content
             VStack(spacing: 20) {
