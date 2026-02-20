@@ -6346,6 +6346,9 @@ impl FirestoreService {
             vec![]
         };
 
+        // channel: None means stable (missing field or null in Firestore)
+        let channel = self.parse_string(fields, "channel");
+
         Ok(crate::routes::updates::ReleaseInfo {
             version: self.parse_string(fields, "version").unwrap_or_default(),
             build_number: self.parse_int(fields, "build_number").unwrap_or(0) as u32,
@@ -6355,6 +6358,7 @@ impl FirestoreService {
             changelog,
             is_live: self.parse_bool(fields, "is_live").unwrap_or(false),
             is_critical: self.parse_bool(fields, "is_critical").unwrap_or(false),
+            channel,
         })
     }
 
@@ -6377,6 +6381,12 @@ impl FirestoreService {
             .map(|s| json!({"stringValue": s}))
             .collect();
 
+        // Channel field: stringValue for non-stable, nullValue for stable
+        let channel_value = match &release.channel {
+            Some(ch) if !ch.is_empty() => json!({"stringValue": ch}),
+            _ => json!({"nullValue": null}),
+        };
+
         let doc = json!({
             "fields": {
                 "version": {"stringValue": release.version},
@@ -6386,7 +6396,8 @@ impl FirestoreService {
                 "published_at": {"stringValue": release.published_at},
                 "changelog": {"arrayValue": {"values": changelog_values}},
                 "is_live": {"booleanValue": release.is_live},
-                "is_critical": {"booleanValue": release.is_critical}
+                "is_critical": {"booleanValue": release.is_critical},
+                "channel": channel_value
             }
         });
 
@@ -6404,6 +6415,80 @@ impl FirestoreService {
 
         tracing::info!("Created desktop release: {}", doc_id);
         Ok(doc_id)
+    }
+
+    /// Promote a desktop release to the next channel: staging → beta → stable
+    /// Returns (old_channel, new_channel) where empty string = stable
+    pub async fn promote_desktop_release(
+        &self,
+        doc_id: &str,
+    ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+        // Fetch the current document
+        let url = format!(
+            "{}/desktop_releases/{}",
+            self.base_url(),
+            doc_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::GET, &url)
+            .await?
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Release not found: {}", error_text).into());
+        }
+
+        let doc: Value = response.json().await?;
+        let fields = doc.get("fields").ok_or("Missing fields in document")?;
+        let current_channel = self.parse_string(fields, "channel").unwrap_or_default();
+
+        // Determine next channel
+        let (old_channel, new_channel_value) = match current_channel.as_str() {
+            "staging" => ("staging".to_string(), json!({"stringValue": "beta"})),
+            "beta" => ("beta".to_string(), json!({"nullValue": null})),
+            "" => return Err("Release is already on stable channel, cannot promote further".into()),
+            other => return Err(format!("Unknown channel '{}', cannot promote", other).into()),
+        };
+
+        let new_channel = match new_channel_value.get("stringValue").and_then(|v| v.as_str()) {
+            Some(ch) => ch.to_string(),
+            None => String::new(), // stable
+        };
+
+        // PATCH only the channel field
+        let patch_url = format!(
+            "{}/desktop_releases/{}?updateMask.fieldPaths=channel",
+            self.base_url(),
+            doc_id
+        );
+
+        let patch_doc = json!({
+            "fields": {
+                "channel": new_channel_value
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &patch_url)
+            .await?
+            .json(&patch_doc)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Failed to update channel: {}", error_text).into());
+        }
+
+        tracing::info!("Promoted release {}: {} → {}", doc_id,
+            if old_channel.is_empty() { "stable" } else { &old_channel },
+            if new_channel.is_empty() { "stable" } else { &new_channel },
+        );
+
+        Ok((old_channel, new_channel))
     }
 
     // =========================================================================
