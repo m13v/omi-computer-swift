@@ -1229,7 +1229,7 @@ class ChatProvider: ObservableObject {
         await loadTasksIfNeeded()
         await loadAIProfileIfNeeded()
         await loadSchemaIfNeeded()
-        discoverClaudeConfig()
+        await discoverClaudeConfig()
 
         // Set working directory for Claude Agent SDK if workspace is configured
         if workingDirectory == nil, !aiChatWorkingDirectory.isEmpty {
