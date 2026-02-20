@@ -217,6 +217,7 @@ actor ACPBridge {
         cwd: String? = nil,
         mode: String? = nil,
         model: String? = nil,
+        resume: String? = nil,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler,
         onToolActivity: @escaping ToolActivityHandler,
