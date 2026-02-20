@@ -263,6 +263,11 @@ actor ClaudeAgentBridge {
                 onTextDelta(text)
 
             case .toolUse(let callId, let name, let input):
+                // If already interrupted, skip this tool call entirely
+                if isInterrupted {
+                    log("ClaudeAgentBridge: skipping tool call \(name) (interrupted)")
+                    continue
+                }
                 // Route OMI tool calls back to Swift for execution
                 let result = await onToolCall(callId, name, input)
                 // Send result back to bridge
@@ -330,6 +335,7 @@ actor ClaudeAgentBridge {
     /// The bridge will abort the current query and send back a partial result.
     func interrupt() {
         guard isRunning else { return }
+        isInterrupted = true
         sendLine("{\"type\":\"interrupt\"}")
     }
 
