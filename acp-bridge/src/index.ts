@@ -95,17 +95,7 @@ function acpNotify(
 }
 
 /** Start the ACP subprocess */
-function startAcpProcess(omiToolsUrl: string): void {
-  // Find the ACP executable — look for the bundled CLI
-  const acpScript = join(
-    __dirname,
-    "..",
-    "node_modules",
-    "@anthropic-ai",
-    "claude-agent-sdk",
-    "cli.js"
-  );
-
+function startAcpProcess(): void {
   // Build environment — strip ANTHROPIC_API_KEY so ACP uses its own OAuth
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
@@ -113,7 +103,6 @@ function startAcpProcess(omiToolsUrl: string): void {
   env.NODE_NO_WARNINGS = "1";
 
   // The ACP binary communicates via JSON-RPC over stdio
-  // We use the claude-code-acp package directly
   const acpBinary = join(
     __dirname,
     "..",
@@ -381,21 +370,17 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       : msg.prompt;
 
     // Set up notification handler for this query
-    const notificationPromise = new Promise<void>((resolve, reject) => {
-      acpNotificationHandler = (method: string, params: unknown) => {
-        if (abortController.signal.aborted) return;
+    acpNotificationHandler = (method: string, params: unknown) => {
+      if (abortController.signal.aborted) return;
 
-        const p = params as Record<string, unknown>;
+      const p = params as Record<string, unknown>;
 
-        if (method === "session/update") {
-          handleSessionUpdate(p, pendingTools, (text) => {
-            fullText += text;
-          });
-        }
-      };
-
-      // The prompt call will complete when the agent finishes
-    });
+      if (method === "session/update") {
+        handleSessionUpdate(p, pendingTools, (text) => {
+          fullText += text;
+        });
+      }
+    };
 
     // Send the prompt
     try {
@@ -607,7 +592,7 @@ async function main(): Promise<void> {
   logErr(`omi-tools URL: ${omiToolsUrl}`);
 
   // 2. Start the ACP subprocess
-  startAcpProcess(omiToolsUrl);
+  startAcpProcess();
 
   // 3. Signal readiness
   send({ type: "init", sessionId: "" });
