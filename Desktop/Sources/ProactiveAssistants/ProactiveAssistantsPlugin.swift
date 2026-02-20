@@ -240,6 +240,20 @@ public class ProactiveAssistantsPlugin: NSObject {
             try? register.run()
             register.waitUntilExit()
 
+            // Restart usernoted (notification center daemon) to pick up fresh registration
+            // Runs as current user (no sudo needed), auto-restarts within ~1 second
+            let killUsernoted = Process()
+            killUsernoted.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
+            killUsernoted.arguments = ["usernoted"]
+            killUsernoted.standardOutput = FileHandle.nullDevice
+            killUsernoted.standardError = FileHandle.nullDevice
+            try? killUsernoted.run()
+            killUsernoted.waitUntilExit()
+            log("Restarted usernoted to force notification re-discovery")
+
+            // Wait for usernoted to restart before retrying
+            Thread.sleep(forTimeInterval: 1.5)
+
             DispatchQueue.main.async {
                 // Also re-register via LSRegisterURL (must be on main thread)
                 if let cfURL = bundleURL as CFURL? {
