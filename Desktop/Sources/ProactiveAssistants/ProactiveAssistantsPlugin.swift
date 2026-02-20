@@ -216,32 +216,127 @@ public class ProactiveAssistantsPlugin: NSObject {
 
     /// Repair LaunchServices registration when notification authorization fails with "not allowed".
     /// The launch-disabled flag in LaunchServices prevents notification center registration.
-    /// Unregistering and re-registering clears the flag, then retries authorization.
+    /// Extended cleanup: removes conflicting Omi app bundles (Trash, DerivedData, DMGs) that
+    /// pollute LaunchServices, unregisters stale paths, then force-registers the current app.
     static func repairNotificationRegistration() {
         let appPath = Bundle.main.bundlePath
         let bundleURL = Bundle.main.bundleURL
         log("Repairing LaunchServices registration for notifications: \(appPath)")
 
         let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        let fileManager = FileManager.default
+        let homeDir = fileManager.homeDirectoryForCurrentUser.path
 
-        // Run blocking Process calls on a background thread
+        // Run blocking cleanup + Process calls on a background thread
         DispatchQueue.global(qos: .utility).async {
-            // Unregister to clear stale/launch-disabled entries
+
+            // 1. Clean Omi apps from Trash (they still register in LaunchServices!)
+            let trashPath = "\(homeDir)/.Trash"
+            if let contents = try? fileManager.contentsOfDirectory(atPath: trashPath) {
+                for item in contents where item.lowercased().contains("omi") && item.hasSuffix(".app") {
+                    let itemPath = "\(trashPath)/\(item)"
+                    // Unregister from LaunchServices before deleting
+                    let unreg = Process()
+                    unreg.executableURL = URL(fileURLWithPath: lsregister)
+                    unreg.arguments = ["-u", itemPath]
+                    unreg.standardOutput = FileHandle.nullDevice
+                    unreg.standardError = FileHandle.nullDevice
+                    try? unreg.run()
+                    unreg.waitUntilExit()
+                    // Delete the bundle
+                    try? fileManager.removeItem(atPath: itemPath)
+                    log("Notification repair: cleaned from Trash: \(item)")
+                }
+            }
+
+            // 2. Eject mounted Omi DMG volumes (the .app inside competes in LaunchServices)
+            if let volumes = try? fileManager.contentsOfDirectory(atPath: "/Volumes") {
+                for volume in volumes where volume.lowercased().contains("omi") || volume.hasPrefix("dmg.") {
+                    let volumePath = "/Volumes/\(volume)"
+                    let eject = Process()
+                    eject.executableURL = URL(fileURLWithPath: "/usr/sbin/diskutil")
+                    eject.arguments = ["eject", volumePath]
+                    eject.standardOutput = FileHandle.nullDevice
+                    eject.standardError = FileHandle.nullDevice
+                    try? eject.run()
+                    eject.waitUntilExit()
+                    if eject.terminationStatus == 0 {
+                        log("Notification repair: ejected volume: \(volume)")
+                    }
+                }
+            }
+
+            // 3. Clean DMG staging dirs
+            if let tmpContents = try? fileManager.contentsOfDirectory(atPath: "/private/tmp") {
+                for item in tmpContents where item.hasPrefix("omi-dmg-staging") || item.hasPrefix("omi-dmg-test") {
+                    try? fileManager.removeItem(atPath: "/private/tmp/\(item)")
+                    log("Notification repair: cleaned DMG staging: \(item)")
+                }
+            }
+
+            // 4. Unregister known conflicting app paths from LaunchServices
+            //    (works even if the path no longer exists — clears stale DB entries)
+            let conflictingPaths = [
+                "/Applications/Omi Computer.app",
+                "/Applications/Omi Dev.app",
+                "/Applications/Omi.app/Contents/MacOS/Omi Computer.app",
+                "\(homeDir)/Desktop/Omi.app",
+                "\(homeDir)/Downloads/Omi.app",
+            ]
+            for path in conflictingPaths where path != appPath {
+                let unreg = Process()
+                unreg.executableURL = URL(fileURLWithPath: lsregister)
+                unreg.arguments = ["-u", path]
+                unreg.standardOutput = FileHandle.nullDevice
+                unreg.standardError = FileHandle.nullDevice
+                try? unreg.run()
+                unreg.waitUntilExit()
+            }
+
+            // 5. Unregister DerivedData Omi builds
+            let derivedDataPath = "\(homeDir)/Library/Developer/Xcode/DerivedData"
+            if let contents = try? fileManager.contentsOfDirectory(atPath: derivedDataPath) {
+                for item in contents where item.lowercased().contains("omi") {
+                    let buildProductsPath = "\(derivedDataPath)/\(item)/Build/Products"
+                    if let buildDirs = try? fileManager.contentsOfDirectory(atPath: buildProductsPath) {
+                        for buildDir in buildDirs {
+                            for appName in ["Omi.app", "Omi Computer.app", "Omi Beta.app", "Omi Dev.app"] {
+                                let path = "\(buildProductsPath)/\(buildDir)/\(appName)"
+                                if fileManager.fileExists(atPath: path) {
+                                    let unreg = Process()
+                                    unreg.executableURL = URL(fileURLWithPath: lsregister)
+                                    unreg.arguments = ["-u", path]
+                                    unreg.standardOutput = FileHandle.nullDevice
+                                    unreg.standardError = FileHandle.nullDevice
+                                    try? unreg.run()
+                                    unreg.waitUntilExit()
+                                    try? fileManager.removeItem(atPath: path)
+                                    log("Notification repair: cleaned DerivedData: \(path)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 6. Now unregister the current app to clear any launch-disabled flag
             let unregister = Process()
             unregister.executableURL = URL(fileURLWithPath: lsregister)
             unregister.arguments = ["-u", appPath]
             try? unregister.run()
             unregister.waitUntilExit()
 
-            // Force re-register
+            // 7. Force re-register the current app as the authoritative version
             let register = Process()
             register.executableURL = URL(fileURLWithPath: lsregister)
             register.arguments = ["-f", appPath]
             try? register.run()
             register.waitUntilExit()
 
+            log("Notification repair: extended cleanup complete, conflicting entries cleared")
+
             DispatchQueue.main.async {
-                // Also re-register via LSRegisterURL (must be on main thread)
+                // Also re-register via LSRegisterURL API
                 if let cfURL = bundleURL as CFURL? {
                     LSRegisterURL(cfURL, true)
                 }
