@@ -162,6 +162,21 @@ else
     echo "Warning: agent-bridge directory not found at $AGENT_BRIDGE_DIR"
 fi
 
+step "Building acp-bridge (npm install + tsc)..."
+ACP_BRIDGE_DIR="$(dirname "$0")/acp-bridge"
+if [ -d "$ACP_BRIDGE_DIR" ]; then
+    cd "$ACP_BRIDGE_DIR"
+    if [ ! -d "node_modules" ] || [ "package.json" -nt "node_modules/.package-lock.json" ]; then
+        substep "Installing npm dependencies"
+        npm install --no-fund --no-audit 2>&1 | tail -1
+    fi
+    substep "Compiling TypeScript"
+    npx tsc
+    cd - > /dev/null
+else
+    echo "Warning: acp-bridge directory not found at $ACP_BRIDGE_DIR"
+fi
+
 step "Building Swift app (swift build -c debug)..."
 xcrun swift build -c debug --package-path Desktop
 
@@ -217,6 +232,14 @@ if [ -d "$AGENT_BRIDGE_DIR/dist" ]; then
     cp -Rf "$AGENT_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/agent-bridge/"
     cp -f "$AGENT_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/agent-bridge/"
     cp -Rf "$AGENT_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/agent-bridge/"
+fi
+
+substep "Copying acp-bridge"
+if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
+    mkdir -p "$APP_BUNDLE/Contents/Resources/acp-bridge"
+    cp -Rf "$ACP_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    cp -f "$ACP_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
 fi
 
 substep "Copying .env.app"
