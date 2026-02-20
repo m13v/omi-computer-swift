@@ -165,6 +165,41 @@ class TaskChatCoordinator: ObservableObject {
         pendingInputText = ""
     }
 
+    // MARK: - Background Investigation
+
+    /// Start an AI chat session in the background for a task without opening the panel.
+    /// The streaming indicator will appear inline on the task row via `observeTaskState`.
+    func investigateInBackground(for task: TaskActionItem) async {
+        log("TaskChatCoordinator: investigateInBackground for \(task.id)")
+
+        // Get or create TaskChatState (same setup as openChat, but don't activate panel)
+        let state: TaskChatState
+        if let existing = taskStates[task.id] {
+            state = existing
+        } else {
+            let configuredPath = TaskAgentSettings.shared.workingDirectory
+            let ws = configuredPath.isEmpty ? (FileManager.default.homeDirectoryForCurrentUser.path) : configuredPath
+            let useACP = UserDefaults.standard.string(forKey: "chatBridgeMode") == "claudeCode"
+            state = TaskChatState(taskId: task.id, workspacePath: ws, useACPMode: useACP)
+            state.systemPromptBuilder = { [weak self] in
+                self?.chatProvider.buildTaskChatSystemPrompt() ?? ""
+            }
+            taskStates[task.id] = state
+            observeTaskState(state)
+
+            await state.loadPersistedMessages()
+        }
+
+        // Only send if chat has no messages yet (avoid duplicate investigations)
+        guard state.messages.isEmpty else {
+            log("TaskChatCoordinator: task \(task.id) already has messages, skipping investigate")
+            return
+        }
+
+        let prompt = buildInitialPrompt(for: task)
+        state.sendMessage(prompt)
+    }
+
     // MARK: - Helpers
 
     private func buildInitialPrompt(for task: TaskActionItem) -> String {
