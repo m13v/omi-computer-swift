@@ -278,7 +278,11 @@ class TaskChatState: ObservableObject {
 
         // Queue follow-up and interrupt current query
         pendingFollowUpText = trimmedText
-        await bridge.interrupt()
+        if useACPMode {
+            await acpBridge?.interrupt()
+        } else {
+            await claudeBridge?.interrupt()
+        }
         log("TaskChatState[\(taskId)]: follow-up queued, interrupt sent")
     }
 
@@ -288,7 +292,11 @@ class TaskChatState: ObservableObject {
         guard isSending else { return }
         isStopping = true
         Task {
-            await bridge.interrupt()
+            if useACPMode {
+                await acpBridge?.interrupt()
+            } else {
+                await claudeBridge?.interrupt()
+            }
         }
     }
 
