@@ -306,6 +306,7 @@ function startAcpProcess(): void {
     acpStdinWriter = null;
     // Session is lost when ACP process dies
     sessionId = "";
+    sessionModel = "";
     isInitialized = false;
     for (const [, handler] of acpResponseHandlers) {
       handler.reject(new Error(`ACP process exited (code ${code})`));
@@ -327,6 +328,7 @@ class AcpError extends Error {
 // --- State ---
 
 let sessionId = "";
+let sessionModel = ""; // model used for the current session
 let activeAbort: AbortController | null = null;
 let interruptRequested = false;
 let isInitialized = false;
@@ -432,6 +434,13 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Ensure ACP is initialized
     await initializeAcp();
 
+    // If model changed since last session, force new session
+    const requestedModel = msg.model || "";
+    if (sessionId && requestedModel !== sessionModel) {
+      logErr(`Model changed (${sessionModel} -> ${requestedModel}), creating new session`);
+      sessionId = "";
+    }
+
     // Reuse existing session if alive, otherwise create a new one
     if (!sessionId) {
       // Build MCP servers array for session (stdio format only)
@@ -474,13 +483,19 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         env: playwrightEnv,
       });
 
-      const sessionResult = (await acpRequest("session/new", {
+      const sessionParams: Record<string, unknown> = {
         cwd: msg.cwd || process.env.HOME || "/",
         mcpServers,
-      })) as { sessionId: string };
+      };
+      if (requestedModel) {
+        sessionParams.model = requestedModel;
+      }
+
+      const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
 
       sessionId = sessionResult.sessionId;
-      logErr(`ACP session created: ${sessionId}`);
+      sessionModel = requestedModel;
+      logErr(`ACP session created: ${sessionId} (model=${requestedModel || "default"})`);
     } else {
       logErr(`Reusing existing ACP session: ${sessionId}`);
     }
