@@ -4295,10 +4295,9 @@ struct SettingsContentView: View {
     }
 
     private func updateLanguage(_ language: String) {
-        // Track language change
-        AnalyticsManager.shared.languageChanged(language: language)
-
         Task {
+            // Track language change
+            await AnalyticsManager.shared.languageChanged(language: language)
             do {
                 let _ = try await APIClient.shared.updateUserLanguage(language)
             } catch {
