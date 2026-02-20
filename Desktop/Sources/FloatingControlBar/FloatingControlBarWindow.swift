@@ -764,7 +764,7 @@ class FloatingControlBarManager {
         window.state.showingAIConversation = false
         window.state.showingAIResponse = false
         window.state.aiInputText = ""
-        window.state.aiResponseText = ""
+        window.state.currentAIMessage = nil
         window.state.screenshotURL = nil
         window.state.chatHistory = []
         window.state.isVoiceFollowUp = false
@@ -795,7 +795,7 @@ class FloatingControlBarManager {
         window.state.isAILoading = true
         window.state.aiInputText = query
         window.state.displayedQuery = query
-        window.state.aiResponseText = ""
+        window.state.currentAIMessage = nil
         window.resizeToResponseHeightPublic(animated: true)
         window.orderFrontRegardless()
 
@@ -815,9 +815,8 @@ class FloatingControlBarManager {
 
         // Archive current exchange
         let currentQuery = window.state.displayedQuery
-        let currentResponse = window.state.aiResponseText
-        if !currentQuery.isEmpty && !currentResponse.isEmpty {
-            window.state.chatHistory.append(ChatExchange(question: currentQuery, response: currentResponse))
+        if let currentMessage = window.state.currentAIMessage, !currentQuery.isEmpty, !currentMessage.text.isEmpty {
+            window.state.chatHistory.append(FloatingChatExchange(question: currentQuery, aiMessage: currentMessage))
         }
 
         // Cancel existing streaming response if still in progress
@@ -826,7 +825,7 @@ class FloatingControlBarManager {
 
         // Set up new query
         window.state.displayedQuery = query
-        window.state.aiResponseText = ""
+        window.state.currentAIMessage = nil
         window.state.isAILoading = true
 
         let screenshot = window.state.screenshotURL
@@ -856,7 +855,7 @@ class FloatingControlBarManager {
 
         // Observe messages for streaming response
         chatCancellable?.cancel()
-        barWindow.state.aiResponseText = ""
+        barWindow.state.currentAIMessage = nil
         barWindow.state.isAILoading = true
         chatCancellable = provider.$messages
             .receive(on: DispatchQueue.main)
@@ -865,9 +864,11 @@ class FloatingControlBarManager {
                 guard messages.count > messageCountBefore,
                       let aiMessage = messages.last,
                       aiMessage.sender == .ai else { return }
+
+                // Store the full ChatMessage (preserves contentBlocks, tool calls, thinking)
+                barWindow?.state.currentAIMessage = aiMessage
+
                 if aiMessage.isStreaming {
-                    barWindow?.updateAIResponse(type: "data", text: "")
-                    barWindow?.state.aiResponseText = aiMessage.text
                     barWindow?.state.isAILoading = false
                     if let barWindow = barWindow, !barWindow.state.showingAIResponse {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
@@ -876,7 +877,6 @@ class FloatingControlBarManager {
                         barWindow.resizeToResponseHeightPublic(animated: true)
                     }
                 } else {
-                    barWindow?.state.aiResponseText = aiMessage.text
                     barWindow?.state.isAILoading = false
                 }
             }
@@ -891,9 +891,10 @@ class FloatingControlBarManager {
 
         // Handle errors: if sendMessage completed but no response was delivered to the bar,
         // something went wrong (bridge error, session creation failed, etc.)
-        if barWindow.state.aiResponseText.isEmpty {
+        if barWindow.state.currentAIMessage == nil || barWindow.state.aiResponseText.isEmpty {
             barWindow.state.isAILoading = false
-            barWindow.state.aiResponseText = provider.errorMessage ?? "Failed to get a response. Please try again."
+            let errorText = provider.errorMessage ?? "Failed to get a response. Please try again."
+            barWindow.state.currentAIMessage = ChatMessage(text: errorText, sender: .ai)
         }
     }
 }
