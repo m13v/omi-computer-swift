@@ -1031,6 +1031,50 @@ class ChatProvider: ObservableObject {
         return prompt
     }
 
+    /// Build system prompt for task chat sessions.
+    /// Same as buildSystemPrompt but **omits** conversation_history section
+    /// (the Claude SDK handles history via `resume: sessionId`).
+    func buildTaskChatSystemPrompt() -> String {
+        let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
+        let contextSection = formatMemoriesSection()
+        let goalSection = formatGoalSection()
+        let tasksSection = formatTasksSection()
+        let aiProfileSection = formatAIProfileSection()
+
+        var prompt = ChatPromptBuilder.buildDesktopChat(
+            userName: userName,
+            memoriesSection: contextSection,
+            goalSection: goalSection,
+            tasksSection: tasksSection,
+            aiProfileSection: aiProfileSection,
+            databaseSchema: cachedDatabaseSchema
+        )
+
+        // NO conversation_history — SDK handles this via resume
+
+        if claudeMdEnabled, let claudeMd = claudeMdContent {
+            prompt += "\n\n<claude_md>\n\(claudeMd)\n</claude_md>"
+        }
+        if projectClaudeMdEnabled, let projectClaudeMd = projectClaudeMdContent {
+            prompt += "\n\n<project_claude_md>\n\(projectClaudeMd)\n</project_claude_md>"
+        }
+
+        let enabledSkillNames = getEnabledSkillNames()
+        if !enabledSkillNames.isEmpty {
+            let allSkills = discoveredSkills + projectDiscoveredSkills
+            let skillDescriptions = allSkills
+                .filter { enabledSkillNames.contains($0.name) }
+                .map { "- \($0.name): \($0.description)" }
+                .joined(separator: "\n")
+            if !skillDescriptions.isEmpty {
+                prompt += "\n\n<available_skills>\n\(skillDescriptions)\n</available_skills>"
+            }
+        }
+
+        log("ChatProvider: task chat prompt built — prompt_length: \(prompt.count) chars")
+        return prompt
+    }
+
     /// Builds system prompt using cached memories only (for simple messages)
     private func buildSystemPromptSimple() -> String {
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
