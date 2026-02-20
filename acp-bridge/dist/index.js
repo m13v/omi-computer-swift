@@ -553,6 +553,14 @@ async function handleQuery(msg) {
                 }
                 return;
             }
+            // If it's an auth error, don't retry — send auth_required immediately
+            if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
+                logErr(`session/prompt failed with auth error (code=${err.code}), requesting authentication`);
+                sessions.delete(requestedModel);
+                isInitialized = false;
+                send({ type: "auth_required", methods: authMethods });
+                return;
+            }
             // If session/prompt failed and we were reusing a session, retry with a fresh one
             if (sessionId) {
                 logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
