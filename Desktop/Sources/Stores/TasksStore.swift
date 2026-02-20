@@ -1286,6 +1286,55 @@ class TasksStore: ObservableObject {
         }
     }
 
+    /// Update tags for a task, preserving other metadata keys
+    func updateTaskTags(_ task: TaskActionItem, tags: [String]) async {
+        // Build metadata that preserves existing keys and updates tags
+        var metaDict: [String: Any] = [:]
+        if let existingMeta = task.metadata,
+           let data = existingMeta.data(using: .utf8),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            metaDict = json
+        }
+        metaDict["tags"] = tags
+
+        // 1. Local-first: update SQLite
+        do {
+            try await ActionItemStorage.shared.updateActionItemFields(
+                backendId: task.id,
+                metadata: metaDict
+            )
+        } catch {
+            logError("TasksStore: Failed to update task tags locally", error: error)
+            self.error = error.localizedDescription
+            return
+        }
+
+        // 2. Read back and update in-memory
+        if let updatedTask = try? await ActionItemStorage.shared.getLocalActionItem(byBackendId: task.id) {
+            if task.completed {
+                if let index = completedTasks.firstIndex(where: { $0.id == task.id }) {
+                    completedTasks[index] = updatedTask
+                }
+            } else {
+                if let index = incompleteTasks.firstIndex(where: { $0.id == task.id }) {
+                    incompleteTasks[index] = updatedTask
+                }
+            }
+        }
+
+        // 3. Call API in background
+        do {
+            let apiResult = try await APIClient.shared.updateActionItem(
+                id: task.id,
+                metadata: metaDict
+            )
+            try await ActionItemStorage.shared.syncTaskActionItems([apiResult])
+        } catch {
+            self.error = error.localizedDescription
+            logError("TasksStore: Failed to update task tags on backend (local update preserved)", error: error)
+        }
+    }
+
     // MARK: - Chat Session
 
     /// Update the chatSessionId for a task in memory
