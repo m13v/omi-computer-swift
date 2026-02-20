@@ -142,6 +142,16 @@ struct DesktopHomeView: View {
                         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
                             Task { await appState.refreshConversations() }
                         }
+                        // On sign-out: reset @AppStorage-backed onboarding flag and stop transcription.
+                        // hasCompletedOnboarding must be set here (in a View) because @AppStorage
+                        // on ObservableObject caches internally and ignores UserDefaults.removeObject().
+                        // Stopping transcription here prevents FOREIGN KEY errors from an old
+                        // transcription session writing to a new user's database.
+                        .onReceive(NotificationCenter.default.publisher(for: .userDidSignOut)) { _ in
+                            log("DesktopHomeView: userDidSignOut — resetting hasCompletedOnboarding and stopping transcription")
+                            appState.hasCompletedOnboarding = false
+                            appState.stopTranscription()
+                        }
                         // Periodic file re-scan (every 3 hours)
                         .task {
                             while !Task.isCancelled {
