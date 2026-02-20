@@ -664,6 +664,24 @@ struct OnboardingView: View {
         }
         ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
         appState.startTranscription()
+
+        // Create a welcome task for the new user
+        Task {
+            await TasksStore.shared.createTask(
+                description: "Run Omi for two days to start receiving helpful advice",
+                dueAt: Date(),
+                priority: "low"
+            )
+        }
+
+        // Send a welcome notification
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            NotificationService.shared.sendNotification(
+                title: "You're all set!",
+                message: "Just go back to your work and run me in the background. I'll start sending you useful advice during your day."
+            )
+        }
+
         if let onComplete = onComplete {
             onComplete()
         }
