@@ -393,34 +393,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return event
         }
 
-        // Shared handler for Ask AI shortcut — works globally without activating main window
-        // NSEvent monitors run on the main thread, so assumeIsolated is safe here
-        let askOmiHandler: (NSEvent) -> Bool = { event in
-            return MainActor.assumeIsolated {
-                let shortcut = ShortcutSettings.shared.askOmiKey
-                if shortcut.matches(event) {
-                    FloatingControlBarManager.shared.openAIInput()
-                    return true
-                }
-                return false
-            }
-        }
+        // Ask Omi shortcut is registered via Carbon RegisterEventHotKey in
+        // GlobalShortcutManager (works regardless of accessibility permission state).
 
-        // Global monitor - for when OTHER apps are focused (requires Accessibility permission)
+        // Global monitor - for when OTHER apps are focused (Ctrl+Option+R only)
         globalHotkeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { event in
-            if askOmiHandler(event) { return }
             _ = hotkeyHandler(event)
         }
 
-        // Local monitor - for when THIS app is focused
+        // Local monitor - for when THIS app is focused (Ctrl+Option+R only)
         localHotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
-            if askOmiHandler(event) { return nil }
             return hotkeyHandler(event)
         }
 
         log("AppDelegate: Hotkey monitors registered - global=\(globalHotkeyMonitor != nil), local=\(localHotkeyMonitor != nil)")
-        let askOmiKeyLabel = MainActor.assumeIsolated { ShortcutSettings.shared.askOmiKey.rawValue }
-        log("AppDelegate: Hotkey is Ctrl+Option+R (⌃⌥R), Ask AI (\(askOmiKeyLabel)), Cmd+\\ (Toggle bar)")
+        log("AppDelegate: Hotkey is Ctrl+Option+R (⌃⌥R), Ask Omi + Cmd+\\ via Carbon hotkeys")
     }
 
     /// Set up observers to show/hide dock icon when main window appears/disappears
