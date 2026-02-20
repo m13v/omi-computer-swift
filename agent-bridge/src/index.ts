@@ -120,6 +120,12 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       includePartialMessages: true,
     };
 
+    // Resume a previous SDK session (for task chat persistence)
+    if (msg.resume) {
+      options.resume = msg.resume;
+      logErr(`Resuming session: ${msg.resume}`);
+    }
+
     // Track tool_use block index → {id, name, inputChunks} for accumulating input_json_delta
     const blockTools: Map<number, { id: string; name: string; inputChunks: string[] }> = new Map();
     // Track toolUseId → name for correlating results
@@ -349,6 +355,41 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       return;
     }
     const errMsg = err instanceof Error ? err.message : String(err);
+    // If resume was set, retry without it (session may have expired)
+    if (msg.resume && !fullText) {
+      logErr(`Query with resume failed (${errMsg}), retrying without resume`);
+      delete options.resume;
+      try {
+        const retryQ = query({ prompt: msg.prompt, options: options as any });
+        for await (const message of retryQ) {
+          if (abortController.signal.aborted) break;
+          if (message.type === "system" && "session_id" in message) {
+            sessionId = message.session_id as string;
+            send({ type: "init", sessionId });
+          } else if (message.type === "stream_event") {
+            const event = (message as any).event;
+            if (event?.type === "content_block_delta" && event.delta?.type === "text_delta") {
+              const text = event.delta.text as string;
+              fullText += text;
+              send({ type: "text_delta", text });
+            }
+          } else if (message.type === "result") {
+            const result = message as any;
+            if (result.subtype === "success") {
+              costUsd = result.total_cost_usd || 0;
+              if (!fullText && result.result) fullText = result.result;
+            }
+          }
+        }
+        send({ type: "result", text: fullText, sessionId, costUsd });
+        return;
+      } catch (retryErr) {
+        const retryMsg = retryErr instanceof Error ? retryErr.message : String(retryErr);
+        logErr(`Retry without resume also failed: ${retryMsg}`);
+        send({ type: "error", message: retryMsg });
+        return;
+      }
+    }
     logErr(`Query error: ${errMsg}`);
     send({ type: "error", message: errMsg });
   } finally {
