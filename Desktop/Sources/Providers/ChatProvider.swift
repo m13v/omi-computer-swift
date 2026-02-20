@@ -1690,7 +1690,7 @@ class ChatProvider: ObservableObject {
                         }
                     }
                 )
-                queryResult = ClaudeAgentBridge.QueryResult(text: acpResult.text, costUsd: acpResult.costUsd)
+                queryResult = ClaudeAgentBridge.QueryResult(text: acpResult.text, costUsd: acpResult.costUsd, sessionId: "")
             } else {
                 queryResult = try await claudeBridge.query(
                     prompt: trimmedText,
