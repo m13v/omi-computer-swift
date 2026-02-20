@@ -560,6 +560,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       if (sessionId) {
         logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
         sessionId = "";
+        sessionModel = "";
         // Recursive call to handleQuery will create a new session
         return handleQuery(msg);
       }
