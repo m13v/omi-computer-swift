@@ -1,6 +1,22 @@
 {
   "releases": [
     {
+      "version": "0.10.1",
+      "date": "2026-02-20",
+      "changes": [
+        "Claude Code mode: use your own Claude Pro/Max account for AI chat via ACP bridge",
+        "Dual bridge architecture: switch between Agent SDK and Claude Code in Settings",
+        "Task chat persistence: conversations saved locally and resume across app restarts",
+        "Claude authentication sheet for signing in with your Claude account",
+        "Staged release pipeline: updates progress through staging, beta, and stable channels",
+        "Update channel picker in Settings to opt into beta releases",
+        "Task chat uses independent bridge processes per task",
+        "Onboarding loading animation during file indexing",
+        "Resource monitor and agent sync reliability improvements",
+        "Fixed staging releases incorrectly updating the public download link"
+      ]
+    },
+    {
       "version": "0.10.0",
       "date": "2026-02-19",
       "changes": [
