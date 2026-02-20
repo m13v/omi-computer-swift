@@ -204,3 +204,57 @@ struct TaskChatPanel: View {
         .padding()
     }
 }
+
+/// Placeholder shown when the chat panel is open but no task is selected.
+struct TaskChatPanelPlaceholder: View {
+    @ObservedObject var coordinator: TaskChatCoordinator
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack(spacing: 8) {
+                Image(systemName: "bubble.left.and.bubble.right")
+                    .scaledFont(size: 12)
+                    .foregroundColor(OmiColors.textSecondary)
+                Text("Task Chat")
+                    .scaledFont(size: 13, weight: .semibold)
+                    .foregroundColor(OmiColors.textPrimary)
+                Spacer()
+                Button(action: onClose) {
+                    Image(systemName: "xmark")
+                        .scaledFont(size: 11, weight: .medium)
+                        .foregroundColor(OmiColors.textTertiary)
+                        .frame(width: 20, height: 20)
+                }
+                .buttonStyle(.plain)
+                .help("Close chat panel")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .background(OmiColors.backgroundTertiary.opacity(0.5))
+
+            Divider()
+                .background(OmiColors.backgroundTertiary)
+
+            // Empty state
+            VStack(spacing: 16) {
+                Spacer()
+                Image(systemName: "text.bubble")
+                    .scaledFont(size: 36)
+                    .foregroundColor(OmiColors.textTertiary.opacity(0.4))
+                Text("Select a task to chat")
+                    .scaledFont(size: 14, weight: .medium)
+                    .foregroundColor(OmiColors.textSecondary)
+                Text("Click on any task in the list to start a conversation about it.")
+                    .scaledFont(size: 12)
+                    .foregroundColor(OmiColors.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 24)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .background(OmiColors.backgroundPrimary)
+    }
+}
