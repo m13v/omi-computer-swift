@@ -1,5 +1,4 @@
 import SwiftUI
-import MarkdownUI
 
 /// Full detail view for a single conversation
 struct ConversationDetailView: View {
@@ -694,8 +693,7 @@ struct ConversationDetailView: View {
                     .foregroundColor(OmiColors.textSecondary)
             }
 
-            Markdown(displayConversation.overview)
-                .scaledMarkdownTheme(.ai)
+            SelectableMarkdown(text: displayConversation.overview, sender: .ai)
                 .textSelection(.enabled)
                 .environment(\.colorScheme, .dark)
                 .frame(maxWidth: .infinity, alignment: .leading)
