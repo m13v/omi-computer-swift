@@ -171,11 +171,18 @@ actor ACPBridge {
             }
         }
 
+        // Bump generation so stale termination handlers from previous processes are ignored
+        processGeneration &+= 1
+        let expectedGeneration = processGeneration
+
         proc.terminationHandler = { [weak self] terminatedProc in
             let code = terminatedProc.terminationStatus
             let reason = terminatedProc.terminationReason
+            // Flush any remaining stderr before the actor closes pipes
+            let stderrData = terminatedProc.standardError.flatMap { ($0 as? Pipe)?.fileHandleForReading.readDataToEndOfFile() }
+            let lastStderr = stderrData.flatMap { String(data: $0, encoding: .utf8) }
             Task { [weak self] in
-                await self?.handleTermination(exitCode: code, reason: reason)
+                await self?.handleTermination(exitCode: code, reason: reason, generation: expectedGeneration, lastStderr: lastStderr)
             }
         }
 
@@ -512,10 +519,22 @@ actor ACPBridge {
         lastExitWasOOM = true
     }
 
-    private func handleTermination(exitCode: Int32 = -1, reason: Process.TerminationReason = .exit) {
+    private func handleTermination(exitCode: Int32 = -1, reason: Process.TerminationReason = .exit, generation: UInt64? = nil, lastStderr: String? = nil) {
+        // Ignore stale termination from a previous process (fixes race where old handler closes new pipes)
+        if let gen = generation, gen != processGeneration {
+            log("ACPBridge: ignoring stale termination (gen=\(gen), current=\(processGeneration))")
+            return
+        }
+
         let reasonStr = reason == .uncaughtSignal ? "signal" : "exit"
         let error: BridgeError = lastExitWasOOM ? .outOfMemory : .processExited
         lastExitWasOOM = false
+
+        // Log any final stderr captured before pipes closed
+        if let stderr = lastStderr?.trimmingCharacters(in: .whitespacesAndNewlines), !stderr.isEmpty {
+            log("ACPBridge: final stderr: \(stderr)")
+        }
+
         log("ACPBridge: process terminated (code=\(exitCode), reason=\(reasonStr), error=\(error))")
         isRunning = false
         closePipes()
