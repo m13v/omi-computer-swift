@@ -3288,6 +3288,7 @@ struct TaskRow: View {
     var onDelete: ((TaskActionItem) async -> Void)?
     var onToggleSelection: ((TaskActionItem) -> Void)?
     var onUpdateDetails: ((TaskActionItem, String?, Date?, String?, String?) async -> Void)?
+    var onUpdateTags: ((TaskActionItem, [String]) async -> Void)?
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
@@ -3322,6 +3323,7 @@ struct TaskRow: View {
     @State private var editDueDate: Date = Date()
     @State private var showRepeatPicker = false
     @State private var editRecurrenceRule: String = ""
+    @State private var showTagPicker = false
 
     // Swipe gesture state
     @State private var swipeOffset: CGFloat = 0
@@ -3708,7 +3710,7 @@ struct TaskRow: View {
         }
         .overlay(alignment: .trailing) {
             // Hover actions overlaid on trailing edge (no layout shift)
-            if (isHovering || showRepeatPicker) && !isMultiSelectMode && !isDeletedTask {
+            if (isHovering || showRepeatPicker || showTagPicker) && !isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
                     // Add date button (shown on hover when no due date)
                     if task.dueAt == nil && !task.completed {
@@ -4167,6 +4169,113 @@ struct PriorityBadgeInteractive: View {
                 }
                 .padding(8)
                 .frame(width: 180)
+            }
+        }
+    }
+}
+
+struct TagBadgeInteractive: View {
+    let tags: [String]
+    let isCompleted: Bool
+    let isRowHovering: Bool
+    @Binding var showTagPicker: Bool
+    let onUpdateTags: ([String]) -> Void
+
+    @State private var badgeHovering = false
+    @State private var editingTags: Set<String> = []
+
+    var body: some View {
+        if !tags.isEmpty || (isRowHovering && !isCompleted) {
+            Button {
+                editingTags = Set(tags)
+                showTagPicker = true
+            } label: {
+                HStack(spacing: 3) {
+                    if tags.isEmpty {
+                        Image(systemName: "plus")
+                            .scaledFont(size: 8)
+                        Text("Tag")
+                            .scaledFont(size: 10, weight: .medium)
+                    } else {
+                        Image(systemName: "tag")
+                            .scaledFont(size: 8)
+                        Text(tags.compactMap { tag in TaskClassification(rawValue: tag)?.label }.prefix(2).joined(separator: ", "))
+                            .scaledFont(size: 10, weight: .medium)
+                        if tags.count > 2 {
+                            Text("+\(tags.count - 2)")
+                                .scaledFont(size: 9, weight: .medium)
+                        }
+                    }
+                    if badgeHovering && !tags.isEmpty {
+                        Image(systemName: "pencil")
+                            .scaledFont(size: 7)
+                    }
+                }
+                .foregroundColor(badgeHovering ? OmiColors.textPrimary : (tags.isEmpty ? OmiColors.textTertiary : OmiColors.textSecondary))
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering in
+                badgeHovering = hovering
+            }
+            .popover(isPresented: $showTagPicker) {
+                VStack(spacing: 8) {
+                    Text("Tags")
+                        .scaledFont(size: 13, weight: .semibold)
+                        .foregroundColor(OmiColors.textPrimary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+
+                    let allTags = TaskClassification.allCases
+                    LazyVGrid(columns: [
+                        GridItem(.adaptive(minimum: 85), spacing: 6)
+                    ], spacing: 6) {
+                        ForEach(allTags, id: \.rawValue) { classification in
+                            let isSelected = editingTags.contains(classification.rawValue)
+                            let tagColor = Color(hex: classification.color) ?? OmiColors.textSecondary
+                            Button {
+                                if isSelected {
+                                    editingTags.remove(classification.rawValue)
+                                } else {
+                                    editingTags.insert(classification.rawValue)
+                                }
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: classification.icon)
+                                        .scaledFont(size: 9)
+                                    Text(classification.label)
+                                        .scaledFont(size: 11, weight: isSelected ? .semibold : .medium)
+                                }
+                                .foregroundColor(isSelected ? .white : tagColor)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule()
+                                        .fill(isSelected ? tagColor : tagColor.opacity(0.1))
+                                )
+                                .overlay(
+                                    Capsule()
+                                        .stroke(isSelected ? Color.clear : tagColor.opacity(0.3), lineWidth: 1)
+                                )
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    Button {
+                        showTagPicker = false
+                        onUpdateTags(Array(editingTags))
+                    } label: {
+                        Text("Done")
+                            .scaledFont(size: 12, weight: .semibold)
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 6)
+                            .background(Capsule().fill(OmiColors.purplePrimary))
+                    }
+                    .buttonStyle(.plain)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .padding(12)
+                .frame(width: 280)
             }
         }
     }
