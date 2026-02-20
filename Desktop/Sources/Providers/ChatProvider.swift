@@ -536,7 +536,7 @@ class ChatProvider: ObservableObject {
 
         // Stop the current bridge
         if isACPMode {
-            acpBridge.stop()
+            await acpBridge.stop()
             acpBridgeStarted = false
         } else {
             await claudeBridge.stop()
