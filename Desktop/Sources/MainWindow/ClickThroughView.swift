@@ -54,6 +54,9 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
                 return event
             }
 
+            // Skip capture when click-through is disabled (e.g., sidebar hidden behind settings)
+            guard self.isClickThroughEnabled else { return event }
+
             // If clicking in our view while window is not key, save the location
             if !window.isKeyWindow {
                 let locationInView = self.convert(event.locationInWindow, from: nil)
