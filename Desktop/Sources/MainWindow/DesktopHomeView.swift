@@ -308,6 +308,7 @@ struct DesktopHomeView: View {
                             }
                         }
                     )
+                    .clickThrough()
                 }
             }
             .fixedSize(horizontal: true, vertical: false)
