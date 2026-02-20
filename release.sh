@@ -749,12 +749,21 @@ fi
 # Upload DMG to GCS for direct downloads (avoids GitHub redirect chain that triggers Chrome warnings)
 GCS_BUCKET="gs://omi_macos_updates"
 echo "  Uploading DMG to GCS..."
-gcloud storage cp --content-disposition='attachment; filename="Omi Beta.dmg"' "$DMG_PATH" "$GCS_BUCKET/releases/v${VERSION}/Omi.Beta.dmg" 2>/dev/null && \
-gcloud storage cp "$GCS_BUCKET/releases/v${VERSION}/Omi.Beta.dmg" "$GCS_BUCKET/latest/Omi.Beta.dmg" 2>/dev/null && {
-    echo "  ✓ Uploaded DMG to GCS (direct download)"
+gcloud storage cp --content-disposition='attachment; filename="Omi Beta.dmg"' "$DMG_PATH" "$GCS_BUCKET/releases/v${VERSION}/Omi.Beta.dmg" 2>/dev/null && {
+    echo "  ✓ Uploaded DMG to GCS (versioned)"
 } || {
     echo "  Warning: Could not upload DMG to GCS"
 }
+# Only update the latest/ pointer for stable releases (macos.omi.me serves this)
+if [ "$RELEASE_CHANNEL" = "stable" ]; then
+    gcloud storage cp "$GCS_BUCKET/releases/v${VERSION}/Omi.Beta.dmg" "$GCS_BUCKET/latest/Omi.Beta.dmg" 2>/dev/null && {
+        echo "  ✓ Updated latest/ pointer (direct download)"
+    } || {
+        echo "  Warning: Could not update latest/ pointer"
+    }
+else
+    echo "  ⏭ Skipping latest/ update (channel: $RELEASE_CHANNEL)"
+fi
 
 # Get the GitHub release download URL for Omi.zip
 DOWNLOAD_URL="https://github.com/$GITHUB_REPO/releases/download/$RELEASE_TAG/Omi.zip"
