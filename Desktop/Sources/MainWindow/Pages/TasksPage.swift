@@ -1995,15 +1995,23 @@ struct TasksPage: View {
                     )
 
                 // Right panel: Task chat (slides in from right)
-                if let taskState = chatCoordinator.activeTaskState {
-                    TaskChatPanel(
-                        taskState: taskState,
-                        coordinator: chatCoordinator,
-                        task: activeTask,
-                        onClose: {
-                            closeChatPanel()
-                        }
-                    )
+                Group {
+                    if let taskState = chatCoordinator.activeTaskState {
+                        TaskChatPanel(
+                            taskState: taskState,
+                            coordinator: chatCoordinator,
+                            task: activeTask,
+                            onClose: {
+                                closeChatPanel()
+                            }
+                        )
+                    } else {
+                        // No task selected — show empty panel with close button
+                        TaskChatPanelPlaceholder(
+                            coordinator: chatCoordinator,
+                            onClose: { closeChatPanel() }
+                        )
+                    }
                 }
                 .frame(width: chatPanelWidth)
                 .transition(.move(edge: .trailing))
