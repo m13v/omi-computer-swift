@@ -222,7 +222,8 @@ function startAcpProcess(): void {
   env.NODE_NO_WARNINGS = "1";
 
   // Use our patched ACP entry point (adds model selection support)
-  const acpEntry = join(__dirname, "..", "src", "patched-acp-entry.mjs");
+  // Located in dist/ (same as __dirname) so it's included in the app bundle
+  const acpEntry = join(__dirname, "patched-acp-entry.mjs");
   const nodeBin = process.execPath;
 
   logErr(`Starting ACP subprocess: ${nodeBin} ${acpEntry}`);
