@@ -12,7 +12,7 @@
  */
 
 import { spawn, type ChildProcess } from "child_process";
-import { createInterface, type Interface as ReadlineInterface } from "readline";
+import { createInterface } from "readline";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import {
