@@ -430,21 +430,34 @@ class ChatProvider: ObservableObject {
                         log("ChatProvider: Skipping bridge restart — query in progress")
                         return
                     }
-                    guard self.bridgeStarted else { return }
-                    log("ChatProvider: Playwright extension setting changed, restarting bridge")
-                    self.bridgeStarted = false
-                    do {
-                        try await self.claudeBridge.restart()
-                        self.bridgeStarted = true
-                        log("ChatProvider: Bridge restarted with new Playwright settings")
-                    } catch {
-                        logError("Failed to restart bridge after Playwright setting change", error: error)
+                    if self.isACPMode {
+                        guard self.acpBridgeStarted else { return }
+                        log("ChatProvider: Playwright extension setting changed, restarting ACP bridge")
+                        self.acpBridgeStarted = false
+                        do {
+                            try await self.acpBridge.restart()
+                            self.acpBridgeStarted = true
+                            log("ChatProvider: ACP bridge restarted with new Playwright settings")
+                        } catch {
+                            logError("Failed to restart ACP bridge after Playwright setting change", error: error)
+                        }
+                    } else {
+                        guard self.bridgeStarted else { return }
+                        log("ChatProvider: Playwright extension setting changed, restarting bridge")
+                        self.bridgeStarted = false
+                        do {
+                            try await self.claudeBridge.restart()
+                            self.bridgeStarted = true
+                            log("ChatProvider: Bridge restarted with new Playwright settings")
+                        } catch {
+                            logError("Failed to restart bridge after Playwright setting change", error: error)
+                        }
                     }
                 }
             }
     }
 
-    /// Pre-start the Claude bridge so the first query doesn't wait for process launch
+    /// Pre-start the active bridge so the first query doesn't wait for process launch
     func warmupBridge() async {
         _ = await ensureBridgeStarted()
     }
@@ -453,7 +466,7 @@ class ChatProvider: ObservableObject {
     /// Ensures the bridge is started (restarting if needed to pick up new token),
     /// then sends a lightweight test query that triggers a browser_snapshot tool call.
     func testPlaywrightConnection() async throws -> Bool {
-        // Restart bridge to pick up any newly-saved token from UserDefaults
+        // Only use agent-bridge for Playwright testing (Mode A always has our API key)
         bridgeStarted = false
         do {
             try await claudeBridge.restart()
@@ -466,26 +479,84 @@ class ChatProvider: ObservableObject {
         return try await claudeBridge.testPlaywrightConnection()
     }
 
-    /// Ensure the Claude Agent bridge is started (restarts if the process died)
+    /// Whether we're currently in ACP (Mode B) mode
+    private var isACPMode: Bool {
+        bridgeMode == BridgeMode.claudeCode.rawValue
+    }
+
+    /// Ensure the active bridge is started (restarts if the process died)
     private func ensureBridgeStarted() async -> Bool {
-        // If we thought the bridge was started but the process died, reset so we restart
-        if bridgeStarted {
-            let alive = await claudeBridge.isAlive
-            if !alive {
-                log("ChatProvider: Bridge process died, will restart")
-                bridgeStarted = false
+        if isACPMode {
+            // Mode B: ACP bridge
+            if acpBridgeStarted {
+                let alive = await acpBridge.isAlive
+                if !alive {
+                    log("ChatProvider: ACP bridge process died, will restart")
+                    acpBridgeStarted = false
+                }
+            }
+            guard !acpBridgeStarted else { return true }
+            do {
+                try await acpBridge.start()
+                acpBridgeStarted = true
+                log("ChatProvider: ACP bridge started successfully")
+                return true
+            } catch {
+                logError("Failed to start ACP bridge", error: error)
+                errorMessage = "AI not available: \(error.localizedDescription)"
+                return false
+            }
+        } else {
+            // Mode A: Agent SDK bridge (existing)
+            if bridgeStarted {
+                let alive = await claudeBridge.isAlive
+                if !alive {
+                    log("ChatProvider: Bridge process died, will restart")
+                    bridgeStarted = false
+                }
+            }
+            guard !bridgeStarted else { return true }
+            do {
+                try await claudeBridge.start()
+                bridgeStarted = true
+                log("ChatProvider: Claude bridge started successfully")
+                return true
+            } catch {
+                logError("Failed to start Claude bridge", error: error)
+                errorMessage = "AI not available: \(error.localizedDescription)"
+                return false
             }
         }
-        guard !bridgeStarted else { return true }
-        do {
-            try await claudeBridge.start()
-            bridgeStarted = true
-            log("ChatProvider: Claude bridge started successfully")
-            return true
-        } catch {
-            logError("Failed to start Claude bridge", error: error)
-            errorMessage = "AI not available: \(error.localizedDescription)"
-            return false
+    }
+
+    /// Switch between bridge modes (Agent SDK vs Claude Code ACP)
+    func switchBridgeMode(to mode: BridgeMode) async {
+        guard mode.rawValue != bridgeMode else { return }
+        log("ChatProvider: Switching bridge mode from \(bridgeMode) to \(mode.rawValue)")
+
+        // Stop the current bridge
+        if isACPMode {
+            acpBridge.stop()
+            acpBridgeStarted = false
+        } else {
+            await claudeBridge.stop()
+            bridgeStarted = false
+        }
+
+        // Switch mode
+        bridgeMode = mode.rawValue
+
+        // Warm up the new bridge
+        _ = await ensureBridgeStarted()
+    }
+
+    /// Start Claude OAuth authentication (Mode B)
+    func startClaudeAuth() {
+        guard isACPMode else { return }
+        Task {
+            // Pick the first available auth method (usually "agent_auth")
+            let methodId = (claudeAuthMethods.first?["id"] as? String) ?? "auth-0"
+            await acpBridge.authenticate(methodId: methodId)
         }
     }
 
@@ -1382,7 +1453,11 @@ class ChatProvider: ObservableObject {
         guard isSending else { return }
         isStopping = true
         Task {
-            await claudeBridge.interrupt()
+            if isACPMode {
+                await acpBridge.interrupt()
+            } else {
+                await claudeBridge.interrupt()
+            }
         }
         // Result flows back normally through the bridge with partial text
     }
@@ -1429,7 +1504,11 @@ class ChatProvider: ObservableObject {
         // When sendMessage finishes (due to the interrupt), it checks
         // pendingFollowUpText and chains a new full query automatically.
         pendingFollowUpText = trimmedText
-        await claudeBridge.interrupt()
+        if isACPMode {
+            await acpBridge.interrupt()
+        } else {
+            await claudeBridge.interrupt()
+        }
         log("ChatProvider: follow-up queued, interrupt sent")
     }
 
@@ -1533,67 +1612,99 @@ class ChatProvider: ObservableObject {
             // Build system prompt with locally cached memories (no backend Gemini call)
             let systemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
 
-            // Query the Claude Agent SDK bridge with streaming
+            // Query the active bridge with streaming
             // Each query is standalone — conversation history is in the system prompt
             // This ensures cross-platform sync (mobile messages appear in context)
-            let queryResult = try await claudeBridge.query(
-                prompt: trimmedText,
-                systemPrompt: systemPrompt,
-                cwd: workingDirectory,
-                mode: chatMode.rawValue,
-                model: model ?? modelOverride,
-                onTextDelta: { [weak self] delta in
-                    Task { @MainActor [weak self] in
-                        self?.appendToMessage(id: aiMessageId, text: delta)
-                    }
-                },
-                onToolCall: { callId, name, input in
-                    // Route OMI tool calls (execute_sql, semantic_search) through ChatToolExecutor
-                    let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
-                    let result = await ChatToolExecutor.execute(toolCall)
-                    log("OMI tool \(name) executed for callId=\(callId)")
-                    return result
-                },
-                onToolActivity: { [weak self] name, status, toolUseId, input in
-                    Task { @MainActor [weak self] in
-                        self?.addToolActivity(
-                            messageId: aiMessageId,
-                            toolName: name,
-                            status: status == "started" ? .running : .completed,
-                            toolUseId: toolUseId,
-                            input: input
-                        )
-                        // Track tool timing
-                        if status == "started" {
-                            toolNames.append(name)
-                            toolStartTimes[name] = Date()
 
-                            // Detect browser tool calls without extension token — abort query and prompt setup
-                            if (name.contains("browser") || name.contains("playwright")) {
-                                let token = UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? ""
-                                if token.isEmpty {
-                                    log("ChatProvider: Browser tool \(name) called without extension token — aborting query and prompting setup")
-                                    self?.needsBrowserExtensionSetup = true
-                                    self?.stopAgent()
-                                }
+            // Shared callbacks for both bridges
+            let textDeltaHandler: ClaudeAgentBridge.TextDeltaHandler = { [weak self] delta in
+                Task { @MainActor [weak self] in
+                    self?.appendToMessage(id: aiMessageId, text: delta)
+                }
+            }
+            let toolCallHandler: ClaudeAgentBridge.ToolCallHandler = { callId, name, input in
+                let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
+                let result = await ChatToolExecutor.execute(toolCall)
+                log("OMI tool \(name) executed for callId=\(callId)")
+                return result
+            }
+            let toolActivityHandler: ClaudeAgentBridge.ToolActivityHandler = { [weak self] name, status, toolUseId, input in
+                Task { @MainActor [weak self] in
+                    self?.addToolActivity(
+                        messageId: aiMessageId,
+                        toolName: name,
+                        status: status == "started" ? .running : .completed,
+                        toolUseId: toolUseId,
+                        input: input
+                    )
+                    if status == "started" {
+                        toolNames.append(name)
+                        toolStartTimes[name] = Date()
+                        if (name.contains("browser") || name.contains("playwright")) {
+                            let token = UserDefaults.standard.string(forKey: "playwrightExtensionToken") ?? ""
+                            if token.isEmpty {
+                                log("ChatProvider: Browser tool \(name) called without extension token — aborting query and prompting setup")
+                                self?.needsBrowserExtensionSetup = true
+                                self?.stopAgent()
                             }
-                        } else if status == "completed", let startTime = toolStartTimes.removeValue(forKey: name) {
-                            let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
-                            AnalyticsManager.shared.chatToolCallCompleted(toolName: name, durationMs: durationMs)
                         }
-                    }
-                },
-                onThinkingDelta: { [weak self] text in
-                    Task { @MainActor [weak self] in
-                        self?.appendThinking(messageId: aiMessageId, text: text)
-                    }
-                },
-                onToolResultDisplay: { [weak self] toolUseId, name, output in
-                    Task { @MainActor [weak self] in
-                        self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
+                    } else if status == "completed", let startTime = toolStartTimes.removeValue(forKey: name) {
+                        let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
+                        AnalyticsManager.shared.chatToolCallCompleted(toolName: name, durationMs: durationMs)
                     }
                 }
-            )
+            }
+            let thinkingDeltaHandler: ClaudeAgentBridge.ThinkingDeltaHandler = { [weak self] text in
+                Task { @MainActor [weak self] in
+                    self?.appendThinking(messageId: aiMessageId, text: text)
+                }
+            }
+            let toolResultDisplayHandler: ClaudeAgentBridge.ToolResultDisplayHandler = { [weak self] toolUseId, name, output in
+                Task { @MainActor [weak self] in
+                    self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
+                }
+            }
+
+            let queryResult: ClaudeAgentBridge.QueryResult
+            if isACPMode {
+                let acpResult = try await acpBridge.query(
+                    prompt: trimmedText,
+                    systemPrompt: systemPrompt,
+                    cwd: workingDirectory,
+                    mode: chatMode.rawValue,
+                    model: model ?? modelOverride,
+                    onTextDelta: textDeltaHandler,
+                    onToolCall: toolCallHandler,
+                    onToolActivity: toolActivityHandler,
+                    onThinkingDelta: thinkingDeltaHandler,
+                    onToolResultDisplay: toolResultDisplayHandler,
+                    onAuthRequired: { [weak self] methods in
+                        Task { @MainActor [weak self] in
+                            self?.claudeAuthMethods = methods
+                            self?.isClaudeAuthRequired = true
+                        }
+                    },
+                    onAuthSuccess: { [weak self] in
+                        Task { @MainActor [weak self] in
+                            self?.isClaudeAuthRequired = false
+                        }
+                    }
+                )
+                queryResult = ClaudeAgentBridge.QueryResult(text: acpResult.text, costUsd: acpResult.costUsd)
+            } else {
+                queryResult = try await claudeBridge.query(
+                    prompt: trimmedText,
+                    systemPrompt: systemPrompt,
+                    cwd: workingDirectory,
+                    mode: chatMode.rawValue,
+                    model: model ?? modelOverride,
+                    onTextDelta: textDeltaHandler,
+                    onToolCall: toolCallHandler,
+                    onToolActivity: toolActivityHandler,
+                    onThinkingDelta: thinkingDeltaHandler,
+                    onToolResultDisplay: toolResultDisplayHandler
+                )
+            }
 
             // Flush any remaining buffered streaming text before finalizing
             streamingFlushWorkItem?.cancel()
