@@ -499,6 +499,8 @@ async fn accept_tasks(
                         item.category.as_deref(),
                         item.relevance_score,
                         None, // from_staged
+                        None, // recurrence_rule
+                        None, // recurrence_parent_id
                     )
                     .await
                 {
