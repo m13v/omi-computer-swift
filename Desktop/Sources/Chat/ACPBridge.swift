@@ -11,6 +11,7 @@ actor ACPBridge {
     struct QueryResult {
         let text: String
         let costUsd: Double
+        let sessionId: String
     }
 
     /// Callback for streaming text deltas
