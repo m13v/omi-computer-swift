@@ -64,6 +64,8 @@ actor ACPBridge {
     private var messageGeneration: UInt64 = 0
     /// Set when stderr indicates OOM so handleTermination can throw the right error
     private var lastExitWasOOM = false
+    /// Set when interrupt() is called so query() can skip remaining tool calls
+    private var isInterrupted = false
 
     /// Whether the bridge subprocess is alive and ready
     var isAlive: Bool { isRunning }
@@ -251,6 +253,7 @@ actor ACPBridge {
             throw BridgeError.encodingError
         }
 
+        isInterrupted = false
         sendLine(jsonString)
 
         // Read messages until we get a result or error
@@ -265,6 +268,11 @@ actor ACPBridge {
                 onTextDelta(text)
 
             case .toolUse(let callId, let name, let input):
+                // If already interrupted, skip this tool call entirely
+                if isInterrupted {
+                    log("ACPBridge: skipping tool call \(name) (interrupted)")
+                    continue
+                }
                 let result = await onToolCall(callId, name, input)
                 let resultDict: [String: Any] = [
                     "type": "tool_result",
@@ -274,6 +282,34 @@ actor ACPBridge {
                 let resultData = try JSONSerialization.data(withJSONObject: resultDict)
                 if let resultString = String(data: resultData, encoding: .utf8) {
                     sendLine(resultString)
+                }
+
+                // If interrupted during tool execution, skip remaining tool calls
+                // and drain messages to find the result (already sent by the bridge).
+                if isInterrupted {
+                    log("ACPBridge: interrupted during tool call, draining for result")
+                    while !pendingMessages.isEmpty {
+                        let pending = pendingMessages.removeFirst()
+                        switch pending {
+                        case .result(let text, let sessionId, let costUsd):
+                            return QueryResult(text: text, costUsd: costUsd ?? 0, sessionId: sessionId)
+                        case .error(let message):
+                            throw BridgeError.agentError(message)
+                        default:
+                            continue
+                        }
+                    }
+                    while true {
+                        let msg = try await waitForMessage(timeout: 10.0)
+                        switch msg {
+                        case .result(let text, let sessionId, let costUsd):
+                            return QueryResult(text: text, costUsd: costUsd ?? 0, sessionId: sessionId)
+                        case .error(let message):
+                            throw BridgeError.agentError(message)
+                        default:
+                            continue
+                        }
+                    }
                 }
 
             case .thinkingDelta(let text):
@@ -305,6 +341,7 @@ actor ACPBridge {
     /// Interrupt the running agent, keeping partial response.
     func interrupt() {
         guard isRunning else { return }
+        isInterrupted = true
         sendLine("{\"type\":\"interrupt\"}")
     }
 
