@@ -346,35 +346,31 @@ async function initializeAcp() {
     }
 }
 function buildMcpServers(mode) {
-    const servers = [];
+    const servers = {};
     // omi-tools (stdio, connects back via Unix socket)
-    servers.push({
-        name: "omi-tools",
+    servers["omi-tools"] = {
         command: process.execPath,
         args: [omiToolsStdioScript],
-        env: [
-            { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
-            { name: "OMI_QUERY_MODE", value: mode },
-        ],
-    });
+        env: {
+            OMI_BRIDGE_PIPE: omiToolsPipePath,
+            OMI_QUERY_MODE: mode,
+        },
+    };
     // Playwright MCP server
     const playwrightArgs = [playwrightCli];
     if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
         playwrightArgs.push("--extension");
     }
-    const playwrightEnv = [];
+    const playwrightEnv = {};
     if (process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN) {
-        playwrightEnv.push({
-            name: "PLAYWRIGHT_MCP_EXTENSION_TOKEN",
-            value: process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN,
-        });
+        playwrightEnv.PLAYWRIGHT_MCP_EXTENSION_TOKEN =
+            process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN;
     }
-    servers.push({
-        name: "playwright",
+    servers["playwright"] = {
         command: process.execPath,
         args: playwrightArgs,
         env: playwrightEnv,
-    });
+    };
     return servers;
 }
 // --- Session pre-warming ---
