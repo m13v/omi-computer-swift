@@ -3665,6 +3665,14 @@ struct SettingsContentView: View {
                             Text("Version \(updaterViewModel.currentVersion) (\(updaterViewModel.buildNumber))")
                                 .scaledFont(size: 13)
                                 .foregroundColor(OmiColors.textTertiary)
+                                .onTapGesture {
+                                    // Hidden: Option+click to enable staging channel
+                                    if NSEvent.modifierFlags.contains(.option) {
+                                        UserDefaults.standard.set("staging", forKey: "update_channel")
+                                        updaterViewModel.updateChannel = .beta // closest visible option
+                                        logSync("Settings: Staging channel enabled via hidden gesture")
+                                    }
+                                }
                         }
 
                         Spacer()
@@ -3738,6 +3746,20 @@ struct SettingsContentView: View {
                                 .toggleStyle(.switch)
                                 .labelsHidden()
                         }
+                    }
+
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    settingRow(title: "Update Channel", subtitle: updaterViewModel.updateChannel.description, settingId: "about.channel") {
+                        Picker("", selection: $updaterViewModel.updateChannel) {
+                            ForEach(UpdateChannel.allCases, id: \.self) { channel in
+                                Text(channel.displayName).tag(channel)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .frame(width: 100)
                     }
                 }
             }
