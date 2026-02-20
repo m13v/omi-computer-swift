@@ -1,4 +1,3 @@
-import MarkdownUI
 import SwiftUI
 
 /// Streaming markdown response view for the floating control bar.
@@ -139,8 +138,7 @@ struct AIResponseView: View {
             .cornerRadius(8)
 
             // Response
-            Markdown(exchange.response)
-                .scaledMarkdownTheme(.ai)
+            SelectableMarkdown(text: exchange.response, sender: .ai)
                 .textSelection(.enabled)
                 .environment(\.colorScheme, .dark)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -218,8 +216,7 @@ struct AIResponseView: View {
                     .frame(maxWidth: .infinity, minHeight: 40, alignment: .leading)
                     .padding(.horizontal, 4)
             } else if !responseText.isEmpty {
-                Markdown(responseText)
-                    .scaledMarkdownTheme(.ai)
+                SelectableMarkdown(text: responseText, sender: .ai)
                     .textSelection(.enabled)
                     .environment(\.colorScheme, .dark)
                     .frame(maxWidth: .infinity, alignment: .leading)
