@@ -533,43 +533,18 @@ async function preWarmSession(cwd?: string, models?: string[]): Promise<void> {
             `Pre-warmed session: ${result.sessionId} (cwd=${warmCwd}, model=${warmModel})`
           );
         } catch (err) {
-          // If pre-warm fails with auth error or internal error (no credentials),
-          // send auth_required so Swift shows the sign-in sheet
+          // If pre-warm fails with auth error, re-initialize with auth flow
           if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-            if (err.code === -32000) {
-              const data = err.data as {
-                authMethods?: Array<{
-                  id: string;
-                  name: string;
-                  description?: string;
-                  type?: string;
-                }>;
-              };
-              if (data?.authMethods) {
-                authMethods = data.authMethods.map((m) => ({
-                  id: m.id,
-                  type: (m.type ?? "agent_auth") as AuthMethod["type"],
-                  displayName: m.name || m.description || m.id,
-                }));
-              }
-            }
-            logErr(`Pre-warm failed with auth/internal error (code=${err.code}), requesting authentication`);
+            logErr(`Pre-warm failed with auth error (code=${err.code}), re-initializing with auth flow`);
             isInitialized = false;
-            send({ type: "auth_required", methods: authMethods });
-            return;
+            await initializeAcp();
+            return; // After auth, warmup will happen on next query
           }
           logErr(`Pre-warm failed for ${warmModel}: ${err}`);
         }
       })
     );
   } catch (err) {
-    // If init/warmup fails with auth error, send auth_required to Swift
-    if (err instanceof AcpError && err.code === -32000) {
-      logErr(`Warmup init failed with auth error, requesting authentication`);
-      isInitialized = false;
-      send({ type: "auth_required", methods: authMethods });
-      return;
-    }
     logErr(`Pre-warm failed (will create on first query): ${err}`);
   }
 }
@@ -699,13 +674,16 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         }
         return;
       }
-      // If it's an auth error, don't retry — send auth_required immediately
+      // If it's an auth error, re-initialize (which has the proper auth flow)
+      // then retry the query
       if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-        logErr(`session/prompt failed with auth error (code=${err.code}), requesting authentication`);
+        logErr(`session/prompt failed with auth error (code=${err.code}), re-initializing with auth flow`);
         sessions.delete(requestedModel);
+        activeSessionId = "";
         isInitialized = false;
-        send({ type: "auth_required", methods: authMethods });
-        return;
+        await initializeAcp();
+        // After successful auth, retry the query
+        return handleQuery(msg);
       }
       // If session/prompt failed and we were reusing a session, retry with a fresh one
       if (sessionId) {
@@ -729,29 +707,12 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       return;
     }
     // If the error is an auth error or internal error (no credentials),
-    // send auth_required so Swift shows the sign-in sheet
+    // re-initialize with the proper auth flow and retry
     if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-      if (err.code === -32000) {
-        const data = err.data as {
-          authMethods?: Array<{
-            id: string;
-            name: string;
-            description?: string;
-            type?: string;
-          }>;
-        };
-        if (data?.authMethods) {
-          authMethods = data.authMethods.map((m) => ({
-            id: m.id,
-            type: (m.type ?? "agent_auth") as AuthMethod["type"],
-            displayName: m.name || m.description || m.id,
-          }));
-        }
-      }
-      logErr(`Query failed with auth/internal error (code=${(err as AcpError).code}), requesting re-authentication`);
+      logErr(`Query failed with auth/internal error (code=${(err as AcpError).code}), re-initializing with auth flow`);
       isInitialized = false;
-      send({ type: "auth_required", methods: authMethods });
-      return;
+      await initializeAcp();
+      return handleQuery(msg);
     }
     const errMsg = err instanceof Error ? err.message : String(err);
     logErr(`Query error: ${errMsg}`);
