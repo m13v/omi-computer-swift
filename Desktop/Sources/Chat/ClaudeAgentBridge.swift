@@ -10,6 +10,7 @@ actor ClaudeAgentBridge {
     struct QueryResult {
         let text: String
         let costUsd: Double
+        let sessionId: String
     }
 
     /// Callback for streaming text deltas
@@ -209,6 +210,7 @@ actor ClaudeAgentBridge {
         cwd: String? = nil,
         mode: String? = nil,
         model: String? = nil,
+        resume: String? = nil,
         onTextDelta: @escaping TextDeltaHandler,
         onToolCall: @escaping ToolCallHandler,
         onToolActivity: @escaping ToolActivityHandler,
@@ -219,7 +221,7 @@ actor ClaudeAgentBridge {
             throw BridgeError.notRunning
         }
 
-        // Build query message — no session resume, each query is independent
+        // Build query message
         var queryDict: [String: Any] = [
             "type": "query",
             "id": UUID().uuidString,
@@ -234,6 +236,9 @@ actor ClaudeAgentBridge {
         }
         if let model = model {
             queryDict["model"] = model
+        }
+        if let resume = resume {
+            queryDict["resume"] = resume
         }
 
         let jsonData = try JSONSerialization.data(withJSONObject: queryDict)
@@ -277,8 +282,8 @@ actor ClaudeAgentBridge {
             case .toolResultDisplay(let toolUseId, let name, let output):
                 onToolResultDisplay(toolUseId, name, output)
 
-            case .result(let text, _, let costUsd):
-                return QueryResult(text: text, costUsd: costUsd ?? 0)
+            case .result(let text, let sessionId, let costUsd):
+                return QueryResult(text: text, costUsd: costUsd ?? 0, sessionId: sessionId)
 
             case .error(let message):
                 throw BridgeError.agentError(message)
