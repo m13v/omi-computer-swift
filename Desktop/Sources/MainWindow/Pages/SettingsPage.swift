@@ -216,6 +216,9 @@ struct SettingsContentView: View {
     @State private var fileViewerTitle = ""
     @State private var skillSearchQuery = ""
 
+    // Dev Mode setting
+    @AppStorage("devModeEnabled") private var devModeEnabled = false
+
     // Browser Extension settings
     @AppStorage("playwrightUseExtension") private var playwrightUseExtension = true
     @State private var playwrightExtensionToken: String = ""
@@ -1953,6 +1956,54 @@ struct SettingsContentView: View {
                                 }
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+            // Dev Mode card
+            settingsCard(settingId: "aichat.devmode") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "hammer")
+                            .scaledFont(size: 16)
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Text("Dev Mode")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Toggle("", isOn: $devModeEnabled)
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .labelsHidden()
+                    }
+
+                    Text("Let the AI modify the app's source code, rebuild it, and add custom features.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textTertiary)
+
+                    if devModeEnabled {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack(spacing: 6) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                                    .scaledFont(size: 12)
+                                Text("AI can modify UI, add features, create custom SQLite tables")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(OmiColors.textSecondary)
+                            }
+                            HStack(spacing: 6) {
+                                Image(systemName: "lock.fill")
+                                    .foregroundColor(.orange)
+                                    .scaledFont(size: 12)
+                                Text("Backend API, auth, and sync logic are read-only")
+                                    .scaledFont(size: 12)
+                                    .foregroundColor(OmiColors.textSecondary)
                             }
                         }
                     }
