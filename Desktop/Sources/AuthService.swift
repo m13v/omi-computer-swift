@@ -5,6 +5,11 @@ import AppKit
 import AuthenticationServices
 import Sentry
 
+extension Notification.Name {
+    /// Posted by AuthService.signOut() so views can reset @AppStorage-backed properties directly.
+    static let userDidSignOut = Notification.Name("com.omi.desktop.userDidSignOut")
+}
+
 @MainActor
 class AuthService {
     static let shared = AuthService()
@@ -1044,10 +1049,10 @@ class AuthService {
         UserDefaults.standard.removeObject(forKey: "hasTriggeredMicrophone")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredSystemAudio")
 
-        // Clear screen analysis setting so it reverts to registered default (true).
-        // Without this, a server-synced "false" value persists through sign-out/sign-in
-        // and prevents monitoring from starting for the next user.
-        UserDefaults.standard.removeObject(forKey: "screenAnalysisEnabled")
+        // screenAnalysisEnabled: Don't removeObject here — SettingsSyncManager overwrites
+        // it from the server within ~200ms of sign-in. Instead, onboarding force-starts
+        // monitoring regardless of this setting.
+        // transcriptionEnabled: removeObject works since nothing writes it back.
         UserDefaults.standard.removeObject(forKey: "transcriptionEnabled")
 
         NSLog("OMI AUTH: Signed out and cleared saved state + onboarding")
