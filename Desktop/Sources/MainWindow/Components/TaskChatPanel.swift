@@ -1,9 +1,9 @@
 import SwiftUI
 
 /// Compact chat panel for the task sidebar.
-/// Displays task-scoped chat using the shared ChatProvider via TaskChatCoordinator.
+/// Displays task-scoped chat using an independent TaskChatState per task.
 struct TaskChatPanel: View {
-    @ObservedObject var chatProvider: ChatProvider
+    @ObservedObject var taskState: TaskChatState
     @ObservedObject var coordinator: TaskChatCoordinator
     let task: TaskActionItem?
     let onClose: () -> Void
@@ -34,23 +34,19 @@ struct TaskChatPanel: View {
             } else {
                 // Messages area
                 ChatMessagesView(
-                    messages: chatProvider.messages,
-                    isSending: chatProvider.isSending,
-                    hasMoreMessages: chatProvider.hasMoreMessages,
-                    isLoadingMoreMessages: chatProvider.isLoadingMoreMessages,
-                    isLoadingInitial: chatProvider.isLoading,
+                    messages: taskState.messages,
+                    isSending: taskState.isSending,
+                    hasMoreMessages: false,
+                    isLoadingMoreMessages: false,
+                    isLoadingInitial: false,
                     app: nil,
-                    onLoadMore: { await chatProvider.loadMoreMessages() },
-                    onRate: { messageId, rating in
-                        Task { await chatProvider.rateMessage(messageId, rating: rating) }
-                    },
-                    sessionsLoadError: chatProvider.sessionsLoadError,
-                    onRetry: { Task { await chatProvider.retryLoad() } },
+                    onLoadMore: { },
+                    onRate: { _, _ in },
                     welcomeContent: { taskWelcome }
                 )
 
                 // Error banner
-                if let error = chatProvider.errorMessage {
+                if let error = taskState.errorMessage {
                     HStack(spacing: 8) {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundColor(OmiColors.warning)
@@ -60,7 +56,7 @@ struct TaskChatPanel: View {
                             .foregroundColor(OmiColors.textSecondary)
                         Spacer()
                         Button {
-                            chatProvider.errorMessage = nil
+                            taskState.errorMessage = nil
                         } label: {
                             Image(systemName: "xmark")
                                 .scaledFont(size: 11)
@@ -77,20 +73,20 @@ struct TaskChatPanel: View {
                 ChatInputView(
                     onSend: { text in
                         AnalyticsManager.shared.chatMessageSent(messageLength: text.count, source: "task_chat")
-                        Task { await chatProvider.sendMessage(text) }
+                        Task { await taskState.sendMessage(text) }
                     },
                     onFollowUp: { text in
-                        Task { await chatProvider.sendFollowUp(text) }
+                        Task { await taskState.sendFollowUp(text) }
                     },
                     onStop: {
-                        chatProvider.stopAgent()
+                        taskState.stopAgent()
                     },
-                    isSending: chatProvider.isSending,
-                    isStopping: chatProvider.isStopping,
+                    isSending: taskState.isSending,
+                    isStopping: taskState.isStopping,
                     placeholder: "Ask about this task...",
-                    mode: $chatProvider.chatMode,
+                    mode: $taskState.chatMode,
                     pendingText: $coordinator.pendingInputText,
-                    inputText: $chatProvider.draftText
+                    inputText: $taskState.draftText
                 )
                 .padding(12)
             }
