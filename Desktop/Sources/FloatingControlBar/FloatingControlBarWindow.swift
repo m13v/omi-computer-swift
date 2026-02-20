@@ -309,7 +309,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             state.showingAIResponse = false
             state.isAILoading = false
             state.aiInputText = ""
-            state.aiResponseText = ""
+            state.currentAIMessage = nil
             // Match the explicit resize height so the observer doesn't immediately override it
             state.inputViewHeight = 120
         }
