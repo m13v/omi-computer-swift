@@ -77,7 +77,7 @@ class TaskChatState: ObservableObject {
 
     // MARK: - Send Message
 
-    func sendMessage(_ text: String) async {
+    func sendMessage(_ text: String, isFollowUp: Bool = false) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
         guard !isSending else {
@@ -91,12 +91,15 @@ class TaskChatState: ObservableObject {
         errorMessage = nil
 
         // Add user message to local messages (no backend save)
-        let userMessage = ChatMessage(
-            id: UUID().uuidString,
-            text: trimmedText,
-            sender: .user
-        )
-        messages.append(userMessage)
+        // Skip for follow-ups — sendFollowUp() already added it
+        if !isFollowUp {
+            let userMessage = ChatMessage(
+                id: UUID().uuidString,
+                text: trimmedText,
+                sender: .user
+            )
+            messages.append(userMessage)
+        }
 
         // Create placeholder AI message
         let aiMessageId = UUID().uuidString
@@ -199,7 +202,7 @@ class TaskChatState: ObservableObject {
         // Chain follow-up if queued
         if let followUp = pendingFollowUpText {
             pendingFollowUpText = nil
-            await sendMessage(followUp)
+            await sendMessage(followUp, isFollowUp: true)
         }
     }
 
