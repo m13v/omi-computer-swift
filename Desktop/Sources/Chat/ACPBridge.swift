@@ -105,7 +105,12 @@ actor ACPBridge {
             throw BridgeError.bridgeScriptNotFound
         }
 
-        log("ACPBridge: starting with node=\(nodePath), bridge=\(bridgePath)")
+        let nodeExists = FileManager.default.isExecutableFile(atPath: nodePath)
+        let bridgeExists = FileManager.default.fileExists(atPath: bridgePath)
+        let bridgeDir = (bridgePath as NSString).deletingLastPathComponent
+        let pkgJsonPath = ((bridgeDir as NSString).deletingLastPathComponent as NSString).appendingPathComponent("package.json")
+        let pkgJsonExists = FileManager.default.fileExists(atPath: pkgJsonPath)
+        log("ACPBridge: starting with node=\(nodePath) (exists=\(nodeExists)), bridge=\(bridgePath) (exists=\(bridgeExists)), package.json=\(pkgJsonExists)")
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: nodePath)
@@ -164,9 +169,11 @@ actor ACPBridge {
             }
         }
 
-        proc.terminationHandler = { [weak self] _ in
+        proc.terminationHandler = { [weak self] terminatedProc in
+            let code = terminatedProc.terminationStatus
+            let reason = terminatedProc.terminationReason
             Task { [weak self] in
-                await self?.handleTermination()
+                await self?.handleTermination(exitCode: code, reason: reason)
             }
         }
 
@@ -503,10 +510,11 @@ actor ACPBridge {
         lastExitWasOOM = true
     }
 
-    private func handleTermination() {
+    private func handleTermination(exitCode: Int32 = -1, reason: Process.TerminationReason = .exit) {
+        let reasonStr = reason == .uncaughtSignal ? "signal" : "exit"
         let error: BridgeError = lastExitWasOOM ? .outOfMemory : .processExited
         lastExitWasOOM = false
-        log("ACPBridge: process terminated (\(error))")
+        log("ACPBridge: process terminated (code=\(exitCode), reason=\(reasonStr), error=\(error))")
         isRunning = false
         closePipes()
         messageContinuation?.resume(throwing: error)
