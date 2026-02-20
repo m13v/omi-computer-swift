@@ -28,6 +28,7 @@ export interface WarmupMessage {
     type: "warmup";
     cwd?: string;
     model?: string;
+    models?: string[];
 }
 export type InboundMessage = QueryMessage | ToolResultMessage | StopMessage | InterruptMessage | AuthenticateMessage | WarmupMessage;
 export interface InitMessage {
