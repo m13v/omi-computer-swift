@@ -214,24 +214,20 @@ function acpNotify(
 
 /** Start the ACP subprocess */
 function startAcpProcess(): void {
-  // Build environment — strip ANTHROPIC_API_KEY so ACP uses its own OAuth
+  // Build environment for ACP subprocess
+  // If ANTHROPIC_API_KEY is present (Mode A), keep it so ACP uses OMI's key.
+  // If absent (Mode B), ACP will use user's own OAuth.
   const env = { ...process.env };
-  delete env.ANTHROPIC_API_KEY;
   delete env.CLAUDE_CODE_USE_VERTEX;
   env.NODE_NO_WARNINGS = "1";
 
-  // The ACP binary communicates via JSON-RPC over stdio
-  const acpBinary = join(
-    __dirname,
-    "..",
-    "node_modules",
-    ".bin",
-    "claude-code-acp"
-  );
+  // Use our patched ACP entry point (adds model selection support)
+  const acpEntry = join(__dirname, "..", "src", "patched-acp-entry.mjs");
+  const nodeBin = process.execPath;
 
-  logErr(`Starting ACP subprocess: ${acpBinary}`);
+  logErr(`Starting ACP subprocess: ${nodeBin} ${acpEntry}`);
 
-  acpProcess = spawn(acpBinary, [], {
+  acpProcess = spawn(nodeBin, [acpEntry], {
     env,
     stdio: ["pipe", "pipe", "pipe"],
   });
