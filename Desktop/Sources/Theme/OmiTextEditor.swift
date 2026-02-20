@@ -88,6 +88,13 @@ struct OmiTextEditor: NSViewRepresentable {
             textView.string = text
             context.coordinator.isUpdating = false
 
+            // Force layout so NSScrollView knows the new content size
+            // (needed for programmatic text changes to show scrollbar)
+            if let layoutManager = textView.layoutManager,
+               let textContainer = textView.textContainer {
+                layoutManager.ensureLayout(for: textContainer)
+            }
+
             if onHeightChange != nil {
                 context.coordinator.updateHeight(for: textView, scrollView: scrollView)
             }
