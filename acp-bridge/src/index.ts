@@ -421,6 +421,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   interruptRequested = false;
 
   let fullText = "";
+  let isNewSession = false;
   const pendingTools: string[] = [];
 
   try {
@@ -492,14 +493,16 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 
       sessionId = sessionResult.sessionId;
       sessionModel = requestedModel;
+      isNewSession = true;
       logErr(`ACP session created: ${sessionId} (model=${requestedModel || "default"})`);
     } else {
+      isNewSession = false;
       logErr(`Reusing existing ACP session: ${sessionId}`);
     }
 
-    // Build the prompt with system context
-    // ACP doesn't have a separate systemPrompt field — prepend it to the user message
-    const fullPrompt = msg.systemPrompt
+    // Only prepend system prompt on the first message in a new session.
+    // On subsequent messages the session already has the context.
+    const fullPrompt = isNewSession && msg.systemPrompt
       ? `<system>\n${msg.systemPrompt}\n</system>\n\n${msg.prompt}`
       : msg.prompt;
 
