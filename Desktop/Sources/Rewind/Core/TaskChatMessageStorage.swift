@@ -209,22 +209,25 @@ actor TaskChatMessageStorage {
     @discardableResult
     func insert(_ record: TaskChatMessageRecord) async throws -> TaskChatMessageRecord {
         let db = try await ensureInitialized()
-        var record = record
-        try await db.write { database in
+        let result = try await db.write { database -> TaskChatMessageRecord in
+            var record = record
             try record.insert(database)
+            return record
         }
-        return record
+        return result
     }
 
     /// Save a ChatMessage for a task (convenience)
     @discardableResult
     func saveMessage(_ message: ChatMessage, taskId: String, acpSessionId: String? = nil) async throws -> TaskChatMessageRecord {
-        var record = TaskChatMessageRecord.from(message, taskId: taskId, acpSessionId: acpSessionId)
+        let record = TaskChatMessageRecord.from(message, taskId: taskId, acpSessionId: acpSessionId)
         let db = try await ensureInitialized()
-        try await db.write { database in
+        let result = try await db.write { database -> TaskChatMessageRecord in
+            var record = record
             try record.insert(database)
+            return record
         }
-        return record
+        return result
     }
 
     // MARK: - Query
