@@ -2162,6 +2162,8 @@ struct TasksPage: View {
                         hasSelection: viewModel.keyboardSelectedTaskId != nil
                     )
                     .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.15), value: viewModel.keyboardSelectedTaskId)
+                    .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
                 }
                 // Undo toast
                 if viewModel.showUndoToast, let lastAction = viewModel.undoStack.last {
@@ -2174,10 +2176,8 @@ struct TasksPage: View {
                 }
             }
             .padding(.bottom, 16)
+            .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
         }
-        .animation(.easeInOut(duration: 0.25), value: viewModel.showUndoToast)
-        .animation(.easeInOut(duration: 0.15), value: viewModel.keyboardSelectedTaskId)
-        .animation(.easeInOut(duration: 0.15), value: viewModel.isInlineCreating)
         .onAppear {
             installKeyboardMonitor()
         }
@@ -3128,14 +3128,13 @@ struct TaskCategorySection: View {
                             .modifier(TaskDragDropModifier(
                                 isEnabled: !isMultiSelectMode,
                                 taskId: task.id,
-                                orderedTasks: orderedTasks,
+                                taskDescription: task.description,
+                                findTask: { id in orderedTasks.first(where: { $0.id == id }) },
+                                findTargetIndex: { orderedTasks.firstIndex(where: { $0.id == task.id }) },
+                                validateDrop: { id in orderedTasks.contains(where: { $0.id == id }) },
                                 onMoveTask: { droppedTask, targetIndex in
                                     onMoveTask?(droppedTask, targetIndex, category)
                                 }
-                            ))
-                            .transition(.asymmetric(
-                                insertion: .opacity.combined(with: .move(edge: .top)),
-                                removal: .opacity.combined(with: .move(edge: .trailing))
                             ))
 
                             // Inline creation row after this task
@@ -3161,25 +3160,30 @@ struct TaskCategorySection: View {
 
 /// Conditionally applies .draggable + .dropDestination to avoid deep ExclusiveGesture nesting.
 /// When disabled (e.g. multi-select mode), the view has fewer gesture modifiers, preventing hangs.
+/// Uses closures instead of the full orderedTasks array to avoid gesture graph rebuilds
+/// when the array identity changes during recomputes (every 30s auto-refresh).
 struct TaskDragDropModifier: ViewModifier {
     let isEnabled: Bool
     let taskId: String
-    let orderedTasks: [TaskActionItem]
+    let taskDescription: String
+    var findTask: ((String) -> TaskActionItem?)?
+    var findTargetIndex: (() -> Int?)?
+    var validateDrop: ((String) -> Bool)?
     var onMoveTask: ((TaskActionItem, Int) -> Void)?
 
     func body(content: Content) -> some View {
-        if isEnabled, let task = orderedTasks.first(where: { $0.id == taskId }) {
+        if isEnabled {
             content
                 .draggable(taskId) {
-                    TaskDragPreview(task: task)
+                    TaskDragPreviewSimple(taskId: taskId, description: taskDescription)
                 }
                 .dropDestination(for: String.self) { droppedIds, _ in
                     guard let droppedId = droppedIds.first,
-                          orderedTasks.contains(where: { $0.id == droppedId }),
-                          let targetIndex = orderedTasks.firstIndex(where: { $0.id == taskId }) else {
+                          validateDrop?(droppedId) == true,
+                          let targetIndex = findTargetIndex?() else {
                         return false
                     }
-                    if let droppedTask = orderedTasks.first(where: { $0.id == droppedId }) {
+                    if let droppedTask = findTask?(droppedId) {
                         onMoveTask?(droppedTask, targetIndex)
                     }
                     return true
@@ -3190,10 +3194,10 @@ struct TaskDragDropModifier: ViewModifier {
     }
 }
 
-// MARK: - Task Drag Preview
-
-struct TaskDragPreview: View {
-    let task: TaskActionItem
+/// Lightweight drag preview that doesn't hold a TaskActionItem reference
+struct TaskDragPreviewSimple: View {
+    let taskId: String
+    let description: String
 
     var body: some View {
         HStack(spacing: 8) {
@@ -3201,7 +3205,7 @@ struct TaskDragPreview: View {
                 .scaledFont(size: 16)
                 .foregroundColor(OmiColors.textTertiary)
 
-            Text(task.description)
+            Text(description)
                 .scaledFont(size: 13)
                 .foregroundColor(OmiColors.textPrimary)
                 .lineLimit(1)
