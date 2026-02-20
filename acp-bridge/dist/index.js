@@ -379,7 +379,7 @@ function buildMcpServers(mode) {
 }
 // --- Session pre-warming ---
 const DEFAULT_MODEL = "claude-opus-4-6";
-const SONNET_MODEL = "claude-sonnet-4-5-20250929";
+const SONNET_MODEL = "claude-sonnet-4-6";
 async function preWarmSession(cwd, models) {
     const warmCwd = cwd || process.env.HOME || "/";
     const warmModels = models && models.length > 0 ? models : [DEFAULT_MODEL, SONNET_MODEL];
