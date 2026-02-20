@@ -159,15 +159,17 @@ function acpNotify(method, params = {}) {
 }
 /** Start the ACP subprocess */
 function startAcpProcess() {
-    // Build environment — strip ANTHROPIC_API_KEY so ACP uses its own OAuth
+    // Build environment for ACP subprocess
+    // If ANTHROPIC_API_KEY is present (Mode A), keep it so ACP uses OMI's key.
+    // If absent (Mode B), ACP will use user's own OAuth.
     const env = { ...process.env };
-    delete env.ANTHROPIC_API_KEY;
     delete env.CLAUDE_CODE_USE_VERTEX;
     env.NODE_NO_WARNINGS = "1";
-    // The ACP binary communicates via JSON-RPC over stdio
-    const acpBinary = join(__dirname, "..", "node_modules", ".bin", "claude-code-acp");
-    logErr(`Starting ACP subprocess: ${acpBinary}`);
-    acpProcess = spawn(acpBinary, [], {
+    // Use our patched ACP entry point (adds model selection support)
+    const acpEntry = join(__dirname, "..", "src", "patched-acp-entry.mjs");
+    const nodeBin = process.execPath;
+    logErr(`Starting ACP subprocess: ${nodeBin} ${acpEntry}`);
+    acpProcess = spawn(nodeBin, [acpEntry], {
         env,
         stdio: ["pipe", "pipe", "pipe"],
     });
@@ -233,6 +235,7 @@ function startAcpProcess() {
         acpStdinWriter = null;
         // Session is lost when ACP process dies
         sessionId = "";
+        sessionModel = "";
         isInitialized = false;
         for (const [, handler] of acpResponseHandlers) {
             handler.reject(new Error(`ACP process exited (code ${code})`));
@@ -251,6 +254,7 @@ class AcpError extends Error {
 }
 // --- State ---
 let sessionId = "";
+let sessionModel = ""; // model used for the current session
 let activeAbort = null;
 let interruptRequested = false;
 let isInitialized = false;
@@ -320,6 +324,12 @@ async function handleQuery(msg) {
         logErr(`Query mode: ${mode}`);
         // Ensure ACP is initialized
         await initializeAcp();
+        // If model changed since last session, force new session
+        const requestedModel = msg.model || "";
+        if (sessionId && requestedModel !== sessionModel) {
+            logErr(`Model changed (${sessionModel} -> ${requestedModel}), creating new session`);
+            sessionId = "";
+        }
         // Reuse existing session if alive, otherwise create a new one
         if (!sessionId) {
             // Build MCP servers array for session (stdio format only)
@@ -353,12 +363,17 @@ async function handleQuery(msg) {
                 args: playwrightArgs,
                 env: playwrightEnv,
             });
-            const sessionResult = (await acpRequest("session/new", {
+            const sessionParams = {
                 cwd: msg.cwd || process.env.HOME || "/",
                 mcpServers,
-            }));
+            };
+            if (requestedModel) {
+                sessionParams.model = requestedModel;
+            }
+            const sessionResult = (await acpRequest("session/new", sessionParams));
             sessionId = sessionResult.sessionId;
-            logErr(`ACP session created: ${sessionId}`);
+            sessionModel = requestedModel;
+            logErr(`ACP session created: ${sessionId} (model=${requestedModel || "default"})`);
         }
         else {
             logErr(`Reusing existing ACP session: ${sessionId}`);
@@ -415,6 +430,7 @@ async function handleQuery(msg) {
             if (sessionId) {
                 logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
                 sessionId = "";
+                sessionModel = "";
                 // Recursive call to handleQuery will create a new session
                 return handleQuery(msg);
             }
