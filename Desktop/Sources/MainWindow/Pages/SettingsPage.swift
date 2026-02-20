@@ -1497,7 +1497,7 @@ struct SettingsContentView: View {
                         }
                         .pickerStyle(.menu)
                         .frame(width: 200)
-                        .onChange(of: chatBridgeMode) { newMode in
+                        .onChange(of: chatBridgeMode) { _, newMode in
                             if let mode = ChatProvider.BridgeMode(rawValue: newMode) {
                                 Task {
                                     await chatProvider?.switchBridgeMode(to: mode)
