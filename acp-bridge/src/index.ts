@@ -688,6 +688,28 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       }
       return;
     }
+    // If the error is an auth error, send auth_required so Swift shows the sign-in sheet
+    if (err instanceof AcpError && err.code === -32000) {
+      const data = err.data as {
+        authMethods?: Array<{
+          id: string;
+          name: string;
+          description?: string;
+          type?: string;
+        }>;
+      };
+      if (data?.authMethods) {
+        authMethods = data.authMethods.map((m) => ({
+          id: m.id,
+          type: (m.type ?? "agent_auth") as AuthMethod["type"],
+          displayName: m.name || m.description || m.id,
+        }));
+      }
+      logErr(`Query failed with auth error, requesting re-authentication`);
+      isInitialized = false;
+      send({ type: "auth_required", methods: authMethods });
+      return;
+    }
     const errMsg = err instanceof Error ? err.message : String(err);
     logErr(`Query error: ${errMsg}`);
     send({ type: "error", message: errMsg });
