@@ -49,6 +49,16 @@ actor ACPBridge {
         case authSuccess
     }
 
+    // MARK: - Configuration
+
+    /// When true, ANTHROPIC_API_KEY is passed through to the ACP subprocess
+    /// (Mode A: OMI's key). When false, the key is stripped so ACP uses OAuth.
+    let passApiKey: Bool
+
+    init(passApiKey: Bool = false) {
+        self.passApiKey = passApiKey
+    }
+
     // MARK: - State
 
     private var process: Process?
@@ -101,10 +111,14 @@ actor ACPBridge {
         proc.executableURL = URL(fileURLWithPath: nodePath)
         proc.arguments = ["--jitless", bridgePath]
 
-        // Build environment — strip ANTHROPIC_API_KEY so ACP uses user's own OAuth
+        // Build environment
         var env = ProcessInfo.processInfo.environment
         env["NODE_NO_WARNINGS"] = "1"
-        env.removeValue(forKey: "ANTHROPIC_API_KEY")
+        if !passApiKey {
+            // Mode B: Strip API key so ACP uses user's own OAuth
+            env.removeValue(forKey: "ANTHROPIC_API_KEY")
+        }
+        // else: Mode A: Keep ANTHROPIC_API_KEY for OMI's key
         env.removeValue(forKey: "CLAUDE_CODE_USE_VERTEX")
 
         // Ensure the directory containing node is in PATH
