@@ -55,6 +55,8 @@ actor ClaudeAgentBridge {
     private var messageGeneration: UInt64 = 0
     /// Set when stderr indicates OOM so handleTermination can throw the right error
     private var lastExitWasOOM = false
+    /// Set when interrupt() is called so query() can skip remaining tool calls
+    private var isInterrupted = false
 
     /// Whether the bridge subprocess is alive and ready
     var isAlive: Bool { isRunning }
@@ -246,6 +248,7 @@ actor ClaudeAgentBridge {
             throw BridgeError.encodingError
         }
 
+        isInterrupted = false
         sendLine(jsonString)
 
         // Read messages until we get a result or error
@@ -271,6 +274,36 @@ actor ClaudeAgentBridge {
                 let resultData = try JSONSerialization.data(withJSONObject: resultDict)
                 if let resultString = String(data: resultData, encoding: .utf8) {
                     sendLine(resultString)
+                }
+
+                // If interrupted during tool execution, skip remaining tool calls
+                // and drain messages to find the result (already sent by the bridge).
+                if isInterrupted {
+                    log("ClaudeAgentBridge: interrupted during tool call, draining for result")
+                    // First check already-buffered messages
+                    while !pendingMessages.isEmpty {
+                        let pending = pendingMessages.removeFirst()
+                        switch pending {
+                        case .result(let text, let sessionId, let costUsd):
+                            return QueryResult(text: text, costUsd: costUsd ?? 0, sessionId: sessionId)
+                        case .error(let message):
+                            throw BridgeError.agentError(message)
+                        default:
+                            continue
+                        }
+                    }
+                    // Result not yet buffered — wait with a short timeout
+                    while true {
+                        let msg = try await waitForMessage(timeout: 10.0)
+                        switch msg {
+                        case .result(let text, let sessionId, let costUsd):
+                            return QueryResult(text: text, costUsd: costUsd ?? 0, sessionId: sessionId)
+                        case .error(let message):
+                            throw BridgeError.agentError(message)
+                        default:
+                            continue
+                        }
+                    }
                 }
 
             case .thinkingDelta(let text):
