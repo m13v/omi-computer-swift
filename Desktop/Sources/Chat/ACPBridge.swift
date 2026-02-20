@@ -283,8 +283,8 @@ actor ACPBridge {
             case .toolResultDisplay(let toolUseId, let name, let output):
                 onToolResultDisplay(toolUseId, name, output)
 
-            case .result(let text, _, let costUsd):
-                return QueryResult(text: text, costUsd: costUsd ?? 0)
+            case .result(let text, let sessionId, let costUsd):
+                return QueryResult(text: text, costUsd: costUsd ?? 0, sessionId: sessionId)
 
             case .error(let message):
                 throw BridgeError.agentError(message)
