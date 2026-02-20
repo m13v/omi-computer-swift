@@ -16,7 +16,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createServer as createNetServer } from "net";
 import { tmpdir } from "os";
-import { unlinkSync } from "fs";
+import { unlinkSync, appendFileSync } from "fs";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 // Resolve paths to bundled tools
 const playwrightCli = join(__dirname, "..", "node_modules", "@playwright", "mcp", "cli.js");
@@ -593,7 +593,6 @@ function handleSessionUpdate(params, pendingTools, onText) {
     }
 }
 // --- Error handling ---
-import { appendFileSync } from "fs";
 /** Write to /tmp/acp-bridge-crash.log as fallback when stderr might be lost */
 function logCrash(msg) {
     try {
