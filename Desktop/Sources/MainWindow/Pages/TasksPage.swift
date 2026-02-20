@@ -2884,8 +2884,8 @@ struct TasksPage: View {
                                     onToggle: { await viewModel.toggleTask($0) },
                                     onDelete: { await viewModel.deleteTaskWithUndo($0) },
                                     onToggleSelection: { viewModel.toggleTaskSelection($0) },
-                                    onUpdateDetails: { task, desc, date, priority in
-                                        await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
+                                    onUpdateDetails: { task, desc, date, priority, recurrenceRule in
+                                        await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority, recurrenceRule: recurrenceRule)
                                     },
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
@@ -2924,8 +2924,8 @@ struct TasksPage: View {
                                     onToggle: { await viewModel.toggleTask($0) },
                                     onDelete: { await viewModel.deleteTaskWithUndo($0) },
                                     onToggleSelection: { viewModel.toggleTaskSelection($0) },
-                                    onUpdateDetails: { task, desc, date, priority in
-                                        await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority)
+                                    onUpdateDetails: { task, desc, date, priority, recurrenceRule in
+                                        await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority, recurrenceRule: recurrenceRule)
                                     },
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
@@ -3659,6 +3659,15 @@ struct TaskRow: View {
                             }
                         }
 
+                    // Recurring badge
+                    if task.isRecurring {
+                        HStack(spacing: 2) {
+                            Image(systemName: "repeat")
+                                .scaledFont(size: 9)
+                        }
+                        .foregroundColor(OmiColors.textTertiary)
+                    }
+
                     // New badge
                     if isNewlyCreated {
                         NewBadge()
@@ -3693,6 +3702,7 @@ struct TaskRow: View {
                     if task.dueAt == nil && !task.completed {
                         Button {
                             editDueDate = Date()
+                            editRecurrenceRule = task.recurrenceRule ?? ""
                             showDatePicker = true
                         } label: {
                             Image(systemName: "calendar.badge.plus")
@@ -3875,6 +3885,25 @@ struct TaskRow: View {
             .datePickerStyle(.graphical)
             .labelsHidden()
 
+            Divider()
+
+            HStack {
+                Text("Repeat")
+                    .scaledFont(size: 13)
+                    .foregroundColor(OmiColors.textSecondary)
+                Spacer()
+                Picker("", selection: $editRecurrenceRule) {
+                    Text("Never").tag("")
+                    Text("Daily").tag("daily")
+                    Text("Weekdays").tag("weekdays")
+                    Text("Weekly").tag("weekly")
+                    Text("Every 2 Weeks").tag("biweekly")
+                    Text("Monthly").tag("monthly")
+                }
+                .pickerStyle(.menu)
+                .frame(width: 140)
+            }
+
             HStack(spacing: 8) {
                 Button("Cancel") {
                     showDatePicker = false
@@ -3883,8 +3912,9 @@ struct TaskRow: View {
 
                 Button("Save") {
                     showDatePicker = false
+                    let ruleToSave = editRecurrenceRule.isEmpty ? "" : editRecurrenceRule
                     Task {
-                        await onUpdateDetails?(task, nil, editDueDate, nil)
+                        await onUpdateDetails?(task, nil, editDueDate, nil, ruleToSave)
                     }
                 }
                 .buttonStyle(.borderedProminent)
@@ -3942,8 +3972,11 @@ struct TaskRow: View {
 struct DueDateBadgeInteractive: View {
     let dueAt: Date
     let isCompleted: Bool
+    let isRecurring: Bool
     @Binding var showDatePicker: Bool
     @Binding var editDueDate: Date
+    @Binding var editRecurrenceRule: String
+    let recurrenceRule: String?
 
     @State private var isHovering = false
 
@@ -3977,6 +4010,7 @@ struct DueDateBadgeInteractive: View {
     var body: some View {
         Button {
             editDueDate = dueAt
+            editRecurrenceRule = recurrenceRule ?? ""
             showDatePicker = true
         } label: {
             HStack(spacing: 3) {
@@ -3984,6 +4018,10 @@ struct DueDateBadgeInteractive: View {
                     .scaledFont(size: 9)
                 Text(displayText)
                     .scaledFont(size: 11, weight: .medium)
+                if isRecurring {
+                    Image(systemName: "repeat")
+                        .scaledFont(size: 9)
+                }
                 if isHovering {
                     Image(systemName: "pencil")
                         .scaledFont(size: 8)
