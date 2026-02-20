@@ -179,6 +179,20 @@ struct ChatPage: View {
             )
             .fixedSize()
         }
+        .sheet(isPresented: $chatProvider.isClaudeAuthRequired) {
+            ClaudeAuthSheet(
+                onConnect: {
+                    chatProvider.startClaudeAuth()
+                },
+                onCancel: {
+                    chatProvider.isClaudeAuthRequired = false
+                    // Switch back to Mode A if auth cancelled
+                    Task {
+                        await chatProvider.switchBridgeMode(to: .agentSDK)
+                    }
+                }
+            )
+        }
         .overlay {
             // Loading overlay when fetching citation
             if isLoadingCitation {
