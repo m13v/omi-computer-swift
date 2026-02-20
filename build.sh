@@ -24,6 +24,16 @@ if [ -d "$AGENT_BRIDGE_DIR" ]; then
     cd - > /dev/null
 fi
 
+# Build acp-bridge
+ACP_BRIDGE_DIR="$(dirname "$0")/acp-bridge"
+if [ -d "$ACP_BRIDGE_DIR" ]; then
+    echo "Building acp-bridge..."
+    cd "$ACP_BRIDGE_DIR"
+    npm install --no-fund --no-audit
+    npx tsc
+    cd - > /dev/null
+fi
+
 # Ensure bundled Node.js exists (for AI chat / Claude Agent Bridge)
 NODE_RESOURCE="Desktop/Sources/Resources/node"
 if [ -x "$NODE_RESOURCE" ]; then
