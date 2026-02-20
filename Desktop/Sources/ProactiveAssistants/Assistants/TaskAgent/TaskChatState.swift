@@ -47,10 +47,74 @@ class TaskChatState: ObservableObject {
     private var streamingFlushWorkItem: DispatchWorkItem?
     private let streamingFlushInterval: TimeInterval = 0.1
 
+    /// Whether persisted messages have been loaded from GRDB
+    private var hasLoadedFromStorage = false
+
     init(taskId: String, workspacePath: String, useACPMode: Bool = false) {
         self.taskId = taskId
         self.workspacePath = workspacePath
         self.useACPMode = useACPMode
+    }
+
+    // MARK: - Persistence
+
+    /// Load persisted messages from GRDB (called once when chat is opened)
+    func loadPersistedMessages() async {
+        guard !hasLoadedFromStorage else { return }
+        hasLoadedFromStorage = true
+
+        do {
+            let records = try await TaskChatMessageStorage.shared.getMessages(forTaskId: taskId)
+            guard !records.isEmpty else { return }
+
+            messages = records.map { $0.toChatMessage() }
+
+            // Restore ACP session ID from stored messages
+            if claudeSessionId == nil {
+                claudeSessionId = try? await TaskChatMessageStorage.shared.getACPSessionId(forTaskId: taskId)
+            }
+
+            log("TaskChatState[\(taskId)]: Loaded \(records.count) persisted messages")
+        } catch {
+            logError("TaskChatState[\(taskId)]: Failed to load persisted messages", error: error)
+        }
+    }
+
+    /// Persist a message to GRDB (fire-and-forget)
+    private func persistMessage(_ message: ChatMessage) {
+        let taskId = self.taskId
+        let sessionId = self.claudeSessionId
+        Task.detached {
+            do {
+                try await TaskChatMessageStorage.shared.saveMessage(message, taskId: taskId, acpSessionId: sessionId)
+            } catch {
+                logError("TaskChatState[\(taskId)]: Failed to persist message \(message.id)", error: error)
+            }
+        }
+    }
+
+    /// Update a persisted message (for finalizing AI streaming)
+    private func updatePersistedMessage(_ message: ChatMessage) {
+        let taskId = self.taskId
+        Task.detached {
+            do {
+                let blocksJson: String?
+                if message.sender == .ai && !message.contentBlocks.isEmpty {
+                    // Re-encode through the record's serialization
+                    let record = TaskChatMessageRecord.from(message, taskId: taskId)
+                    blocksJson = record.contentBlocksJson
+                } else {
+                    blocksJson = nil
+                }
+                try await TaskChatMessageStorage.shared.updateMessage(
+                    messageId: message.id,
+                    text: message.text,
+                    contentBlocksJson: blocksJson
+                )
+            } catch {
+                logError("TaskChatState[\(taskId)]: Failed to update persisted message \(message.id)", error: error)
+            }
+        }
     }
 
     deinit {
@@ -114,8 +178,8 @@ class TaskChatState: ObservableObject {
         isSending = true
         errorMessage = nil
 
-        // Add user message to local messages (no backend save)
-        // Skip for follow-ups — sendFollowUp() already added it
+        // Add user message to local messages and persist
+        // Skip for follow-ups — sendFollowUp() already added and persisted it
         if !isFollowUp {
             let userMessage = ChatMessage(
                 id: UUID().uuidString,
@@ -123,6 +187,7 @@ class TaskChatState: ObservableObject {
                 sender: .user
             )
             messages.append(userMessage)
+            persistMessage(userMessage)
         }
 
         // Create placeholder AI message
@@ -227,6 +292,7 @@ class TaskChatState: ObservableObject {
                 messages[index].text = messageText
                 messages[index].isStreaming = false
                 completeRemainingToolCalls(messageId: aiMessageId)
+                persistMessage(messages[index])
             }
 
             log("TaskChatState[\(taskId)]: response complete (cost=$\(queryResult.costUsd))")
@@ -241,6 +307,7 @@ class TaskChatState: ObservableObject {
                 } else {
                     messages[index].isStreaming = false
                     completeRemainingToolCalls(messageId: aiMessageId)
+                    persistMessage(messages[index])
                 }
             }
 
@@ -268,13 +335,14 @@ class TaskChatState: ObservableObject {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty, isSending else { return }
 
-        // Add user message locally
+        // Add user message locally and persist
         let userMessage = ChatMessage(
             id: UUID().uuidString,
             text: trimmedText,
             sender: .user
         )
         messages.append(userMessage)
+        persistMessage(userMessage)
 
         // Queue follow-up and interrupt current query
         pendingFollowUpText = trimmedText
