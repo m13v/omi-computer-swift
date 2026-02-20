@@ -6758,37 +6758,22 @@ impl FirestoreService {
             fields["plugin_id"] = json!({"nullValue": null});
         }
 
-        // Determine chat_session_id for cross-platform compatibility
-        // The mobile (Python) backend filters messages by chat_session_id,
-        // so desktop messages must include the mobile's session ID to be visible there.
+        // Acquire (get or create) a chat session — mirrors Python's acquire_chat_session().
+        // This ensures desktop messages have a chat_session_id so they're visible on mobile.
         let effective_session_id: Option<String> = if let Some(session) = session_id {
             Some(session.to_string())
-        } else if app_id.is_none() {
-            // Default main chat — look up the mobile's chat session
-            match self.get_main_chat_session_id(uid).await {
-                Ok(Some(main_session_id)) => {
-                    tracing::info!(
-                        "Using mobile main chat session {} for desktop message",
-                        main_session_id
-                    );
-                    Some(main_session_id)
-                }
-                Ok(None) => {
-                    tracing::info!("No mobile main chat session found for user {}", uid);
-                    None
-                }
+        } else {
+            match self.acquire_chat_session(uid, app_id).await {
+                Ok(session) => Some(session),
                 Err(e) => {
-                    tracing::warn!("Failed to look up main chat session: {}", e);
+                    tracing::warn!("Failed to acquire chat session: {}", e);
                     None
                 }
             }
-        } else {
-            None
         };
 
         if let Some(ref session) = effective_session_id {
             fields["session_id"] = json!({"stringValue": session});
-            // Also set chat_session_id for Python compatibility
             fields["chat_session_id"] = json!({"stringValue": session});
         }
 
@@ -6808,6 +6793,18 @@ impl FirestoreService {
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(format!("Firestore create error: {}", error_text).into());
+        }
+
+        // Track message in the chat session's message_ids array
+        // (mirrors Python's add_message_to_chat_session)
+        if let Some(ref session) = effective_session_id {
+            if let Err(e) = self
+                .add_message_to_chat_session(uid, session, &message_id)
+                .await
+            {
+                tracing::warn!("Failed to track message in chat session: {}", e);
+                // Non-fatal — message is already saved
+            }
         }
 
         let message = MessageDB {
