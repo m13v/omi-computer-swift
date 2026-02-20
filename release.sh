@@ -57,6 +57,10 @@ GITHUB_REPO="BasedHardware/omi"
 DESKTOP_BACKEND_URL="${DESKTOP_BACKEND_URL:-https://desktop-backend-hhibjajaja-uc.a.run.app}"
 RELEASE_SECRET="${RELEASE_SECRET:-}"
 
+# Release channel: staging (default), beta, or stable
+# New releases start on staging; use promote_release.sh to advance
+RELEASE_CHANNEL="${RELEASE_CHANNEL:-staging}"
+
 # Read changelog from CHANGELOG.json
 CHANGELOG_FILE="CHANGELOG.json"
 if [ -f "$CHANGELOG_FILE" ]; then
@@ -766,7 +770,8 @@ if [ -n "$RELEASE_SECRET" ]; then
     "ed_signature": "$ED_SIGNATURE",
     "changelog": $CHANGELOG_JSON,
     "is_live": true,
-    "is_critical": false
+    "is_critical": false,
+    "channel": "${RELEASE_CHANNEL:-staging}"
 }
 EOJSON
 )
