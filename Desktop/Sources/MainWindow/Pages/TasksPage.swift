@@ -1979,14 +1979,14 @@ struct TasksPage: View {
                         }
                     }
                     .gesture(
-                        DragGesture()
+                        DragGesture(coordinateSpace: .global)
                             .onChanged { value in
                                 isDraggingDivider = true
                                 if dragStartWidth == 0 {
                                     dragStartWidth = chatPanelWidth
                                 }
-                                let newWidth = dragStartWidth - value.translation.width
-                                chatPanelWidth = min(600, max(300, newWidth))
+                                let delta = value.startLocation.x - value.location.x
+                                chatPanelWidth = min(600, max(300, dragStartWidth + delta))
                             }
                             .onEnded { _ in
                                 isDraggingDivider = false
