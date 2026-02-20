@@ -786,11 +786,25 @@ async function main(): Promise<void> {
 
       case "authenticate": {
         logErr(`Authentication method selected: ${msg.methodId}`);
-        if (authResolve) {
-          authResolve();
-          authResolve = null;
-        }
-        send({ type: "auth_success" });
+        // Actually call ACP to perform the OAuth flow
+        acpRequest("authenticate", { methodId: msg.methodId })
+          .then(() => {
+            logErr("ACP authentication succeeded");
+            send({ type: "auth_success" });
+            if (authResolve) {
+              authResolve();
+              authResolve = null;
+            }
+          })
+          .catch((err) => {
+            const errMsg =
+              err instanceof Error ? err.message : String(err);
+            logErr(`ACP authentication failed: ${errMsg}`);
+            send({
+              type: "error",
+              message: `Authentication failed: ${errMsg}`,
+            });
+          });
         break;
       }
 
