@@ -235,7 +235,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             state.showingAIConversation = false
             state.showingAIResponse = false
             state.aiInputText = ""
-            state.aiResponseText = ""
+            state.currentAIMessage = nil
             state.screenshotURL = nil
             state.chatHistory = []
             state.isVoiceFollowUp = false
