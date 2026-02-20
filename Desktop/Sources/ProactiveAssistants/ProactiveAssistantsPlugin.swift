@@ -162,8 +162,11 @@ public class ProactiveAssistantsPlugin: NSObject {
 
     // MARK: - Public Monitoring Control
 
-    /// Start monitoring
-    public func startMonitoring(completion: @escaping (Bool, String?) -> Void) {
+    /// Start monitoring with optional retry for transient permission failures
+    public func startMonitoring(retryCount: Int = 0, completion: @escaping (Bool, String?) -> Void) {
+        let maxRetries = 3
+        let retryDelays: [Double] = [2.0, 4.0, 8.0]  // exponential backoff
+
         // Guard against both active monitoring and pending startup (race condition fix)
         guard !isMonitoring && !isStartingMonitoring else {
             completion(isMonitoring, nil)
@@ -176,8 +179,22 @@ public class ProactiveAssistantsPlugin: NSObject {
         // Check screen recording permission (and update cache)
         refreshScreenRecordingPermission()
         guard hasScreenRecordingPermission else {
-            // Request both traditional TCC and ScreenCaptureKit permissions
-            ScreenCaptureService.requestAllScreenCapturePermissions()
+            if retryCount == 0 {
+                // First attempt: request permissions and schedule retry
+                ScreenCaptureService.requestAllScreenCapturePermissions()
+            }
+
+            if retryCount < maxRetries {
+                let delay = retryDelays[retryCount]
+                log("Screen recording permission not yet granted, retrying in \(delay)s (attempt \(retryCount + 1)/\(maxRetries))")
+                isStartingMonitoring = false
+                DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+                    self?.startMonitoring(retryCount: retryCount + 1, completion: completion)
+                }
+                return
+            }
+
+            log("Screen recording permission not granted after \(maxRetries) retries, giving up")
             isStartingMonitoring = false
             completion(false, "Screen recording permission not granted")
             return
