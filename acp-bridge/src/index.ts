@@ -573,18 +573,20 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Ensure ACP is initialized
     await initializeAcp();
 
-    // If model changed since last session, force new session
+    // Look up a pre-warmed session for the requested model
     const requestedModel = msg.model || DEFAULT_MODEL;
-    if (sessionId && requestedModel !== sessionModel) {
-      logErr(`Model changed (${sessionModel} -> ${requestedModel}), creating new session`);
-      sessionId = "";
-    }
-
-    // If cwd changed since last session, force new session
     const requestedCwd = msg.cwd || process.env.HOME || "/";
-    if (sessionId && requestedCwd !== sessionCwd) {
-      logErr(`Cwd changed (${sessionCwd} -> ${requestedCwd}), creating new session`);
-      sessionId = "";
+    let sessionId = "";
+
+    const existing = sessions.get(requestedModel);
+    if (existing) {
+      // If cwd changed, invalidate this specific session
+      if (existing.cwd !== requestedCwd) {
+        logErr(`Cwd changed for ${requestedModel} (${existing.cwd} -> ${requestedCwd}), creating new session`);
+        sessions.delete(requestedModel);
+      } else {
+        sessionId = existing.sessionId;
+      }
     }
 
     // Reuse existing session if alive, otherwise create a new one
@@ -600,14 +602,14 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
 
       sessionId = sessionResult.sessionId;
-      sessionModel = requestedModel;
-      sessionCwd = requestedCwd;
+      sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
       isNewSession = true;
       logErr(`ACP session created: ${sessionId} (model=${requestedModel || "default"}, cwd=${requestedCwd})`);
     } else {
       isNewSession = false;
-      logErr(`Reusing existing ACP session: ${sessionId}`);
+      logErr(`Reusing existing ACP session: ${sessionId} (model=${requestedModel})`);
     }
+    activeSessionId = sessionId;
 
     // Only prepend system prompt on the first message in a new session.
     // On subsequent messages the session already has the context.
@@ -668,9 +670,8 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       // If session/prompt failed and we were reusing a session, retry with a fresh one
       if (sessionId) {
         logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
-        sessionId = "";
-        sessionModel = "";
-        sessionCwd = "";
+        sessions.delete(requestedModel);
+        activeSessionId = "";
         // Recursive call to handleQuery will create a new session
         return handleQuery(msg);
       }
@@ -683,7 +684,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
           send({ type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
-        send({ type: "result", text: fullText, sessionId, costUsd: 0 });
+        send({ type: "result", text: fullText, sessionId: activeSessionId, costUsd: 0 });
       }
       return;
     }
@@ -936,8 +937,10 @@ async function main(): Promise<void> {
 
       case "warmup": {
         const wm = msg as WarmupMessage;
-        logErr(`Warmup requested (cwd=${wm.cwd || "default"}, model=${wm.model || "default"})`);
-        preWarmPromise = preWarmSession(wm.cwd, wm.model);
+        // Support both single model (backward compat) and models array
+        const models = wm.models ?? (wm.model ? [wm.model] : undefined);
+        logErr(`Warmup requested (cwd=${wm.cwd || "default"}, models=${JSON.stringify(models) || "default"})`);
+        preWarmPromise = preWarmSession(wm.cwd, models);
         break;
       }
 
@@ -949,8 +952,8 @@ async function main(): Promise<void> {
         logErr("Interrupt requested by user");
         interruptRequested = true;
         if (activeAbort) activeAbort.abort();
-        if (sessionId) {
-          acpNotify("session/cancel", { sessionId });
+        if (activeSessionId) {
+          acpNotify("session/cancel", { sessionId: activeSessionId });
         }
         break;
 
