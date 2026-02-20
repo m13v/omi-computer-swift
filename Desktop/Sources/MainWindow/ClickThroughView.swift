@@ -8,8 +8,17 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
     private var localMonitor: Any?
     private var isProcessingSyntheticClick: Bool = false  // Guard against re-entry
 
+    /// When false, the view is transparent to AppKit hit testing (returns nil from hitTest).
+    /// This prevents the NSView from intercepting clicks meant for overlapping SwiftUI views.
+    var isClickThroughEnabled: Bool = true
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        return true
+        return isClickThroughEnabled
+    }
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        guard isClickThroughEnabled else { return nil }
+        return super.hitTest(point)
     }
 
     override func viewDidMoveToWindow() {
@@ -159,14 +168,17 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
 struct ClickThroughView<Content: View>: NSViewRepresentable {
     let content: Content
     let width: CGFloat?
+    let enabled: Bool
 
-    init(width: CGFloat? = nil, @ViewBuilder content: () -> Content) {
+    init(width: CGFloat? = nil, enabled: Bool = true, @ViewBuilder content: () -> Content) {
         self.width = width
+        self.enabled = enabled
         self.content = content()
     }
 
     func makeNSView(context: Context) -> ClickThroughHostingView<Content> {
         let hostingView = ClickThroughHostingView(rootView: content)
+        hostingView.isClickThroughEnabled = enabled
         // Don't constrain the hosting view size - let it use intrinsic size
         hostingView.setContentHuggingPriority(.defaultHigh, for: .horizontal)
         hostingView.setContentHuggingPriority(.defaultLow, for: .vertical)
@@ -175,6 +187,7 @@ struct ClickThroughView<Content: View>: NSViewRepresentable {
 
     func updateNSView(_ nsView: ClickThroughHostingView<Content>, context: Context) {
         nsView.rootView = content
+        nsView.isClickThroughEnabled = enabled
     }
 }
 
@@ -182,8 +195,8 @@ struct ClickThroughView<Content: View>: NSViewRepresentable {
 extension View {
     /// Wraps this view to enable click-through behavior.
     /// The view will maintain its intrinsic size.
-    func clickThrough() -> some View {
-        ClickThroughView { self }
+    func clickThrough(enabled: Bool = true) -> some View {
+        ClickThroughView(enabled: enabled) { self }
             .fixedSize(horizontal: true, vertical: false)
     }
 }
