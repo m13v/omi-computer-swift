@@ -1031,10 +1031,12 @@ class AuthService {
             await AIUserProfileService.shared.invalidateCache()
         }
 
-        // Clear onboarding so a different user goes through setup (which force-starts monitoring).
-        // Permissions are per-app on macOS and don't need re-granting, but onboarding also
-        // initializes screen analysis which won't start otherwise.
-        UserDefaults.standard.removeObject(forKey: "hasCompletedOnboarding")
+        // Notify observers (DesktopHomeView) to reset @AppStorage-backed properties directly.
+        // Using removeObject() on @AppStorage properties doesn't work because the cached value
+        // in AppState (an ObservableObject, not a View) gets written back immediately.
+        NotificationCenter.default.post(name: .userDidSignOut, object: nil)
+
+        // Clear non-@AppStorage onboarding keys via UserDefaults (these work fine).
         UserDefaults.standard.removeObject(forKey: "onboardingStep")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredNotification")
         UserDefaults.standard.removeObject(forKey: "hasTriggeredAutomation")
