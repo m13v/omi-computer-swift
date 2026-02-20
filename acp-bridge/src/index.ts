@@ -305,6 +305,7 @@ function startAcpProcess(): void {
     // Session is lost when ACP process dies
     sessionId = "";
     sessionModel = "";
+    sessionCwd = "";
     isInitialized = false;
     for (const [, handler] of acpResponseHandlers) {
       handler.reject(new Error(`ACP process exited (code ${code})`));
@@ -618,6 +619,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
         sessionId = "";
         sessionModel = "";
+        sessionCwd = "";
         // Recursive call to handleQuery will create a new session
         return handleQuery(msg);
       }
@@ -880,6 +882,13 @@ async function main(): Promise<void> {
           send({ type: "error", message: String(err) });
         });
         break;
+
+      case "warmup": {
+        const wm = msg as WarmupMessage;
+        logErr(`Warmup requested (cwd=${wm.cwd || "default"}, model=${wm.model || "default"})`);
+        preWarmPromise = preWarmSession(wm.cwd, wm.model);
+        break;
+      }
 
       case "tool_result":
         resolveToolCall(msg);
