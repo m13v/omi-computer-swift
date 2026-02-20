@@ -1170,7 +1170,7 @@ class ChatProvider: ObservableObject {
         // Append conversation history from Firestore (source of truth for cross-platform sync)
         let history = buildConversationHistory()
         if !history.isEmpty {
-            prompt += "\n\n<conversation_history>\n\(history)\n</conversation_history>"
+            prompt += "\n\n<conversation_history>\nBelow is the recent conversation history between you and the user. Use this to maintain continuity — the user can see these messages in the chat UI and expects you to be aware of them.\n\(history)\n</conversation_history>"
         }
 
         // Append global CLAUDE.md instructions if enabled
@@ -1205,7 +1205,8 @@ class ChatProvider: ObservableObject {
 
         // Log prompt context summary
         let activeGoalCount = cachedGoals.filter { $0.isActive }.count
-        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyCount) msgs, claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
+        let historyInjected = !history.isEmpty
+        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyInjected ? "injected (\(historyCount) msgs)" : "none"), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
 
         return prompt
     }
