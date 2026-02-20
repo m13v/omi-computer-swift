@@ -60,71 +60,66 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   // Track pending tool calls so we can mark them completed on interrupt
   const pendingTools: string[] = [];
 
+  // Build options outside try so catch block can access them for resume retry
+  const mode = msg.mode ?? "act";
+  const isAskMode = mode === "ask";
+  setQueryMode(mode);
+  logErr(`Query mode: ${mode}`);
+
+  const readOnlyPlaywrightTools = [
+    "mcp__playwright__browser_snapshot",
+    "mcp__playwright__browser_take_screenshot",
+    "mcp__playwright__browser_console_messages",
+    "mcp__playwright__browser_network_requests",
+    "mcp__playwright__browser_tabs",
+    "mcp__playwright__browser_navigate",
+    "mcp__playwright__browser_navigate_back",
+    "mcp__playwright__browser_wait_for",
+    "mcp__playwright__browser_resize",
+  ];
+
+  const allowedTools = isAskMode
+    ? [
+        "Read", "Glob", "Grep", "WebSearch", "WebFetch",
+        "mcp__omi-tools__execute_sql",
+        "mcp__omi-tools__semantic_search",
+        ...readOnlyPlaywrightTools,
+      ]
+    : ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"];
+
+  const playwrightArgs = [playwrightCli];
+  if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
+    playwrightArgs.push("--extension");
+  }
+
+  const mcpServers: Record<string, unknown> = {
+    "omi-tools": omiServer,
+    "playwright": {
+      command: process.execPath,
+      args: playwrightArgs,
+    },
+  };
+
+  const options: Record<string, unknown> = {
+    model: msg.model || "claude-opus-4-6",
+    abortController,
+    systemPrompt: msg.systemPrompt,
+    allowedTools,
+    permissionMode: "bypassPermissions",
+    allowDangerouslySkipPermissions: true,
+    maxTurns: undefined,
+    cwd: msg.cwd || process.env.HOME || "/",
+    mcpServers,
+    includePartialMessages: true,
+  };
+
+  // Resume a previous SDK session (for task chat persistence)
+  if (msg.resume) {
+    options.resume = msg.resume;
+    logErr(`Resuming session: ${msg.resume}`);
+  }
+
   try {
-    // Each query is standalone — conversation history comes via systemPrompt
-    // This ensures cross-platform sync (mobile messages are included in context)
-    const mode = msg.mode ?? "act";
-    const isAskMode = mode === "ask";
-    setQueryMode(mode);
-    logErr(`Query mode: ${mode}`);
-
-    // In ask mode, only allow read-only built-in tools + read-only MCP tools
-    // MCP tools use the naming convention: mcp__<server>__<tool>
-    const readOnlyPlaywrightTools = [
-      "mcp__playwright__browser_snapshot",
-      "mcp__playwright__browser_take_screenshot",
-      "mcp__playwright__browser_console_messages",
-      "mcp__playwright__browser_network_requests",
-      "mcp__playwright__browser_tabs",
-      "mcp__playwright__browser_navigate",
-      "mcp__playwright__browser_navigate_back",
-      "mcp__playwright__browser_wait_for",
-      "mcp__playwright__browser_resize",
-    ];
-
-    const allowedTools = isAskMode
-      ? [
-          "Read", "Glob", "Grep", "WebSearch", "WebFetch",
-          // OMI MCP tools (execute_sql is gated in omi-tools.ts to SELECT-only)
-          "mcp__omi-tools__execute_sql",
-          "mcp__omi-tools__semantic_search",
-          // Read-only Playwright tools
-          ...readOnlyPlaywrightTools,
-        ]
-      : ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"];
-
-    // Always include both MCP servers
-    const playwrightArgs = [playwrightCli];
-    if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
-      playwrightArgs.push("--extension");
-    }
-
-    const mcpServers: Record<string, unknown> = {
-      "omi-tools": omiServer,
-      "playwright": {
-        command: process.execPath,
-        args: playwrightArgs,
-      },
-    };
-
-    const options: Record<string, unknown> = {
-      model: msg.model || "claude-opus-4-6",
-      abortController,
-      systemPrompt: msg.systemPrompt,
-      allowedTools,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      maxTurns: undefined,
-      cwd: msg.cwd || process.env.HOME || "/",
-      mcpServers,
-      includePartialMessages: true,
-    };
-
-    // Resume a previous SDK session (for task chat persistence)
-    if (msg.resume) {
-      options.resume = msg.resume;
-      logErr(`Resuming session: ${msg.resume}`);
-    }
 
     // Track tool_use block index → {id, name, inputChunks} for accumulating input_json_delta
     const blockTools: Map<number, { id: string; name: string; inputChunks: string[] }> = new Map();
