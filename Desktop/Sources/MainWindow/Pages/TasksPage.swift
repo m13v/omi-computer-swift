@@ -901,9 +901,10 @@ class TasksViewModel: ObservableObject {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let keyCode = event.keyCode
 
-        // Cmd+N: new task
+        // Cmd+N: new task (inline at top)
         if modifiers == .command && keyCode == 45 {
-            showingCreateTask = true
+            isInlineCreating = true
+            inlineCreateAfterTaskId = nil
             return true
         }
 
@@ -1899,13 +1900,23 @@ class TasksViewModel: ObservableObject {
             tags: context.tags.isEmpty ? nil : context.tags
         )
 
-        // Position the new task after afterTaskId in category order
-        if let created = created, let afterId = afterTaskId {
-            for category in TaskCategory.allCases {
-                if let tasks = categorizedTasks[category],
-                   let afterIndex = tasks.firstIndex(where: { $0.id == afterId }) {
-                    moveTask(created, toIndex: afterIndex + 1, inCategory: category)
-                    break
+        if let created = created {
+            if let afterId = afterTaskId {
+                // Position the new task after afterTaskId in category order
+                for category in TaskCategory.allCases {
+                    if let tasks = categorizedTasks[category],
+                       let afterIndex = tasks.firstIndex(where: { $0.id == afterId }) {
+                        moveTask(created, toIndex: afterIndex + 1, inCategory: category)
+                        break
+                    }
+                }
+            } else {
+                // Cmd+N: move to index 0 in the first non-empty category
+                for category in TaskCategory.allCases {
+                    if let tasks = categorizedTasks[category], !tasks.isEmpty {
+                        moveTask(created, toIndex: 0, inCategory: category)
+                        break
+                    }
                 }
             }
             // Select the newly created task
@@ -2019,12 +2030,7 @@ struct TasksPage: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.clear)
-        .dismissableSheet(isPresented: $viewModel.showingCreateTask) {
-            TaskCreateSheet(
-                viewModel: viewModel,
-                onDismiss: { viewModel.showingCreateTask = false }
-            )
-        }
+        // Modal creation sheet removed — Cmd+N now creates inline at top
         .onAppear {
             // If tasks are already loaded, notify sidebar to clear loading indicator
             if !viewModel.isLoading {
@@ -2850,6 +2856,17 @@ struct TasksPage: View {
                     let onlyDone = viewModel.selectedTags.contains(.done) && !viewModel.selectedTags.contains(.todo)
                     let onlyDeleted = (viewModel.selectedTags.contains(.removedByAI) || viewModel.selectedTags.contains(.removedByMe)) && !viewModel.selectedTags.contains(.todo) && !viewModel.selectedTags.contains(.done)
                     if !onlyDone && !onlyDeleted && !viewModel.isMultiSelectMode {
+                        // Inline creation at top (Cmd+N)
+                        if viewModel.isInlineCreating && viewModel.inlineCreateAfterTaskId == nil {
+                            InlineTaskCreationRow(
+                                text: $inlineCreateText,
+                                isFocused: $inlineCreateFocused,
+                                onCommit: { _ in commitInlineCreate() },
+                                onCancel: { cancelInlineCreate() }
+                            )
+                            .id("inline-create-top")
+                        }
+
                         ForEach(TaskCategory.allCases, id: \.self) { category in
                             let orderedTasks = viewModel.getOrderedTasks(for: category)
                             if !orderedTasks.isEmpty {
@@ -2891,6 +2908,17 @@ struct TasksPage: View {
                             }
                         }
                     } else {
+                        // Inline creation at top (Cmd+N) — flat view
+                        if viewModel.isInlineCreating && viewModel.inlineCreateAfterTaskId == nil {
+                            InlineTaskCreationRow(
+                                text: $inlineCreateText,
+                                isFocused: $inlineCreateFocused,
+                                onCommit: { _ in commitInlineCreate() },
+                                onCancel: { cancelInlineCreate() }
+                            )
+                            .id("inline-create-top-flat")
+                        }
+
                         // Flat list for other sort options, completed view, or multi-select mode
                         ForEach(viewModel.displayTasks) { task in
                             VStack(spacing: 0) {
