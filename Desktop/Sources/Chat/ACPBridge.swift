@@ -67,6 +67,8 @@ actor ACPBridge {
     private var stderrPipe: Pipe?
     private var isRunning = false
     private var readTask: Task<Void, Never>?
+    /// Incremented each time start() is called; stale termination handlers check this
+    private var processGeneration: UInt64 = 0
 
     /// Pending messages from the bridge
     private var pendingMessages: [InboundMessage] = []
