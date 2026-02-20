@@ -23,7 +23,13 @@ export interface AuthenticateMessage {
     type: "authenticate";
     methodId: string;
 }
-export type InboundMessage = QueryMessage | ToolResultMessage | StopMessage | InterruptMessage | AuthenticateMessage;
+/** Swift tells the bridge to pre-create an ACP session in the background */
+export interface WarmupMessage {
+    type: "warmup";
+    cwd?: string;
+    model?: string;
+}
+export type InboundMessage = QueryMessage | ToolResultMessage | StopMessage | InterruptMessage | AuthenticateMessage | WarmupMessage;
 export interface InitMessage {
     type: "init";
     sessionId: string;
