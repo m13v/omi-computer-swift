@@ -2,6 +2,28 @@ import Foundation
 import SwiftUI
 import Sparkle
 
+/// Update channel for staged releases
+enum UpdateChannel: String, CaseIterable {
+    case stable = "stable"
+    case beta = "beta"
+
+    var displayName: String {
+        switch self {
+        case .stable: return "Stable"
+        case .beta: return "Beta"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .stable: return "Recommended for most users"
+        case .beta: return "Early access to new features"
+        }
+    }
+}
+
+private let kUpdateChannelKey = "update_channel"
+
 /// Delegate to track Sparkle update events for analytics
 final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
 
@@ -63,6 +85,20 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
         }
     }
 
+    /// Tells Sparkle which non-default channels this client wants to see.
+    /// Channels are additive: the default (stable) channel is always included.
+    func allowedChannels(for updater: SPUUpdater) -> Set<String> {
+        let raw = UserDefaults.standard.string(forKey: kUpdateChannelKey) ?? "stable"
+        switch raw {
+        case "staging":
+            return Set(["staging", "beta"])
+        case "beta":
+            return Set(["beta"])
+        default:
+            return Set() // empty = default (stable) channel only
+        }
+    }
+
     /// Called when an update will be installed (app may terminate immediately after)
     func updater(_ updater: SPUUpdater, willInstallUpdate item: SUAppcastItem) {
         let version = item.displayVersionString
@@ -115,6 +151,16 @@ final class UpdaterViewModel: ObservableObject {
     /// Nonisolated snapshot for cross-actor reads
     private nonisolated(unsafe) static var _isUpdateInProgress: Bool = false
 
+    /// Selected update channel (persisted to UserDefaults)
+    @Published var updateChannel: UpdateChannel {
+        didSet {
+            UserDefaults.standard.set(updateChannel.rawValue, forKey: kUpdateChannelKey)
+            if isInitialized {
+                AnalyticsManager.shared.settingToggled(setting: "update_channel", enabled: updateChannel != .stable)
+            }
+        }
+    }
+
     /// Whether a new update is available (set by delegate callbacks)
     @Published var updateAvailable: Bool = false
 
@@ -137,6 +183,10 @@ final class UpdaterViewModel: ObservableObject {
         // Initialize published properties from updater state (must be before using `self`)
         automaticallyChecksForUpdates = updaterController.updater.automaticallyChecksForUpdates
         automaticallyDownloadsUpdates = updaterController.updater.automaticallyDownloadsUpdates
+
+        // Initialize update channel from UserDefaults
+        let storedChannel = UserDefaults.standard.string(forKey: kUpdateChannelKey) ?? "stable"
+        updateChannel = UpdateChannel(rawValue: storedChannel) ?? .stable
 
         // Wire up delegate back-reference
         updaterDelegate.viewModel = self
