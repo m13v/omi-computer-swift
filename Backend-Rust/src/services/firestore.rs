@@ -6517,19 +6517,20 @@ impl FirestoreService {
     // MESSAGES (Chat Persistence)
     // =========================================================================
 
-    /// Get the mobile app's main chat session ID for a user.
-    /// The mobile (Python) backend creates a chat_session with plugin_id=null for the main chat,
-    /// and filters all messages by chat_session_id. Desktop messages must include this ID
-    /// to be visible on mobile.
-    pub async fn get_main_chat_session_id(
+    /// Get or create a chat session for the given app_id (None = main default chat).
+    /// Mirrors Python's `acquire_chat_session()`:
+    ///   1. List all chat_sessions, find one matching plugin_id
+    ///   2. If none exists, create one with {id, created_at, plugin_id}
+    /// Returns the session ID.
+    pub async fn acquire_chat_session(
         &self,
         uid: &str,
-    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
-        // Fetch ALL chat sessions and filter client-side.
-        // Firestore REST API's `WHERE plugin_id == null` does NOT match documents
-        // where plugin_id is absent or was set to null by the Python SDK (gRPC).
-        // So we fetch all sessions and find the main one ourselves.
-        let url = format!(
+        app_id: Option<&str>,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        // Step 1: Fetch all chat sessions and find a matching one client-side.
+        // We can't use `WHERE plugin_id == null` via REST API — it doesn't match
+        // documents where the field is absent or was set to null by the Python SDK.
+        let list_url = format!(
             "{}/{}/{}/{}",
             self.base_url(),
             USERS_COLLECTION,
@@ -6538,85 +6539,174 @@ impl FirestoreService {
         );
 
         let response = self
-            .build_request(reqwest::Method::GET, &url)
+            .build_request(reqwest::Method::GET, &list_url)
             .await?
+            .send()
+            .await?;
+
+        if response.status().is_success() {
+            let body: Value = response.json().await?;
+            if let Some(documents) = body.get("documents").and_then(|d| d.as_array()) {
+                for doc in documents {
+                    let fields = match doc.get("fields") {
+                        Some(f) => f,
+                        None => continue,
+                    };
+
+                    let matches = match app_id {
+                        Some(target_app) => {
+                            // Looking for a session with this specific plugin_id
+                            fields
+                                .get("plugin_id")
+                                .and_then(|v| v.get("stringValue"))
+                                .and_then(|v| v.as_str())
+                                == Some(target_app)
+                        }
+                        None => {
+                            // Looking for main chat: plugin_id is null, absent, or empty
+                            match fields.get("plugin_id") {
+                                None => true,
+                                Some(val) => {
+                                    val.get("nullValue").is_some()
+                                        || val
+                                            .get("stringValue")
+                                            .and_then(|v| v.as_str())
+                                            .map_or(false, |s| s.is_empty())
+                                }
+                            }
+                        }
+                    };
+
+                    if matches {
+                        if let Some(doc_id) = doc
+                            .get("name")
+                            .and_then(|n| n.as_str())
+                            .and_then(|name| name.split('/').last())
+                        {
+                            tracing::info!(
+                                "Found existing chat session {} for user {} (app_id={:?})",
+                                doc_id,
+                                uid,
+                                app_id
+                            );
+                            return Ok(doc_id.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
+        // Step 2: No matching session found — create one (mirrors Python's ChatSession model)
+        let session_id = uuid::Uuid::new_v4().to_string();
+        let now = Utc::now();
+
+        let create_url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            session_id
+        );
+
+        let mut session_fields = json!({
+            "id": {"stringValue": &session_id},
+            "created_at": {"timestampValue": now.to_rfc3339()},
+            "message_ids": {"arrayValue": {"values": []}},
+            "file_ids": {"arrayValue": {"values": []}}
+        });
+
+        if let Some(app) = app_id {
+            session_fields["plugin_id"] = json!({"stringValue": app});
+            session_fields["app_id"] = json!({"stringValue": app});
+        } else {
+            session_fields["plugin_id"] = json!({"nullValue": null});
+            session_fields["app_id"] = json!({"nullValue": null});
+        }
+
+        let doc = json!({"fields": session_fields});
+
+        let response = self
+            .build_request(reqwest::Method::PATCH, &create_url)
+            .await?
+            .json(&doc)
             .send()
             .await?;
 
         if !response.status().is_success() {
             let error_text = response.text().await?;
-            tracing::warn!("Failed to list chat sessions: {}", error_text);
-            return Ok(None);
+            return Err(format!("Failed to create chat session: {}", error_text).into());
         }
 
-        let body: Value = response.json().await?;
-        let documents = match body.get("documents").and_then(|d| d.as_array()) {
-            Some(docs) => docs,
-            None => {
-                tracing::info!("No chat sessions found for user {}", uid);
-                return Ok(None);
-            }
-        };
-
-        // Find main chat session: plugin_id is either null, absent, or empty string
-        let mut best_session: Option<(String, usize)> = None; // (doc_id, message_count)
-        for doc in documents {
-            let fields = match doc.get("fields") {
-                Some(f) => f,
-                None => continue,
-            };
-
-            // Check plugin_id — main chat has null/absent/empty plugin_id
-            let is_main = match fields.get("plugin_id") {
-                None => true, // field absent = main chat
-                Some(val) => {
-                    // nullValue means explicitly null
-                    if val.get("nullValue").is_some() {
-                        true
-                    } else if let Some(s) = val.get("stringValue").and_then(|v| v.as_str()) {
-                        s.is_empty()
-                    } else {
-                        false
-                    }
-                }
-            };
-
-            if !is_main {
-                continue;
-            }
-
-            // Extract doc ID from name
-            let doc_id = match doc.get("name").and_then(|n| n.as_str()) {
-                Some(name) => match name.split('/').last() {
-                    Some(id) => id.to_string(),
-                    None => continue,
-                },
-                None => continue,
-            };
-
-            // Count messages to find the most-used session
-            let msg_count = fields
-                .get("messages")
-                .and_then(|m| m.get("arrayValue"))
-                .and_then(|a| a.get("values"))
-                .and_then(|v| v.as_array())
-                .map(|arr| arr.len())
-                .unwrap_or(0);
-
-            if best_session.as_ref().map_or(true, |(_, count)| msg_count > *count) {
-                best_session = Some((doc_id, msg_count));
-            }
-        }
-
-        let session_id = best_session.map(|(id, _)| id);
-
-        if let Some(ref id) = session_id {
-            tracing::info!("Found main chat session {} for user {}", id, uid);
-        } else {
-            tracing::info!("No main chat session found for user {}", uid);
-        }
-
+        tracing::info!(
+            "Created new chat session {} for user {} (app_id={:?})",
+            session_id,
+            uid,
+            app_id
+        );
         Ok(session_id)
+    }
+
+    /// Append a message ID to a chat session's message_ids array.
+    /// Mirrors Python's `add_message_to_chat_session()`.
+    async fn add_message_to_chat_session(
+        &self,
+        uid: &str,
+        chat_session_id: &str,
+        message_id: &str,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let url = format!(
+            "{}/{}/{}/{}/{}",
+            self.base_url(),
+            USERS_COLLECTION,
+            uid,
+            CHAT_SESSIONS_SUBCOLLECTION,
+            chat_session_id
+        );
+
+        // Firestore REST API: use fieldTransforms with appendMissingElements
+        // to atomically append to the array (equivalent to Python's ArrayUnion)
+        let update = json!({
+            "writes": [{
+                "transform": {
+                    "document": format!(
+                        "projects/{}/databases/(default)/documents/{}/{}/{}/{}",
+                        self.project_id, USERS_COLLECTION, uid,
+                        CHAT_SESSIONS_SUBCOLLECTION, chat_session_id
+                    ),
+                    "fieldTransforms": [{
+                        "fieldPath": "message_ids",
+                        "appendMissingElements": {
+                            "values": [{"stringValue": message_id}]
+                        }
+                    }]
+                }
+            }]
+        });
+
+        let commit_url = format!(
+            "https://firestore.googleapis.com/v1/projects/{}/databases/(default)/documents:commit",
+            self.project_id
+        );
+
+        let response = self
+            .build_request(reqwest::Method::POST, &commit_url)
+            .await?
+            .json(&update)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            tracing::warn!(
+                "Failed to add message {} to chat session {}: {}",
+                message_id,
+                chat_session_id,
+                error_text
+            );
+        }
+
+        Ok(())
     }
 
     /// Save a chat message to Firestore
