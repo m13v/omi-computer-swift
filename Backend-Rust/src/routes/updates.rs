@@ -164,7 +164,8 @@ struct LatestVersionResponse {
 async fn get_latest_version(State(state): State<AppState>) -> impl IntoResponse {
     match state.firestore.get_desktop_releases().await {
         Ok(releases) => {
-            if let Some(latest) = releases.into_iter().filter(|r| r.is_live).next() {
+            // Return the latest live stable release (no channel = stable)
+            if let Some(latest) = releases.into_iter().filter(|r| r.is_live && r.channel.as_deref().unwrap_or("").is_empty()).next() {
                 axum::Json(LatestVersionResponse {
                     version: latest.version,
                     build_number: latest.build_number,
@@ -197,7 +198,8 @@ async fn get_latest_version(State(state): State<AppState>) -> impl IntoResponse 
 async fn download_redirect(State(state): State<AppState>) -> impl IntoResponse {
     match state.firestore.get_desktop_releases().await {
         Ok(releases) => {
-            if let Some(latest) = releases.into_iter().filter(|r| r.is_live).next() {
+            // Return the latest live stable release for download
+            if let Some(latest) = releases.into_iter().filter(|r| r.is_live && r.channel.as_deref().unwrap_or("").is_empty()).next() {
                 // Serve from GCS bucket for direct download (avoids multi-hop GitHub redirects)
                 let gcs_url = format!(
                     "https://storage.googleapis.com/omi_macos_updates/releases/v{}/Omi.Beta.dmg",
