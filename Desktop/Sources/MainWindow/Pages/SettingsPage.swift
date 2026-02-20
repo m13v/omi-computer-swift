@@ -1961,7 +1961,6 @@ struct SettingsContentView: View {
                     }
                 }
             }
-        }
 
             // Dev Mode card
             settingsCard(settingId: "aichat.devmode") {
