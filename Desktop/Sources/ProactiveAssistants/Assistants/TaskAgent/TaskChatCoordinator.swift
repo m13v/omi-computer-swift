@@ -125,7 +125,8 @@ class TaskChatCoordinator: ObservableObject {
         } else {
             let configuredPath = TaskAgentSettings.shared.workingDirectory
             let ws = configuredPath.isEmpty ? (FileManager.default.homeDirectoryForCurrentUser.path) : configuredPath
-            state = TaskChatState(taskId: task.id, workspacePath: ws)
+            let useACP = UserDefaults.standard.string(forKey: "chatBridgeMode") == "claudeCode"
+            state = TaskChatState(taskId: task.id, workspacePath: ws, useACPMode: useACP)
             // Wire system prompt builder to use ChatProvider's cached context (without history)
             state.systemPromptBuilder = { [weak self] in
                 self?.chatProvider.buildTaskChatSystemPrompt() ?? ""
