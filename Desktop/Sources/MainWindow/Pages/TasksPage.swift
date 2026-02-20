@@ -3640,37 +3640,35 @@ struct TaskRow: View {
                             }
                         }
 
-                    // Badges row (only shown when at least one badge is visible)
-                    if task.isRecurring || isNewlyCreated || TaskAgentSettings.shared.isEnabled || chatCoordinator != nil {
-                        FlowLayout(spacing: 6) {
-                            // Recurring badge
-                            if task.isRecurring {
-                                HStack(spacing: 2) {
-                                    Image(systemName: "repeat")
-                                        .scaledFont(size: 9)
-                                }
-                                .foregroundColor(OmiColors.textTertiary)
+                    // Badges + detail button row
+                    FlowLayout(spacing: 6) {
+                        // Recurring badge
+                        if task.isRecurring {
+                            HStack(spacing: 2) {
+                                Image(systemName: "repeat")
+                                    .scaledFont(size: 9)
                             }
-
-                            // New badge
-                            if isNewlyCreated {
-                                NewBadge()
-                            }
-
-                            // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
-                            if TaskAgentSettings.shared.isEnabled {
-                                AgentStatusIndicator(task: task)
-                            }
-
-                            // Chat session status (streaming indicator or unread dot)
-                            if let coordinator = chatCoordinator {
-                                ChatSessionStatusIndicator(task: task, coordinator: coordinator, onOpenChat: onOpenChat)
-                            }
+                            .foregroundColor(OmiColors.textTertiary)
                         }
-                    }
 
-                    // Task detail button (hover for preview, click for full detail)
-                    TaskDetailButton(task: task, showDetail: $showTaskDetail)
+                        // New badge
+                        if isNewlyCreated {
+                            NewBadge()
+                        }
+
+                        // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
+                        if TaskAgentSettings.shared.isEnabled {
+                            AgentStatusIndicator(task: task)
+                        }
+
+                        // Chat session status (streaming indicator or unread dot)
+                        if let coordinator = chatCoordinator {
+                            ChatSessionStatusIndicator(task: task, coordinator: coordinator, onOpenChat: onOpenChat)
+                        }
+
+                        // Task detail button (hover for preview, click for full detail)
+                        TaskDetailButton(task: task, showDetail: $showTaskDetail)
+                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
