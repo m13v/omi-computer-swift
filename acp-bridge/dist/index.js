@@ -231,6 +231,9 @@ function startAcpProcess() {
         logErr(`ACP process exited with code ${code}`);
         acpProcess = null;
         acpStdinWriter = null;
+        // Session is lost when ACP process dies
+        sessionId = "";
+        isInitialized = false;
         for (const [, handler] of acpResponseHandlers) {
             handler.reject(new Error(`ACP process exited (code ${code})`));
         }
@@ -317,44 +320,49 @@ async function handleQuery(msg) {
         logErr(`Query mode: ${mode}`);
         // Ensure ACP is initialized
         await initializeAcp();
-        // Build MCP servers array for session (stdio format only)
-        // Schema: { name: string, command: string, args: string[], env: {name,value}[] }
-        const mcpServers = [];
-        // Add omi-tools as stdio MCP server (spawned by ACP, connects back via Unix socket)
-        mcpServers.push({
-            name: "omi-tools",
-            command: process.execPath,
-            args: [omiToolsStdioScript],
-            env: [
-                { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
-                { name: "OMI_QUERY_MODE", value: mode },
-            ],
-        });
-        // Add Playwright MCP server
-        const playwrightArgs = [playwrightCli];
-        if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
-            playwrightArgs.push("--extension");
-        }
-        const playwrightEnv = [];
-        if (process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN) {
-            playwrightEnv.push({
-                name: "PLAYWRIGHT_MCP_EXTENSION_TOKEN",
-                value: process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN,
+        // Reuse existing session if alive, otherwise create a new one
+        if (!sessionId) {
+            // Build MCP servers array for session (stdio format only)
+            // Schema: { name: string, command: string, args: string[], env: {name,value}[] }
+            const mcpServers = [];
+            // Add omi-tools as stdio MCP server (spawned by ACP, connects back via Unix socket)
+            mcpServers.push({
+                name: "omi-tools",
+                command: process.execPath,
+                args: [omiToolsStdioScript],
+                env: [
+                    { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
+                    { name: "OMI_QUERY_MODE", value: mode },
+                ],
             });
+            // Add Playwright MCP server
+            const playwrightArgs = [playwrightCli];
+            if (process.env.PLAYWRIGHT_USE_EXTENSION === "true") {
+                playwrightArgs.push("--extension");
+            }
+            const playwrightEnv = [];
+            if (process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN) {
+                playwrightEnv.push({
+                    name: "PLAYWRIGHT_MCP_EXTENSION_TOKEN",
+                    value: process.env.PLAYWRIGHT_MCP_EXTENSION_TOKEN,
+                });
+            }
+            mcpServers.push({
+                name: "playwright",
+                command: process.execPath,
+                args: playwrightArgs,
+                env: playwrightEnv,
+            });
+            const sessionResult = (await acpRequest("session/new", {
+                cwd: msg.cwd || process.env.HOME || "/",
+                mcpServers,
+            }));
+            sessionId = sessionResult.sessionId;
+            logErr(`ACP session created: ${sessionId}`);
         }
-        mcpServers.push({
-            name: "playwright",
-            command: process.execPath,
-            args: playwrightArgs,
-            env: playwrightEnv,
-        });
-        // Create a new session for each query (stateless, like agent-bridge)
-        const sessionResult = (await acpRequest("session/new", {
-            cwd: msg.cwd || process.env.HOME || "/",
-            mcpServers,
-        }));
-        sessionId = sessionResult.sessionId;
-        logErr(`ACP session created: ${sessionId}`);
+        else {
+            logErr(`Reusing existing ACP session: ${sessionId}`);
+        }
         // Build the prompt with system context
         // ACP doesn't have a separate systemPrompt field — prepend it to the user message
         const fullPrompt = msg.systemPrompt
@@ -371,8 +379,8 @@ async function handleQuery(msg) {
                 });
             }
         };
-        // Send the prompt
-        try {
+        // Send the prompt — retry with fresh session if stale
+        const sendPrompt = async () => {
             const promptResult = (await acpRequest("session/prompt", {
                 sessionId,
                 prompt: [{ type: "text", text: fullPrompt }],
@@ -384,6 +392,9 @@ async function handleQuery(msg) {
             }
             pendingTools.length = 0;
             send({ type: "result", text: fullText, sessionId, costUsd: 0 });
+        };
+        try {
+            await sendPrompt();
         }
         catch (err) {
             if (abortController.signal.aborted) {
@@ -399,6 +410,13 @@ async function handleQuery(msg) {
                     logErr("Query aborted (superseded by new query)");
                 }
                 return;
+            }
+            // If session/prompt failed and we were reusing a session, retry with a fresh one
+            if (sessionId) {
+                logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
+                sessionId = "";
+                // Recursive call to handleQuery will create a new session
+                return handleQuery(msg);
             }
             throw err;
         }
