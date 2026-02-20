@@ -497,6 +497,21 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !hasVisibleOmiWindow && NSApp.activationPolicy() != .accessory {
             NSApp.setActivationPolicy(.accessory)
             log("AppDelegate: Dock icon hidden (no visible Omi windows)")
+            // Workaround for macOS Sequoia bug: switching to .accessory can cause
+            // NSStatusBar items to disappear. Force-refresh the status bar item.
+            refreshMenuBarIcon()
+        }
+    }
+
+    /// Force-refresh the menu bar icon after activation policy changes.
+    /// Works around a macOS Sequoia bug where NSStatusBar items vanish
+    /// when switching to .accessory activation policy.
+    private func refreshMenuBarIcon() {
+        guard let statusBarItem = statusBarItem else { return }
+        statusBarItem.isVisible = false
+        DispatchQueue.main.async {
+            statusBarItem.isVisible = true
+            log("AppDelegate: [MENUBAR] Refreshed status bar item after policy change")
         }
     }
 
@@ -617,11 +632,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor @objc private func openOmiFromMenu() {
         AnalyticsManager.shared.menuBarActionClicked(action: "open_omi")
         NSApp.activate(ignoringOtherApps: true)
+        var foundWindow = false
         for window in NSApp.windows {
             if window.title.hasPrefix("Omi") {
+                foundWindow = true
                 window.makeKeyAndOrderFront(nil)
                 window.appearance = NSAppearance(named: .darkAqua)
             }
+        }
+        // Restore dock icon when opening from menu bar
+        showDockIcon()
+        if !foundWindow {
+            log("AppDelegate: [MENUBAR] WARNING - No Omi window found when opening from menu bar")
         }
     }
 
