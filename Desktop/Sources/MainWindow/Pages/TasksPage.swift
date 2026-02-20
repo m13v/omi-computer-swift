@@ -1850,8 +1850,8 @@ class TasksViewModel: ObservableObject {
         showingCreateTask = false
     }
 
-    func updateTaskDetails(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil) async {
-        await store.updateTask(task, description: description, dueAt: dueAt, priority: priority)
+    func updateTaskDetails(_ task: TaskActionItem, description: String? = nil, dueAt: Date? = nil, priority: String? = nil, recurrenceRule: String? = nil) async {
+        await store.updateTask(task, description: description, dueAt: dueAt, priority: priority, recurrenceRule: recurrenceRule)
         // Read the updated task back from the store for surgical update
         if let updated = store.tasks.first(where: { $0.id == task.id }) {
             updateInDisplay(updated)
