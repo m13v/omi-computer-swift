@@ -97,12 +97,7 @@ struct DesktopHomeView: View {
                                     if success {
                                         log("DesktopHomeView: Screen analysis started")
                                     } else {
-                                        log("DesktopHomeView: Screen analysis failed to start: \(error ?? "unknown")")
-                                        // Revert persistent setting so UI reflects actual state
-                                        DispatchQueue.main.async {
-                                            AssistantSettings.shared.screenAnalysisEnabled = false
-                                            UserDefaults.standard.set(false, forKey: "screenAnalysisEnabled")
-                                        }
+                                        log("DesktopHomeView: Screen analysis failed to start: \(error ?? "unknown") — setting remains enabled for next launch")
                                     }
                                 }
                             } else {
