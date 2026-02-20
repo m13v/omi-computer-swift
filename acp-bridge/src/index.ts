@@ -17,7 +17,7 @@ import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import { createServer as createNetServer, type Socket } from "net";
 import { tmpdir } from "os";
-import { unlinkSync } from "fs";
+import { unlinkSync, appendFileSync } from "fs";
 import type {
   InboundMessage,
   OutboundMessage,
@@ -747,17 +747,30 @@ function handleSessionUpdate(
 
 // --- Error handling ---
 
+/** Write to /tmp/acp-bridge-crash.log as fallback when stderr might be lost */
+function logCrash(msg: string): void {
+  try {
+    const ts = new Date().toISOString();
+    appendFileSync("/tmp/acp-bridge-crash.log", `[${ts}] ${msg}\n`);
+  } catch {
+    // ignore
+  }
+}
+
 process.on("unhandledRejection", (reason) => {
   logErr(`Unhandled rejection: ${reason}`);
+  logCrash(`Unhandled rejection: ${reason}`);
 });
 
 process.on("uncaughtException", (err) => {
   const code = (err as NodeJS.ErrnoException).code;
   if (code === "EPIPE" || code === "ERR_STREAM_DESTROYED") {
     logErr(`Caught ${code} in uncaughtException (subprocess pipe closed)`);
+    logCrash(`Caught ${code} (pipe closed)`);
     return;
   }
   logErr(`Uncaught exception: ${err.message}\n${err.stack ?? ""}`);
+  logCrash(`Uncaught exception: ${err.message}\n${err.stack ?? ""}`);
   send({ type: "error", message: `Uncaught: ${err.message}` });
   process.exit(1);
 });
@@ -765,9 +778,11 @@ process.on("uncaughtException", (err) => {
 process.stdout.on("error", (err) => {
   if ((err as NodeJS.ErrnoException).code === "EPIPE") {
     logErr("stdout pipe closed (parent process disconnected)");
+    logCrash("stdout EPIPE — parent disconnected");
     process.exit(0);
   }
   logErr(`stdout error: ${err.message}`);
+  logCrash(`stdout error: ${err.message}`);
 });
 
 // --- Main ---
@@ -862,6 +877,7 @@ async function main(): Promise<void> {
 
   rl.on("close", () => {
     logErr("stdin closed, exiting");
+    logCrash("stdin closed, exiting");
     if (activeAbort) activeAbort.abort();
     if (acpProcess) acpProcess.kill();
     process.exit(0);
@@ -870,6 +886,7 @@ async function main(): Promise<void> {
 
 main().catch((err) => {
   logErr(`Fatal error: ${err}`);
+  logCrash(`Fatal error: ${err}`);
   send({ type: "error", message: `Fatal: ${err}` });
   process.exit(1);
 });
