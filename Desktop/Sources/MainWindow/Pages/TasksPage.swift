@@ -1958,7 +1958,7 @@ struct TasksPage: View {
     }
 
     var body: some View {
-        let isChatVisible = showChatPanel && chatProvider != nil
+        let isChatVisible = showChatPanel && chatCoordinator.activeTaskState != nil
 
         HStack(spacing: 0) {
             // Left panel: Tasks content (always full width)
@@ -1995,14 +1995,16 @@ struct TasksPage: View {
                     )
 
                 // Right panel: Task chat (slides in from right)
-                TaskChatPanel(
-                    chatProvider: chatProvider!,
-                    coordinator: chatCoordinator,
-                    task: activeTask,
-                    onClose: {
-                        closeChatPanel()
-                    }
-                )
+                if let taskState = chatCoordinator.activeTaskState {
+                    TaskChatPanel(
+                        taskState: taskState,
+                        coordinator: chatCoordinator,
+                        task: activeTask,
+                        onClose: {
+                            closeChatPanel()
+                        }
+                    )
+                }
                 .frame(width: chatPanelWidth)
                 .transition(.move(edge: .trailing))
             }
@@ -2036,7 +2038,7 @@ struct TasksPage: View {
             if showChatPanel {
                 adjustWindowWidth(expand: false)
                 showChatPanel = false
-                Task { await chatCoordinator.closeChat() }
+                chatCoordinator.closeChat()
             }
         }
     }
