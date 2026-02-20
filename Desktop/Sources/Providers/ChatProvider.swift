@@ -302,6 +302,22 @@ class ChatProvider: ObservableObject {
 
     private let claudeBridge = ClaudeAgentBridge()
     private var bridgeStarted = false
+
+    // MARK: - Dual Bridge (Mode A: Agent SDK, Mode B: ACP)
+    private let acpBridge = ACPBridge()
+    private var acpBridgeStarted = false
+
+    enum BridgeMode: String {
+        case agentSDK = "agentSDK"
+        case claudeCode = "claudeCode"
+    }
+    @AppStorage("chatBridgeMode") var bridgeMode: String = BridgeMode.agentSDK.rawValue
+
+    /// Whether the ACP bridge requires authentication (shown as sheet in UI)
+    @Published var isClaudeAuthRequired = false
+    /// Auth methods returned by ACP bridge
+    @Published var claudeAuthMethods: [[String: Any]] = []
+
     private let messagesPageSize = 50
     private var multiChatObserver: AnyCancellable?
     private var playwrightExtensionObserver: AnyCancellable?
