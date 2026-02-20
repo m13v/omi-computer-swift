@@ -365,6 +365,7 @@ async fn promote_release(
             let old_display = if old_channel.is_empty() { "stable".to_string() } else { old_channel.clone() };
             let new_display = if new_channel.is_empty() { "stable".to_string() } else { new_channel.clone() };
             tracing::info!("Promoted release {}: {} → {}", request.doc_id, old_display, new_display);
+            let message = format!("Release promoted from {} to {}", old_display, new_display);
             (
                 StatusCode::OK,
                 Json(PromoteReleaseResponse {
@@ -372,7 +373,7 @@ async fn promote_release(
                     doc_id: request.doc_id,
                     old_channel: old_display,
                     new_channel: new_display,
-                    message: format!("Release promoted from {} to {}", old_display, new_display),
+                    message,
                 }),
             )
         }
