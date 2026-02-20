@@ -3589,14 +3589,15 @@ struct TaskRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 // Always-editable task content
-                FlowLayout(spacing: 6) {
-                    // Always-rendered TextField (notes-like editing)
+                VStack(alignment: .leading, spacing: 2) {
+                    // Always-rendered TextField (notes-like editing) — full width to prevent early wrapping
                     TextField("Task description", text: $editText, axis: .vertical)
                         .textFieldStyle(.plain)
                         .scaledFont(size: 14)
                         .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
                         .strikethrough(task.completed, color: OmiColors.textTertiary)
                         .lineLimit(1...4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .focused($isTextFieldFocused)
                         .disabled(isMultiSelectMode)
                         .onKeyPress(.escape) {
@@ -3639,28 +3640,33 @@ struct TaskRow: View {
                             }
                         }
 
-                    // Recurring badge
-                    if task.isRecurring {
-                        HStack(spacing: 2) {
-                            Image(systemName: "repeat")
-                                .scaledFont(size: 9)
+                    // Badges row (only shown when at least one badge is visible)
+                    if task.isRecurring || isNewlyCreated || TaskAgentSettings.shared.isEnabled || chatCoordinator != nil {
+                        FlowLayout(spacing: 6) {
+                            // Recurring badge
+                            if task.isRecurring {
+                                HStack(spacing: 2) {
+                                    Image(systemName: "repeat")
+                                        .scaledFont(size: 9)
+                                }
+                                .foregroundColor(OmiColors.textTertiary)
+                            }
+
+                            // New badge
+                            if isNewlyCreated {
+                                NewBadge()
+                            }
+
+                            // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
+                            if TaskAgentSettings.shared.isEnabled {
+                                AgentStatusIndicator(task: task)
+                            }
+
+                            // Chat session status (streaming indicator or unread dot)
+                            if let coordinator = chatCoordinator {
+                                ChatSessionStatusIndicator(task: task, coordinator: coordinator, onOpenChat: onOpenChat)
+                            }
                         }
-                        .foregroundColor(OmiColors.textTertiary)
-                    }
-
-                    // New badge
-                    if isNewlyCreated {
-                        NewBadge()
-                    }
-
-                    // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
-                    if TaskAgentSettings.shared.isEnabled {
-                        AgentStatusIndicator(task: task)
-                    }
-
-                    // Chat session status (streaming indicator or unread dot)
-                    if let coordinator = chatCoordinator {
-                        ChatSessionStatusIndicator(task: task, coordinator: coordinator, onOpenChat: onOpenChat)
                     }
 
                     // Task detail button (hover for preview, click for full detail)
