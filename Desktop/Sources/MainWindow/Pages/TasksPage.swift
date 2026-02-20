@@ -1946,8 +1946,9 @@ struct TasksPage: View {
     @State private var showSaveFilterAlert = false
     @State private var saveFilterName = ""
 
-    /// Width added to the window for the chat panel
-    private static let chatExpandWidth: CGFloat = 400
+    // Chat panel resize state
+    @State private var isDraggingDivider = false
+    @State private var dragStartWidth: Double = 0
 
     init(viewModel: TasksViewModel, chatProvider: ChatProvider? = nil) {
         self.viewModel = viewModel
@@ -1965,10 +1966,33 @@ struct TasksPage: View {
                 .frame(maxWidth: .infinity)
 
             if isChatVisible {
-                // Divider line
+                // Draggable divider
                 Rectangle()
-                    .fill(OmiColors.border)
+                    .fill(isDraggingDivider ? OmiColors.textSecondary : OmiColors.border)
                     .frame(width: 1)
+                    .contentShape(Rectangle().inset(by: -4))
+                    .onHover { hovering in
+                        if hovering {
+                            NSCursor.resizeLeftRight.push()
+                        } else {
+                            NSCursor.pop()
+                        }
+                    }
+                    .gesture(
+                        DragGesture()
+                            .onChanged { value in
+                                isDraggingDivider = true
+                                if dragStartWidth == 0 {
+                                    dragStartWidth = chatPanelWidth
+                                }
+                                let newWidth = dragStartWidth - value.translation.width
+                                chatPanelWidth = min(600, max(300, newWidth))
+                            }
+                            .onEnded { _ in
+                                isDraggingDivider = false
+                                dragStartWidth = 0
+                            }
+                    )
 
                 // Right panel: Task chat (slides in from right)
                 TaskChatPanel(
