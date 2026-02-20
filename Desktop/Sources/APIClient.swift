@@ -2703,7 +2703,7 @@ struct ScoreResponse: Codable {
 // MARK: - App Models
 
 /// App summary for list views (lightweight)
-struct OmiApp: Codable, Identifiable {
+struct OmiApp: Codable, Identifiable, Sendable {
     let id: String
     let name: String
     let description: String
@@ -2865,13 +2865,13 @@ struct OmiAppDetails: Codable, Identifiable {
 }
 
 /// App category
-struct OmiAppCategory: Codable, Identifiable {
+struct OmiAppCategory: Codable, Identifiable, Sendable {
     let id: String
     let title: String
 }
 
 /// App capability definition
-struct OmiAppCapability: Codable, Identifiable {
+struct OmiAppCapability: Codable, Identifiable, Sendable {
     let id: String
     let title: String
     let description: String
