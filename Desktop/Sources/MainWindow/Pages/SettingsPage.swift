@@ -1436,6 +1436,7 @@ struct SettingsContentView: View {
                     Spacer()
 
                     Button("Sign Out") {
+                        appState.stopTranscription()
                         ProactiveAssistantsPlugin.shared.stopMonitoring()
                         try? AuthService.shared.signOut()
                     }
