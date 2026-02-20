@@ -3040,7 +3040,7 @@ struct TaskCategorySection: View {
     var onToggle: ((TaskActionItem) async -> Void)?
     var onDelete: ((TaskActionItem) async -> Void)?
     var onToggleSelection: ((TaskActionItem) -> Void)?
-    var onUpdateDetails: ((TaskActionItem, String?, Date?, String?) async -> Void)?
+    var onUpdateDetails: ((TaskActionItem, String?, Date?, String?, String?) async -> Void)?
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
@@ -3280,7 +3280,7 @@ struct TaskRow: View {
     var onToggle: ((TaskActionItem) async -> Void)?
     var onDelete: ((TaskActionItem) async -> Void)?
     var onToggleSelection: ((TaskActionItem) -> Void)?
-    var onUpdateDetails: ((TaskActionItem, String?, Date?, String?) async -> Void)?
+    var onUpdateDetails: ((TaskActionItem, String?, Date?, String?, String?) async -> Void)?
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
@@ -3313,6 +3313,7 @@ struct TaskRow: View {
     // Inline due date popover
     @State private var showDatePicker = false
     @State private var editDueDate: Date = Date()
+    @State private var editRecurrenceRule: String = ""
 
     // Swipe gesture state
     @State private var swipeOffset: CGFloat = 0
@@ -3840,7 +3841,7 @@ struct TaskRow: View {
         }
 
         Task {
-            await onUpdateDetails?(task, trimmed, nil, nil)
+            await onUpdateDetails?(task, trimmed, nil, nil, nil)
         }
     }
 
