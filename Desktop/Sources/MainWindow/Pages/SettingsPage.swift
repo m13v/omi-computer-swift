@@ -199,6 +199,7 @@ struct SettingsContentView: View {
     @AppStorage("conversationsCompactView") private var conversationsCompactView = true
 
     // AI Chat settings
+    @AppStorage("chatBridgeMode") private var chatBridgeMode: String = "agentSDK"
     @AppStorage("askModeEnabled") private var askModeEnabled = false
     @AppStorage("claudeMdEnabled") private var claudeMdEnabled = true
     @AppStorage("projectClaudeMdEnabled") private var projectClaudeMdEnabled = true
@@ -1476,6 +1477,43 @@ struct SettingsContentView: View {
 
     private var aiChatSection: some View {
         VStack(spacing: 20) {
+            // AI Provider card
+            settingsCard(settingId: "aichat.provider") {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "cpu")
+                            .scaledFont(size: 16)
+                            .foregroundColor(OmiColors.textTertiary)
+
+                        Text("AI Provider")
+                            .scaledFont(size: 15, weight: .semibold)
+                            .foregroundColor(OmiColors.textPrimary)
+
+                        Spacer()
+
+                        Picker("", selection: $chatBridgeMode) {
+                            Text("Omi AI (Free)").tag("agentSDK")
+                            Text("Your Claude Account").tag("claudeCode")
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 200)
+                        .onChange(of: chatBridgeMode) { newMode in
+                            if let mode = ChatProvider.BridgeMode(rawValue: newMode) {
+                                Task {
+                                    await chatProvider?.switchBridgeMode(to: mode)
+                                }
+                            }
+                        }
+                    }
+
+                    Text(chatBridgeMode == "claudeCode"
+                         ? "Using your Claude Pro/Max subscription. You'll be prompted to sign in with your Claude account."
+                         : "Using Omi's AI — free for all users.")
+                        .scaledFont(size: 12)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+            }
+
             // Ask Mode card
             settingsCard(settingId: "aichat.askmode") {
                 VStack(alignment: .leading, spacing: 12) {
