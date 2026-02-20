@@ -1859,6 +1859,13 @@ class TasksViewModel: ObservableObject {
         }
     }
 
+    func updateTaskTags(_ task: TaskActionItem, tags: [String]) async {
+        await store.updateTaskTags(task, tags: tags)
+        if let updated = store.tasks.first(where: { $0.id == task.id }) {
+            updateInDisplay(updated)
+        }
+    }
+
     // MARK: - Inline Task Creation
 
     /// Determine context (due date, tags) for a new inline task based on selected task position
@@ -2883,6 +2890,9 @@ struct TasksPage: View {
                                     onUpdateDetails: { task, desc, date, priority, recurrenceRule in
                                         await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority, recurrenceRule: recurrenceRule)
                                     },
+                                    onUpdateTags: { task, tags in
+                                        await viewModel.updateTaskTags(task, tags: tags)
+                                    },
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
@@ -2933,6 +2943,9 @@ struct TasksPage: View {
                                     onToggleSelection: { viewModel.toggleTaskSelection($0) },
                                     onUpdateDetails: { task, desc, date, priority, recurrenceRule in
                                         await viewModel.updateTaskDetails(task, description: desc, dueAt: date, priority: priority, recurrenceRule: recurrenceRule)
+                                    },
+                                    onUpdateTags: { task, tags in
+                                        await viewModel.updateTaskTags(task, tags: tags)
                                     },
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
@@ -3048,6 +3061,7 @@ struct TaskCategorySection: View {
     var onDelete: ((TaskActionItem) async -> Void)?
     var onToggleSelection: ((TaskActionItem) -> Void)?
     var onUpdateDetails: ((TaskActionItem, String?, Date?, String?, String?) async -> Void)?
+    var onUpdateTags: ((TaskActionItem, [String]) async -> Void)?
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
@@ -3119,6 +3133,7 @@ struct TaskCategorySection: View {
                                 onDelete: onDelete,
                                 onToggleSelection: onToggleSelection,
                                 onUpdateDetails: onUpdateDetails,
+                                onUpdateTags: onUpdateTags,
                                 onIncrementIndent: onIncrementIndent,
                                 onDecrementIndent: onDecrementIndent,
                                 onOpenChat: onOpenChat,
@@ -3743,6 +3758,19 @@ struct TaskRow: View {
                         .popover(isPresented: $showRepeatPicker) {
                             repeatPopover
                         }
+                    }
+
+                    // Tag button
+                    if !task.completed {
+                        TagBadgeInteractive(
+                            tags: task.tags,
+                            isCompleted: task.completed,
+                            isRowHovering: isHovering,
+                            showTagPicker: $showTagPicker,
+                            onUpdateTags: { newTags in
+                                Task { await onUpdateTags?(task, newTags) }
+                            }
+                        )
                     }
 
                     // Outdent button (decrease indent)
