@@ -1,5 +1,4 @@
 import SwiftUI
-import MarkdownUI
 
 /// Detects user scroll-wheel / trackpad gestures on the enclosing NSScrollView
 /// and fires a callback immediately — before the scroll position settles.
