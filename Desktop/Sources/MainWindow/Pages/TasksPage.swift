@@ -2070,6 +2070,14 @@ struct TasksPage: View {
         return viewModel.findTask(taskId)
     }
 
+    /// Start a background AI investigation for a task (no panel opens)
+    private func investigateTask(_ task: TaskActionItem) {
+        log("TaskChat: investigateTask called for task \(task.id)")
+        Task {
+            await chatCoordinator.investigateInBackground(for: task)
+        }
+    }
+
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
         log("TaskChat: openChatForTask called for task \(task.id) (deleted=\(task.deleted ?? false), completed=\(task.completed))")
@@ -2897,6 +2905,7 @@ struct TasksPage: View {
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
@@ -2950,6 +2959,7 @@ struct TasksPage: View {
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
