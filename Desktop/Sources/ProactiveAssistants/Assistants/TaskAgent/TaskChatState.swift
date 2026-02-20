@@ -15,11 +15,15 @@ class TaskChatState: ObservableObject {
     @Published var errorMessage: String?
     @Published var chatMode: ChatMode = .act
 
+    /// Bridge mode — determines which bridge process to use
+    let useACPMode: Bool
+
     /// Own bridge process — completely independent from sidebar chat
-    private let bridge = ClaudeAgentBridge()
+    private var claudeBridge: ClaudeAgentBridge?
+    private var acpBridge: ACPBridge?
     private var bridgeStarted = false
 
-    /// Claude SDK session ID for resume (conversation continuity)
+    /// Claude SDK session ID for resume (conversation continuity, Mode A only)
     var claudeSessionId: String?
 
     /// Workspace path for file-system tools
@@ -27,6 +31,10 @@ class TaskChatState: ObservableObject {
 
     /// Closure to build system prompt from ChatProvider's cached data
     var systemPromptBuilder: (() -> String)?
+
+    /// Auth callbacks for ACP mode
+    var onAuthRequired: ACPBridge.AuthRequiredHandler?
+    var onAuthSuccess: ACPBridge.AuthSuccessHandler?
 
     /// Follow-up chaining
     private var pendingFollowUpText: String?
@@ -39,34 +47,50 @@ class TaskChatState: ObservableObject {
     private var streamingFlushWorkItem: DispatchWorkItem?
     private let streamingFlushInterval: TimeInterval = 0.1
 
-    init(taskId: String, workspacePath: String) {
+    init(taskId: String, workspacePath: String, useACPMode: Bool = false) {
         self.taskId = taskId
         self.workspacePath = workspacePath
+        self.useACPMode = useACPMode
     }
 
     deinit {
-        // Fire-and-forget bridge cleanup
-        let bridge = self.bridge
-        Task { await bridge.stop() }
+        if let bridge = claudeBridge {
+            Task { await bridge.stop() }
+        }
+        if let bridge = acpBridge {
+            Task { await bridge.stop() }
+        }
     }
 
     // MARK: - Bridge Lifecycle
 
     private func ensureBridgeStarted() async -> Bool {
         if bridgeStarted {
-            let alive = await bridge.isAlive
+            let alive: Bool
+            if useACPMode {
+                alive = await acpBridge?.isAlive ?? false
+            } else {
+                alive = await claudeBridge?.isAlive ?? false
+            }
             if !alive {
                 log("TaskChatState[\(taskId)]: Bridge process died, will restart")
                 bridgeStarted = false
-                // Session is lost when bridge dies
                 claudeSessionId = nil
             }
         }
         guard !bridgeStarted else { return true }
         do {
-            try await bridge.start()
+            if useACPMode {
+                let bridge = ACPBridge()
+                try await bridge.start()
+                acpBridge = bridge
+            } else {
+                let bridge = ClaudeAgentBridge()
+                try await bridge.start()
+                claudeBridge = bridge
+            }
             bridgeStarted = true
-            log("TaskChatState[\(taskId)]: Bridge started")
+            log("TaskChatState[\(taskId)]: Bridge started (mode=\(useACPMode ? "ACP" : "Claude"))")
             return true
         } catch {
             logError("TaskChatState[\(taskId)]: Failed to start bridge", error: error)
@@ -114,45 +138,77 @@ class TaskChatState: ObservableObject {
         do {
             let systemPrompt = systemPromptBuilder?() ?? ""
 
-            let queryResult = try await bridge.query(
-                prompt: trimmedText,
-                systemPrompt: systemPrompt,
-                cwd: workspacePath.isEmpty ? nil : workspacePath,
-                mode: chatMode.rawValue,
-                resume: claudeSessionId,
-                onTextDelta: { [weak self] delta in
-                    Task { @MainActor [weak self] in
-                        self?.appendToMessage(id: aiMessageId, text: delta)
-                    }
-                },
-                onToolCall: { callId, name, input in
-                    let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
-                    let result = await ChatToolExecutor.execute(toolCall)
-                    log("TaskChat OMI tool \(name) executed for callId=\(callId)")
-                    return result
-                },
-                onToolActivity: { [weak self] name, status, toolUseId, input in
-                    Task { @MainActor [weak self] in
-                        self?.addToolActivity(
-                            messageId: aiMessageId,
-                            toolName: name,
-                            status: status == "started" ? .running : .completed,
-                            toolUseId: toolUseId,
-                            input: input
-                        )
-                    }
-                },
-                onThinkingDelta: { [weak self] text in
-                    Task { @MainActor [weak self] in
-                        self?.appendThinking(messageId: aiMessageId, text: text)
-                    }
-                },
-                onToolResultDisplay: { [weak self] toolUseId, name, output in
-                    Task { @MainActor [weak self] in
-                        self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
-                    }
+            let textDeltaHandler: @Sendable (String) -> Void = { [weak self] delta in
+                Task { @MainActor [weak self] in
+                    self?.appendToMessage(id: aiMessageId, text: delta)
                 }
-            )
+            }
+            let toolCallHandler: @Sendable (String, String, [String: Any]) async -> String = { callId, name, input in
+                let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
+                let result = await ChatToolExecutor.execute(toolCall)
+                log("TaskChat OMI tool \(name) executed for callId=\(callId)")
+                return result
+            }
+            let toolActivityHandler: @Sendable (String, String, String?, [String: Any]?) -> Void = { [weak self] name, status, toolUseId, input in
+                Task { @MainActor [weak self] in
+                    self?.addToolActivity(
+                        messageId: aiMessageId,
+                        toolName: name,
+                        status: status == "started" ? .running : .completed,
+                        toolUseId: toolUseId,
+                        input: input
+                    )
+                }
+            }
+            let thinkingDeltaHandler: @Sendable (String) -> Void = { [weak self] text in
+                Task { @MainActor [weak self] in
+                    self?.appendThinking(messageId: aiMessageId, text: text)
+                }
+            }
+            let toolResultDisplayHandler: @Sendable (String, String, String) -> Void = { [weak self] toolUseId, name, output in
+                Task { @MainActor [weak self] in
+                    self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
+                }
+            }
+
+            let queryResult: ACPBridge.QueryResult
+            if useACPMode, let bridge = acpBridge {
+                // ACP mode — session reuse handled internally by the bridge
+                queryResult = try await bridge.query(
+                    prompt: trimmedText,
+                    systemPrompt: systemPrompt,
+                    cwd: workspacePath.isEmpty ? nil : workspacePath,
+                    mode: chatMode.rawValue,
+                    onTextDelta: textDeltaHandler,
+                    onToolCall: toolCallHandler,
+                    onToolActivity: toolActivityHandler,
+                    onThinkingDelta: thinkingDeltaHandler,
+                    onToolResultDisplay: toolResultDisplayHandler,
+                    onAuthRequired: onAuthRequired ?? { _ in },
+                    onAuthSuccess: onAuthSuccess ?? { }
+                )
+            } else if let bridge = claudeBridge {
+                // Claude SDK mode — use resume for conversation continuity
+                let claudeResult = try await bridge.query(
+                    prompt: trimmedText,
+                    systemPrompt: systemPrompt,
+                    cwd: workspacePath.isEmpty ? nil : workspacePath,
+                    mode: chatMode.rawValue,
+                    resume: claudeSessionId,
+                    onTextDelta: textDeltaHandler,
+                    onToolCall: toolCallHandler,
+                    onToolActivity: toolActivityHandler,
+                    onThinkingDelta: thinkingDeltaHandler,
+                    onToolResultDisplay: toolResultDisplayHandler
+                )
+                queryResult = ACPBridge.QueryResult(
+                    text: claudeResult.text,
+                    costUsd: claudeResult.costUsd,
+                    sessionId: claudeResult.sessionId
+                )
+            } else {
+                throw BridgeError.notRunning
+            }
 
             // Flush remaining streaming buffers
             streamingFlushWorkItem?.cancel()
