@@ -133,6 +133,9 @@ class TaskChatCoordinator: ObservableObject {
             }
             taskStates[task.id] = state
             observeTaskState(state)
+
+            // Load persisted messages from GRDB
+            await state.loadPersistedMessages()
         }
 
         activeTaskState = state
