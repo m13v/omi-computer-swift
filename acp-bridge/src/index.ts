@@ -773,11 +773,15 @@ process.stdout.on("error", (err) => {
 // --- Main ---
 
 async function main(): Promise<void> {
+  logErr(`Bridge main() starting (pid=${process.pid}, node=${process.version}, execPath=${process.execPath})`);
+
   // 1. Start Unix socket for omi-tools relay
   omiToolsPipePath = await startOmiToolsRelay();
+  logErr("omi-tools relay started");
 
   // 2. Start the ACP subprocess
   startAcpProcess();
+  logErr("ACP subprocess spawned");
 
   // 3. Signal readiness
   send({ type: "init", sessionId: "" });
