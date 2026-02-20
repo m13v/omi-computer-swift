@@ -67,6 +67,12 @@ pub struct ActionItemDB {
     /// Whether this task was promoted from staged_tasks
     #[serde(default)]
     pub from_staged: Option<bool>,
+    /// Recurrence rule: "daily", "weekdays", "weekly", "biweekly", "monthly"
+    #[serde(default)]
+    pub recurrence_rule: Option<String>,
+    /// ID of original parent task in recurrence chain
+    #[serde(default)]
+    pub recurrence_parent_id: Option<String>,
 }
 
 /// Request body for updating an action item
