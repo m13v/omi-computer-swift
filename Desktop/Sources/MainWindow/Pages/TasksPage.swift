@@ -1958,7 +1958,7 @@ struct TasksPage: View {
     }
 
     var body: some View {
-        let isChatVisible = showChatPanel && chatCoordinator.activeTaskState != nil
+        let isChatVisible = showChatPanel
 
         HStack(spacing: 0) {
             // Left panel: Tasks content (always full width)
@@ -2067,7 +2067,7 @@ struct TasksPage: View {
 
     /// Close the chat panel and shrink window
     private func closeChatPanel() {
-        Task { await chatCoordinator.closeChat() }
+        chatCoordinator.closeChat()
         // Animate panel out and shrink window together
         withAnimation(.easeInOut(duration: 0.25)) {
             showChatPanel = false
