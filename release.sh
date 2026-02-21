@@ -264,7 +264,7 @@ fi
 echo "  ffmpeg: $(file "$FFMPEG_RESOURCE" | sed 's/.*: //')"
 
 # -----------------------------------------------------------------------------
-# Step 1.6: Prepare Universal Node.js binary (for AI chat / Claude Agent Bridge)
+# Step 1.6: Prepare Universal Node.js binary (for AI chat / ACP Bridge)
 # -----------------------------------------------------------------------------
 echo "[1.6/12] Preparing universal Node.js binary..."
 
@@ -340,6 +340,23 @@ fi
 
 # Show node architectures
 echo "  node: $(file "$NODE_RESOURCE" | sed 's/.*: //')"
+
+# -----------------------------------------------------------------------------
+# Step 1.7: Build ACP Bridge (TypeScript → JavaScript)
+# -----------------------------------------------------------------------------
+echo "[1.7/12] Building acp-bridge..."
+
+ACP_BRIDGE_DIR="$(dirname "$0")/acp-bridge"
+if [ -d "$ACP_BRIDGE_DIR" ]; then
+    cd "$ACP_BRIDGE_DIR"
+    npm install --no-fund --no-audit
+    npx tsc
+    cd - > /dev/null
+    echo "  ✓ acp-bridge built"
+else
+    echo "Error: acp-bridge directory not found at $ACP_BRIDGE_DIR"
+    exit 1
+fi
 
 # -----------------------------------------------------------------------------
 # Step 2: Build Desktop App (Universal Binary: arm64 + x86_64)
@@ -420,6 +437,18 @@ else
     echo "Warning: Resource bundle not found at $SWIFT_BUILD_DIR/Omi Computer_Omi Computer.bundle"
 fi
 
+# Copy acp-bridge to app bundle
+if [ -d "$ACP_BRIDGE_DIR/dist" ]; then
+    mkdir -p "$APP_BUNDLE/Contents/Resources/acp-bridge"
+    cp -Rf "$ACP_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    cp -f "$ACP_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    cp -Rf "$ACP_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/acp-bridge/"
+    echo "  Copied acp-bridge to bundle"
+else
+    echo "Error: acp-bridge dist not found. Run npm install && npx tsc in acp-bridge/ first."
+    exit 1
+fi
+
 # Update Info.plist with version and bundle info
 /usr/libexec/PlistBuddy -c "Set :CFBundleExecutable $BINARY_NAME" "$APP_BUNDLE/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier $BUNDLE_ID" "$APP_BUNDLE/Contents/Info.plist"
@@ -476,6 +505,18 @@ if [ -f "$NODE_BUNDLE_PATH" ]; then
         --sign "$SIGN_IDENTITY" \
         --entitlements Desktop/Node.entitlements \
         "$NODE_BUNDLE_PATH"
+fi
+
+# Sign native binaries in acp-bridge node_modules (e.g. .node files)
+ACP_BRIDGE_BUNDLE="$APP_BUNDLE/Contents/Resources/acp-bridge"
+if [ -d "$ACP_BRIDGE_BUNDLE/node_modules" ]; then
+    echo "  Signing native binaries in acp-bridge/node_modules..."
+    find "$ACP_BRIDGE_BUNDLE/node_modules" -name "*.node" -type f 2>/dev/null | while read native_bin; do
+        echo "    Signing: $(basename "$native_bin")"
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" \
+            "$native_bin"
+    done
 fi
 
 # Sign Sparkle framework components (innermost first)
