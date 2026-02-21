@@ -518,6 +518,7 @@ class ChatProvider: ObservableObject {
     /// Switch between bridge modes (Omi AI vs user's Claude account)
     func switchBridgeMode(to mode: BridgeMode) async {
         guard mode.rawValue != bridgeMode else { return }
+        let oldMode = bridgeMode
         log("ChatProvider: Switching bridge mode from \(bridgeMode) to \(mode.rawValue)")
 
         // Stop the current bridge
@@ -527,6 +528,7 @@ class ChatProvider: ObservableObject {
         // Switch mode and recreate bridge with appropriate passApiKey
         bridgeMode = mode.rawValue
         acpBridge = ACPBridge(passApiKey: mode == .omiAI)
+        AnalyticsManager.shared.chatBridgeModeChanged(from: oldMode, to: mode.rawValue)
 
         // Check Claude connection status when switching to user's Claude account
         if mode == .userClaude {
