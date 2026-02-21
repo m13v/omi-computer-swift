@@ -36,44 +36,44 @@ struct ChatInputView: View {
         HStack(alignment: .bottom, spacing: 8) {
             // Input field with floating toggle
             ZStack(alignment: .topTrailing) {
-                // Input field — NSTextView with auto-grow height
-                ZStack(alignment: .topLeading) {
-                    // Hidden text to calculate content height (drives ZStack size)
-                    Text(inputText.isEmpty ? " " : inputText + " ")
-                        .scaledFont(size: 14)
-                        .padding(.horizontal, inputPaddingH)
-                        .padding(.vertical, inputPaddingV)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .opacity(0)
-                        .allowsHitTesting(false)
-                        .accessibilityHidden(true)
-
-                    // Placeholder text — padding matches textContainerInset exactly
-                    if inputText.isEmpty {
-                        Text(placeholder)
-                            .scaledFont(size: 14)
-                            .foregroundColor(OmiColors.textTertiary)
-                            .padding(.horizontal, inputPaddingH)
-                            .padding(.vertical, inputPaddingV)
-                            .allowsHitTesting(false)
+                // Input field — hidden Text drives the height; OmiTextEditor is overlaid
+                // to match that exact frame. This prevents the NSScrollView from expanding
+                // to fill all available space (which made the empty input disproportionately tall).
+                Text(inputText.isEmpty ? " " : inputText + " ")
+                    .scaledFont(size: 14)
+                    .padding(.horizontal, inputPaddingH)
+                    .padding(.vertical, inputPaddingV)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .opacity(0)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .overlay(alignment: .topLeading) {
+                        // Placeholder text — padding matches textContainerInset exactly
+                        if inputText.isEmpty {
+                            Text(placeholder)
+                                .scaledFont(size: 14)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, inputPaddingH)
+                                .padding(.vertical, inputPaddingV)
+                                .allowsHitTesting(false)
+                        }
                     }
-
-                    // NSTextView with lineFragmentPadding=0 and explicit textContainerInset
-                    // so cursor position is deterministic and matches placeholder exactly
-                    OmiTextEditor(
-                        text: $inputText,
-                        fontSize: round(14 * fontScale),
-                        textColor: NSColor(OmiColors.textPrimary),
-                        textContainerInset: NSSize(width: inputPaddingH, height: inputPaddingV),
-                        onSubmit: handleSubmit
-                    )
-                    .frame(minHeight: 0, maxHeight: .infinity)
-                }
-                .frame(maxHeight: 200)
-                .clipped()
-                .background(OmiColors.backgroundSecondary)
-                .cornerRadius(12)
+                    .overlay {
+                        // NSTextView with lineFragmentPadding=0 and explicit textContainerInset
+                        // so cursor position is deterministic and matches placeholder exactly
+                        OmiTextEditor(
+                            text: $inputText,
+                            fontSize: round(14 * fontScale),
+                            textColor: NSColor(OmiColors.textPrimary),
+                            textContainerInset: NSSize(width: inputPaddingH, height: inputPaddingV),
+                            onSubmit: handleSubmit
+                        )
+                    }
+                    .frame(maxHeight: 200)
+                    .clipped()
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(12)
 
                 // Floating Ask/Act toggle (top-right, inside the input area)
                 if askModeEnabled {
