@@ -1124,6 +1124,29 @@ class TasksStore: ObservableObject {
     }
 
     @discardableResult
+    func createDailyRecurringTask(description: String, priority: String? = "medium", tags: [String]? = nil) async -> TaskActionItem? {
+        // Set due date to start of next day if it's past 6 PM, otherwise today
+        let calendar = Calendar.current
+        let now = Date()
+        let hour = calendar.component(.hour, from: now)
+        let dueDate: Date
+
+        if hour >= 18 { // After 6 PM, schedule for next day
+            dueDate = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: now) ?? now)
+        } else {
+            dueDate = calendar.startOfDay(for: now)
+        }
+
+        return await createTask(
+            description: description,
+            dueAt: dueDate,
+            priority: priority,
+            tags: (tags ?? []) + ["daily"],
+            recurrenceRule: "daily"
+        )
+    }
+
+    @discardableResult
     func createTask(description: String, dueAt: Date?, priority: String?, tags: [String]? = nil, recurrenceRule: String? = nil) async -> TaskActionItem? {
         // Local-first: insert into SQLite immediately, then sync to backend in background
         do {
