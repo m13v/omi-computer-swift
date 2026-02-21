@@ -24,7 +24,7 @@ if [ -d "$ACP_BRIDGE_DIR" ]; then
     cd - > /dev/null
 fi
 
-# Ensure bundled Node.js exists (for AI chat / Claude Agent Bridge)
+# Ensure bundled Node.js exists (for AI chat / ACP Bridge)
 NODE_RESOURCE="Desktop/Sources/Resources/node"
 if [ -x "$NODE_RESOURCE" ]; then
     echo "Node.js binary already exists, skipping download"
