@@ -25,6 +25,7 @@ import type {
   WarmupMessage,
   AuthMethod,
 } from "./protocol.js";
+import { startOAuthFlow, type OAuthFlowHandle } from "./oauth-flow.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
