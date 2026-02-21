@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "0.10.4",
+      "date": "2026-02-21",
+      "changes": [
+        "Fixed staging channel Option+click gesture being immediately overwritten by beta",
+        "Verification script no longer kills running Dev and Production app instances"
+      ]
+    },
+    {
       "version": "0.10.3",
       "date": "2026-02-21",
       "changes": [
