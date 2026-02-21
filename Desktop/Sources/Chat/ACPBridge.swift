@@ -29,8 +29,8 @@ actor ACPBridge {
     /// Callback for tool result display (toolUseId, name, output)
     typealias ToolResultDisplayHandler = @Sendable (String, String, String) -> Void
 
-    /// Callback for auth required events (methods array)
-    typealias AuthRequiredHandler = @Sendable ([[String: Any]]) -> Void
+    /// Callback for auth required events (methods array, optional auth URL)
+    typealias AuthRequiredHandler = @Sendable ([[String: Any]], String?) -> Void
 
     /// Callback for auth success
     typealias AuthSuccessHandler = @Sendable () -> Void
@@ -45,7 +45,7 @@ actor ACPBridge {
         case toolResultDisplay(toolUseId: String, name: String, output: String)
         case result(text: String, sessionId: String, costUsd: Double?)
         case error(message: String)
-        case authRequired(methods: [[String: Any]])
+        case authRequired(methods: [[String: Any]], authUrl: String?)
         case authSuccess
     }
 
@@ -281,7 +281,7 @@ actor ACPBridge {
         onToolActivity: @escaping ToolActivityHandler,
         onThinkingDelta: @escaping ThinkingDeltaHandler = { _ in },
         onToolResultDisplay: @escaping ToolResultDisplayHandler = { _, _, _ in },
-        onAuthRequired: @escaping AuthRequiredHandler = { _ in },
+        onAuthRequired: @escaping AuthRequiredHandler = { _, _ in },
         onAuthSuccess: @escaping AuthSuccessHandler = { }
     ) async throws -> QueryResult {
         guard isRunning else {
@@ -389,8 +389,8 @@ actor ACPBridge {
             case .error(let message):
                 throw BridgeError.agentError(message)
 
-            case .authRequired(let methods):
-                onAuthRequired(methods)
+            case .authRequired(let methods, let authUrl):
+                onAuthRequired(methods, authUrl)
 
             case .authSuccess:
                 onAuthSuccess()
@@ -504,7 +504,8 @@ actor ACPBridge {
 
         case "auth_required":
             let methods = dict["methods"] as? [[String: Any]] ?? []
-            return .authRequired(methods: methods)
+            let authUrl = dict["authUrl"] as? String
+            return .authRequired(methods: methods, authUrl: authUrl)
 
         case "auth_success":
             return .authSuccess
@@ -518,10 +519,10 @@ actor ACPBridge {
     private func deliverMessage(_ message: InboundMessage) {
         // Handle auth messages immediately via global handlers (even outside query)
         switch message {
-        case .authRequired(let methods):
+        case .authRequired(let methods, let authUrl):
             if messageContinuation == nil, let handler = onAuthRequiredGlobal {
                 // No active query waiting — fire the global handler immediately
-                handler(methods)
+                handler(methods, authUrl)
                 return
             }
         case .authSuccess:
