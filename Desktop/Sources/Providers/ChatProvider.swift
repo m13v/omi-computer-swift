@@ -633,8 +633,8 @@ class ChatProvider: ObservableObject {
                    let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                    let tokenCache = json["oauth:tokenCache"] as? String, !tokenCache.isEmpty {
                     log("ChatProvider: Credentials detected after \(attempt * 2) seconds")
+                    await self?.acpBridge.authenticate(methodId: "claude-login")
                     await MainActor.run {
-                        self?.acpBridge.authenticate(methodId: "claude-login")
                         self?.isClaudeAuthRequired = false
                         self?.checkClaudeConnectionStatus()
                     }
