@@ -164,6 +164,35 @@ class TaskChatCoordinator: ObservableObject {
         pendingInputText = ""
     }
 
+    // MARK: - Background Investigation
+
+    /// Run an AI investigation for a task without opening the panel.
+    /// Skips tasks that already have messages (dedup).
+    func investigateInBackground(for task: TaskActionItem) async {
+        let state: TaskChatState
+        if let existing = taskStates[task.id] {
+            state = existing
+        } else {
+            let configuredPath = TaskAgentSettings.shared.workingDirectory
+            let ws = configuredPath.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : configuredPath
+            state = TaskChatState(taskId: task.id, workspacePath: ws)
+            state.systemPromptBuilder = { [weak self] in
+                self?.chatProvider.buildTaskChatSystemPrompt() ?? ""
+            }
+            taskStates[task.id] = state
+            observeTaskState(state)
+            await state.loadPersistedMessages()
+        }
+
+        guard state.messages.isEmpty else {
+            log("TaskChatCoordinator: investigateInBackground skipping \(task.id) — already has messages")
+            return
+        }
+
+        let prompt = buildInitialPrompt(for: task)
+        await state.sendMessage(prompt)
+    }
+
     // MARK: - Helpers
 
     private func buildInitialPrompt(for task: TaskActionItem) -> String {
