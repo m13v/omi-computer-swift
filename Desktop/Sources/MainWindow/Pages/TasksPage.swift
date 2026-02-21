@@ -772,13 +772,27 @@ class TasksViewModel: ObservableObject {
 
     // MARK: - Drag-and-Drop Methods
 
-    /// Get ordered tasks for a category, matching Python backend sort: due_at ASC, created_at DESC
+    /// Get ordered tasks for a category, using sortOrder when available, falling back to UserDefaults/default sort
     func getOrderedTasks(for category: TaskCategory) -> [TaskActionItem] {
         guard let tasks = categorizedTasks[category], !tasks.isEmpty else {
             return []
         }
 
-        // Fall back to legacy UserDefaults categoryOrder if present (local drag-and-drop)
+        // Primary: if any task in this category has a sortOrder, use sortOrder-based sorting
+        let hasSortOrder = tasks.contains(where: { $0.sortOrder != nil })
+        if hasSortOrder {
+            return tasks.sorted { a, b in
+                let aOrder = a.sortOrder ?? Int.max
+                let bOrder = b.sortOrder ?? Int.max
+                if aOrder != bOrder { return aOrder < bOrder }
+                let aDue = a.dueAt ?? .distantFuture
+                let bDue = b.dueAt ?? .distantFuture
+                if aDue != bDue { return aDue < bDue }
+                return a.createdAt > b.createdAt
+            }
+        }
+
+        // Fallback: legacy UserDefaults categoryOrder (transitional for users who haven't synced yet)
         if let order = categoryOrder[category], !order.isEmpty {
             var orderedTasks: [TaskActionItem] = []
             var taskMap = Dictionary(tasks.map { ($0.id, $0) }, uniquingKeysWith: { _, latest in latest })
@@ -790,7 +804,6 @@ class TasksViewModel: ObservableObject {
                 }
             }
 
-            // Remaining tasks not in custom order
             let remaining = taskMap.values.sorted { a, b in
                 let aDue = a.dueAt ?? .distantFuture
                 let bDue = b.dueAt ?? .distantFuture
@@ -823,7 +836,19 @@ class TasksViewModel: ObservableObject {
 
         categoryOrder[category] = order
 
-        // Compute sortOrder values for all tasks in this category and schedule sync
+        // Write sortOrder in-memory immediately so getOrderedTasks() reflects the change
+        let categoryOffset = (TaskCategory.allCases.firstIndex(of: category) ?? 0) * 100_000
+        for (index, taskId) in order.enumerated() {
+            let newSortOrder = categoryOffset + (index + 1) * 1000
+            if let storeIndex = store.incompleteTasks.firstIndex(where: { $0.id == taskId }) {
+                store.incompleteTasks[storeIndex].sortOrder = newSortOrder
+            }
+        }
+
+        // Recompute caches immediately so the UI updates
+        recomputeAllCaches()
+
+        // Schedule debounced sync to SQLite + backend
         scheduleSortOrderSync()
     }
 
