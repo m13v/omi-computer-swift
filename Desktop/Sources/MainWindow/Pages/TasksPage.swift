@@ -4390,7 +4390,7 @@ struct TagBadgeInteractive: View {
     @State private var editingTags: Set<String> = []
 
     var body: some View {
-        if !tags.isEmpty || (isRowHovering && !isCompleted) {
+        if !tags.isEmpty || ((isRowHovering || showTagPicker) && !isCompleted) {
             Button {
                 editingTags = Set(tags)
                 showTagPicker = true
