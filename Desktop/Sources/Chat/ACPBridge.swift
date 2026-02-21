@@ -179,7 +179,10 @@ actor ACPBridge {
             let data = handle.availableData
             if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
                 log("ACPBridge stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
-                if text.contains("FatalProcessOutOfMemory") || text.contains("JavaScript heap out of memory") {
+                if text.contains("FatalProcessOutOfMemory")
+                    || text.contains("JavaScript heap out of memory")
+                    || text.contains("Failed to reserve virtual memory")
+                    || text.contains("out of memory") {
                     Task { await self?.markOOM() }
                 }
             }
@@ -578,17 +581,24 @@ actor ACPBridge {
         }
 
         let reasonStr = reason == .uncaughtSignal ? "signal" : "exit"
-        let error: BridgeError = lastExitWasOOM ? .outOfMemory : .processExited
-        lastExitWasOOM = false
 
-        // Capture any remaining stderr before closing pipes (avoids race with readabilityHandler)
+        // Capture any remaining stderr before closing pipes (may reveal OOM)
         if let stderrHandle = stderrPipe?.fileHandleForReading {
             stderrHandle.readabilityHandler = nil  // Stop async handler
             let remaining = stderrHandle.availableData
             if !remaining.isEmpty, let text = String(data: remaining, encoding: .utf8) {
                 log("ACPBridge stderr (final): \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                if text.contains("out of memory") || text.contains("Failed to reserve virtual memory") {
+                    lastExitWasOOM = true
+                }
             }
         }
+
+        // SIGABRT (134) and SIGTRAP (133/5) with uncaughtSignal are typical V8 OOM crashes
+        let likelyOOM = lastExitWasOOM
+            || (reason == .uncaughtSignal && (exitCode == 134 || exitCode == 133 || exitCode == 5 || exitCode == 6))
+        let error: BridgeError = likelyOOM ? .outOfMemory : .processExited
+        lastExitWasOOM = false
 
         log("ACPBridge: process terminated (code=\(exitCode), reason=\(reasonStr), error=\(error))")
         isRunning = false
