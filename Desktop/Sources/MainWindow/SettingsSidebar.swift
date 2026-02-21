@@ -37,6 +37,8 @@ struct SettingsSearchItem: Identifiable {
 
         // Rewind
         SettingsSearchItem(name: "Rewind", subtitle: "Browse your screen history", keywords: ["screen history", "screenshots", "recording"], section: .rewind, advancedSubsection: nil, icon: "clock.arrow.circlepath", settingId: "rewind.rewind"),
+        SettingsSearchItem(name: "Screen Capture", subtitle: "Toggle screen capture on or off", keywords: ["screen capture", "screenshot", "monitor", "recording", "rewind"], section: .rewind, advancedSubsection: nil, icon: "rectangle.dashed.badge.record", settingId: "rewind.screencapture"),
+        SettingsSearchItem(name: "Audio Recording", subtitle: "Toggle audio recording and transcription", keywords: ["audio", "microphone", "recording", "transcription", "mic"], section: .rewind, advancedSubsection: nil, icon: "mic.fill", settingId: "rewind.audiorecording"),
         SettingsSearchItem(name: "Storage", subtitle: "View frame count and disk usage", keywords: ["frames", "storage", "disk", "space", "gb"], section: .rewind, advancedSubsection: nil, icon: "clock.arrow.circlepath", settingId: "rewind.storage"),
         SettingsSearchItem(name: "Excluded Apps", subtitle: "Screen capture is paused when these apps are active", keywords: ["exclude", "ignore", "block apps", "blocklist", "reset to defaults"], section: .rewind, advancedSubsection: nil, icon: "clock.arrow.circlepath", settingId: "rewind.excludedapps"),
         SettingsSearchItem(name: "Battery Optimization", subtitle: "Pause text recognition on battery to save energy", keywords: ["battery", "power", "energy", "low power"], section: .rewind, advancedSubsection: nil, icon: "clock.arrow.circlepath", settingId: "rewind.battery"),
