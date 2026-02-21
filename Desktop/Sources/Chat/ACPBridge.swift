@@ -60,6 +60,14 @@ actor ACPBridge {
     /// Persistent auth success handler called whenever auth_success arrives (even outside query)
     var onAuthSuccessGlobal: AuthSuccessHandler?
 
+    func setGlobalAuthHandlers(
+        onAuthRequired: AuthRequiredHandler?,
+        onAuthSuccess: AuthSuccessHandler?
+    ) {
+        self.onAuthRequiredGlobal = onAuthRequired
+        self.onAuthSuccessGlobal = onAuthSuccess
+    }
+
     init(passApiKey: Bool = false) {
         self.passApiKey = passApiKey
     }
