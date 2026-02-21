@@ -1399,6 +1399,23 @@ actor ActionItemStorage {
         }
     }
 
+    // MARK: - Recurring Tasks
+
+    /// Get incomplete recurring tasks that are due (dueAt <= now)
+    func getDueRecurringTasks() async throws -> [TaskActionItem] {
+        let db = try await ensureInitialized()
+
+        return try await db.read { database in
+            let records = try ActionItemRecord
+                .filter(Column("completed") == false)
+                .filter(Column("deleted") == false)
+                .filter(Column("recurrenceRule") != nil && Column("recurrenceRule") != "")
+                .filter(Column("dueAt") != nil && Column("dueAt") <= Date())
+                .fetchAll(database)
+            return records.map { $0.toTaskActionItem() }
+        }
+    }
+
     // MARK: - Stats
 
     /// Get action item storage statistics
