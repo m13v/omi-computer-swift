@@ -154,9 +154,9 @@ function waitForCallback(
 ): Promise<string> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
-      reject(new Error("OAuth callback timed out (5 minutes)"));
+      reject(new Error("OAuth callback timed out (10 minutes)"));
       server.close();
-    }, 5 * 60 * 1000);
+    }, 10 * 60 * 1000);
 
     server.on("request", (req: IncomingMessage, res: ServerResponse) => {
       const parsed = new URL(req.url || "", `http://localhost`);
