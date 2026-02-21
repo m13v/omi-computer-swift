@@ -652,8 +652,8 @@ class ChatProvider: ObservableObject {
                     secProcess.waitUntilExit()
                     if secProcess.terminationStatus == 0 {
                         log("ChatProvider: Keychain credentials detected after \(attempt * 2) seconds")
+                        await self?.acpBridge.authenticate(methodId: "claude-login")
                         await MainActor.run {
-                            self?.acpBridge.authenticate(methodId: "claude-login")
                             self?.isClaudeAuthRequired = false
                             self?.checkClaudeConnectionStatus()
                         }
