@@ -2941,6 +2941,22 @@ struct TasksPage: View {
                                     isChatActive: showChatPanel,
                                     activeChatTaskId: chatCoordinator.activeTaskId,
                                     chatCoordinator: chatCoordinator,
+                                    dropTargetTaskId: viewModel.dropTargetTaskId,
+                                    dropAbove: viewModel.dropAbove,
+                                    findTaskGlobal: { viewModel.findTask($0) },
+                                    onDragStarted: { viewModel.draggedTaskId = $0 },
+                                    onDragEnded: {
+                                        viewModel.draggedTaskId = nil
+                                        viewModel.dropTargetTaskId = nil
+                                    },
+                                    onDragHoverChanged: { taskId, isHovered in
+                                        if isHovered {
+                                            viewModel.dropTargetTaskId = taskId
+                                            viewModel.dropAbove = true
+                                        } else if viewModel.dropTargetTaskId == taskId {
+                                            viewModel.dropTargetTaskId = nil
+                                        }
+                                    },
                                     editingTaskId: viewModel.editingTaskId,
                                     onEditingChanged: { editing in
                                         viewModel.isAnyTaskEditing = editing
@@ -3136,6 +3152,8 @@ struct TaskCategorySection: View {
     var onInlineCommit: (() -> Void)?
     var onInlineCancel: (() -> Void)?
 
+    @State private var isTopDropTargeted = false
+
     private var visibleTasks: [TaskActionItem] {
         orderedTasks
     }
@@ -3165,6 +3183,30 @@ struct TaskCategorySection: View {
                 Spacer()
             }
             .padding(.horizontal, 4)
+
+            // Drop zone at top of category (for dropping at position 0)
+            if !isMultiSelectMode {
+                Color.clear
+                    .frame(height: isTopDropTargeted ? 4 : 2)
+                    .overlay {
+                        if isTopDropTargeted {
+                            Rectangle()
+                                .fill(Color.accentColor)
+                                .frame(height: 2)
+                        }
+                    }
+                    .dropDestination(for: String.self) { droppedIds, _ in
+                        isTopDropTargeted = false
+                        guard let droppedId = droppedIds.first,
+                              let droppedTask = findTaskGlobal?(droppedId) ?? orderedTasks.first(where: { $0.id == droppedId }) else {
+                            return false
+                        }
+                        onMoveTask?(droppedTask, 0, category)
+                        return true
+                    } isTargeted: { targeted in
+                        isTopDropTargeted = targeted
+                    }
+            }
 
             // Tasks in category with drag-and-drop reordering
             if !isMultiSelectMode {
@@ -3201,12 +3243,16 @@ struct TaskCategorySection: View {
                                 isEnabled: !isMultiSelectMode,
                                 taskId: task.id,
                                 taskDescription: task.description,
-                                findTask: { id in orderedTasks.first(where: { $0.id == id }) },
+                                isDropTarget: dropTargetTaskId == task.id,
+                                dropAbove: dropAbove,
+                                findTask: { id in findTaskGlobal?(id) ?? orderedTasks.first(where: { $0.id == id }) },
                                 findTargetIndex: { orderedTasks.firstIndex(where: { $0.id == task.id }) },
-                                validateDrop: { id in orderedTasks.contains(where: { $0.id == id }) },
                                 onMoveTask: { droppedTask, targetIndex in
                                     onMoveTask?(droppedTask, targetIndex, category)
-                                }
+                                },
+                                onDragStarted: onDragStarted,
+                                onDragEnded: onDragEnded,
+                                onHoverChanged: onDragHoverChanged
                             ))
 
                             // Inline creation row after this task
