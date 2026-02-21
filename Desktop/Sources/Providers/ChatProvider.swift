@@ -506,6 +506,19 @@ class ChatProvider: ObservableObject {
                 try await acpBridge.start()
                 acpBridgeStarted = true
                 log("ChatProvider: ACP bridge started successfully")
+                // Set up global auth handlers so auth_required during warmup is handled
+                acpBridge.onAuthRequiredGlobal = { [weak self] methods in
+                    Task { @MainActor [weak self] in
+                        self?.claudeAuthMethods = methods
+                        self?.isClaudeAuthRequired = true
+                    }
+                }
+                acpBridge.onAuthSuccessGlobal = { [weak self] in
+                    Task { @MainActor [weak self] in
+                        self?.isClaudeAuthRequired = false
+                        self?.checkClaudeConnectionStatus()
+                    }
+                }
                 // Pre-warm an ACP session in background so first query is faster
                 await acpBridge.warmupSession(cwd: workingDirectory, models: ["claude-opus-4-6", "claude-sonnet-4-6"])
                 return true
