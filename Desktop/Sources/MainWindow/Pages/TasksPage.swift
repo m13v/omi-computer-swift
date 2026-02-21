@@ -3496,6 +3496,7 @@ struct TaskRow: View {
     @State private var showRepeatPicker = false
     @State private var editRecurrenceRule: String = ""
     @State private var showTagPicker = false
+    @State private var showPriorityPicker = false
 
     // Swipe gesture state
     @State private var swipeOffset: CGFloat = 0
@@ -3902,7 +3903,7 @@ struct TaskRow: View {
         }
         .overlay(alignment: .trailing) {
             // Hover actions overlaid on trailing edge (no layout shift)
-            if (isHovering || showRepeatPicker || showTagPicker) && !isMultiSelectMode && !isDeletedTask {
+            if (isHovering || showRepeatPicker || showTagPicker || showPriorityPicker) && !isMultiSelectMode && !isDeletedTask {
                 HStack(spacing: 4) {
                     // Add date button (shown on hover when no due date)
                     if task.dueAt == nil && !task.completed {
@@ -3935,6 +3936,19 @@ struct TaskRow: View {
                         .popover(isPresented: $showRepeatPicker) {
                             repeatPopover
                         }
+                    }
+
+                    // Priority button
+                    if !task.completed {
+                        PriorityBadgeInteractive(
+                            priority: task.priority,
+                            isCompleted: task.completed,
+                            isHovering: isHovering,
+                            showPriorityPicker: $showPriorityPicker,
+                            onPriorityChange: { newPriority in
+                                Task { await onUpdateDetails?(task, nil, nil, newPriority, nil) }
+                            }
+                        )
                     }
 
                     // Tag button
@@ -4312,8 +4326,8 @@ struct PriorityBadgeInteractive: View {
     }
 
     var body: some View {
-        // Show if task has a priority, or show "add priority" on hover
-        if priority != nil || (isHovering && !isCompleted) {
+        // Show if task has a priority, or show "add priority" on hover/popover
+        if priority != nil || ((isHovering || showPriorityPicker) && !isCompleted) {
             Button {
                 showPriorityPicker = true
             } label: {
