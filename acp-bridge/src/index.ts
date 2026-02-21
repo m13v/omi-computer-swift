@@ -370,6 +370,67 @@ let authResolve: (() => void) | null = null;
 let preWarmPromise: Promise<void> | null = null;
 let authRetryCount = 0;
 const MAX_AUTH_RETRIES = 2;
+let activeAuthPromise: Promise<void> | null = null;
+let activeOAuthFlow: OAuthFlowHandle | null = null;
+
+// --- Auth flow (OAuth) ---
+
+/** Restart the ACP subprocess so it picks up freshly-stored credentials */
+async function restartAcpProcess(): Promise<void> {
+  logErr("Restarting ACP subprocess to pick up new credentials...");
+  if (acpProcess) {
+    const exitPromise = new Promise<void>((resolve) => {
+      acpProcess!.once("exit", () => resolve());
+    });
+    acpProcess.kill();
+    await exitPromise;
+  }
+  // State is cleaned up by the exit handler (sessions, handlers, etc.)
+  startAcpProcess();
+}
+
+/**
+ * Start the OAuth flow: spin up a local callback server, send the auth URL
+ * to Swift (so it can open the browser), wait for the user to complete auth,
+ * store credentials in Keychain, and restart the ACP subprocess.
+ *
+ * Idempotent: if a flow is already running, returns the same promise.
+ */
+async function startAuthFlow(): Promise<void> {
+  if (activeAuthPromise) {
+    logErr("Auth flow already in progress, waiting for it...");
+    return activeAuthPromise;
+  }
+
+  activeAuthPromise = (async () => {
+    try {
+      logErr("Starting OAuth flow...");
+      const flow = await startOAuthFlow(logErr);
+      activeOAuthFlow = flow;
+
+      // Send auth URL to Swift so it can open the browser
+      send({ type: "auth_required", methods: authMethods, authUrl: flow.authUrl });
+
+      // Wait for OAuth callback + token exchange + credential storage
+      await flow.complete;
+      logErr("OAuth flow completed successfully");
+
+      // Restart ACP subprocess so it picks up new credentials from Keychain
+      await restartAcpProcess();
+
+      // Notify Swift
+      send({ type: "auth_success" });
+    } catch (err) {
+      logErr(`OAuth flow failed: ${err}`);
+      throw err;
+    } finally {
+      activeOAuthFlow = null;
+      activeAuthPromise = null;
+    }
+  })();
+
+  return activeAuthPromise;
+}
 
 // --- ACP initialization ---
 
@@ -431,15 +492,9 @@ async function initializeAcp(): Promise<void> {
         }));
       }
       logErr(`ACP requires authentication: ${JSON.stringify(authMethods)}`);
-      send({ type: "auth_required", methods: authMethods });
+      await startAuthFlow();
 
-      // Wait for authenticate message from Swift
-      await new Promise<void>((resolve) => {
-        authResolve = resolve;
-      });
-
-      // Retry initialization after auth
-      isInitialized = false;
+      // Retry initialization after auth (ACP subprocess already restarted)
       await initializeAcp();
       return;
     }
@@ -536,15 +591,10 @@ async function preWarmSession(cwd?: string, models?: string[]): Promise<void> {
             `Pre-warmed session: ${result.sessionId} (cwd=${warmCwd}, model=${warmModel})`
           );
         } catch (err) {
-          // If pre-warm fails with auth error, send auth_required and wait
+          // If pre-warm fails with auth error, start OAuth flow
           if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-            logErr(`Pre-warm failed with auth error (code=${err.code}), requesting authentication`);
-            send({ type: "auth_required", methods: authMethods });
-            await new Promise<void>((resolve) => {
-              authResolve = resolve;
-            });
-            isInitialized = false;
-            await initializeAcp();
+            logErr(`Pre-warm failed with auth error (code=${err.code}), starting OAuth flow`);
+            await startAuthFlow();
             return; // After auth, warmup will happen on next query
           }
           logErr(`Pre-warm failed for ${warmModel}: ${err}`);
@@ -690,17 +740,10 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
           return;
         }
         authRetryCount++;
-        logErr(`session/prompt failed with auth error (code=${err.code}), requesting authentication (attempt ${authRetryCount})`);
+        logErr(`session/prompt failed with auth error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
         sessions.delete(requestedModel);
         activeSessionId = "";
-        // Send auth_required to Swift and wait for user to authenticate
-        send({ type: "auth_required", methods: authMethods });
-        await new Promise<void>((resolve) => {
-          authResolve = resolve;
-        });
-        // After auth, re-initialize and retry
-        isInitialized = false;
-        await initializeAcp();
+        await startAuthFlow();
         return handleQuery(msg);
       }
       // If session/prompt failed and we were reusing a session, retry with a fresh one
@@ -733,13 +776,8 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         return;
       }
       authRetryCount++;
-      logErr(`Query failed with auth/internal error (code=${(err as AcpError).code}), requesting authentication (attempt ${authRetryCount})`);
-      send({ type: "auth_required", methods: authMethods });
-      await new Promise<void>((resolve) => {
-        authResolve = resolve;
-      });
-      isInitialized = false;
-      await initializeAcp();
+      logErr(`Query failed with auth/internal error (code=${(err as AcpError).code}), starting OAuth flow (attempt ${authRetryCount})`);
+      await startAuthFlow();
       return handleQuery(msg);
     }
     const errMsg = err instanceof Error ? err.message : String(err);
@@ -1012,11 +1050,9 @@ async function main(): Promise<void> {
         break;
 
       case "authenticate": {
-        logErr(`Authentication completed (credentials stored externally)`);
-        // Auth is handled externally (Swift runs claude setup-token or CLI login).
-        // ACP's authenticate RPC is not implemented, so we just resolve the
-        // waiting promise — the next query attempt will spawn a new Claude Code
-        // subprocess that picks up the freshly-stored credentials.
+        // Legacy fallback: OAuth flow now handles auth internally.
+        // This handler is kept for backward compatibility.
+        logErr(`Authentication message received from Swift (legacy fallback)`);
         send({ type: "auth_success" });
         if (authResolve) {
           authResolve();
