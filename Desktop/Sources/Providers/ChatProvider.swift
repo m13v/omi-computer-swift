@@ -579,76 +579,94 @@ class ChatProvider: ObservableObject {
     }
 
     /// Start Claude OAuth authentication (Mode B)
-    /// Runs `claude setup-token` to open a browser for OAuth, then notifies the bridge.
+    /// Opens Terminal.app to run `claude setup-token` (requires TTY for interactive OAuth),
+    /// then polls for credentials to complete the auth flow.
     func startClaudeAuth() {
         guard isACPMode else { return }
 
-        log("ChatProvider: Starting Claude login via setup-token")
+        log("ChatProvider: Starting Claude login via Terminal setup-token")
 
-        // Find the Node binary (same logic as ACPBridge)
+        // Find the Node binary and Claude Code CLI
         let nodePath = findNodeForAuth()
-        guard let nodePath else {
-            logError("ChatProvider: Cannot find node binary for auth")
-            isClaudeAuthRequired = false
-            return
-        }
-
-        // Find the Claude Code CLI relative to the bridge script
         let cliPath = findClaudeCodeCLI()
-        guard let cliPath else {
-            logError("ChatProvider: Cannot find Claude Code CLI for auth")
+
+        guard let nodePath, let cliPath else {
+            logError("ChatProvider: Cannot find node (\(nodePath ?? "nil")) or CLI (\(cliPath ?? "nil")) for auth")
             isClaudeAuthRequired = false
             return
         }
 
-        log("ChatProvider: Running setup-token: \(nodePath) \(cliPath)")
+        // Open Terminal.app to run setup-token (needs TTY for interactive Ink UI)
+        let escapedNode = nodePath.replacingOccurrences(of: "'", with: "'\\''")
+        let escapedCli = cliPath.replacingOccurrences(of: "'", with: "'\\''")
+        let terminalScript = """
+        tell application "Terminal"
+            do script "NODE_OPTIONS='--dns-result-order=ipv4first' '\\(escapedNode)' '\\(escapedCli)' setup-token; exit"
+            activate
+        end tell
+        """
 
-        // Run the process on a background thread to avoid blocking main
+        let proc = Process()
+        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
+        proc.arguments = ["-e", terminalScript]
+        proc.standardOutput = FileHandle.nullDevice
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+            log("ChatProvider: Opened Terminal for setup-token")
+        } catch {
+            logError("ChatProvider: Failed to open Terminal for auth", error: error)
+            isClaudeAuthRequired = false
+            return
+        }
+
+        // Poll for credentials every 2 seconds (max 5 minutes)
         Task.detached { [weak self] in
-            let proc = Process()
-            proc.executableURL = URL(fileURLWithPath: nodePath)
-            proc.arguments = [cliPath, "setup-token"]
+            let maxAttempts = 150 // 5 minutes at 2-second intervals
+            for attempt in 1...maxAttempts {
+                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
 
-            // Use same environment as the main app
-            var env = ProcessInfo.processInfo.environment
-            env["NODE_NO_WARNINGS"] = "1"
-            // Workaround for IPv6/IPv4 callback issue
-            env["NODE_OPTIONS"] = "--dns-result-order=ipv4first"
-            proc.environment = env
+                // Check if credentials appeared
+                let configPath = NSString(string: "~/Library/Application Support/Claude/config.json").expandingTildeInPath
+                if FileManager.default.fileExists(atPath: configPath),
+                   let data = FileManager.default.contents(atPath: configPath),
+                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                   let tokenCache = json["oauth:tokenCache"] as? String, !tokenCache.isEmpty {
+                    log("ChatProvider: Credentials detected after \(attempt * 2) seconds")
+                    await MainActor.run {
+                        self?.acpBridge.authenticate(methodId: "claude-login")
+                        self?.isClaudeAuthRequired = false
+                        self?.checkClaudeConnectionStatus()
+                    }
+                    return
+                }
 
-            let stderrPipe = Pipe()
-            proc.standardError = stderrPipe
-            proc.standardOutput = Pipe() // discard stdout
-
-            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
-                    log("ChatProvider: setup-token stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                // Also check Keychain
+                let secProcess = Process()
+                secProcess.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+                secProcess.arguments = ["find-generic-password", "-s", "Claude Code-credentials"]
+                secProcess.standardOutput = FileHandle.nullDevice
+                secProcess.standardError = FileHandle.nullDevice
+                do {
+                    try secProcess.run()
+                    secProcess.waitUntilExit()
+                    if secProcess.terminationStatus == 0 {
+                        log("ChatProvider: Keychain credentials detected after \(attempt * 2) seconds")
+                        await MainActor.run {
+                            self?.acpBridge.authenticate(methodId: "claude-login")
+                            self?.isClaudeAuthRequired = false
+                            self?.checkClaudeConnectionStatus()
+                        }
+                        return
+                    }
+                } catch {
+                    // ignore
                 }
             }
 
-            do {
-                try proc.run()
-                // Wait for the process to complete (user completes OAuth in browser)
-                proc.waitUntilExit()
-                let exitCode = proc.terminationStatus
-                log("ChatProvider: setup-token exited with code \(exitCode)")
-
-                await MainActor.run {
-                    if exitCode == 0 {
-                        // Credentials should now be stored — notify the bridge
-                        self?.acpBridge.authenticate(methodId: "claude-login")
-                        self?.checkClaudeConnectionStatus()
-                    } else {
-                        log("ChatProvider: setup-token failed (exit code \(exitCode))")
-                        self?.isClaudeAuthRequired = false
-                    }
-                }
-            } catch {
-                logError("ChatProvider: Failed to run setup-token", error: error)
-                await MainActor.run {
-                    self?.isClaudeAuthRequired = false
-                }
+            log("ChatProvider: Auth polling timed out after 5 minutes")
+            await MainActor.run {
+                self?.isClaudeAuthRequired = false
             }
         }
     }
