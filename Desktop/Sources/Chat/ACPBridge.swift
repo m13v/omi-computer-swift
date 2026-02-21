@@ -1,8 +1,9 @@
 import Foundation
 
 /// Manages a long-lived Node.js subprocess running the ACP (Agent Client Protocol) bridge.
-/// This is the Mode B bridge — users authenticate with their own Claude account (Pro/Max).
-/// Communication uses JSON lines over stdin/stdout pipes, same protocol as ClaudeAgentBridge.
+/// This is the sole bridge for AI chat — supports both OMI's API key (passApiKey=true)
+/// and user's own Claude account via OAuth (passApiKey=false).
+/// Communication uses JSON lines over stdin/stdout pipes.
 actor ACPBridge {
 
     // MARK: - Types
@@ -616,7 +617,7 @@ actor ACPBridge {
         stderrPipe = nil
     }
 
-    // MARK: - Node.js Discovery (same as ClaudeAgentBridge)
+    // MARK: - Node.js Discovery
 
     private func findNodeBinary() -> String? {
         // 1. Check bundled node binary in app resources
