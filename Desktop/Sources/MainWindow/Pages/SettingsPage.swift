@@ -1588,7 +1588,7 @@ struct SettingsContentView: View {
                         Spacer()
 
                         Picker("", selection: $chatBridgeMode) {
-                            Text("Omi AI (Free)").tag("agentSDK")
+                            Text("Omi account").tag("agentSDK")
                             Text("Your Claude Account").tag("claudeCode")
                         }
                         .pickerStyle(.menu)
@@ -1604,7 +1604,7 @@ struct SettingsContentView: View {
 
                     Text(chatBridgeMode == "claudeCode"
                          ? "Using your Claude Pro/Max subscription. You'll be prompted to sign in with your Claude account."
-                         : "Using Omi's AI — free for all users.")
+                         : "Using your Omi account.")
                         .scaledFont(size: 12)
                         .foregroundColor(OmiColors.textTertiary)
 
