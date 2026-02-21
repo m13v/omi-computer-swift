@@ -2982,6 +2982,7 @@ struct TasksPage: View {
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onMoveTask: { task, index, cat in viewModel.moveTaskToCategory(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
@@ -3051,6 +3052,7 @@ struct TasksPage: View {
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
@@ -3167,6 +3169,7 @@ struct TaskCategorySection: View {
     var onDecrementIndent: ((String) -> Void)?
     var onMoveTask: ((TaskActionItem, Int, TaskCategory) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
+    var onInvestigate: ((TaskActionItem) -> Void)?
     var onSelect: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
     var isChatActive: Bool = false
@@ -3272,6 +3275,7 @@ struct TaskCategorySection: View {
                                 onIncrementIndent: onIncrementIndent,
                                 onDecrementIndent: onDecrementIndent,
                                 onOpenChat: onOpenChat,
+                                onInvestigate: onInvestigate,
                                 onSelect: onSelect,
                                 onHover: onHover,
                                 isChatActive: isChatActive,
@@ -3465,6 +3469,7 @@ struct TaskRow: View {
     var onIncrementIndent: ((String) -> Void)?
     var onDecrementIndent: ((String) -> Void)?
     var onOpenChat: ((TaskActionItem) -> Void)?
+    var onInvestigate: ((TaskActionItem) -> Void)?
     var onSelect: ((TaskActionItem) -> Void)?
     var onHover: ((String?) -> Void)?
     var isChatActive: Bool = false
@@ -3863,6 +3868,26 @@ struct TaskRow: View {
                         // Agent status indicator (click status → detail modal, click terminal icon → open terminal)
                         if TaskAgentSettings.shared.isEnabled {
                             AgentStatusIndicator(task: task)
+                        }
+
+                        // Investigate button (background AI chat)
+                        if let coordinator = chatCoordinator,
+                           TaskAgentSettings.shared.isEnabled,
+                           !coordinator.streamingTaskIds.contains(task.id),
+                           !coordinator.unreadTaskIds.contains(task.id) {
+                            Button {
+                                onInvestigate?(task)
+                            } label: {
+                                HStack(spacing: 3) {
+                                    Image(systemName: "magnifyingglass")
+                                        .scaledFont(size: 9)
+                                    Text("Investigate")
+                                        .scaledFont(size: 10, weight: .medium)
+                                }
+                                .foregroundColor(OmiColors.textSecondary)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Start AI investigation in background")
                         }
 
                         // Chat session status (streaming indicator or unread dot)
