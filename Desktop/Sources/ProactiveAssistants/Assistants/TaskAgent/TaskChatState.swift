@@ -15,16 +15,9 @@ class TaskChatState: ObservableObject {
     @Published var errorMessage: String?
     @Published var chatMode: ChatMode = .act
 
-    /// Bridge mode — determines which bridge process to use
-    let useACPMode: Bool
-
     /// Own bridge process — completely independent from sidebar chat
-    private var claudeBridge: ClaudeAgentBridge?
     private var acpBridge: ACPBridge?
     private var bridgeStarted = false
-
-    /// Claude SDK session ID for resume (conversation continuity, Mode A only)
-    var claudeSessionId: String?
 
     /// Workspace path for file-system tools
     let workspacePath: String
@@ -50,10 +43,9 @@ class TaskChatState: ObservableObject {
     /// Whether persisted messages have been loaded from GRDB
     private var hasLoadedFromStorage = false
 
-    init(taskId: String, workspacePath: String, useACPMode: Bool = false) {
+    init(taskId: String, workspacePath: String) {
         self.taskId = taskId
         self.workspacePath = workspacePath
-        self.useACPMode = useACPMode
     }
 
     // MARK: - Persistence
@@ -69,11 +61,6 @@ class TaskChatState: ObservableObject {
 
             messages = records.map { $0.toChatMessage() }
 
-            // Restore ACP session ID from stored messages
-            if claudeSessionId == nil {
-                claudeSessionId = try? await TaskChatMessageStorage.shared.getACPSessionId(forTaskId: taskId)
-            }
-
             log("TaskChatState[\(taskId)]: Loaded \(records.count) persisted messages")
         } catch {
             logError("TaskChatState[\(taskId)]: Failed to load persisted messages", error: error)
@@ -83,10 +70,9 @@ class TaskChatState: ObservableObject {
     /// Persist a message to GRDB (fire-and-forget)
     private func persistMessage(_ message: ChatMessage) {
         let taskId = self.taskId
-        let sessionId = self.claudeSessionId
         Task.detached {
             do {
-                try await TaskChatMessageStorage.shared.saveMessage(message, taskId: taskId, acpSessionId: sessionId)
+                try await TaskChatMessageStorage.shared.saveMessage(message, taskId: taskId, acpSessionId: nil)
             } catch {
                 logError("TaskChatState[\(taskId)]: Failed to persist message \(message.id)", error: error)
             }
@@ -118,9 +104,6 @@ class TaskChatState: ObservableObject {
     }
 
     deinit {
-        if let bridge = claudeBridge {
-            Task { await bridge.stop() }
-        }
         if let bridge = acpBridge {
             Task { await bridge.stop() }
         }
