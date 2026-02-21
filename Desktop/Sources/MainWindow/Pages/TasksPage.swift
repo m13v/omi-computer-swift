@@ -903,26 +903,6 @@ class TasksViewModel: ObservableObject {
         return categoryFor(task: task, startOfTomorrow: startOfTomorrow, startOfDayAfterTomorrow: startOfDayAfter)
     }
 
-    /// Compute a suitable due_at for placing a task in a target category
-    private func dueAtForCategory(_ category: TaskCategory) -> Date? {
-        let calendar = Calendar.current
-        let now = Date()
-        switch category {
-        case .today:
-            // End of today
-            return calendar.date(bySettingHour: 23, minute: 59, second: 59, of: now)
-        case .tomorrow:
-            // End of tomorrow
-            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
-            return calendar.date(bySettingHour: 23, minute: 59, second: 59, of: tomorrow)
-        case .later:
-            // One week from now
-            return calendar.date(byAdding: .day, value: 7, to: now)
-        case .noDeadline:
-            return nil
-        }
-    }
-
     // MARK: - Indent Methods
 
     func getIndentLevel(for taskId: String) -> Int {
