@@ -164,6 +164,42 @@ class TaskChatCoordinator: ObservableObject {
         pendingInputText = ""
     }
 
+    // MARK: - Background Investigation
+
+    /// Run an AI investigation for a task without opening the panel.
+    /// Uses the ACP bridge via TaskChatState. Skips tasks already sending.
+    func investigateInBackground(for task: TaskActionItem) async {
+        log("TaskChatCoordinator: investigateInBackground for \(task.id)")
+
+        let state: TaskChatState
+        if let existing = taskStates[task.id] {
+            state = existing
+        } else {
+            let configuredPath = TaskAgentSettings.shared.workingDirectory
+            let ws = configuredPath.isEmpty ? FileManager.default.homeDirectoryForCurrentUser.path : configuredPath
+            state = TaskChatState(taskId: task.id, workspacePath: ws)
+            state.systemPromptBuilder = { [weak self] in
+                self?.chatProvider.buildTaskChatSystemPrompt() ?? ""
+            }
+            taskStates[task.id] = state
+            observeTaskState(state)
+            await state.loadPersistedMessages()
+        }
+
+        guard !state.isSending else {
+            log("TaskChatCoordinator: task \(task.id) already sending, skipping investigate")
+            return
+        }
+
+        guard state.messages.isEmpty else {
+            log("TaskChatCoordinator: task \(task.id) already has messages, skipping investigate")
+            return
+        }
+
+        let prompt = buildInitialPrompt(for: task)
+        await state.sendMessage(prompt)
+    }
+
     // MARK: - Helpers
 
     private func buildInitialPrompt(for task: TaskActionItem) -> String {
