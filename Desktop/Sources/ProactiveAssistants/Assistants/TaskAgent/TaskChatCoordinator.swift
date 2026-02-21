@@ -190,9 +190,9 @@ class TaskChatCoordinator: ObservableObject {
             await state.loadPersistedMessages()
         }
 
-        // Only send if chat has no messages yet (avoid duplicate investigations)
-        guard state.messages.isEmpty else {
-            log("TaskChatCoordinator: task \(task.id) already has messages, skipping investigate")
+        // Skip if already streaming (avoid double-send)
+        guard !state.isSending else {
+            log("TaskChatCoordinator: task \(task.id) already sending, skipping investigate")
             return
         }
 
