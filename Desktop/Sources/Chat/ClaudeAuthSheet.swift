@@ -50,7 +50,7 @@ struct ClaudeAuthSheet: View {
                         .foregroundColor(OmiColors.textPrimary)
                         .multilineTextAlignment(.center)
 
-                    Text("You'll be redirected to claude.ai to sign in. Your Omi conversations will use your Claude account's API quota.")
+                    Text("Terminal will open to complete the sign-in. After authenticating in your browser, return to Omi.")
                         .scaledFont(size: 13)
                         .foregroundColor(OmiColors.textTertiary)
                         .multilineTextAlignment(.center)
@@ -63,7 +63,7 @@ struct ClaudeAuthSheet: View {
                         ProgressView()
                             .controlSize(.small)
 
-                        Text("Complete sign-in in your browser...")
+                        Text("Complete sign-in in Terminal and browser...")
                             .scaledFont(size: 13)
                             .foregroundColor(OmiColors.textTertiary)
                     }
