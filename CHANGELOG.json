@@ -1,6 +1,15 @@
 {
   "releases": [
     {
+      "version": "0.10.3",
+      "date": "2026-02-21",
+      "changes": [
+        "ACP bridge bundled in release builds: AI chat now works reliably without external dependencies",
+        "Update channel label shown in Settings so you can see if you're on Beta or Staging",
+        "Native binaries in ACP bridge node_modules are now properly code-signed"
+      ]
+    },
+    {
       "version": "0.10.2",
       "date": "2026-02-20",
       "changes": [
