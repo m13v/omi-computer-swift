@@ -130,7 +130,7 @@ actor ACPBridge {
 
         let proc = Process()
         proc.executableURL = URL(fileURLWithPath: nodePath)
-        proc.arguments = ["--jitless", bridgePath]
+        proc.arguments = ["--max-old-space-size=256", "--max-semi-space-size=16", bridgePath]
 
         // Build environment
         var env = ProcessInfo.processInfo.environment
