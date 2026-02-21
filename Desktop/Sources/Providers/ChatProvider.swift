@@ -579,13 +579,121 @@ class ChatProvider: ObservableObject {
     }
 
     /// Start Claude OAuth authentication (Mode B)
+    /// Runs `claude setup-token` to open a browser for OAuth, then notifies the bridge.
     func startClaudeAuth() {
         guard isACPMode else { return }
-        Task {
-            // Pick the first available auth method (usually "agent_auth")
-            let methodId = (claudeAuthMethods.first?["id"] as? String) ?? "auth-0"
-            await acpBridge.authenticate(methodId: methodId)
+
+        log("ChatProvider: Starting Claude login via setup-token")
+
+        // Find the Node binary (same logic as ACPBridge)
+        let nodePath = findNodeForAuth()
+        guard let nodePath else {
+            logError("ChatProvider: Cannot find node binary for auth")
+            isClaudeAuthRequired = false
+            return
         }
+
+        // Find the Claude Code CLI relative to the bridge script
+        let cliPath = findClaudeCodeCLI()
+        guard let cliPath else {
+            logError("ChatProvider: Cannot find Claude Code CLI for auth")
+            isClaudeAuthRequired = false
+            return
+        }
+
+        log("ChatProvider: Running setup-token: \(nodePath) \(cliPath)")
+
+        // Run the process on a background thread to avoid blocking main
+        Task.detached { [weak self] in
+            let proc = Process()
+            proc.executableURL = URL(fileURLWithPath: nodePath)
+            proc.arguments = [cliPath, "setup-token"]
+
+            // Use same environment as the main app
+            var env = ProcessInfo.processInfo.environment
+            env["NODE_NO_WARNINGS"] = "1"
+            // Workaround for IPv6/IPv4 callback issue
+            env["NODE_OPTIONS"] = "--dns-result-order=ipv4first"
+            proc.environment = env
+
+            let stderrPipe = Pipe()
+            proc.standardError = stderrPipe
+            proc.standardOutput = Pipe() // discard stdout
+
+            stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if !data.isEmpty, let text = String(data: data, encoding: .utf8) {
+                    log("ChatProvider: setup-token stderr: \(text.trimmingCharacters(in: .whitespacesAndNewlines))")
+                }
+            }
+
+            do {
+                try proc.run()
+                // Wait for the process to complete (user completes OAuth in browser)
+                proc.waitUntilExit()
+                let exitCode = proc.terminationStatus
+                log("ChatProvider: setup-token exited with code \(exitCode)")
+
+                await MainActor.run {
+                    if exitCode == 0 {
+                        // Credentials should now be stored — notify the bridge
+                        self?.acpBridge.authenticate(methodId: "claude-login")
+                        self?.checkClaudeConnectionStatus()
+                    } else {
+                        log("ChatProvider: setup-token failed (exit code \(exitCode))")
+                        self?.isClaudeAuthRequired = false
+                    }
+                }
+            } catch {
+                logError("ChatProvider: Failed to run setup-token", error: error)
+                await MainActor.run {
+                    self?.isClaudeAuthRequired = false
+                }
+            }
+        }
+    }
+
+    /// Find a node binary for running the Claude Code CLI
+    private func findNodeForAuth() -> String? {
+        // Check bundled node binary
+        let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil)
+        if let bundledNode, FileManager.default.isExecutableFile(atPath: bundledNode) {
+            return bundledNode
+        }
+        // Fall back to system node
+        for path in ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"] {
+            if FileManager.default.isExecutableFile(atPath: path) {
+                return path
+            }
+        }
+        return nil
+    }
+
+    /// Find the Claude Code CLI (cli.js) relative to the ACP bridge
+    private func findClaudeCodeCLI() -> String? {
+        // Check in app bundle Resources
+        if let bundlePath = Bundle.main.resourcePath {
+            let cliPath = (bundlePath as NSString).appendingPathComponent(
+                "acp-bridge/node_modules/@anthropic-ai/claude-code/cli.js"
+            )
+            if FileManager.default.fileExists(atPath: cliPath) {
+                return cliPath
+            }
+        }
+        // Check relative to executable (development mode)
+        if let execDir = Bundle.main.executableURL?.deletingLastPathComponent() {
+            let devPaths = [
+                execDir.appendingPathComponent("../../../acp-bridge/node_modules/@anthropic-ai/claude-code/cli.js").path,
+                execDir.appendingPathComponent("../../../../acp-bridge/node_modules/@anthropic-ai/claude-code/cli.js").path,
+            ]
+            for path in devPaths {
+                let resolved = (path as NSString).standardizingPath
+                if FileManager.default.fileExists(atPath: resolved) {
+                    return resolved
+                }
+            }
+        }
+        return nil
     }
 
     /// Check whether a cached Claude OAuth token exists (config file or Keychain)
