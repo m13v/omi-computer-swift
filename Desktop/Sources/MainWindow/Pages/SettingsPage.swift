@@ -3866,9 +3866,17 @@ struct SettingsContentView: View {
                         }
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Omi")
-                                .scaledFont(size: 18, weight: .bold)
-                                .foregroundColor(OmiColors.textPrimary)
+                            HStack(spacing: 6) {
+                                Text("Omi")
+                                    .scaledFont(size: 18, weight: .bold)
+                                    .foregroundColor(OmiColors.textPrimary)
+
+                                if !updaterViewModel.activeChannelLabel.isEmpty {
+                                    Text("(\(updaterViewModel.activeChannelLabel))")
+                                        .scaledFont(size: 13, weight: .medium)
+                                        .foregroundColor(OmiColors.purplePrimary)
+                                }
+                            }
 
                             Text("Version \(updaterViewModel.currentVersion) (\(updaterViewModel.buildNumber))")
                                 .scaledFont(size: 13)
@@ -3878,6 +3886,7 @@ struct SettingsContentView: View {
                                     if NSEvent.modifierFlags.contains(.option) {
                                         UserDefaults.standard.set("staging", forKey: "update_channel")
                                         updaterViewModel.updateChannel = .beta // closest visible option
+                                        updaterViewModel.activeChannelLabel = "Staging"
                                         logSync("Settings: Staging channel enabled via hidden gesture")
                                     }
                                 }
