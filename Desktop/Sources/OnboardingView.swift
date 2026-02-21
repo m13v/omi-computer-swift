@@ -665,13 +665,19 @@ struct OnboardingView: View {
         ProactiveAssistantsPlugin.shared.startMonitoring { _, _ in }
         appState.startTranscription()
 
-        // Create a welcome task for the new user
+        // Create a welcome task for the new user (skip if one already exists)
         Task {
-            await TasksStore.shared.createTask(
-                description: "Run Omi for two days to start receiving helpful advice",
-                dueAt: Date(),
-                priority: "low"
-            )
+            let welcomeDescription = "Run Omi for two days to start receiving helpful advice"
+            let alreadyExists = TasksStore.shared.incompleteTasks.contains(where: {
+                $0.description == welcomeDescription
+            })
+            if !alreadyExists {
+                await TasksStore.shared.createTask(
+                    description: welcomeDescription,
+                    dueAt: Date(),
+                    priority: "low"
+                )
+            }
         }
 
         // Send a welcome notification
