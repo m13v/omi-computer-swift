@@ -1106,6 +1106,7 @@ class AppState: ObservableObject {
             )
 
             isTranscribing = true
+            AssistantSettings.shared.transcriptionEnabled = true
             audioSource = effectiveSource
             currentTranscript = ""
             speakerSegments = []
