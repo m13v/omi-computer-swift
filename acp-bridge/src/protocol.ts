@@ -104,6 +104,7 @@ export interface ErrorMessage {
 export interface AuthRequiredMessage {
   type: "auth_required";
   methods: AuthMethod[];
+  authUrl?: string;
 }
 
 export interface AuthMethod {
