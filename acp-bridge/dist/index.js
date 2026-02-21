@@ -298,6 +298,8 @@ let isInitialized = false;
 let authMethods = [];
 let authResolve = null;
 let preWarmPromise = null;
+let authRetryCount = 0;
+const MAX_AUTH_RETRIES = 2;
 // --- ACP initialization ---
 async function initializeAcp() {
     if (isInitialized)
@@ -413,9 +415,13 @@ async function preWarmSession(cwd, models) {
                 logErr(`Pre-warmed session: ${result.sessionId} (cwd=${warmCwd}, model=${warmModel})`);
             }
             catch (err) {
-                // If pre-warm fails with auth error, re-initialize with auth flow
+                // If pre-warm fails with auth error, send auth_required and wait
                 if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-                    logErr(`Pre-warm failed with auth error (code=${err.code}), re-initializing with auth flow`);
+                    logErr(`Pre-warm failed with auth error (code=${err.code}), requesting authentication`);
+                    send({ type: "auth_required", methods: authMethods });
+                    await new Promise((resolve) => {
+                        authResolve = resolve;
+                    });
                     isInitialized = false;
                     await initializeAcp();
                     return; // After auth, warmup will happen on next query
@@ -437,6 +443,7 @@ async function handleQuery(msg) {
     const abortController = new AbortController();
     activeAbort = abortController;
     interruptRequested = false;
+    authRetryCount = 0;
     let fullText = "";
     let isNewSession = false;
     const pendingTools = [];
@@ -535,15 +542,25 @@ async function handleQuery(msg) {
                 }
                 return;
             }
-            // If it's an auth error, re-initialize (which has the proper auth flow)
-            // then retry the query
+            // If it's an auth error, send auth_required to Swift and wait for user auth
             if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-                logErr(`session/prompt failed with auth error (code=${err.code}), re-initializing with auth flow`);
+                if (authRetryCount >= MAX_AUTH_RETRIES) {
+                    logErr(`session/prompt auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
+                    send({ type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
+                    return;
+                }
+                authRetryCount++;
+                logErr(`session/prompt failed with auth error (code=${err.code}), requesting authentication (attempt ${authRetryCount})`);
                 sessions.delete(requestedModel);
                 activeSessionId = "";
+                // Send auth_required to Swift and wait for user to authenticate
+                send({ type: "auth_required", methods: authMethods });
+                await new Promise((resolve) => {
+                    authResolve = resolve;
+                });
+                // After auth, re-initialize and retry
                 isInitialized = false;
                 await initializeAcp();
-                // After successful auth, retry the query
                 return handleQuery(msg);
             }
             // If session/prompt failed and we were reusing a session, retry with a fresh one
@@ -569,9 +586,19 @@ async function handleQuery(msg) {
             return;
         }
         // If the error is an auth error or internal error (no credentials),
-        // re-initialize with the proper auth flow and retry
+        // send auth_required to Swift and wait for user auth
         if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
-            logErr(`Query failed with auth/internal error (code=${err.code}), re-initializing with auth flow`);
+            if (authRetryCount >= MAX_AUTH_RETRIES) {
+                logErr(`Query auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
+                send({ type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
+                return;
+            }
+            authRetryCount++;
+            logErr(`Query failed with auth/internal error (code=${err.code}), requesting authentication (attempt ${authRetryCount})`);
+            send({ type: "auth_required", methods: authMethods });
+            await new Promise((resolve) => {
+                authResolve = resolve;
+            });
             isInitialized = false;
             await initializeAcp();
             return handleQuery(msg);
