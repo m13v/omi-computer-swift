@@ -3884,8 +3884,9 @@ struct SettingsContentView: View {
                                 .onTapGesture {
                                     // Hidden: Option+click to enable staging channel
                                     if NSEvent.modifierFlags.contains(.option) {
+                                        // Set staging directly in UserDefaults, bypassing the
+                                        // updateChannel didSet which would overwrite with "beta"
                                         UserDefaults.standard.set("staging", forKey: "update_channel")
-                                        updaterViewModel.updateChannel = .beta // closest visible option
                                         updaterViewModel.activeChannelLabel = "Staging"
                                         logSync("Settings: Staging channel enabled via hidden gesture")
                                     }
