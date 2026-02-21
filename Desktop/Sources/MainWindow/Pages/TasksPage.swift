@@ -2141,14 +2141,6 @@ struct TasksPage: View {
         return viewModel.findTask(taskId)
     }
 
-    /// Start a background AI investigation for a task (no panel opens)
-    private func investigateTask(_ task: TaskActionItem) {
-        log("TaskChat: investigateTask called for task \(task.id)")
-        Task {
-            await chatCoordinator.investigateInBackground(for: task)
-        }
-    }
-
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
         log("TaskChat: openChatForTask called for task \(task.id) (deleted=\(task.deleted ?? false), completed=\(task.completed))")
@@ -2201,17 +2193,23 @@ struct TasksPage: View {
             // Restore to the saved width, or just subtract the expand amount
             if preChatWindowWidth > 0 {
                 frame.size.width = preChatWindowWidth
-                preChatWindowWidth = 0
             } else {
                 frame.size.width -= expandAmount
             }
         }
 
-        NSAnimationContext.runAnimationGroup { context in
+        NSAnimationContext.runAnimationGroup({ context in
             context.duration = 0.25
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             window.animator().setFrame(frame, display: true)
-        }
+        }, completionHandler: {
+            // Clear preChatWindowWidth only after the resize animation completes.
+            // If the app quits mid-animation, this won't fire, leaving the saved
+            // width intact so restorePreChatWindowWidth() can shrink on next launch.
+            if !expand {
+                UserDefaults.standard.set(Double(0), forKey: "tasksPreChatWindowWidth")
+            }
+        })
     }
 
     /// On launch, restore the window to its pre-chat width if the user quit with chat open.
@@ -2976,7 +2974,6 @@ struct TasksPage: View {
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onMoveTask: { task, index, cat in viewModel.moveTaskToCategory(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
-                                    onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
@@ -3046,7 +3043,6 @@ struct TasksPage: View {
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
-                                    onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
