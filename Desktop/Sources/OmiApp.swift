@@ -473,6 +473,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func showDockIcon() {
         if NSApp.activationPolicy() != .regular {
             NSApp.setActivationPolicy(.regular)
+            // Re-apply the custom icon — macOS can lose it when toggling activation policy
+            if let iconURL = Bundle.main.url(forResource: "OmiIcon", withExtension: "icns"),
+               let icon = NSImage(contentsOf: iconURL) {
+                NSApp.applicationIconImage = icon
+            }
             log("AppDelegate: Dock icon shown")
         }
     }
