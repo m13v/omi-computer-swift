@@ -55,6 +55,11 @@ actor ACPBridge {
     /// (Mode A: OMI's key). When false, the key is stripped so ACP uses OAuth.
     let passApiKey: Bool
 
+    /// Persistent auth handler called whenever auth_required arrives (even outside query)
+    var onAuthRequiredGlobal: AuthRequiredHandler?
+    /// Persistent auth success handler called whenever auth_success arrives (even outside query)
+    var onAuthSuccessGlobal: AuthSuccessHandler?
+
     init(passApiKey: Bool = false) {
         self.passApiKey = passApiKey
     }
@@ -503,6 +508,23 @@ actor ACPBridge {
     }
 
     private func deliverMessage(_ message: InboundMessage) {
+        // Handle auth messages immediately via global handlers (even outside query)
+        switch message {
+        case .authRequired(let methods):
+            if messageContinuation == nil, let handler = onAuthRequiredGlobal {
+                // No active query waiting — fire the global handler immediately
+                handler(methods)
+                return
+            }
+        case .authSuccess:
+            if messageContinuation == nil, let handler = onAuthSuccessGlobal {
+                handler()
+                return
+            }
+        default:
+            break
+        }
+
         if let continuation = messageContinuation {
             messageContinuation = nil
             continuation.resume(returning: message)
