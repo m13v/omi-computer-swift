@@ -1747,19 +1747,19 @@ class ChatProvider: ObservableObject {
             // Each query is standalone — conversation history is in the system prompt
             // This ensures cross-platform sync (mobile messages appear in context)
 
-            // Shared callbacks for both bridges
-            let textDeltaHandler: ClaudeAgentBridge.TextDeltaHandler = { [weak self] delta in
+            // Callbacks for ACP bridge
+            let textDeltaHandler: ACPBridge.TextDeltaHandler = { [weak self] delta in
                 Task { @MainActor [weak self] in
                     self?.appendToMessage(id: aiMessageId, text: delta)
                 }
             }
-            let toolCallHandler: ClaudeAgentBridge.ToolCallHandler = { callId, name, input in
+            let toolCallHandler: ACPBridge.ToolCallHandler = { callId, name, input in
                 let toolCall = ToolCall(name: name, arguments: input, thoughtSignature: nil)
                 let result = await ChatToolExecutor.execute(toolCall)
                 log("OMI tool \(name) executed for callId=\(callId)")
                 return result
             }
-            let toolActivityHandler: ClaudeAgentBridge.ToolActivityHandler = { [weak self] name, status, toolUseId, input in
+            let toolActivityHandler: ACPBridge.ToolActivityHandler = { [weak self] name, status, toolUseId, input in
                 Task { @MainActor [weak self] in
                     self?.addToolActivity(
                         messageId: aiMessageId,
@@ -1785,59 +1785,42 @@ class ChatProvider: ObservableObject {
                     }
                 }
             }
-            let thinkingDeltaHandler: ClaudeAgentBridge.ThinkingDeltaHandler = { [weak self] text in
+            let thinkingDeltaHandler: ACPBridge.ThinkingDeltaHandler = { [weak self] text in
                 Task { @MainActor [weak self] in
                     self?.appendThinking(messageId: aiMessageId, text: text)
                 }
             }
-            let toolResultDisplayHandler: ClaudeAgentBridge.ToolResultDisplayHandler = { [weak self] toolUseId, name, output in
+            let toolResultDisplayHandler: ACPBridge.ToolResultDisplayHandler = { [weak self] toolUseId, name, output in
                 Task { @MainActor [weak self] in
                     self?.addToolResult(messageId: aiMessageId, toolUseId: toolUseId, name: name, output: output)
                 }
             }
 
-            let queryResult: ClaudeAgentBridge.QueryResult
-            if isACPMode {
-                let acpResult = try await acpBridge.query(
-                    prompt: trimmedText,
-                    systemPrompt: systemPrompt,
-                    cwd: workingDirectory,
-                    mode: chatMode.rawValue,
-                    model: model ?? modelOverride,
-                    onTextDelta: textDeltaHandler,
-                    onToolCall: toolCallHandler,
-                    onToolActivity: toolActivityHandler,
-                    onThinkingDelta: thinkingDeltaHandler,
-                    onToolResultDisplay: toolResultDisplayHandler,
-                    onAuthRequired: { [weak self] methods, authUrl in
-                        Task { @MainActor [weak self] in
-                            self?.claudeAuthMethods = methods
-                            self?.claudeAuthUrl = authUrl
-                            self?.isClaudeAuthRequired = true
-                        }
-                    },
-                    onAuthSuccess: { [weak self] in
-                        Task { @MainActor [weak self] in
-                            self?.isClaudeAuthRequired = false
-                            self?.checkClaudeConnectionStatus()
-                        }
+            let queryResult = try await acpBridge.query(
+                prompt: trimmedText,
+                systemPrompt: systemPrompt,
+                cwd: workingDirectory,
+                mode: chatMode.rawValue,
+                model: model ?? modelOverride,
+                onTextDelta: textDeltaHandler,
+                onToolCall: toolCallHandler,
+                onToolActivity: toolActivityHandler,
+                onThinkingDelta: thinkingDeltaHandler,
+                onToolResultDisplay: toolResultDisplayHandler,
+                onAuthRequired: { [weak self] methods, authUrl in
+                    Task { @MainActor [weak self] in
+                        self?.claudeAuthMethods = methods
+                        self?.claudeAuthUrl = authUrl
+                        self?.isClaudeAuthRequired = true
                     }
-                )
-                queryResult = ClaudeAgentBridge.QueryResult(text: acpResult.text, costUsd: acpResult.costUsd, sessionId: "")
-            } else {
-                queryResult = try await claudeBridge.query(
-                    prompt: trimmedText,
-                    systemPrompt: systemPrompt,
-                    cwd: workingDirectory,
-                    mode: chatMode.rawValue,
-                    model: model ?? modelOverride,
-                    onTextDelta: textDeltaHandler,
-                    onToolCall: toolCallHandler,
-                    onToolActivity: toolActivityHandler,
-                    onThinkingDelta: thinkingDeltaHandler,
-                    onToolResultDisplay: toolResultDisplayHandler
-                )
-            }
+                },
+                onAuthSuccess: { [weak self] in
+                    Task { @MainActor [weak self] in
+                        self?.isClaudeAuthRequired = false
+                        self?.checkClaudeConnectionStatus()
+                    }
+                }
+            )
 
             // Flush any remaining buffered streaming text before finalizing
             streamingFlushWorkItem?.cancel()
@@ -1908,7 +1891,7 @@ class ChatProvider: ObservableObject {
             }
         } catch {
             // On timeout, cancel the stuck ACP session so it's not left dangling
-            if let bridgeError = error as? BridgeError, case .timeout = bridgeError, isACPMode {
+            if let bridgeError = error as? BridgeError, case .timeout = bridgeError {
                 log("ChatProvider: ACP query timed out, sending interrupt to cancel stuck session")
                 await acpBridge.interrupt()
             }
