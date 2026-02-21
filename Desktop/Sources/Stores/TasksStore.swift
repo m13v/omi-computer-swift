@@ -1125,31 +1125,100 @@ class TasksStore: ObservableObject {
 
     @discardableResult
     func createTask(description: String, dueAt: Date?, priority: String?, tags: [String]? = nil, recurrenceRule: String? = nil) async -> TaskActionItem? {
+        // Local-first: insert into SQLite immediately, then sync to backend in background
         do {
-            var metadata: [String: Any]? = nil
+            var metadataJson: String? = nil
             if let tags = tags, !tags.isEmpty {
-                metadata = ["tags": tags]
+                let metaDict: [String: Any] = ["tags": tags]
+                if let data = try? JSONSerialization.data(withJSONObject: metaDict),
+                   let str = String(data: data, encoding: .utf8) {
+                    metadataJson = str
+                }
             }
 
-            let created = try await APIClient.shared.createActionItem(
+            let now = Date()
+            let record = ActionItemRecord(
+                id: nil,
+                backendId: nil,
+                backendSynced: false,
                 description: description,
-                dueAt: dueAt,
+                completed: false,
+                deleted: false,
                 source: "manual",
+                conversationId: nil,
                 priority: priority,
                 category: tags?.first,
-                metadata: metadata,
-                recurrenceRule: recurrenceRule
+                tagsJson: nil,
+                deletedBy: nil,
+                dueAt: dueAt,
+                recurrenceRule: recurrenceRule,
+                recurrenceParentId: nil,
+                screenshotId: nil,
+                confidence: nil,
+                sourceApp: nil,
+                windowTitle: nil,
+                contextSummary: nil,
+                currentActivity: nil,
+                metadataJson: metadataJson,
+                embedding: nil,
+                sortOrder: nil,
+                indentLevel: nil,
+                relevanceScore: nil,
+                scoredAt: nil,
+                agentStatus: nil,
+                agentSessionName: nil,
+                agentPrompt: nil,
+                agentPlan: nil,
+                agentStartedAt: nil,
+                agentCompletedAt: nil,
+                agentEditedFilesJson: nil,
+                chatSessionId: nil,
+                fromStaged: false,
+                createdAt: now,
+                updatedAt: now
             )
 
-            // Sync to local SQLite cache
-            try await ActionItemStorage.shared.syncTaskActionItems([created])
+            let inserted = try await ActionItemStorage.shared.insertLocalActionItem(record)
+            let localTask = inserted.toTaskActionItem()
+            let localId = inserted.id!
 
-            // New tasks are incomplete, add to incomplete list
-            incompleteTasks.insert(created, at: 0)
-            return created
+            // Instant UI update
+            incompleteTasks.insert(localTask, at: 0)
+
+            // Sync to backend in background
+            Task {
+                do {
+                    var metadata: [String: Any]? = nil
+                    if let tags = tags, !tags.isEmpty {
+                        metadata = ["tags": tags]
+                    }
+
+                    let created = try await APIClient.shared.createActionItem(
+                        description: description,
+                        dueAt: dueAt,
+                        source: "manual",
+                        priority: priority,
+                        category: tags?.first,
+                        metadata: metadata,
+                        recurrenceRule: recurrenceRule
+                    )
+
+                    try await ActionItemStorage.shared.markSynced(id: localId, backendId: created.id)
+
+                    // Replace local_ entry with real backend-synced task
+                    if let idx = self.incompleteTasks.firstIndex(where: { $0.id == localTask.id }) {
+                        self.incompleteTasks[idx] = created
+                    }
+                    log("TasksStore: Task synced to backend (local \(localId) → \(created.id))")
+                } catch {
+                    logError("TasksStore: Failed to sync new task to backend (will retry on next launch)", error: error)
+                }
+            }
+
+            return localTask
         } catch {
             self.error = error.localizedDescription
-            logError("TasksStore: Failed to create task", error: error)
+            logError("TasksStore: Failed to create task locally", error: error)
             return nil
         }
     }
