@@ -1888,6 +1888,10 @@ class ChatProvider: ObservableObject {
                 messageLength: responseLength
             )
 
+            if bridgeMode == BridgeMode.omiAI.rawValue {
+                sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
+            }
+
             // Fire-and-forget: check if user's message mentions goal progress
             let chatText = trimmedText
             Task.detached(priority: .background) {
