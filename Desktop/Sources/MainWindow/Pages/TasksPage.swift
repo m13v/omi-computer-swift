@@ -662,6 +662,11 @@ class TasksViewModel: ObservableObject {
     @Published var selectedTaskIds: Set<String> = []
 
     // MARK: - Drag-and-Drop Reordering (like Flutter)
+    /// Drag state for visual feedback
+    @Published var draggedTaskId: String? = nil
+    @Published var dropTargetTaskId: String? = nil
+    @Published var dropAbove: Bool = true
+
     /// Custom order of task IDs per category (persisted to UserDefaults as fallback)
     @Published var categoryOrder: [TaskCategory: [String]] = [:] {
         didSet { saveCategoryOrder() }
@@ -3108,6 +3113,14 @@ struct TaskCategorySection: View {
     var activeChatTaskId: String?
     var chatCoordinator: TaskChatCoordinator?
 
+    // Drag-and-drop visual feedback
+    var dropTargetTaskId: String?
+    var dropAbove: Bool = true
+    var findTaskGlobal: ((String) -> TaskActionItem?)?
+    var onDragStarted: ((String) -> Void)?
+    var onDragEnded: (() -> Void)?
+    var onDragHoverChanged: ((String, Bool) -> Void)?
+
     // Edit mode support
     var editingTaskId: String?
     var onEditingChanged: ((Bool) -> Void)?
@@ -3225,20 +3238,33 @@ struct TaskDragDropModifier: ViewModifier {
     let isEnabled: Bool
     let taskId: String
     let taskDescription: String
+    var isDropTarget: Bool = false
+    var dropAbove: Bool = true
     var findTask: ((String) -> TaskActionItem?)?
     var findTargetIndex: (() -> Int?)?
-    var validateDrop: ((String) -> Bool)?
     var onMoveTask: ((TaskActionItem, Int) -> Void)?
+    var onDragStarted: ((String) -> Void)?
+    var onDragEnded: (() -> Void)?
+    var onHoverChanged: ((String, Bool) -> Void)?
 
     func body(content: Content) -> some View {
         if isEnabled {
             content
+                .overlay(alignment: dropAbove ? .top : .bottom) {
+                    if isDropTarget {
+                        Rectangle()
+                            .fill(Color.accentColor)
+                            .frame(height: 2)
+                            .transition(.opacity)
+                    }
+                }
                 .draggable(taskId) {
                     TaskDragPreviewSimple(taskId: taskId, description: taskDescription)
                 }
                 .dropDestination(for: String.self) { droppedIds, _ in
+                    onDragEnded?()
                     guard let droppedId = droppedIds.first,
-                          validateDrop?(droppedId) == true,
+                          droppedId != taskId,
                           let targetIndex = findTargetIndex?() else {
                         return false
                     }
@@ -3246,6 +3272,12 @@ struct TaskDragDropModifier: ViewModifier {
                         onMoveTask?(droppedTask, targetIndex)
                     }
                     return true
+                } isTargeted: { isTargeted in
+                    if isTargeted {
+                        onHoverChanged?(taskId, true)
+                    } else {
+                        onHoverChanged?(taskId, false)
+                    }
                 }
         } else {
             content
