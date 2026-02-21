@@ -317,6 +317,8 @@ class ChatProvider: ObservableObject {
     @Published var isClaudeAuthRequired = false
     /// Auth methods returned by ACP bridge
     @Published var claudeAuthMethods: [[String: Any]] = []
+    /// OAuth URL to open in browser (sent by bridge when auth is needed)
+    @Published var claudeAuthUrl: String?
     /// Whether the user has a cached Claude OAuth token
     @Published var isClaudeConnected = false
 
@@ -508,9 +510,10 @@ class ChatProvider: ObservableObject {
                 log("ChatProvider: ACP bridge started successfully")
                 // Set up global auth handlers so auth_required during warmup is handled
                 await acpBridge.setGlobalAuthHandlers(
-                    onAuthRequired: { [weak self] methods in
+                    onAuthRequired: { [weak self] methods, authUrl in
                         Task { @MainActor [weak self] in
                             self?.claudeAuthMethods = methods
+                            self?.claudeAuthUrl = authUrl
                             self?.isClaudeAuthRequired = true
                         }
                     },
