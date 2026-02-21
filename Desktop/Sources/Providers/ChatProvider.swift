@@ -582,139 +582,19 @@ class ChatProvider: ObservableObject {
     }
 
     /// Start Claude OAuth authentication (Mode B)
-    /// Opens Terminal.app to run `claude setup-token` (requires TTY for interactive OAuth),
-    /// then polls for credentials to complete the auth flow.
+    /// Opens the OAuth URL (provided by the bridge) in the default browser.
+    /// The bridge handles the full OAuth flow: local callback server, token exchange,
+    /// credential storage, and ACP subprocess restart.
     func startClaudeAuth() {
         guard isACPMode else { return }
 
-        log("ChatProvider: Starting Claude login via Terminal setup-token")
-
-        // Find the Node binary and Claude Code CLI
-        let nodePath = findNodeForAuth()
-        let cliPath = findClaudeCodeCLI()
-
-        guard let nodePath, let cliPath else {
-            logError("ChatProvider: Cannot find node (\(nodePath ?? "nil")) or CLI (\(cliPath ?? "nil")) for auth")
+        if let urlString = claudeAuthUrl, let url = URL(string: urlString) {
+            log("ChatProvider: Opening Claude OAuth URL in browser")
+            NSWorkspace.shared.open(url)
+        } else {
+            logError("ChatProvider: No auth URL available from bridge")
             isClaudeAuthRequired = false
-            return
         }
-
-        // Open Terminal.app to run setup-token (needs TTY for interactive Ink UI)
-        let escapedNode = nodePath.replacingOccurrences(of: "'", with: "'\\''")
-        let escapedCli = cliPath.replacingOccurrences(of: "'", with: "'\\''")
-        let terminalScript = """
-        tell application "Terminal"
-            do script "NODE_OPTIONS='--dns-result-order=ipv4first' '\\(escapedNode)' '\\(escapedCli)' setup-token; exit"
-            activate
-        end tell
-        """
-
-        let proc = Process()
-        proc.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-        proc.arguments = ["-e", terminalScript]
-        proc.standardOutput = FileHandle.nullDevice
-        proc.standardError = FileHandle.nullDevice
-        do {
-            try proc.run()
-            log("ChatProvider: Opened Terminal for setup-token")
-        } catch {
-            logError("ChatProvider: Failed to open Terminal for auth", error: error)
-            isClaudeAuthRequired = false
-            return
-        }
-
-        // Poll for credentials every 2 seconds (max 5 minutes)
-        Task.detached { [weak self] in
-            let maxAttempts = 150 // 5 minutes at 2-second intervals
-            for attempt in 1...maxAttempts {
-                try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
-
-                // Check if credentials appeared
-                let configPath = NSString(string: "~/Library/Application Support/Claude/config.json").expandingTildeInPath
-                if FileManager.default.fileExists(atPath: configPath),
-                   let data = FileManager.default.contents(atPath: configPath),
-                   let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-                   let tokenCache = json["oauth:tokenCache"] as? String, !tokenCache.isEmpty {
-                    log("ChatProvider: Credentials detected after \(attempt * 2) seconds")
-                    await self?.acpBridge.authenticate(methodId: "claude-login")
-                    await MainActor.run {
-                        self?.isClaudeAuthRequired = false
-                        self?.checkClaudeConnectionStatus()
-                    }
-                    return
-                }
-
-                // Also check Keychain
-                let secProcess = Process()
-                secProcess.executableURL = URL(fileURLWithPath: "/usr/bin/security")
-                secProcess.arguments = ["find-generic-password", "-s", "Claude Code-credentials"]
-                secProcess.standardOutput = FileHandle.nullDevice
-                secProcess.standardError = FileHandle.nullDevice
-                do {
-                    try secProcess.run()
-                    secProcess.waitUntilExit()
-                    if secProcess.terminationStatus == 0 {
-                        log("ChatProvider: Keychain credentials detected after \(attempt * 2) seconds")
-                        await self?.acpBridge.authenticate(methodId: "claude-login")
-                        await MainActor.run {
-                            self?.isClaudeAuthRequired = false
-                            self?.checkClaudeConnectionStatus()
-                        }
-                        return
-                    }
-                } catch {
-                    // ignore
-                }
-            }
-
-            log("ChatProvider: Auth polling timed out after 5 minutes")
-            await MainActor.run {
-                self?.isClaudeAuthRequired = false
-            }
-        }
-    }
-
-    /// Find a node binary for running the Claude Code CLI
-    private func findNodeForAuth() -> String? {
-        // Check bundled node binary
-        let bundledNode = Bundle.resourceBundle.path(forResource: "node", ofType: nil)
-        if let bundledNode, FileManager.default.isExecutableFile(atPath: bundledNode) {
-            return bundledNode
-        }
-        // Fall back to system node
-        for path in ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/usr/bin/node"] {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                return path
-            }
-        }
-        return nil
-    }
-
-    /// Find the Claude Code CLI (cli.js) relative to the ACP bridge
-    private func findClaudeCodeCLI() -> String? {
-        // Check in app bundle Resources
-        if let bundlePath = Bundle.main.resourcePath {
-            let cliPath = (bundlePath as NSString).appendingPathComponent(
-                "acp-bridge/node_modules/@anthropic-ai/claude-code/cli.js"
-            )
-            if FileManager.default.fileExists(atPath: cliPath) {
-                return cliPath
-            }
-        }
-        // Check relative to executable (development mode)
-        if let execDir = Bundle.main.executableURL?.deletingLastPathComponent() {
-            let devPaths = [
-                execDir.appendingPathComponent("../../../acp-bridge/node_modules/@anthropic-ai/claude-code/cli.js").path,
-                execDir.appendingPathComponent("../../../../acp-bridge/node_modules/@anthropic-ai/claude-code/cli.js").path,
-            ]
-            for path in devPaths {
-                let resolved = (path as NSString).standardizingPath
-                if FileManager.default.fileExists(atPath: resolved) {
-                    return resolved
-                }
-            }
-        }
-        return nil
     }
 
     /// Check whether a cached Claude OAuth token exists (config file or Keychain)
@@ -1980,9 +1860,10 @@ class ChatProvider: ObservableObject {
                     onToolActivity: toolActivityHandler,
                     onThinkingDelta: thinkingDeltaHandler,
                     onToolResultDisplay: toolResultDisplayHandler,
-                    onAuthRequired: { [weak self] methods in
+                    onAuthRequired: { [weak self] methods, authUrl in
                         Task { @MainActor [weak self] in
                             self?.claudeAuthMethods = methods
+                            self?.claudeAuthUrl = authUrl
                             self?.isClaudeAuthRequired = true
                         }
                     },
