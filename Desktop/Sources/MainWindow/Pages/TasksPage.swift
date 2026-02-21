@@ -868,18 +868,24 @@ class TasksViewModel: ObservableObject {
 
         if sourceCategory != targetCategory {
             // Cross-category move: update due_at so categoryFor() places it correctly
+            guard let newDueAt = dueAtForCategory(targetCategory) else {
+                // Can't drag to No Deadline (clearing dueAt not supported via updateTaskDetails)
+                // Same-category reorder within No Deadline still works
+                moveTask(task, toIndex: index, inCategory: targetCategory)
+                return
+            }
+
             // Remove from old category's UserDefaults order
             if var oldOrder = categoryOrder[sourceCategory] {
                 oldOrder.removeAll { $0 == task.id }
                 categoryOrder[sourceCategory] = oldOrder
             }
 
-            let newDueAt = dueAtForCategory(targetCategory)
             // Update due_at via async store call, then reorder
             Task {
                 await updateTaskDetails(task, dueAt: newDueAt)
-                // After due_at update, move to desired position in new category
                 await MainActor.run {
+                    recomputeAllCaches()
                     moveTask(task, toIndex: index, inCategory: targetCategory)
                 }
             }
