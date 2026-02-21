@@ -105,56 +105,42 @@ class ClickThroughHostingView<Content: View>: NSHostingView<Content> {
             let locationInView = self.convert(location, from: nil)
             guard self.bounds.contains(locationInView) else { return }
 
-            // Convert window coordinates to screen coordinates
-            let screenLocation = window.convertPoint(toScreen: location)
-
-            // Flip Y coordinate for CGEvent (CGEvent uses top-left origin, AppKit uses bottom-left)
-            guard let screen = window.screen ?? NSScreen.main else {
-                log("CLICKTHROUGH: No screen available, skipping synthetic click")
-                return
-            }
-            let flippedY = screen.frame.maxY - screenLocation.y
-            let cgPoint = CGPoint(x: screenLocation.x, y: flippedY)
-
             // Set guard before posting synthetic events
             self.isProcessingSyntheticClick = true
 
-            // Safety timeout: reset the guard after 200ms no matter what
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
-                if self?.isProcessingSyntheticClick == true {
-                    self?.isProcessingSyntheticClick = false
-                }
-            }
-
-            // Create and post a synthetic mouse event at the SAVED click location
-            log("CLICKTHROUGH: Posting synthetic click at screen position \(cgPoint)")
-            if let cgEvent = CGEvent(
-                mouseEventSource: nil,
-                mouseType: .leftMouseDown,
-                mouseCursorPosition: cgPoint,
-                mouseButton: .left
+            // Use NSEvent + window.sendEvent() instead of CGEvent.post()
+            // CGEvent.post(mouseCursorPosition:) physically moves the cursor, causing the jump bug
+            log("CLICKTHROUGH: Sending synthetic click at window position \(location)")
+            if let syntheticEvent = NSEvent.mouseEvent(
+                with: .leftMouseDown,
+                location: location,
+                modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber,
+                context: nil,
+                eventNumber: 0,
+                clickCount: 1,
+                pressure: 1.0
             ) {
-                cgEvent.post(tap: .cghidEventTap)
+                window.sendEvent(syntheticEvent)
 
-                // Also post mouse up
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.01) { [weak self] in
-                    if let upEvent = CGEvent(
-                        mouseEventSource: nil,
-                        mouseType: .leftMouseUp,
-                        mouseCursorPosition: cgPoint,
-                        mouseButton: .left
-                    ) {
-                        upEvent.post(tap: .cghidEventTap)
-                    }
-
-                    // Clear guard after mouse up completes
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-                        self?.isProcessingSyntheticClick = false
-                    }
+                // Also send mouse up
+                if let upEvent = NSEvent.mouseEvent(
+                    with: .leftMouseUp,
+                    location: location,
+                    modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber,
+                    context: nil,
+                    eventNumber: 0,
+                    clickCount: 1,
+                    pressure: 0.0
+                ) {
+                    window.sendEvent(upEvent)
                 }
-            } else {
-                self.isProcessingSyntheticClick = false
             }
+
+            self.isProcessingSyntheticClick = false
         }
     }
 
