@@ -126,8 +126,7 @@ class TaskChatCoordinator: ObservableObject {
         } else {
             let configuredPath = TaskAgentSettings.shared.workingDirectory
             let ws = configuredPath.isEmpty ? (FileManager.default.homeDirectoryForCurrentUser.path) : configuredPath
-            let useACP = UserDefaults.standard.string(forKey: "chatBridgeMode") == "claudeCode"
-            state = TaskChatState(taskId: task.id, workspacePath: ws, useACPMode: useACP)
+            state = TaskChatState(taskId: task.id, workspacePath: ws)
             // Wire system prompt builder to use ChatProvider's cached context (without history)
             state.systemPromptBuilder = { [weak self] in
                 self?.chatProvider.buildTaskChatSystemPrompt() ?? ""
@@ -163,41 +162,6 @@ class TaskChatCoordinator: ObservableObject {
         activeTaskId = nil
         activeTaskState = nil
         pendingInputText = ""
-    }
-
-    // MARK: - Background Investigation
-
-    /// Start an AI chat session in the background for a task without opening the panel.
-    /// The streaming indicator will appear inline on the task row via `observeTaskState`.
-    func investigateInBackground(for task: TaskActionItem) async {
-        log("TaskChatCoordinator: investigateInBackground for \(task.id)")
-
-        // Get or create TaskChatState (same setup as openChat, but don't activate panel)
-        let state: TaskChatState
-        if let existing = taskStates[task.id] {
-            state = existing
-        } else {
-            let configuredPath = TaskAgentSettings.shared.workingDirectory
-            let ws = configuredPath.isEmpty ? (FileManager.default.homeDirectoryForCurrentUser.path) : configuredPath
-            let useACP = UserDefaults.standard.string(forKey: "chatBridgeMode") == "claudeCode"
-            state = TaskChatState(taskId: task.id, workspacePath: ws, useACPMode: useACP)
-            state.systemPromptBuilder = { [weak self] in
-                self?.chatProvider.buildTaskChatSystemPrompt() ?? ""
-            }
-            taskStates[task.id] = state
-            observeTaskState(state)
-
-            await state.loadPersistedMessages()
-        }
-
-        // Skip if already streaming (avoid double-send)
-        guard !state.isSending else {
-            log("TaskChatCoordinator: task \(task.id) already sending, skipping investigate")
-            return
-        }
-
-        let prompt = buildInitialPrompt(for: task)
-        await state.sendMessage(prompt)
     }
 
     // MARK: - Helpers
