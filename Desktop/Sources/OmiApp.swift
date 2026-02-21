@@ -244,6 +244,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             TranscriptionRetryService.shared.start()
         }
 
+        // Start recurring task scheduler (checks every 60s for due tasks)
+        RecurringTaskScheduler.shared.start()
+
         // Identify user if already signed in
         if AuthState.shared.isSignedIn {
             AnalyticsManager.shared.identify()
@@ -702,6 +705,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Stop transcription retry service
         TranscriptionRetryService.shared.stop()
+
+        // Stop recurring task scheduler
+        RecurringTaskScheduler.shared.stop()
 
         // Mark clean shutdown so next launch skips expensive DB integrity check
         RewindDatabase.markCleanShutdown()
