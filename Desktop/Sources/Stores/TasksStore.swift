@@ -1136,46 +1136,14 @@ class TasksStore: ObservableObject {
                 }
             }
 
-            let now = Date()
             let record = ActionItemRecord(
-                id: nil,
-                backendId: nil,
-                backendSynced: false,
                 description: description,
-                completed: false,
-                deleted: false,
                 source: "manual",
-                conversationId: nil,
                 priority: priority,
                 category: tags?.first,
-                tagsJson: nil,
-                deletedBy: nil,
                 dueAt: dueAt,
                 recurrenceRule: recurrenceRule,
-                recurrenceParentId: nil,
-                screenshotId: nil,
-                confidence: nil,
-                sourceApp: nil,
-                windowTitle: nil,
-                contextSummary: nil,
-                currentActivity: nil,
-                metadataJson: metadataJson,
-                embedding: nil,
-                sortOrder: nil,
-                indentLevel: nil,
-                relevanceScore: nil,
-                scoredAt: nil,
-                agentStatus: nil,
-                agentSessionName: nil,
-                agentPrompt: nil,
-                agentPlan: nil,
-                agentStartedAt: nil,
-                agentCompletedAt: nil,
-                agentEditedFilesJson: nil,
-                chatSessionId: nil,
-                fromStaged: false,
-                createdAt: now,
-                updatedAt: now
+                metadataJson: metadataJson
             )
 
             let inserted = try await ActionItemStorage.shared.insertLocalActionItem(record)
