@@ -670,6 +670,36 @@ actor ACPBridge {
         return nil
     }
 
+    // MARK: - Playwright Connection Test
+
+    /// Test that the Playwright Chrome extension is connected and working.
+    /// Sends a minimal query that triggers a browser_snapshot tool call.
+    /// Returns true if the extension responds successfully.
+    func testPlaywrightConnection() async throws -> Bool {
+        guard isRunning else {
+            throw BridgeError.notRunning
+        }
+
+        log("ACPBridge: Testing Playwright connection...")
+        let result = try await query(
+            prompt: "Call browser_snapshot to verify the extension is connected. Only call that one tool, then report success or failure.",
+            systemPrompt: "You are a connection test agent. Call the browser_snapshot tool exactly once. If it succeeds, respond with exactly 'CONNECTED'. If it fails, respond with 'FAILED' followed by the error.",
+            mode: "ask",
+            onTextDelta: { _ in },
+            onToolCall: { _, _, _ in "" },
+            onToolActivity: { name, status, _, _ in
+                log("ACPBridge: test tool activity: \(name) \(status)")
+            },
+            onThinkingDelta: { _ in },
+            onToolResultDisplay: { _, name, output in
+                log("ACPBridge: test tool result: \(name) -> \(output.prefix(200))")
+            }
+        )
+        let connected = result.text.contains("CONNECTED")
+        log("ACPBridge: Playwright test response: \(result.text.prefix(300)), connected=\(connected)")
+        return connected
+    }
+
     private func findBridgeScript() -> String? {
         // 1. Check in app bundle Resources
         if let bundlePath = Bundle.main.resourcePath {
@@ -702,5 +732,42 @@ actor ACPBridge {
         }
 
         return nil
+    }
+}
+
+// MARK: - Errors
+
+enum BridgeError: LocalizedError {
+    case nodeNotFound
+    case bridgeScriptNotFound
+    case notRunning
+    case encodingError
+    case timeout
+    case processExited
+    case outOfMemory
+    case stopped
+    case agentError(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .nodeNotFound:
+            return "Node.js not found. Please reinstall the app."
+        case .bridgeScriptNotFound:
+            return "AI components missing. Please reinstall the app."
+        case .notRunning:
+            return "AI is not running. Try sending your message again."
+        case .encodingError:
+            return "Failed to encode message"
+        case .timeout:
+            return "AI took too long to respond. Try again."
+        case .processExited:
+            return "AI stopped unexpectedly. Try sending your message again."
+        case .outOfMemory:
+            return "Not enough memory for AI chat. Close some apps and try again."
+        case .stopped:
+            return "Response stopped."
+        case .agentError(let msg):
+            return "Agent error: \(msg)"
+        }
     }
 }
