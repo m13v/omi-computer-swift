@@ -620,6 +620,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
   authRetryCount = 0;
 
   let fullText = "";
+  let fullPrompt = "";
   let isNewSession = false;
   const pendingTools: string[] = [];
 
@@ -678,7 +679,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 
     // Only prepend system prompt on the first message in a new session.
     // On subsequent messages the session already has the context.
-    const fullPrompt = isNewSession && msg.systemPrompt
+    fullPrompt = isNewSession && msg.systemPrompt
       ? `<system>\n${msg.systemPrompt}\n</system>\n\n${msg.prompt}`
       : msg.prompt;
 
@@ -711,7 +712,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       }
       pendingTools.length = 0;
 
-      send({ type: "result", text: fullText, sessionId, costUsd: 0 });
+      const inputTokens = Math.ceil(fullPrompt.length / 4);
+      const outputTokens = Math.ceil(fullText.length / 4);
+      send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
     };
 
     try {
@@ -726,7 +729,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
           logErr(
             `Query interrupted by user, sending partial result (${fullText.length} chars)`
           );
-          send({ type: "result", text: fullText, sessionId, costUsd: 0 });
+          const inputTokens = Math.ceil(fullPrompt.length / 4);
+          const outputTokens = Math.ceil(fullText.length / 4);
+          send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
         } else {
           logErr("Query aborted (superseded by new query)");
         }
@@ -763,7 +768,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
           send({ type: "tool_activity", name, status: "completed" });
         }
         pendingTools.length = 0;
-        send({ type: "result", text: fullText, sessionId: activeSessionId, costUsd: 0 });
+        const inputTokens = Math.ceil(fullPrompt.length / 4);
+        const outputTokens = Math.ceil(fullText.length / 4);
+        send({ type: "result", text: fullText, sessionId: activeSessionId, costUsd: 0, inputTokens, outputTokens });
       }
       return;
     }
