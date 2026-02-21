@@ -1,19 +1,14 @@
 import Foundation
 
-/// Checks every 60 seconds for recurring tasks that are due and triggers
-/// AI chat investigations for each one via TaskChatCoordinator.
-/// Dedup is automatic — investigateInBackground skips tasks with existing messages.
+/// Checks every 60 seconds for recurring tasks that are due.
+/// Background investigation was removed — this scheduler currently only logs due tasks.
 @MainActor
 class RecurringTaskScheduler {
     static let shared = RecurringTaskScheduler()
 
     private var timer: Timer?
-    private let coordinator: TaskChatCoordinator
 
-    private init() {
-        let provider = ChatProvider()
-        coordinator = TaskChatCoordinator(chatProvider: provider)
-    }
+    private init() {}
 
     func start() {
         guard timer == nil else { return }
@@ -40,8 +35,5 @@ class RecurringTaskScheduler {
               !tasks.isEmpty else { return }
 
         log("RecurringTaskScheduler: Found \(tasks.count) due recurring task(s)")
-        for task in tasks {
-            await coordinator.investigateInBackground(for: task)
-        }
     }
 }
