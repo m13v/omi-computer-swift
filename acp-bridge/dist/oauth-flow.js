@@ -13,6 +13,7 @@
  * 7. Redirect browser to success page
  */
 import { createServer } from "http";
+import { request as httpsRequest } from "https";
 import { randomBytes, createHash } from "crypto";
 import { execSync } from "child_process";
 import { URL } from "url";
@@ -158,18 +159,47 @@ async function exchangeCodeForToken(code, codeVerifier, state, redirectUri, logE
         state,
         expires_in: TOKEN_EXPIRY_SECONDS,
     };
-    const response = await fetch(TOKEN_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+    const jsonBody = JSON.stringify(body);
+    const tokenUrl = new URL(TOKEN_URL);
+    const data = await new Promise((resolve, reject) => {
+        const req = httpsRequest({
+            hostname: tokenUrl.hostname,
+            port: 443,
+            path: tokenUrl.pathname,
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Content-Length": Buffer.byteLength(jsonBody),
+            },
+        }, (res) => {
+            let responseBody = "";
+            res.on("data", (chunk) => {
+                responseBody += chunk.toString();
+            });
+            res.on("end", () => {
+                if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                    try {
+                        resolve(JSON.parse(responseBody));
+                    }
+                    catch (parseErr) {
+                        reject(new Error(`Failed to parse token response: ${parseErr}`));
+                    }
+                }
+                else if (res.statusCode === 401) {
+                    reject(new Error("Authentication failed: Invalid authorization code"));
+                }
+                else {
+                    reject(new Error(`Token exchange failed (${res.statusCode}): ${responseBody}`));
+                }
+            });
+        });
+        req.on("error", (err) => {
+            logErr(`Token exchange network error: ${err.message}`);
+            reject(new Error(`Token exchange network error: ${err.message}`));
+        });
+        req.write(jsonBody);
+        req.end();
     });
-    if (!response.ok) {
-        const text = await response.text();
-        throw new Error(response.status === 401
-            ? "Authentication failed: Invalid authorization code"
-            : `Token exchange failed (${response.status}): ${text}`);
-    }
-    const data = (await response.json());
     logErr("Token exchange successful");
     const expiresAt = data.expires_in
         ? new Date(Date.now() + data.expires_in * 1000).toISOString()
