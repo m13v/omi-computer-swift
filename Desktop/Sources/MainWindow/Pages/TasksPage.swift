@@ -862,6 +862,61 @@ class TasksViewModel: ObservableObject {
         moveTask(task, toIndex: 0, inCategory: category)
     }
 
+    /// Move a task to a specific position, handling cross-category moves by updating due_at
+    func moveTaskToCategory(_ task: TaskActionItem, toIndex index: Int, inCategory targetCategory: TaskCategory) {
+        let sourceCategory = currentCategoryFor(task)
+
+        if sourceCategory != targetCategory {
+            // Cross-category move: update due_at so categoryFor() places it correctly
+            // Remove from old category's UserDefaults order
+            if var oldOrder = categoryOrder[sourceCategory] {
+                oldOrder.removeAll { $0 == task.id }
+                categoryOrder[sourceCategory] = oldOrder
+            }
+
+            let newDueAt = dueAtForCategory(targetCategory)
+            // Update due_at via async store call, then reorder
+            Task {
+                await updateTaskDetails(task, dueAt: newDueAt)
+                // After due_at update, move to desired position in new category
+                await MainActor.run {
+                    moveTask(task, toIndex: index, inCategory: targetCategory)
+                }
+            }
+        } else {
+            // Same category: just reorder
+            moveTask(task, toIndex: index, inCategory: targetCategory)
+        }
+    }
+
+    /// Get current category for a task (used for cross-category drag detection)
+    private func currentCategoryFor(_ task: TaskActionItem) -> TaskCategory {
+        let calendar = Calendar.current
+        let startOfTomorrow = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 1, to: Date()) ?? Date())
+        let startOfDayAfter = calendar.startOfDay(for: calendar.date(byAdding: .day, value: 2, to: Date()) ?? Date())
+        return categoryFor(task: task, startOfTomorrow: startOfTomorrow, startOfDayAfterTomorrow: startOfDayAfter)
+    }
+
+    /// Compute a suitable due_at for placing a task in a target category
+    private func dueAtForCategory(_ category: TaskCategory) -> Date? {
+        let calendar = Calendar.current
+        let now = Date()
+        switch category {
+        case .today:
+            // End of today
+            return calendar.date(bySettingHour: 23, minute: 59, second: 59, of: now)
+        case .tomorrow:
+            // End of tomorrow
+            let tomorrow = calendar.date(byAdding: .day, value: 1, to: now) ?? now
+            return calendar.date(bySettingHour: 23, minute: 59, second: 59, of: tomorrow)
+        case .later:
+            // One week from now
+            return calendar.date(byAdding: .day, value: 7, to: now)
+        case .noDeadline:
+            return nil
+        }
+    }
+
     // MARK: - Indent Methods
 
     func getIndentLevel(for taskId: String) -> Int {
@@ -2933,7 +2988,7 @@ struct TasksPage: View {
                                     },
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
-                                    onMoveTask: { task, index, cat in viewModel.moveTask(task, toIndex: index, inCategory: cat) },
+                                    onMoveTask: { task, index, cat in viewModel.moveTaskToCategory(task, toIndex: index, inCategory: cat) },
                                     onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
                                     onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
