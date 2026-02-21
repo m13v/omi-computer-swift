@@ -435,28 +435,15 @@ class ChatProvider: ObservableObject {
                         log("ChatProvider: Skipping bridge restart — query in progress")
                         return
                     }
-                    if self.isACPMode {
-                        guard self.acpBridgeStarted else { return }
-                        log("ChatProvider: Playwright extension setting changed, restarting ACP bridge")
-                        self.acpBridgeStarted = false
-                        do {
-                            try await self.acpBridge.restart()
-                            self.acpBridgeStarted = true
-                            log("ChatProvider: ACP bridge restarted with new Playwright settings")
-                        } catch {
-                            logError("Failed to restart ACP bridge after Playwright setting change", error: error)
-                        }
-                    } else {
-                        guard self.bridgeStarted else { return }
-                        log("ChatProvider: Playwright extension setting changed, restarting bridge")
-                        self.bridgeStarted = false
-                        do {
-                            try await self.claudeBridge.restart()
-                            self.bridgeStarted = true
-                            log("ChatProvider: Bridge restarted with new Playwright settings")
-                        } catch {
-                            logError("Failed to restart bridge after Playwright setting change", error: error)
-                        }
+                    guard self.acpBridgeStarted else { return }
+                    log("ChatProvider: Playwright extension setting changed, restarting ACP bridge")
+                    self.acpBridgeStarted = false
+                    do {
+                        try await self.acpBridge.restart()
+                        self.acpBridgeStarted = true
+                        log("ChatProvider: ACP bridge restarted with new Playwright settings")
+                    } catch {
+                        logError("Failed to restart ACP bridge after Playwright setting change", error: error)
                     }
                 }
             }
@@ -471,106 +458,78 @@ class ChatProvider: ObservableObject {
     /// Ensures the bridge is started (restarting if needed to pick up new token),
     /// then sends a lightweight test query that triggers a browser_snapshot tool call.
     func testPlaywrightConnection() async throws -> Bool {
-        // Only use agent-bridge for Playwright testing (Mode A always has our API key)
-        bridgeStarted = false
+        // Restart bridge to pick up new extension token
+        acpBridgeStarted = false
         do {
-            try await claudeBridge.restart()
-            bridgeStarted = true
+            try await acpBridge.restart()
+            acpBridgeStarted = true
         } catch {
-            // If restart fails, try a fresh start
-            try await claudeBridge.start()
-            bridgeStarted = true
+            try await acpBridge.start()
+            acpBridgeStarted = true
         }
-        return try await claudeBridge.testPlaywrightConnection()
+        return try await acpBridge.testPlaywrightConnection()
     }
 
-    /// Whether we're currently in ACP (Mode B) mode
-    private var isACPMode: Bool {
-        bridgeMode == BridgeMode.claudeCode.rawValue
+    /// Whether we're currently in user's Claude account mode
+    private var isUserClaudeMode: Bool {
+        bridgeMode == BridgeMode.userClaude.rawValue
     }
 
-    /// Ensure the active bridge is started (restarts if the process died)
+    /// Ensure the ACP bridge is started (restarts if the process died)
     private func ensureBridgeStarted() async -> Bool {
-        if isACPMode {
-            // Mode B: ACP bridge
-            if acpBridgeStarted {
-                let alive = await acpBridge.isAlive
-                if !alive {
-                    log("ChatProvider: ACP bridge process died, will restart")
-                    acpBridgeStarted = false
-                }
+        if acpBridgeStarted {
+            let alive = await acpBridge.isAlive
+            if !alive {
+                log("ChatProvider: ACP bridge process died, will restart")
+                acpBridgeStarted = false
             }
-            guard !acpBridgeStarted else { return true }
-            do {
-                try await acpBridge.start()
-                acpBridgeStarted = true
-                log("ChatProvider: ACP bridge started successfully")
-                // Set up global auth handlers so auth_required during warmup is handled
-                await acpBridge.setGlobalAuthHandlers(
-                    onAuthRequired: { [weak self] methods, authUrl in
-                        Task { @MainActor [weak self] in
-                            self?.claudeAuthMethods = methods
-                            self?.claudeAuthUrl = authUrl
-                            self?.isClaudeAuthRequired = true
-                        }
-                    },
-                    onAuthSuccess: { [weak self] in
-                        Task { @MainActor [weak self] in
-                            self?.isClaudeAuthRequired = false
-                            self?.checkClaudeConnectionStatus()
-                        }
+        }
+        guard !acpBridgeStarted else { return true }
+        do {
+            try await acpBridge.start()
+            acpBridgeStarted = true
+            log("ChatProvider: ACP bridge started successfully")
+            // Set up global auth handlers so auth_required during warmup is handled
+            await acpBridge.setGlobalAuthHandlers(
+                onAuthRequired: { [weak self] methods, authUrl in
+                    Task { @MainActor [weak self] in
+                        self?.claudeAuthMethods = methods
+                        self?.claudeAuthUrl = authUrl
+                        self?.isClaudeAuthRequired = true
                     }
-                )
-                // Pre-warm an ACP session in background so first query is faster
-                await acpBridge.warmupSession(cwd: workingDirectory, models: ["claude-opus-4-6", "claude-sonnet-4-6"])
-                return true
-            } catch {
-                logError("Failed to start ACP bridge", error: error)
-                errorMessage = "AI not available: \(error.localizedDescription)"
-                return false
-            }
-        } else {
-            // Mode A: Agent SDK bridge (existing)
-            if bridgeStarted {
-                let alive = await claudeBridge.isAlive
-                if !alive {
-                    log("ChatProvider: Bridge process died, will restart")
-                    bridgeStarted = false
+                },
+                onAuthSuccess: { [weak self] in
+                    Task { @MainActor [weak self] in
+                        self?.isClaudeAuthRequired = false
+                        self?.checkClaudeConnectionStatus()
+                    }
                 }
-            }
-            guard !bridgeStarted else { return true }
-            do {
-                try await claudeBridge.start()
-                bridgeStarted = true
-                log("ChatProvider: Claude bridge started successfully")
-                return true
-            } catch {
-                logError("Failed to start Claude bridge", error: error)
-                errorMessage = "AI not available: \(error.localizedDescription)"
-                return false
-            }
+            )
+            // Pre-warm an ACP session in background so first query is faster
+            await acpBridge.warmupSession(cwd: workingDirectory, models: ["claude-opus-4-6", "claude-sonnet-4-6"])
+            return true
+        } catch {
+            logError("Failed to start ACP bridge", error: error)
+            errorMessage = "AI not available: \(error.localizedDescription)"
+            return false
         }
     }
 
-    /// Switch between bridge modes (Agent SDK vs Claude Code ACP)
+    /// Switch between bridge modes (Omi AI vs user's Claude account)
     func switchBridgeMode(to mode: BridgeMode) async {
         guard mode.rawValue != bridgeMode else { return }
         log("ChatProvider: Switching bridge mode from \(bridgeMode) to \(mode.rawValue)")
 
         // Stop the current bridge
-        if isACPMode {
-            await acpBridge.stop()
-            acpBridgeStarted = false
-        } else {
-            await claudeBridge.stop()
-            bridgeStarted = false
-        }
+        await acpBridge.stop()
+        acpBridgeStarted = false
 
-        // Switch mode
+        // Switch mode and recreate bridge with appropriate passApiKey
         bridgeMode = mode.rawValue
+        acpBridge = ACPBridge(passApiKey: mode == .omiAI)
 
-        // Check Claude connection status when switching to claudeCode mode
-        if mode == .claudeCode {
+        // Check Claude connection status when switching to user's Claude account
+        if mode == .userClaude {
             checkClaudeConnectionStatus()
         }
 
@@ -583,7 +542,7 @@ class ChatProvider: ObservableObject {
     /// The bridge handles the full OAuth flow: local callback server, token exchange,
     /// credential storage, and ACP subprocess restart.
     func startClaudeAuth() {
-        guard isACPMode else { return }
+        guard isUserClaudeMode else { return }
 
         if let urlString = claudeAuthUrl, let url = URL(string: urlString) {
             log("ChatProvider: Opening Claude OAuth URL in browser")
@@ -662,8 +621,9 @@ class ChatProvider: ObservableObject {
         // 4. Update state
         isClaudeConnected = false
 
-        // 5. Switch back to agentSDK mode
-        bridgeMode = BridgeMode.agentSDK.rawValue
+        // 5. Switch back to Omi AI mode and recreate bridge with API key
+        bridgeMode = BridgeMode.omiAI.rawValue
+        acpBridge = ACPBridge(passApiKey: true)
     }
 
     // MARK: - Session Management
@@ -1632,11 +1592,7 @@ class ChatProvider: ObservableObject {
         guard isSending else { return }
         isStopping = true
         Task {
-            if isACPMode {
-                await acpBridge.interrupt()
-            } else {
-                await claudeBridge.interrupt()
-            }
+            await acpBridge.interrupt()
         }
         // Result flows back normally through the bridge with partial text
     }
@@ -1683,11 +1639,7 @@ class ChatProvider: ObservableObject {
         // When sendMessage finishes (due to the interrupt), it checks
         // pendingFollowUpText and chains a new full query automatically.
         pendingFollowUpText = trimmedText
-        if isACPMode {
-            await acpBridge.interrupt()
-        } else {
-            await claudeBridge.interrupt()
-        }
+        await acpBridge.interrupt()
         log("ChatProvider: follow-up queued, interrupt sent")
     }
 
