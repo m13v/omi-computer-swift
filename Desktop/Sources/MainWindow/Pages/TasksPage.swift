@@ -2141,6 +2141,14 @@ struct TasksPage: View {
         return viewModel.findTask(taskId)
     }
 
+    /// Start a background AI investigation for a task (no panel opens)
+    private func investigateTask(_ task: TaskActionItem) {
+        log("TaskChat: investigateTask called for task \(task.id)")
+        Task {
+            await chatCoordinator.investigateInBackground(for: task)
+        }
+    }
+
     /// Open chat for a task
     private func openChatForTask(_ task: TaskActionItem) {
         log("TaskChat: openChatForTask called for task \(task.id) (deleted=\(task.deleted ?? false), completed=\(task.completed))")
