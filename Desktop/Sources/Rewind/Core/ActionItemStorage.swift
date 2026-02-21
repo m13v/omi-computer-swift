@@ -92,9 +92,9 @@ actor ActionItemStorage {
                 query = query.filter(Column("priority") == priority)
             }
 
-            // Sort matching Python backend: due_at ASC (nulls last), created_at DESC
+            // Sort by sortOrder first (drag-and-drop), then due_at, created_at
             let records = try query
-                .order(Column("dueAt").ascNullsLast, Column("createdAt").desc)
+                .order(Column("sortOrder").ascNullsLast, Column("dueAt").ascNullsLast, Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
@@ -234,9 +234,9 @@ actor ActionItemStorage {
                 }
             }
 
-            // Sort matching Python backend: due_at ASC (nulls last), created_at DESC
+            // Sort by sortOrder first (drag-and-drop), then due_at, created_at
             let records = try query
-                .order(Column("dueAt").ascNullsLast, Column("createdAt").desc)
+                .order(Column("sortOrder").ascNullsLast, Column("dueAt").ascNullsLast, Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
@@ -289,9 +289,9 @@ actor ActionItemStorage {
                 query = query.filter(Column("priority") == priority)
             }
 
-            // Sort matching Python backend: due_at ASC (nulls last), created_at DESC
+            // Sort by sortOrder first (drag-and-drop), then due_at, created_at
             let records = try query
-                .order(Column("dueAt").ascNullsLast, Column("createdAt").desc)
+                .order(Column("sortOrder").ascNullsLast, Column("dueAt").ascNullsLast, Column("createdAt").desc)
                 .limit(limit, offset: offset)
                 .fetchAll(database)
 
