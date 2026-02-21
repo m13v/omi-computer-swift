@@ -249,7 +249,7 @@ class TaskChatState: ObservableObject {
                     onToolActivity: toolActivityHandler,
                     onThinkingDelta: thinkingDeltaHandler,
                     onToolResultDisplay: toolResultDisplayHandler,
-                    onAuthRequired: onAuthRequired ?? { _ in },
+                    onAuthRequired: onAuthRequired ?? { _, _ in },
                     onAuthSuccess: onAuthSuccess ?? { }
                 )
             } else if let bridge = claudeBridge {
