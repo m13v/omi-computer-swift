@@ -140,12 +140,7 @@ class TaskChatCoordinator: ObservableObject {
 
         activeTaskState = state
 
-        // Pre-fill initial prompt if chat has no messages yet
-        if state.messages.isEmpty {
-            pendingInputText = buildInitialPrompt(for: task)
-        } else {
-            pendingInputText = ""
-        }
+        pendingInputText = ""
 
         isPanelOpen = true
     }
