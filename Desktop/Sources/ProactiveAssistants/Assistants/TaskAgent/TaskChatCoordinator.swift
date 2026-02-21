@@ -191,11 +191,6 @@ class TaskChatCoordinator: ObservableObject {
             return
         }
 
-        guard state.messages.isEmpty else {
-            log("TaskChatCoordinator: task \(task.id) already has messages, skipping investigate")
-            return
-        }
-
         let prompt = buildInitialPrompt(for: task)
         await state.sendMessage(prompt)
     }
