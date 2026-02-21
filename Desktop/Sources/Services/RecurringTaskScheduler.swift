@@ -40,8 +40,31 @@ class RecurringTaskScheduler {
               !tasks.isEmpty else { return }
 
         log("RecurringTaskScheduler: Found \(tasks.count) due recurring task(s)")
-        for task in tasks {
+
+        // Separate daily tasks for special handling
+        let dailyTasks = tasks.filter { $0.recurrenceRule == "daily" }
+        let otherTasks = tasks.filter { $0.recurrenceRule != "daily" }
+
+        // Handle daily tasks with lighter touch - just check if investigation already exists
+        for task in dailyTasks {
+            // Only investigate if no recent chat session exists
+            if task.chatSessionId == nil || await shouldReinvestigateDaily(task: task) {
+                await coordinator.investigateInBackground(for: task)
+            }
+        }
+
+        // Handle other recurring tasks normally
+        for task in otherTasks {
             await coordinator.investigateInBackground(for: task)
         }
+    }
+
+    /// Check if a daily task should be re-investigated (less frequent than other tasks)
+    private func shouldReinvestigateDaily(task: TaskActionItem) async -> Bool {
+        // For daily tasks, only re-investigate if more than 4 hours have passed
+        // to avoid overwhelming the user with daily task investigations
+        guard let lastInvestigation = task.agentStartedAt else { return true }
+        let hoursSinceLastInvestigation = Date().timeIntervalSince(lastInvestigation) / 3600
+        return hoursSinceLastInvestigation > 4
     }
 }
