@@ -304,27 +304,27 @@ struct SettingsSidebar: View {
     }
 
     private var backButton: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "chevron.left")
-                .scaledFont(size: 14, weight: .semibold)
-                .foregroundColor(OmiColors.textSecondary)
+        Button(action: onBack) {
+            HStack(spacing: 8) {
+                Image(systemName: "chevron.left")
+                    .scaledFont(size: 14, weight: .semibold)
+                    .foregroundColor(OmiColors.textSecondary)
 
-            Text("Back")
-                .scaledFont(size: 14, weight: .medium)
-                .foregroundColor(OmiColors.textSecondary)
+                Text("Back")
+                    .scaledFont(size: 14, weight: .medium)
+                    .foregroundColor(OmiColors.textSecondary)
 
-            Spacer()
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isBackHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isBackHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
-        )
-        .onTapGesture {
-            onBack()
-        }
+        .buttonStyle(.plain)
         .onHover { hovering in
             isBackHovered = hovering
         }
@@ -357,30 +357,30 @@ struct SettingsSidebarItem: View {
     }
 
     var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: icon)
-                .scaledFont(size: 17)
-                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                .frame(width: iconWidth)
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                Image(systemName: icon)
+                    .scaledFont(size: 17)
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                    .frame(width: iconWidth)
 
-            Text(section.rawValue)
-                .scaledFont(size: 14, weight: isSelected ? .medium : .regular)
-                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                Text(section.rawValue)
+                    .scaledFont(size: 14, weight: isSelected ? .medium : .regular)
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
 
-            Spacer()
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 11)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isSelected
+                          ? OmiColors.backgroundTertiary.opacity(0.8)
+                          : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 10)
-                .fill(isSelected
-                      ? OmiColors.backgroundTertiary.opacity(0.8)
-                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear))
-        )
-        .onTapGesture {
-            onTap()
-        }
+        .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -397,34 +397,34 @@ struct SettingsSubsectionItem: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            // Indentation spacer
-            Spacer()
-                .frame(width: iconWidth + 12)
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                // Indentation spacer
+                Spacer()
+                    .frame(width: iconWidth + 12)
 
-            Image(systemName: subsection.icon)
-                .scaledFont(size: 14)
-                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
-                .frame(width: 16)
+                Image(systemName: subsection.icon)
+                    .scaledFont(size: 14)
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textTertiary)
+                    .frame(width: 16)
 
-            Text(subsection.rawValue)
-                .scaledFont(size: 13, weight: isSelected ? .medium : .regular)
-                .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
+                Text(subsection.rawValue)
+                    .scaledFont(size: 13, weight: isSelected ? .medium : .regular)
+                    .foregroundColor(isSelected ? OmiColors.textPrimary : OmiColors.textSecondary)
 
-            Spacer()
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 9)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected
+                          ? OmiColors.backgroundTertiary.opacity(0.6)
+                          : (isHovered ? OmiColors.backgroundTertiary.opacity(0.3) : Color.clear))
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 9)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isSelected
-                      ? OmiColors.backgroundTertiary.opacity(0.6)
-                      : (isHovered ? OmiColors.backgroundTertiary.opacity(0.3) : Color.clear))
-        )
-        .onTapGesture {
-            onTap()
-        }
+        .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
@@ -439,34 +439,34 @@ struct SettingsSearchResultRow: View {
     @State private var isHovered = false
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: item.icon)
-                .scaledFont(size: 14)
-                .foregroundColor(OmiColors.textTertiary)
-                .frame(width: 20)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.name)
-                    .scaledFont(size: 13, weight: .medium)
-                    .foregroundColor(OmiColors.textPrimary)
-
-                Text(item.breadcrumb)
-                    .scaledFont(size: 11)
+        Button(action: onTap) {
+            HStack(spacing: 10) {
+                Image(systemName: item.icon)
+                    .scaledFont(size: 14)
                     .foregroundColor(OmiColors.textTertiary)
-            }
+                    .frame(width: 20)
 
-            Spacer()
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(item.name)
+                        .scaledFont(size: 13, weight: .medium)
+                        .foregroundColor(OmiColors.textPrimary)
+
+                    Text(item.breadcrumb)
+                        .scaledFont(size: 11)
+                        .foregroundColor(OmiColors.textTertiary)
+                }
+
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
+            )
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
-        .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(isHovered ? OmiColors.backgroundTertiary.opacity(0.5) : Color.clear)
-        )
-        .onTapGesture {
-            onTap()
-        }
+        .buttonStyle(.plain)
         .onHover { hovering in
             isHovered = hovering
         }
