@@ -2055,33 +2055,41 @@ struct TasksPage: View {
                 .frame(maxWidth: .infinity)
 
             if isChatVisible {
-                // Draggable divider
-                Rectangle()
-                    .fill(isDraggingDivider ? OmiColors.textSecondary : OmiColors.border)
-                    .frame(width: 1)
-                    .contentShape(Rectangle().inset(by: -4))
-                    .onHover { hovering in
-                        if hovering {
-                            NSCursor.resizeLeftRight.push()
-                        } else {
-                            NSCursor.pop()
-                        }
+                // Draggable divider with handle
+                ZStack {
+                    Rectangle()
+                        .fill(isDraggingDivider ? OmiColors.textSecondary.opacity(0.3) : OmiColors.border)
+                        .frame(width: 1)
+
+                    // Visible drag handle
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(isDraggingDivider ? OmiColors.textSecondary : OmiColors.textSecondary.opacity(0.4))
+                        .frame(width: 4, height: 36)
+                }
+                .frame(width: 9)
+                .contentShape(Rectangle())
+                .onHover { hovering in
+                    if hovering {
+                        NSCursor.resizeLeftRight.push()
+                    } else {
+                        NSCursor.pop()
                     }
-                    .gesture(
-                        DragGesture(coordinateSpace: .global)
-                            .onChanged { value in
-                                isDraggingDivider = true
-                                if dragStartWidth == 0 {
-                                    dragStartWidth = chatPanelWidth
-                                }
-                                let delta = value.startLocation.x - value.location.x
-                                chatPanelWidth = min(600, max(300, dragStartWidth + delta))
+                }
+                .gesture(
+                    DragGesture(coordinateSpace: .global)
+                        .onChanged { value in
+                            isDraggingDivider = true
+                            if dragStartWidth == 0 {
+                                dragStartWidth = chatPanelWidth
                             }
-                            .onEnded { _ in
-                                isDraggingDivider = false
-                                dragStartWidth = 0
-                            }
-                    )
+                            let delta = value.startLocation.x - value.location.x
+                            chatPanelWidth = min(600, max(300, dragStartWidth + delta))
+                        }
+                        .onEnded { _ in
+                            isDraggingDivider = false
+                            dragStartWidth = 0
+                        }
+                )
 
                 // Right panel: Task chat (slides in from right)
                 Group {
@@ -2842,8 +2850,12 @@ struct TasksPage: View {
         Button {
             if showChatPanel {
                 closeChatPanel()
+            } else if let selectedId = viewModel.keyboardSelectedTaskId,
+                      let task = viewModel.displayTasks.first(where: { $0.id == selectedId }) {
+                // A task is selected — open chat directly for it
+                openChatForTask(task)
             } else {
-                // Open empty sidebar — user picks a task to chat about
+                // No task selected — open empty sidebar
                 adjustWindowWidth(expand: true)
                 withAnimation(.easeInOut(duration: 0.25)) {
                     showChatPanel = true
