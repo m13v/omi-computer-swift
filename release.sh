@@ -349,16 +349,6 @@ echo "[2/12] Building $APP_NAME (Universal Binary)..."
 rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
-# Build agent-bridge (Node.js Claude Code integration)
-AGENT_BRIDGE_DIR="$(dirname "$0")/agent-bridge"
-if [ -d "$AGENT_BRIDGE_DIR" ]; then
-    echo "  Building agent-bridge..."
-    cd "$AGENT_BRIDGE_DIR"
-    npm install --no-fund --no-audit
-    npx tsc
-    cd - > /dev/null
-fi
-
 # Build for Apple Silicon (arm64)
 echo "  Building for arm64..."
 xcrun swift build -c release --package-path Desktop --triple arm64-apple-macosx
@@ -449,15 +439,6 @@ else
     echo "  Warning: No .env.app file found"
 fi
 
-# Copy agent-bridge (Node.js Claude Code integration)
-if [ -d "$AGENT_BRIDGE_DIR/dist" ]; then
-    mkdir -p "$APP_BUNDLE/Contents/Resources/agent-bridge"
-    cp -Rf "$AGENT_BRIDGE_DIR/dist" "$APP_BUNDLE/Contents/Resources/agent-bridge/"
-    cp -f "$AGENT_BRIDGE_DIR/package.json" "$APP_BUNDLE/Contents/Resources/agent-bridge/"
-    cp -Rf "$AGENT_BRIDGE_DIR/node_modules" "$APP_BUNDLE/Contents/Resources/agent-bridge/"
-    echo "  Copied agent-bridge to bundle"
-fi
-
 echo -n "APPL????" > "$APP_BUNDLE/Contents/PkgInfo"
 
 # Embed provisioning profile (required for Sign In with Apple entitlement)
@@ -495,17 +476,6 @@ if [ -f "$NODE_BUNDLE_PATH" ]; then
         --sign "$SIGN_IDENTITY" \
         --entitlements Desktop/Node.entitlements \
         "$NODE_BUNDLE_PATH"
-fi
-
-# Sign native binaries in agent-bridge node_modules
-AGENT_BRIDGE_RESOURCES="$APP_BUNDLE/Contents/Resources/agent-bridge/node_modules"
-if [ -d "$AGENT_BRIDGE_RESOURCES" ]; then
-    echo "  Signing agent-bridge native binaries..."
-    find "$AGENT_BRIDGE_RESOURCES" \( -name "*.node" -o -name "*.dylib" -o -name "rg" \) -type f | while read -r binary; do
-        codesign --force --options runtime --timestamp \
-            --sign "$SIGN_IDENTITY" \
-            "$binary" 2>/dev/null && echo "    Signed: $(basename "$binary")" || true
-    done
 fi
 
 # Sign Sparkle framework components (innermost first)
