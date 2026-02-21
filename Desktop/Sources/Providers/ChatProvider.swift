@@ -318,6 +318,8 @@ class ChatProvider: ObservableObject {
     @Published var claudeAuthUrl: String?
     /// Whether the user has a cached Claude OAuth token
     @Published var isClaudeConnected = false
+    /// Cumulative tokens used in the current session via Omi account
+    @Published var sessionTokensUsed: Int = 0
 
     private let messagesPageSize = 50
     private var multiChatObserver: AnyCancellable?
