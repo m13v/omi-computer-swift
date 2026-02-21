@@ -14,6 +14,7 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from "http";
+import { request as httpsRequest } from "https";
 import { randomBytes, createHash } from "crypto";
 import { execSync } from "child_process";
 import { URL } from "url";
@@ -217,27 +218,55 @@ async function exchangeCodeForToken(
     expires_in: TOKEN_EXPIRY_SECONDS,
   };
 
-  const response = await fetch(TOKEN_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
+  const jsonBody = JSON.stringify(body);
+  const tokenUrl = new URL(TOKEN_URL);
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(
-      response.status === 401
-        ? "Authentication failed: Invalid authorization code"
-        : `Token exchange failed (${response.status}): ${text}`
-    );
-  }
-
-  const data = (await response.json()) as {
+  const data = await new Promise<{
     access_token: string;
     refresh_token?: string;
     expires_in?: number;
     scope?: string;
-  };
+  }>((resolve, reject) => {
+    const req = httpsRequest(
+      {
+        hostname: tokenUrl.hostname,
+        port: 443,
+        path: tokenUrl.pathname,
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(jsonBody),
+        },
+      },
+      (res) => {
+        let responseBody = "";
+        res.on("data", (chunk: Buffer) => {
+          responseBody += chunk.toString();
+        });
+        res.on("end", () => {
+          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              resolve(JSON.parse(responseBody));
+            } catch (parseErr) {
+              reject(new Error(`Failed to parse token response: ${parseErr}`));
+            }
+          } else if (res.statusCode === 401) {
+            reject(new Error("Authentication failed: Invalid authorization code"));
+          } else {
+            reject(new Error(`Token exchange failed (${res.statusCode}): ${responseBody}`));
+          }
+        });
+      }
+    );
+
+    req.on("error", (err) => {
+      logErr(`Token exchange network error: ${err.message}`);
+      reject(new Error(`Token exchange network error: ${err.message}`));
+    });
+
+    req.write(jsonBody);
+    req.end();
+  });
 
   logErr("Token exchange successful");
 
