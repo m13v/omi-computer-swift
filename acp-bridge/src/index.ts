@@ -1011,26 +1011,16 @@ async function main(): Promise<void> {
         break;
 
       case "authenticate": {
-        logErr(`Authentication method selected: ${msg.methodId}`);
-        // Actually call ACP to perform the OAuth flow
-        acpRequest("authenticate", { methodId: msg.methodId })
-          .then(() => {
-            logErr("ACP authentication succeeded");
-            send({ type: "auth_success" });
-            if (authResolve) {
-              authResolve();
-              authResolve = null;
-            }
-          })
-          .catch((err) => {
-            const errMsg =
-              err instanceof Error ? err.message : String(err);
-            logErr(`ACP authentication failed: ${errMsg}`);
-            send({
-              type: "error",
-              message: `Authentication failed: ${errMsg}`,
-            });
-          });
+        logErr(`Authentication completed (credentials stored externally)`);
+        // Auth is handled externally (Swift runs claude setup-token or CLI login).
+        // ACP's authenticate RPC is not implemented, so we just resolve the
+        // waiting promise — the next query attempt will spawn a new Claude Code
+        // subprocess that picks up the freshly-stored credentials.
+        send({ type: "auth_success" });
+        if (authResolve) {
+          authResolve();
+          authResolve = null;
+        }
         break;
       }
 
