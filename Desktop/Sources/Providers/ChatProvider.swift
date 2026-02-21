@@ -300,18 +300,15 @@ class ChatProvider: ObservableObject {
     /// When true, user can create multiple chat sessions
     @AppStorage("multiChatEnabled") var multiChatEnabled = false
 
-    private let claudeBridge = ClaudeAgentBridge()
-    private var bridgeStarted = false
-
-    // MARK: - Dual Bridge (Mode A: Agent SDK, Mode B: ACP)
-    private let acpBridge = ACPBridge()
+    // MARK: - Bridge (ACP-only, passApiKey controls OMI vs user's account)
+    private var acpBridge = ACPBridge(passApiKey: true)
     private var acpBridgeStarted = false
 
     enum BridgeMode: String {
-        case agentSDK = "agentSDK"
-        case claudeCode = "claudeCode"
+        case omiAI = "agentSDK"
+        case userClaude = "claudeCode"
     }
-    @AppStorage("chatBridgeMode") var bridgeMode: String = BridgeMode.agentSDK.rawValue
+    @AppStorage("chatBridgeMode") var bridgeMode: String = BridgeMode.omiAI.rawValue
 
     /// Whether the ACP bridge requires authentication (shown as sheet in UI)
     @Published var isClaudeAuthRequired = false
