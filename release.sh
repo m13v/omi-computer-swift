@@ -507,15 +507,70 @@ if [ -f "$NODE_BUNDLE_PATH" ]; then
         "$NODE_BUNDLE_PATH"
 fi
 
-# Sign native binaries in acp-bridge node_modules (e.g. .node files)
+# Sign ALL native binaries in acp-bridge node_modules
+# Apple notarization requires every binary/dylib/jnilib to be signed
 ACP_BRIDGE_BUNDLE="$APP_BUNDLE/Contents/Resources/acp-bridge"
 if [ -d "$ACP_BRIDGE_BUNDLE/node_modules" ]; then
     echo "  Signing native binaries in acp-bridge/node_modules..."
+
+    # First: extract JARs containing native libs, sign them, repackage
+    find "$ACP_BRIDGE_BUNDLE/node_modules" -name "*.jar" -type f 2>/dev/null | while read jar_file; do
+        # Check if JAR contains any native Mac binaries
+        if jar tf "$jar_file" 2>/dev/null | grep -qE '\.(jnilib|dylib)$'; then
+            echo "    Processing JAR: $(echo "$jar_file" | sed "s|$ACP_BRIDGE_BUNDLE/||")"
+            JAR_TMPDIR=$(mktemp -d)
+            cd "$JAR_TMPDIR"
+            jar xf "$jar_file"
+            find . \( -name "*.jnilib" -o -name "*.dylib" \) -type f | while read native_lib; do
+                echo "      Signing: $native_lib"
+                codesign --force --options runtime --timestamp \
+                    --sign "$SIGN_IDENTITY" \
+                    "$native_lib"
+            done
+            # Repackage the JAR with signed binaries
+            jar cf "$jar_file" -C "$JAR_TMPDIR" .
+            cd - > /dev/null
+            rm -rf "$JAR_TMPDIR"
+        fi
+    done
+
+    # Sign .node files (native Node addons)
     find "$ACP_BRIDGE_BUNDLE/node_modules" -name "*.node" -type f 2>/dev/null | while read native_bin; do
-        echo "    Signing: $(basename "$native_bin")"
+        echo "    Signing: $(echo "$native_bin" | sed "s|$ACP_BRIDGE_BUNDLE/||")"
         codesign --force --options runtime --timestamp \
             --sign "$SIGN_IDENTITY" \
             "$native_bin"
+    done
+
+    # Sign standalone executables (e.g. ripgrep 'rg')
+    find "$ACP_BRIDGE_BUNDLE/node_modules" -type f \( -name "rg" -o -name "ripgrep" \) 2>/dev/null | while read exe_bin; do
+        if file "$exe_bin" | grep -q "Mach-O"; then
+            echo "    Signing: $(echo "$exe_bin" | sed "s|$ACP_BRIDGE_BUNDLE/||")"
+            codesign --force --options runtime --timestamp \
+                --sign "$SIGN_IDENTITY" \
+                "$exe_bin"
+        fi
+    done
+
+    # Sign .dylib files (shared libraries like libvips)
+    find "$ACP_BRIDGE_BUNDLE/node_modules" -name "*.dylib" -type f 2>/dev/null | while read dylib_bin; do
+        echo "    Signing: $(echo "$dylib_bin" | sed "s|$ACP_BRIDGE_BUNDLE/||")"
+        codesign --force --options runtime --timestamp \
+            --sign "$SIGN_IDENTITY" \
+            "$dylib_bin"
+    done
+
+    # Catch-all: sign any remaining Mach-O binaries that might have been missed
+    find "$ACP_BRIDGE_BUNDLE/node_modules" -type f ! -name "*.js" ! -name "*.json" ! -name "*.ts" ! -name "*.map" ! -name "*.md" ! -name "*.txt" ! -name "*.yml" ! -name "*.yaml" ! -name "*.css" ! -name "*.html" ! -name "*.jar" 2>/dev/null | while read candidate; do
+        if file "$candidate" 2>/dev/null | grep -q "Mach-O"; then
+            # Check if already signed with our identity
+            if ! codesign -v "$candidate" 2>/dev/null; then
+                echo "    Signing (catch-all): $(echo "$candidate" | sed "s|$ACP_BRIDGE_BUNDLE/||")"
+                codesign --force --options runtime --timestamp \
+                    --sign "$SIGN_IDENTITY" \
+                    "$candidate"
+            fi
+        fi
     done
 fi
 
