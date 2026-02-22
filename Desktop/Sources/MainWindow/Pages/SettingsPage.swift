@@ -102,6 +102,7 @@ struct SettingsContentView: View {
     // Task Assistant states
     @State private var taskEnabled: Bool
     @State private var taskChatAgentEnabled: Bool
+    @State private var taskAgentWorkingDirectory: String
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
     @State private var taskNotificationsEnabled: Bool
@@ -300,6 +301,7 @@ struct SettingsContentView: View {
         _focusExcludedApps = State(initialValue: FocusAssistantSettings.shared.excludedApps)
         _taskEnabled = State(initialValue: TaskAssistantSettings.shared.isEnabled)
         _taskChatAgentEnabled = State(initialValue: TaskAgentSettings.shared.isChatEnabled)
+        _taskAgentWorkingDirectory = State(initialValue: TaskAgentSettings.shared.workingDirectory)
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
         _taskNotificationsEnabled = State(initialValue: TaskAssistantSettings.shared.notificationsEnabled)
@@ -2849,6 +2851,47 @@ struct SettingsContentView: View {
                             .onChange(of: taskChatAgentEnabled) { _, newValue in
                                 TaskAgentSettings.shared.isChatEnabled = newValue
                             }
+                    }
+
+                    // Working Directory (shared by chat agent and terminal agent)
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Working Directory")
+                                .scaledFont(size: 14)
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text(taskAgentWorkingDirectory.isEmpty ? "Not set — chat agent defaults to ~" : taskAgentWorkingDirectory)
+                                .scaledFont(size: 11)
+                                .foregroundColor(OmiColors.textTertiary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+
+                        Spacer()
+
+                        Button("Browse...") {
+                            let panel = NSOpenPanel()
+                            panel.canChooseFiles = false
+                            panel.canChooseDirectories = true
+                            panel.allowsMultipleSelection = false
+                            panel.canCreateDirectories = true
+                            if !taskAgentWorkingDirectory.isEmpty {
+                                panel.directoryURL = URL(fileURLWithPath: taskAgentWorkingDirectory)
+                            }
+                            if panel.runModal() == .OK, let url = panel.url {
+                                taskAgentWorkingDirectory = url.path
+                                TaskAgentSettings.shared.workingDirectory = url.path
+                            }
+                        }
+                        .scaledFont(size: 13)
+
+                        if !taskAgentWorkingDirectory.isEmpty {
+                            Button("Clear") {
+                                taskAgentWorkingDirectory = ""
+                                TaskAgentSettings.shared.workingDirectory = ""
+                            }
+                            .scaledFont(size: 13)
+                            .foregroundColor(OmiColors.textTertiary)
+                        }
                     }
 
                     Divider()
