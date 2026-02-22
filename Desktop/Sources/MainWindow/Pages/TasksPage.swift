@@ -1803,6 +1803,7 @@ class TasksViewModel: ObservableObject {
 
     func deleteTask(_ task: TaskActionItem) async {
         removeFromDisplay(task.id)
+        chatCoordinator?.purgeState(for: task.id)
         await store.deleteTask(task)
     }
 
@@ -1816,6 +1817,7 @@ class TasksViewModel: ObservableObject {
 
         // Delete the task
         removeFromDisplay(task.id)
+        chatCoordinator?.purgeState(for: task.id)
         await store.deleteTask(task)
 
         // Show toast and schedule auto-dismiss
@@ -1915,6 +1917,9 @@ class TasksViewModel: ObservableObject {
 
     func deleteSelectedTasks() async {
         let idsToDelete = Array(selectedTaskIds)
+        for id in idsToDelete {
+            chatCoordinator?.purgeState(for: id)
+        }
         await store.deleteMultipleTasks(ids: idsToDelete)
         selectedTaskIds.removeAll()
         isMultiSelectMode = false
@@ -2121,6 +2126,8 @@ struct TasksPage: View {
         .background(Color.clear)
         // Modal creation sheet removed — Cmd+N now creates inline at top
         .onAppear {
+            // Wire coordinator so delete operations can purge in-memory chat states
+            viewModel.chatCoordinator = chatCoordinator
             // If tasks are already loaded, notify sidebar to clear loading indicator
             if !viewModel.isLoading {
                 NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
