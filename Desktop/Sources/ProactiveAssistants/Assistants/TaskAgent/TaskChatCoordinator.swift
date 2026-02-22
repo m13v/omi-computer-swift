@@ -225,6 +225,7 @@ class TaskChatCoordinator: ObservableObject {
 
         let prompt = buildInitialPrompt(for: task)
         await state.sendMessage(prompt)
+    }
 
     // MARK: - Helpers
 
