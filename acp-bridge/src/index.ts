@@ -856,9 +856,24 @@ function handleSessionUpdate(
 
     case "tool_call": {
       const toolCallId = (update.toolCallId as string) ?? "";
-      const title = (update.title as string) ?? "unknown";
+      let title = (update.title as string) ?? "unknown";
       const kind = (update.kind as string) ?? "";
       const status = (update.status as string) ?? "pending";
+
+      // Fix undefined titles for server-side tools (e.g. WebSearch, WebFetch)
+      // where input may not be populated when the notification fires
+      if (title.includes("undefined")) {
+        const meta = update._meta as { claudeCode?: { toolName?: string } } | undefined;
+        const toolName = meta?.claudeCode?.toolName;
+        const rawInput = update.rawInput as Record<string, unknown> | undefined;
+        if (toolName === "WebSearch" && rawInput?.query) {
+          title = `"${rawInput.query}"`;
+        } else if (toolName === "WebFetch" && rawInput?.url) {
+          title = `Fetch ${rawInput.url}`;
+        } else if (toolName) {
+          title = toolName;
+        }
+      }
 
       if (status === "pending" || status === "in_progress") {
         pendingTools.push(title);
