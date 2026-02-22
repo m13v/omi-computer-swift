@@ -216,6 +216,13 @@ class TaskChatCoordinator: ObservableObject {
         // doesn't re-fire this task every 60 seconds (dedup check is chatSessionId != nil)
         try? await ActionItemStorage.shared.updateChatSessionId(taskId: task.id, sessionId: task.id)
 
+        // Advance dueAt for recurring tasks so getDueRecurringTasks() won't keep returning them
+        if let currentDueAt = task.dueAt, task.recurrenceRule == "daily" {
+            let nextDueAt = currentDueAt.addingTimeInterval(86400) // +1 day
+            try? await ActionItemStorage.shared.updateActionItemFields(backendId: task.id, dueAt: nextDueAt)
+            log("TaskChatCoordinator: advanced dueAt for daily task \(task.id) to \(nextDueAt)")
+        }
+
         let prompt = buildInitialPrompt(for: task)
         await state.sendMessage(prompt)
 
