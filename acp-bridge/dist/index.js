@@ -466,7 +466,7 @@ async function preWarmSession(cwd, models) {
             }
             catch (err) {
                 // If pre-warm fails with auth error, start OAuth flow
-                if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
+                if (err instanceof AcpError && err.code === -32000) {
                     logErr(`Pre-warm failed with auth error (code=${err.code}), starting OAuth flow`);
                     await startAuthFlow();
                     return; // After auth, warmup will happen on next query
