@@ -439,6 +439,9 @@ class TasksViewModel: ObservableObject {
     // Use shared TasksStore as single source of truth
     private let store = TasksStore.shared
 
+    /// Set by TasksPage so delete operations can purge in-memory chat states.
+    weak var chatCoordinator: TaskChatCoordinator?
+
     // Search state - searches SQLite directly
     @Published var searchText = "" {
         didSet {
