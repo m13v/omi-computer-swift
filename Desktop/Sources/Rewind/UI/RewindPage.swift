@@ -1139,14 +1139,6 @@ struct RewindPage: View {
     @AppStorage("recordingNotesPanelRatio") private var panelRatio: Double = 0.65
     private let minPanelWidth: CGFloat = 200
 
-    /// The segments to display — live if available, otherwise the saved snapshot
-    private var displaySegments: [SpeakerSegment] {
-        if !liveTranscript.segments.isEmpty {
-            return liveTranscript.segments
-        }
-        return savedTranscriptSegments
-    }
-
     private var expandedTranscriptView: some View {
         VStack(spacing: 0) {
             // Show a back bar only when the recording bar is not visible
@@ -1155,7 +1147,7 @@ struct RewindPage: View {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isTranscriptExpanded = false
-                            savedTranscriptSegments = []
+                            LiveTranscriptMonitor.shared.clearSaved()
                         }
                     } label: {
                         HStack(spacing: 4) {
@@ -1188,32 +1180,13 @@ struct RewindPage: View {
                 HStack(spacing: 0) {
                     // Left: Live transcript
                     VStack(spacing: 0) {
-                        if displaySegments.isEmpty {
-                            VStack(spacing: 16) {
-                                Image(systemName: "waveform")
-                                    .scaledFont(size: 48)
-                                    .foregroundColor(OmiColors.textTertiary)
-                                    .opacity(0.5)
-                                Text("Listening...")
-                                    .scaledFont(size: 16, weight: .medium)
-                                    .foregroundColor(OmiColors.textSecondary)
-                                Text("Start speaking and your transcript will appear here")
-                                    .scaledFont(size: 14)
-                                    .foregroundColor(OmiColors.textTertiary)
-                                    .multilineTextAlignment(.center)
+                        LiveTranscriptPanel(
+                            speakerNames: speakerNames,
+                            onSpeakerTapped: { segment in
+                                selectedSpeakerSegment = segment
+                                showNameSpeakerSheet = true
                             }
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .padding(32)
-                        } else {
-                            LiveTranscriptView(
-                                segments: displaySegments,
-                                speakerNames: speakerNames,
-                                onSpeakerTapped: { segment in
-                                    selectedSpeakerSegment = segment
-                                    showNameSpeakerSheet = true
-                                }
-                            )
-                        }
+                        )
                     }
                     .frame(width: transcriptWidth)
                     .background(OmiColors.backgroundPrimary)
@@ -1266,23 +1239,12 @@ struct RewindPage: View {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isTranscriptExpanded.toggle()
                         if !isTranscriptExpanded {
-                            savedTranscriptSegments = []
+                            LiveTranscriptMonitor.shared.clearSaved()
                         }
                     }
                 } label: {
                     HStack(spacing: 6) {
-                        if let latestText = liveTranscript.latestText, !liveTranscript.isEmpty {
-                            Text(latestText)
-                                .scaledFont(size: 14)
-                                .foregroundColor(OmiColors.textSecondary)
-                                .lineLimit(1)
-                                .truncationMode(.head)
-                                .frame(maxWidth: 260, alignment: .leading)
-                        } else {
-                            Text("Listening")
-                                .scaledFont(size: 14, weight: .medium)
-                                .foregroundColor(OmiColors.textPrimary)
-                        }
+                        RecordingBarTranscriptText()
                         Image(systemName: isTranscriptExpanded ? "chevron.up" : "chevron.down")
                             .scaledFont(size: 10, weight: .semibold)
                             .foregroundColor(OmiColors.textTertiary)
