@@ -5,7 +5,7 @@ import CoreAudio
 /// Service for capturing system audio using Core Audio Taps (macOS 14.4+)
 /// Captures all system audio output and converts to 16-bit PCM at 16kHz for transcription
 @available(macOS 14.4, *)
-class SystemAudioCaptureService {
+class SystemAudioCaptureService: @unchecked Sendable {
 
     // MARK: - Types
 
