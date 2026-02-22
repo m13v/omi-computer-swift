@@ -101,6 +101,7 @@ struct SettingsContentView: View {
 
     // Task Assistant states
     @State private var taskEnabled: Bool
+    @State private var taskChatAgentEnabled: Bool
     @State private var taskExtractionInterval: Double
     @State private var taskMinConfidence: Double
     @State private var taskNotificationsEnabled: Bool
@@ -298,6 +299,7 @@ struct SettingsContentView: View {
         _focusNotificationsEnabled = State(initialValue: FocusAssistantSettings.shared.notificationsEnabled)
         _focusExcludedApps = State(initialValue: FocusAssistantSettings.shared.excludedApps)
         _taskEnabled = State(initialValue: TaskAssistantSettings.shared.isEnabled)
+        _taskChatAgentEnabled = State(initialValue: TaskAgentSettings.shared.isChatEnabled)
         _taskExtractionInterval = State(initialValue: TaskAssistantSettings.shared.extractionInterval)
         _taskMinConfidence = State(initialValue: TaskAssistantSettings.shared.minConfidence)
         _taskNotificationsEnabled = State(initialValue: TaskAssistantSettings.shared.notificationsEnabled)
@@ -2825,6 +2827,30 @@ struct SettingsContentView: View {
                         .foregroundColor(OmiColors.textTertiary)
 
                     if taskEnabled {
+                    Divider()
+                        .background(OmiColors.backgroundQuaternary)
+
+                    // Task Agent (chat / investigate) toggle
+                    HStack {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Task Agent")
+                                .scaledFont(size: 14)
+                                .foregroundColor(OmiColors.textSecondary)
+                            Text("Investigate button and sidebar chat for tasks")
+                                .scaledFont(size: 12)
+                                .foregroundColor(OmiColors.textTertiary)
+                        }
+
+                        Spacer()
+
+                        Toggle("", isOn: $taskChatAgentEnabled)
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .onChange(of: taskChatAgentEnabled) { _, newValue in
+                                TaskAgentSettings.shared.isChatEnabled = newValue
+                            }
+                    }
+
                     Divider()
                         .background(OmiColors.backgroundQuaternary)
 
