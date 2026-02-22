@@ -3035,6 +3035,7 @@ struct TasksPage: View {
                                         viewModel.isAnyTaskEditing = editing
                                         if !editing { viewModel.editingTaskId = nil }
                                     },
+                                    onStartEditing: { task in viewModel.editingTaskId = task.id },
                                     animateToggleTaskId: viewModel.animateToggleTaskId,
                                     isInlineCreating: viewModel.isInlineCreating,
                                     inlineCreateAfterTaskId: viewModel.inlineCreateAfterTaskId,
@@ -3089,6 +3090,7 @@ struct TasksPage: View {
                                         viewModel.isAnyTaskEditing = editing
                                         if !editing { viewModel.editingTaskId = nil }
                                     },
+                                    onStartEditing: { task in viewModel.editingTaskId = task.id },
                                     animateToggleTaskId: viewModel.animateToggleTaskId
                                 )
                                 .id(task.id)
@@ -3213,6 +3215,7 @@ struct TaskCategorySection: View {
     // Edit mode support
     var editingTaskId: String?
     var onEditingChanged: ((Bool) -> Void)?
+    var onStartEditing: ((TaskActionItem) -> Void)?
 
     // Space-key animated toggle
     var animateToggleTaskId: String?
@@ -3309,6 +3312,7 @@ struct TaskCategorySection: View {
                                 chatCoordinator: chatCoordinator,
                                 editingTaskId: editingTaskId,
                                 onEditingChanged: onEditingChanged,
+                                onStartEditing: onStartEditing,
                                 animateToggleTaskId: animateToggleTaskId
                             )
                             .id(task.id)
@@ -3505,6 +3509,7 @@ struct TaskRow: View {
     // Edit mode support (external trigger from keyboard navigation)
     var editingTaskId: String?
     var onEditingChanged: ((Bool) -> Void)?
+    var onStartEditing: ((TaskActionItem) -> Void)?
 
     // Space-key animated toggle (set by parent when space is pressed)
     var animateToggleTaskId: String?
@@ -3823,72 +3828,78 @@ struct TaskRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
-                // Always-editable task content
+                // Task content
                 VStack(alignment: .leading, spacing: 2) {
-                    // Always-rendered TextField (notes-like editing) — full width to prevent early wrapping
-                    TextField("Task description", text: $editText, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .scaledFont(size: 14)
-                        .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
-                        .strikethrough(task.completed, color: OmiColors.textTertiary)
-                        .lineLimit(1...4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .focused($isTextFieldFocused)
-                        .disabled(isMultiSelectMode)
-                        .onKeyPress(.escape) {
-                            debounceTask?.cancel()
-                            commitEdit()
-                            isTextFieldFocused = false
-                            return .handled
-                        }
-                        .onSubmit {
-                            debounceTask?.cancel()
-                            commitEdit()
-                        }
-                        .onChange(of: isTextFieldFocused) { _, focused in
-                            onEditingChanged?(focused)
-                            if !focused {
+                    // Task title: edit mode shows TextField, view mode shows Text (tap to edit)
+                    if editingTaskId == task.id || isTextFieldFocused {
+                        // Editing: interactive TextField
+                        TextField("Task description", text: $editText, axis: .vertical)
+                            .textFieldStyle(.plain)
+                            .scaledFont(size: 14)
+                            .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
+                            .strikethrough(task.completed, color: OmiColors.textTertiary)
+                            .lineLimit(1...4)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .focused($isTextFieldFocused)
+                            .disabled(isMultiSelectMode)
+                            .onKeyPress(.escape) {
+                                debounceTask?.cancel()
+                                commitEdit()
+                                isTextFieldFocused = false
+                                return .handled
+                            }
+                            .onSubmit {
                                 debounceTask?.cancel()
                                 commitEdit()
                             }
-                        }
-                        .onChange(of: editingTaskId) { _, newId in
-                            if newId == task.id {
+                            .onChange(of: isTextFieldFocused) { _, focused in
+                                onEditingChanged?(focused)
+                                if !focused {
+                                    debounceTask?.cancel()
+                                    commitEdit()
+                                }
+                            }
+                            .onChange(of: editText) { _, _ in
+                                // Debounced auto-save: save after 1s of no typing
+                                debounceTask?.cancel()
+                                debounceTask = Task {
+                                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                                    guard !Task.isCancelled else { return }
+                                    commitEdit()
+                                }
+                            }
+                            .onAppear {
                                 isTextFieldFocused = true
                             }
-                        }
-                        .onChange(of: editText) { _, _ in
-                            // Debounced auto-save: save after 1s of no typing
-                            debounceTask?.cancel()
-                            debounceTask = Task {
-                                try? await Task.sleep(nanoseconds: 1_000_000_000)
-                                guard !Task.isCancelled else { return }
-                                commitEdit()
+                            // Editing highlight: background hugs text characters, dark page background
+                            .background(alignment: .topLeading) {
+                                if isTextFieldFocused {
+                                    Text(editText.isEmpty ? "Task description" : editText)
+                                        .scaledFont(size: 14)
+                                        .lineLimit(1...4)
+                                        .foregroundColor(.clear)
+                                        .padding(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 6))
+                                        .background(
+                                            RoundedRectangle(cornerRadius: 4)
+                                                .fill(OmiColors.backgroundPrimary)
+                                        )
+                                }
                             }
+                    } else {
+                        // View mode: tapping on text starts editing; empty space just selects via outer gesture
+                        HStack(spacing: 0) {
+                            Text(editText.isEmpty ? "Task description" : editText)
+                                .scaledFont(size: 14)
+                                .foregroundColor(task.completed ? OmiColors.textTertiary : OmiColors.textPrimary)
+                                .strikethrough(task.completed, color: OmiColors.textTertiary)
+                                .lineLimit(1...4)
+                                .onTapGesture {
+                                    onSelect?(task)
+                                    onStartEditing?(task)
+                                }
+                            Spacer()
                         }
-                        .onAppear {
-                            editText = task.description
-                        }
-                        .onChange(of: task.description) { _, newValue in
-                            if !isTextFieldFocused {
-                                editText = newValue
-                            }
-                        }
-                        // Editing highlight: invisible Text sizer so the background hugs the
-                        // visible characters instead of spanning the full card width.
-                        .background(alignment: .topLeading) {
-                            if isTextFieldFocused {
-                                Text(editText.isEmpty ? "Task description" : editText)
-                                    .scaledFont(size: 14)
-                                    .lineLimit(1...4)
-                                    .foregroundColor(.clear)
-                                    .padding(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 6))
-                                    .background(
-                                        RoundedRectangle(cornerRadius: 4)
-                                            .fill(Color.black.opacity(0.18))
-                                    )
-                            }
-                        }
+                    }
 
                     // Badges + detail button row
                     FlowLayout(spacing: 6) {
@@ -3942,6 +3953,10 @@ struct TaskRow: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
+                .onAppear { editText = task.description }
+                .onChange(of: task.description) { _, newValue in
+                    if !isTextFieldFocused { editText = newValue }
+                }
                 .popover(isPresented: $showDatePicker) {
                     dueDatePopover
                 }
