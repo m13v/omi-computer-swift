@@ -48,7 +48,14 @@ class RecurringTaskScheduler {
         // Handle daily tasks with lighter touch - just check if investigation already exists
         for task in dailyTasks {
             // Only investigate if no recent chat session exists
-            if task.chatSessionId == nil || await shouldReinvestigateDaily(task: task) {
+            // (can't use || with await because the rhs is an @autoclosure)
+            let needsInvestigation: Bool
+            if task.chatSessionId == nil {
+                needsInvestigation = true
+            } else {
+                needsInvestigation = await shouldReinvestigateDaily(task: task)
+            }
+            if needsInvestigation {
                 await coordinator.investigateInBackground(for: task)
             }
         }
