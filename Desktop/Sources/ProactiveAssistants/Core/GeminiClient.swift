@@ -118,9 +118,16 @@ struct GeminiRequest: Encodable {
 struct GeminiResponse: Decodable {
     let candidates: [Candidate]?
     let error: GeminiError?
+    let promptFeedback: PromptFeedback?
 
     struct Candidate: Decodable {
         let content: Content?
+        let finishReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case content
+            case finishReason = "finish_reason"
+        }
 
         struct Content: Decodable {
             let parts: [Part]?
@@ -128,6 +135,14 @@ struct GeminiResponse: Decodable {
             struct Part: Decodable {
                 let text: String?
             }
+        }
+    }
+
+    struct PromptFeedback: Decodable {
+        let blockReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case blockReason = "block_reason"
         }
     }
 
@@ -169,6 +184,21 @@ actor GeminiClient {
         }
         self.apiKey = key
         self.model = model
+    }
+
+    /// Throw a descriptive error based on why the Gemini response has no usable content.
+    /// Prefers block reasons from promptFeedback or finishReason over the generic invalidResponse.
+    private func throwBlockedOrInvalidResponse(
+        blockReason: String?,
+        finishReason: String?
+    ) throws -> Never {
+        if let reason = blockReason {
+            throw GeminiClientError.apiError("blocked: \(reason)")
+        }
+        if let reason = finishReason, reason != "STOP" {
+            throw GeminiClientError.apiError("blocked: \(reason)")
+        }
+        throw GeminiClientError.invalidResponse
     }
 
     /// Check if an error is transient and worth retrying
@@ -253,7 +283,10 @@ actor GeminiClient {
                 }
 
                 guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-                    throw GeminiClientError.invalidResponse
+                    try throwBlockedOrInvalidResponse(
+                        blockReason: response.promptFeedback?.blockReason,
+                        finishReason: response.candidates?.first?.finishReason
+                    )
                 }
 
                 return text
@@ -1317,9 +1350,16 @@ extension GeminiClient {
 struct GeminiToolResponse: Decodable {
     let candidates: [Candidate]?
     let error: GeminiError?
+    let promptFeedback: PromptFeedback?
 
     struct Candidate: Decodable {
         let content: Content?
+        let finishReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case content
+            case finishReason = "finish_reason"
+        }
 
         struct Content: Decodable {
             let parts: [Part]?
@@ -1335,6 +1375,14 @@ struct GeminiToolResponse: Decodable {
                     case thoughtSignature = "thoughtSignature"
                 }
             }
+        }
+    }
+
+    struct PromptFeedback: Decodable {
+        let blockReason: String?
+
+        enum CodingKeys: String, CodingKey {
+            case blockReason = "block_reason"
         }
     }
 
