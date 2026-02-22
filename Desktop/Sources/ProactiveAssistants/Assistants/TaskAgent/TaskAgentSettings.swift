@@ -158,7 +158,6 @@ struct TaskAgentSettingsView: View {
     @ObservedObject var settings = TaskAgentSettings.shared
     @State private var validation: TaskAgentSettings.EnvironmentValidation?
     @State private var isValidating = false
-    @State private var showingDirectoryPicker = false
 
     var body: some View {
         Form {
@@ -175,23 +174,6 @@ struct TaskAgentSettingsView: View {
             }
 
             if settings.isEnabled {
-                Section {
-                    HStack {
-                        TextField("Working Directory", text: $settings.workingDirectory)
-                            .textFieldStyle(.roundedBorder)
-
-                        Button("Browse...") {
-                            browseForDirectory()
-                        }
-                    }
-
-                    Text("Claude agents will run from this directory")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                } header: {
-                    Label("Working Directory", systemImage: "folder")
-                }
-
                 Section {
                     TextEditor(text: $settings.customPromptPrefix)
                         .frame(minHeight: 80)
@@ -288,18 +270,6 @@ struct TaskAgentSettingsView: View {
         }
     }
 
-    private func browseForDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.directoryURL = URL(fileURLWithPath: settings.workingDirectory)
-
-        if panel.runModal() == .OK, let url = panel.url {
-            settings.workingDirectory = url.path
-        }
-    }
 }
 
 struct ValidationRow: View {
