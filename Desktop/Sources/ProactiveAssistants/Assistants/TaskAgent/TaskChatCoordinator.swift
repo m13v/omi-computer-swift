@@ -112,6 +112,21 @@ class TaskChatCoordinator: ObservableObject {
         unreadTaskIds.remove(taskId)
     }
 
+    /// Release memory held by a task's chat state.
+    /// Call when a task is permanently deleted to prevent unbounded memory growth.
+    func purgeState(for taskId: String) {
+        taskCancellables[taskId]?.removeAll()
+        taskCancellables.removeValue(forKey: taskId)
+        taskStates.removeValue(forKey: taskId)
+        if activeTaskId == taskId {
+            closeChat()
+        }
+        streamingTaskIds.remove(taskId)
+        streamingStatuses.removeValue(forKey: taskId)
+        unreadTaskIds.remove(taskId)
+        log("TaskChatCoordinator: Purged state for task \(taskId)")
+    }
+
     // MARK: - Open / Close
 
     /// Open (or resume) a chat panel for a task.
