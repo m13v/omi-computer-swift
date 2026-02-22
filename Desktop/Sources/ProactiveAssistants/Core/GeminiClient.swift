@@ -350,7 +350,10 @@ actor GeminiClient {
                 }
 
                 guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-                    throw GeminiClientError.invalidResponse
+                    try throwBlockedOrInvalidResponse(
+                        blockReason: response.promptFeedback?.blockReason,
+                        finishReason: response.candidates?.first?.finishReason
+                    )
                 }
 
                 return text
@@ -415,7 +418,10 @@ actor GeminiClient {
                 }
 
                 guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-                    throw GeminiClientError.invalidResponse
+                    try throwBlockedOrInvalidResponse(
+                        blockReason: response.promptFeedback?.blockReason,
+                        finishReason: response.candidates?.first?.finishReason
+                    )
                 }
 
                 return text
@@ -837,7 +843,10 @@ extension GeminiClient {
 
         guard let candidate = response.candidates?.first,
               let parts = candidate.content?.parts else {
-            throw GeminiClientError.invalidResponse
+            try throwBlockedOrInvalidResponse(
+                blockReason: response.promptFeedback?.blockReason,
+                finishReason: response.candidates?.first?.finishReason
+            )
         }
 
         // Check for function calls
@@ -929,7 +938,10 @@ extension GeminiClient {
 
         guard let candidate = response.candidates?.first,
               let parts = candidate.content?.parts else {
-            throw GeminiClientError.invalidResponse
+            try throwBlockedOrInvalidResponse(
+                blockReason: response.promptFeedback?.blockReason,
+                finishReason: response.candidates?.first?.finishReason
+            )
         }
 
         // Check for more function calls or text
@@ -1133,7 +1145,10 @@ extension GeminiClient {
 
                 guard let candidate = response.candidates?.first,
                       let parts = candidate.content?.parts else {
-                    throw GeminiClientError.invalidResponse
+                    try throwBlockedOrInvalidResponse(
+                        blockReason: response.promptFeedback?.blockReason,
+                        finishReason: response.candidates?.first?.finishReason
+                    )
                 }
 
                 var toolCalls: [ToolCall] = []
@@ -1216,7 +1231,10 @@ extension GeminiClient {
 
                 guard let candidate = response.candidates?.first,
                       let parts = candidate.content?.parts else {
-                    throw GeminiClientError.invalidResponse
+                    try throwBlockedOrInvalidResponse(
+                        blockReason: response.promptFeedback?.blockReason,
+                        finishReason: response.candidates?.first?.finishReason
+                    )
                 }
 
                 var toolCalls: [ToolCall] = []
@@ -1328,7 +1346,10 @@ extension GeminiClient {
                 }
 
                 guard let text = response.candidates?.first?.content?.parts?.first?.text else {
-                    throw GeminiClientError.invalidResponse
+                    try throwBlockedOrInvalidResponse(
+                        blockReason: response.promptFeedback?.blockReason,
+                        finishReason: response.candidates?.first?.finishReason
+                    )
                 }
 
                 return text
