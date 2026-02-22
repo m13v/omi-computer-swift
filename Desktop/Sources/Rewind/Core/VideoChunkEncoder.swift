@@ -302,14 +302,29 @@ actor VideoChunkEncoder {
             ffmpegStdin = nil
         }
 
-        // Wait for ffmpeg to finish
+        // Wait for ffmpeg to finish, but don't block forever.
+        // Under memory pressure, ffmpeg can hang in a disk I/O syscall and never respond
+        // to stdin close. A 10-second watchdog force-kills it so the cooperative thread
+        // isn't blocked indefinitely, which would deadlock the entire actor.
         if let process = ffmpegProcess {
+            let pid = process.processIdentifier
+            let frameCount = frameTimestamps.count
+
+            let watchdog = Task.detached(priority: .background) {
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                if process.isRunning {
+                    logError("VideoChunkEncoder: ffmpeg hung for 10s — force killing PID \(pid)")
+                    kill(pid, SIGKILL)
+                }
+            }
+
             process.waitUntilExit()
+            watchdog.cancel()
 
             if process.terminationStatus != 0 {
                 logError("VideoChunkEncoder: FFmpeg exited with status \(process.terminationStatus)")
             } else {
-                log("VideoChunkEncoder: Finalized chunk with \(frameTimestamps.count) frames")
+                log("VideoChunkEncoder: Finalized chunk with \(frameCount) frames")
             }
 
             ffmpegProcess = nil
