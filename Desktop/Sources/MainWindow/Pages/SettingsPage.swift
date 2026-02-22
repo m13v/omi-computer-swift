@@ -2103,6 +2103,9 @@ struct SettingsContentView: View {
                             .toggleStyle(.switch)
                             .controlSize(.small)
                             .labelsHidden()
+                            .onChange(of: devModeEnabled) { _, newValue in
+                                AnalyticsManager.shared.settingToggled(setting: "dev_mode", enabled: newValue)
+                            }
                     }
 
                     Text("Let the AI modify the app's source code, rebuild it, and add custom features.")
