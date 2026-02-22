@@ -1,5 +1,65 @@
 import SwiftUI
 
+/// Self-contained panel that observes LiveTranscriptMonitor internally,
+/// so the parent view does NOT need to observe transcript changes.
+struct LiveTranscriptPanel: View {
+    @ObservedObject private var monitor = LiveTranscriptMonitor.shared
+    var speakerNames: [Int: String] = [:]
+    var onSpeakerTapped: ((SpeakerSegment) -> Void)? = nil
+
+    private var displaySegments: [SpeakerSegment] {
+        if !monitor.segments.isEmpty { return monitor.segments }
+        return monitor.savedSegments
+    }
+
+    var body: some View {
+        if displaySegments.isEmpty {
+            VStack(spacing: 16) {
+                Image(systemName: "waveform")
+                    .scaledFont(size: 48)
+                    .foregroundColor(OmiColors.textTertiary)
+                    .opacity(0.5)
+                Text("Live Transcript")
+                    .scaledFont(size: 16, weight: .medium)
+                    .foregroundColor(OmiColors.textSecondary)
+                Text("Start speaking and your transcript will appear here")
+                    .scaledFont(size: 14)
+                    .foregroundColor(OmiColors.textTertiary)
+                    .multilineTextAlignment(.center)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(32)
+        } else {
+            LiveTranscriptView(
+                segments: displaySegments,
+                speakerNames: speakerNames,
+                onSpeakerTapped: onSpeakerTapped
+            )
+        }
+    }
+}
+
+/// Small view for the recording bar that observes LiveTranscriptMonitor
+/// without forcing the parent to re-render.
+struct RecordingBarTranscriptText: View {
+    @ObservedObject private var monitor = LiveTranscriptMonitor.shared
+
+    var body: some View {
+        if let latestText = monitor.latestText, !monitor.isEmpty {
+            Text(latestText)
+                .scaledFont(size: 14)
+                .foregroundColor(OmiColors.textSecondary)
+                .lineLimit(1)
+                .truncationMode(.head)
+                .frame(maxWidth: 260, alignment: .leading)
+        } else {
+            Text("Listening")
+                .scaledFont(size: 14, weight: .medium)
+                .foregroundColor(OmiColors.textPrimary)
+        }
+    }
+}
+
 /// Live transcript view showing speaker segments during recording
 struct LiveTranscriptView: View {
     let segments: [SpeakerSegment]
