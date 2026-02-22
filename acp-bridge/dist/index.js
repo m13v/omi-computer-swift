@@ -170,7 +170,8 @@ function startAcpProcess() {
     // Located in dist/ (same as __dirname) so it's included in the app bundle
     const acpEntry = join(__dirname, "patched-acp-entry.mjs");
     const nodeBin = process.execPath;
-    logErr(`Starting ACP subprocess: ${nodeBin} ${acpEntry}`);
+    const mode = env.ANTHROPIC_API_KEY ? "Mode A (Omi API key)" : "Mode B (Your Claude Account / OAuth)";
+    logErr(`Starting ACP subprocess [${mode}]: ${nodeBin} ${acpEntry}`);
     acpProcess = spawn(nodeBin, [acpEntry], {
         env,
         stdio: ["pipe", "pipe", "pipe"],
@@ -465,7 +466,8 @@ async function preWarmSession(cwd, models) {
                 logErr(`Pre-warmed session: ${result.sessionId} (cwd=${warmCwd}, model=${warmModel})`);
             }
             catch (err) {
-                // If pre-warm fails with auth error, start OAuth flow
+                // If pre-warm fails with auth error, start OAuth flow.
+                // Only -32000 is AUTH_REQUIRED; -32603 is a generic error (credit balance, API error, etc.)
                 if (err instanceof AcpError && err.code === -32000) {
                     logErr(`Pre-warm failed with auth error (code=${err.code}), starting OAuth flow`);
                     await startAuthFlow();
