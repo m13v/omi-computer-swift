@@ -10,7 +10,6 @@ struct RewindPage: View {
     @StateObject private var viewModel = RewindViewModel()
     @ObservedObject private var audioLevels = AudioLevelMonitor.shared
     @ObservedObject private var recordingTimer = RecordingTimer.shared
-    @ObservedObject private var liveTranscript = LiveTranscriptMonitor.shared
 
     @State private var currentIndex: Int = 0
     @State private var currentImage: NSImage?
@@ -33,7 +32,6 @@ struct RewindPage: View {
 
     // Expanded transcript state
     @State private var isTranscriptExpanded = false
-    @State private var savedTranscriptSegments: [SpeakerSegment] = []
 
     // Finish conversation button state
     @State private var isFinishing = false
@@ -198,18 +196,12 @@ struct RewindPage: View {
                 selectedGroupIndex = 0
             }
         }
-        .onChange(of: appState?.isTranscribing) { _, newValue in
-            // When recording stops, snapshot the transcript so it survives the clear
-            if newValue != true && isTranscriptExpanded && !liveTranscript.segments.isEmpty {
-                savedTranscriptSegments = liveTranscript.segments
-            }
-        }
         // Global keyboard handlers
         .onKeyPress(.escape) {
             // Expanded transcript → collapse
             if isTranscriptExpanded {
                 isTranscriptExpanded = false
-                savedTranscriptSegments = []
+                LiveTranscriptMonitor.shared.clearSaved()
                 return .handled
             }
             // Timeline mode → go back to results list
