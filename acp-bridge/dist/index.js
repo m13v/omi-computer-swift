@@ -570,9 +570,10 @@ async function handleQuery(msg) {
                 send({ type: "tool_activity", name, status: "completed" });
             }
             pendingTools.length = 0;
-            const inputTokens = Math.ceil(fullPrompt.length / 4);
-            const outputTokens = Math.ceil(fullText.length / 4);
-            send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
+            const inputTokens = promptResult.usage?.inputTokens ?? Math.ceil(fullPrompt.length / 4);
+            const outputTokens = promptResult.usage?.outputTokens ?? Math.ceil(fullText.length / 4);
+            const costUsd = promptResult._meta?.costUsd ?? 0;
+            send({ type: "result", text: fullText, sessionId, costUsd, inputTokens, outputTokens });
         };
         try {
             await sendPrompt();
