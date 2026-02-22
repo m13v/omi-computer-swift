@@ -827,6 +827,9 @@ class AnalyticsManager {
         props["floating_bar_enabled"] = FloatingControlBarManager.shared.isEnabled
         props["floating_bar_visible"] = FloatingControlBarManager.shared.isVisible
 
+        // -- Dev Mode --
+        props["dev_mode_enabled"] = ud.bool(forKey: "devModeEnabled")
+
         return props
     }
 
