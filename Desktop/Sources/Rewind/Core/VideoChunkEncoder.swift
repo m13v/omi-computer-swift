@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Darwin
 import Foundation
 import Sentry
 
@@ -501,8 +502,17 @@ actor VideoChunkEncoder {
 
         // Terminate ffmpeg process
         if let process = ffmpegProcess {
-            process.terminate()
+            let pid = process.processIdentifier
+            process.terminate() // SIGTERM
             ffmpegProcess = nil
+            // Force kill after 2s if ffmpeg didn't respond to SIGTERM
+            // (e.g., stuck in disk I/O under memory pressure)
+            Task.detached(priority: .background) {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if process.isRunning {
+                    kill(pid, SIGKILL)
+                }
+            }
         }
 
         frameTimestamps.removeAll()
@@ -540,10 +550,23 @@ actor VideoChunkEncoder {
             ffmpegStdin = nil
         }
 
-        // Terminate ffmpeg process forcefully
+        // Terminate ffmpeg process forcefully.
+        // Use SIGTERM first, then SIGKILL after 2s if it doesn't respond.
+        // ffmpeg can get stuck in disk I/O when the system is under memory pressure,
+        // causing SIGTERM to be ignored (process is in uninterruptible sleep in the kernel).
+        // Without the SIGKILL fallback, zombie ffmpeg processes accumulate and eventually
+        // push the app's memory to 7GB+, making the entire system unresponsive.
         if let process = ffmpegProcess {
-            process.terminate()
+            let pid = process.processIdentifier
+            process.terminate() // SIGTERM
             ffmpegProcess = nil
+            Task.detached(priority: .background) {
+                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                if process.isRunning {
+                    logError("VideoChunkEncoder: ffmpeg still running 2s after SIGTERM — force killing PID \(pid)")
+                    kill(pid, SIGKILL)
+                }
+            }
         }
 
         // Clear all state
