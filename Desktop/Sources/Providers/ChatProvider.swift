@@ -1893,8 +1893,6 @@ class ChatProvider: ObservableObject {
                 messageLength: responseLength
             )
 
-            let modeTag = bridgeMode == BridgeMode.omiAI.rawValue ? "Mode A (Omi)" : "Mode B (Your Claude)"
-            log("ChatProvider: tokens — \(modeTag), input=\(queryResult.inputTokens), output=\(queryResult.outputTokens), total=\(queryResult.inputTokens + queryResult.outputTokens), sessionTotal=\(sessionTokensUsed + queryResult.inputTokens + queryResult.outputTokens)")
             if bridgeMode == BridgeMode.omiAI.rawValue {
                 sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
             }
