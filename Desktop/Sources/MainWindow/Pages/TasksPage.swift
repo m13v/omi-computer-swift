@@ -2335,6 +2335,10 @@ struct TasksPage: View {
     // MARK: - Keyboard Navigation Helpers
 
     private func selectTask(_ task: TaskActionItem) {
+        if viewModel.editingTaskId != nil && viewModel.editingTaskId != task.id {
+            viewModel.editingTaskId = nil
+            NSApp.keyWindow?.makeFirstResponder(nil)
+        }
         viewModel.keyboardSelectedTaskId = task.id
     }
 
