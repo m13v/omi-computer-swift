@@ -2335,7 +2335,7 @@ struct TasksPage: View {
     // MARK: - Keyboard Navigation Helpers
 
     private func selectTask(_ task: TaskActionItem) {
-        if viewModel.editingTaskId != nil && viewModel.editingTaskId != task.id {
+        if viewModel.editingTaskId != nil {
             viewModel.editingTaskId = nil
             NSApp.keyWindow?.makeFirstResponder(nil)
         }
