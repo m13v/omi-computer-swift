@@ -6,7 +6,7 @@ import CoreAudio
 /// Uses CoreAudio IOProc directly on the default input device to avoid
 /// AVAudioEngine's implicit aggregate device creation, which degrades
 /// system audio output quality (especially Bluetooth A2DP → SCO switch).
-class AudioCaptureService {
+class AudioCaptureService: @unchecked Sendable {
 
     // MARK: - Types
 
