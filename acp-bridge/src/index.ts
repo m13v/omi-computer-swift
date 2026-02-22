@@ -752,12 +752,12 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         await startAuthFlow();
         return handleQuery(msg);
       }
-      // If session/prompt failed and we were reusing a session, retry with a fresh one
-      if (sessionId) {
+      // If session/prompt failed while reusing an existing session, retry once with a fresh one.
+      // Do NOT retry if we already started fresh (isNewSession) — that would infinite-loop.
+      if (!isNewSession && sessionId) {
         logErr(`session/prompt failed with existing session, retrying with fresh session: ${err}`);
         sessions.delete(requestedModel);
         activeSessionId = "";
-        // Recursive call to handleQuery will create a new session
         return handleQuery(msg);
       }
       throw err;
