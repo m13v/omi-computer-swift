@@ -184,6 +184,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             options.enableCaptureFailedRequests = false
             options.maxBreadcrumbs = 100
             options.beforeSend = { event in
+                // Never send events from dev builds — they pollute production Sentry data
+                if isDev { return nil }
                 // Filter out HTTP errors targeting the dev tunnel — noise when the tunnel is down
                 if let urlTag = event.tags?["url"], urlTag.contains("m13v.com") {
                     return nil
@@ -193,6 +195,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let exceptions = event.exceptions, exceptions.contains(where: { exc in
                     exc.type == "NSURLErrorDomain" && exc.value.contains("Code=-999") ||
                     exc.type == "NSURLErrorDomain" && exc.value.contains("Code: -999")
+                }) {
+                    return nil
+                }
+                // Filter out AuthError.notSignedIn — this is thrown when token refresh transiently
+                // fails (network blip, expired token mid-refresh). The user is still signed in per
+                // UserDefaults; the 30s refresh timer will retry. Not actionable as a Sentry error.
+                if let exceptions = event.exceptions, exceptions.contains(where: { exc in
+                    exc.type == "Omi_Computer.AuthError" && exc.value.contains("notSignedIn")
                 }) {
                     return nil
                 }
