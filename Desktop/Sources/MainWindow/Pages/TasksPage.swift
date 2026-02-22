@@ -2430,7 +2430,7 @@ struct TasksPage: View {
                 }
                 cancelMultiSelectButton
             } else {
-                if chatProvider != nil && TaskAgentSettings.shared.isEnabled {
+                if chatProvider != nil && TaskAgentSettings.shared.isChatEnabled {
                     chatToggleButton
                 }
                 taskSettingsButton
@@ -2993,7 +2993,7 @@ struct TasksPage: View {
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
                                     onMoveTask: { task, index, cat in viewModel.moveTaskToCategory(task, toIndex: index, inCategory: cat) },
-                                    onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onOpenChat: (chatProvider != nil && TaskAgentSettings.shared.isChatEnabled) ? { task in openChatForTask(task) } : nil,
                                     onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
@@ -3063,7 +3063,7 @@ struct TasksPage: View {
                                     },
                                     onIncrementIndent: { viewModel.incrementIndent(for: $0) },
                                     onDecrementIndent: { viewModel.decrementIndent(for: $0) },
-                                    onOpenChat: chatProvider != nil ? { task in openChatForTask(task) } : nil,
+                                    onOpenChat: (chatProvider != nil && TaskAgentSettings.shared.isChatEnabled) ? { task in openChatForTask(task) } : nil,
                                     onInvestigate: { task in investigateTask(task) },
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
@@ -3884,7 +3884,7 @@ struct TaskRow: View {
 
                         // Investigate button (background AI chat)
                         if let coordinator = chatCoordinator,
-                           TaskAgentSettings.shared.isEnabled,
+                           TaskAgentSettings.shared.isChatEnabled,
                            !coordinator.streamingTaskIds.contains(task.id),
                            !coordinator.unreadTaskIds.contains(task.id) {
                             Button {
