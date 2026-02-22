@@ -704,6 +704,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         prompt: [{ type: "text", text: fullPrompt }],
       })) as {
         stopReason: string;
+        // Populated by patched-acp-entry.mjs intercepting SDKResultSuccess
+        usage?: { inputTokens: number; outputTokens: number; cachedReadTokens?: number | null; cachedWriteTokens?: number | null; totalTokens: number };
+        _meta?: { costUsd?: number };
       };
 
       logErr(`Prompt completed: stopReason=${promptResult.stopReason}`);
@@ -714,9 +717,10 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       }
       pendingTools.length = 0;
 
-      const inputTokens = Math.ceil(fullPrompt.length / 4);
-      const outputTokens = Math.ceil(fullText.length / 4);
-      send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
+      const inputTokens = promptResult.usage?.inputTokens ?? Math.ceil(fullPrompt.length / 4);
+      const outputTokens = promptResult.usage?.outputTokens ?? Math.ceil(fullText.length / 4);
+      const costUsd = promptResult._meta?.costUsd ?? 0;
+      send({ type: "result", text: fullText, sessionId, costUsd, inputTokens, outputTokens });
     };
 
     try {
