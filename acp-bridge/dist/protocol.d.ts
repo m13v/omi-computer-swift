@@ -50,6 +50,8 @@ export interface ResultMessage {
     text: string;
     sessionId: string;
     costUsd?: number;
+    inputTokens?: number;
+    outputTokens?: number;
 }
 export interface ToolActivityMessage {
     type: "tool_activity";
