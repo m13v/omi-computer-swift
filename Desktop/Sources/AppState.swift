@@ -1640,8 +1640,14 @@ class AppState: ObservableObject {
                 }
             }
         } catch {
-            // Silently ignore errors during auto-refresh — cached data stays visible
-            logError("Conversations: Auto-refresh failed", error: error)
+            // Silently ignore errors during auto-refresh — cached data stays visible.
+            // Auth errors (notSignedIn) are transient: token refresh may fail momentarily
+            // while the user is still signed in. Don't send these to Sentry.
+            if case AuthError.notSignedIn = error {
+                log("Conversations: Auto-refresh skipped (auth token temporarily unavailable)")
+            } else {
+                logError("Conversations: Auto-refresh failed", error: error)
+            }
         }
 
         // Update total count
