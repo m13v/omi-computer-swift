@@ -3870,6 +3870,21 @@ struct TaskRow: View {
                                 editText = newValue
                             }
                         }
+                        // Editing highlight: invisible Text sizer so the background hugs the
+                        // visible characters instead of spanning the full card width.
+                        .background(alignment: .topLeading) {
+                            if isTextFieldFocused {
+                                Text(editText.isEmpty ? "Task description" : editText)
+                                    .scaledFont(size: 14)
+                                    .lineLimit(1...4)
+                                    .foregroundColor(.clear)
+                                    .padding(EdgeInsets(top: 2, leading: 0, bottom: 2, trailing: 6))
+                                    .background(
+                                        RoundedRectangle(cornerRadius: 4)
+                                            .fill(Color.black.opacity(0.18))
+                                    )
+                            }
+                        }
 
                     // Badges + detail button row
                     FlowLayout(spacing: 6) {
@@ -3922,10 +3937,6 @@ struct TaskRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 5)
-                        .fill(isTextFieldFocused ? Color.black.opacity(0.08) : Color.clear)
-                )
                 .contentShape(Rectangle())
                 .popover(isPresented: $showDatePicker) {
                     dueDatePopover
