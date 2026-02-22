@@ -2514,30 +2514,32 @@ class AppState: ObservableObject {
         // Create a test capture service
         let testService = SystemAudioCaptureService()
 
-        do {
-            // Try to start capture - this will fail if permission is not granted
-            try testService.startCapture { _ in
-                // We don't need the audio data, just testing if it works
-            }
+        Task {
+            do {
+                // Try to start capture - this will fail if permission is not granted
+                try await testService.startCapture { _ in
+                    // We don't need the audio data, just testing if it works
+                }
 
-            // If we get here, capture started successfully
-            log("System audio: Test capture started successfully")
+                // If we get here, capture started successfully
+                log("System audio: Test capture started successfully")
 
-            // Stop the test capture
-            testService.stopCapture()
-            log("System audio: Test capture stopped")
+                // Stop the test capture
+                testService.stopCapture()
+                log("System audio: Test capture stopped")
 
-            // Mark permission as granted
-            hasSystemAudioPermission = true
-            log("System audio: Permission verified")
+                // Mark permission as granted
+                hasSystemAudioPermission = true
+                log("System audio: Permission verified")
 
-        } catch {
-            logError("System audio: Test capture failed", error: error)
-            hasSystemAudioPermission = false
+            } catch {
+                logError("System audio: Test capture failed", error: error)
+                hasSystemAudioPermission = false
 
-            // Open System Settings to Screen Recording section
-            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-                NSWorkspace.shared.open(url)
+                // Open System Settings to Screen Recording section
+                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
+                    NSWorkspace.shared.open(url)
+                }
             }
         }
     }
