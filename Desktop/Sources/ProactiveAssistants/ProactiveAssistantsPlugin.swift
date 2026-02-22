@@ -903,6 +903,7 @@ public class ProactiveAssistantsPlugin: NSObject {
             captureTimer = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
                 guard let self = self, self.isMonitoring else { return }
+                self.captureTimer?.invalidate()
                 self.captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
                     Task { @MainActor in
                         await self?.captureFrame()
@@ -941,6 +942,7 @@ public class ProactiveAssistantsPlugin: NSObject {
             screenCaptureService = ScreenCaptureService()
 
             // Restart capture timer
+            captureTimer?.invalidate()
             captureTimer = Timer.scheduledTimer(withTimeInterval: RewindSettings.shared.captureInterval, repeats: true) { [weak self] _ in
                 Task { @MainActor in
                     await self?.captureFrame()
