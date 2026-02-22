@@ -18,10 +18,17 @@ class TaskChatCoordinator: ObservableObject {
 
     // MARK: - Chat Status Tracking
 
+    private static let unreadTaskIdsKey = "taskChat.unreadTaskIds"
+
     /// Tasks that currently have an active AI stream (supports parallel agents)
     @Published var streamingTaskIds: Set<String> = []
-    /// Tasks with unseen AI responses (finished while user wasn't viewing)
-    @Published var unreadTaskIds: Set<String> = []
+    /// Tasks with unseen AI responses (finished while user wasn't viewing).
+    /// Persisted to UserDefaults so the "New reply" indicator survives app restarts.
+    @Published var unreadTaskIds: Set<String> = [] {
+        didSet {
+            UserDefaults.standard.set(Array(unreadTaskIds), forKey: Self.unreadTaskIdsKey)
+        }
+    }
     /// Per-task human-readable status text for active streams
     @Published var streamingStatuses: [String: String] = [:]
 
@@ -38,6 +45,10 @@ class TaskChatCoordinator: ObservableObject {
 
     init(chatProvider: ChatProvider) {
         self.chatProvider = chatProvider
+        // Restore persisted unread indicators so the "New reply" dot survives app restarts
+        if let saved = UserDefaults.standard.array(forKey: Self.unreadTaskIdsKey) as? [String] {
+            unreadTaskIds = Set(saved)
+        }
     }
 
     // MARK: - Status Observation (per-task)
