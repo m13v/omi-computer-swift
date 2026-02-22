@@ -3912,6 +3912,10 @@ struct TaskRow: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 5)
+                        .fill(isTextFieldFocused ? Color.black.opacity(0.08) : Color.clear)
+                )
                 .contentShape(Rectangle())
                 .popover(isPresented: $showDatePicker) {
                     dueDatePopover
@@ -3921,7 +3925,7 @@ struct TaskRow: View {
         }
         .overlay(alignment: .trailing) {
             // Hover actions overlaid on trailing edge (no layout shift)
-            if (isHovering || showRepeatPicker || showTagPicker || showPriorityPicker) && !isMultiSelectMode && !isDeletedTask {
+            if (isHovering || showRepeatPicker || showTagPicker || showPriorityPicker) && !isMultiSelectMode && !isDeletedTask && !isTextFieldFocused {
                 HStack(spacing: 4) {
                     // Add date button (shown on hover when no due date)
                     if task.dueAt == nil && !task.completed {
