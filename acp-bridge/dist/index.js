@@ -592,8 +592,9 @@ async function handleQuery(msg) {
                 }
                 return;
             }
-            // If it's an auth error, send auth_required to Swift and wait for user auth
-            if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
+            // Only -32000 is AUTH_REQUIRED in the new ACP protocol.
+            // -32603 is a generic internal error (API error, rate limit, etc.) — do NOT start OAuth for it.
+            if (err instanceof AcpError && err.code === -32000) {
                 if (authRetryCount >= MAX_AUTH_RETRIES) {
                     logErr(`session/prompt auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
                     send({ type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
@@ -630,16 +631,16 @@ async function handleQuery(msg) {
             }
             return;
         }
-        // If the error is an auth error or internal error (no credentials),
-        // send auth_required to Swift and wait for user auth
-        if (err instanceof AcpError && (err.code === -32000 || err.code === -32603)) {
+        // Only -32000 is AUTH_REQUIRED in the new ACP protocol.
+        // -32603 is a generic internal error — surface it as a real error, not auth.
+        if (err instanceof AcpError && err.code === -32000) {
             if (authRetryCount >= MAX_AUTH_RETRIES) {
                 logErr(`Query auth error but max retries (${MAX_AUTH_RETRIES}) reached, giving up`);
                 send({ type: "error", message: "Authentication required. Please disconnect and reconnect your Claude account in Settings." });
                 return;
             }
             authRetryCount++;
-            logErr(`Query failed with auth/internal error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
+            logErr(`Query failed with auth error (code=${err.code}), starting OAuth flow (attempt ${authRetryCount})`);
             await startAuthFlow();
             return handleQuery(msg);
         }
