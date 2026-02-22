@@ -490,6 +490,7 @@ async function handleQuery(msg) {
     interruptRequested = false;
     authRetryCount = 0;
     let fullText = "";
+    let fullPrompt = "";
     let isNewSession = false;
     const pendingTools = [];
     try {
@@ -541,7 +542,7 @@ async function handleQuery(msg) {
         activeSessionId = sessionId;
         // Only prepend system prompt on the first message in a new session.
         // On subsequent messages the session already has the context.
-        const fullPrompt = isNewSession && msg.systemPrompt
+        fullPrompt = isNewSession && msg.systemPrompt
             ? `<system>\n${msg.systemPrompt}\n</system>\n\n${msg.prompt}`
             : msg.prompt;
         // Set up notification handler for this query
@@ -567,7 +568,9 @@ async function handleQuery(msg) {
                 send({ type: "tool_activity", name, status: "completed" });
             }
             pendingTools.length = 0;
-            send({ type: "result", text: fullText, sessionId, costUsd: 0 });
+            const inputTokens = Math.ceil(fullPrompt.length / 4);
+            const outputTokens = Math.ceil(fullText.length / 4);
+            send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
         };
         try {
             await sendPrompt();
@@ -580,7 +583,9 @@ async function handleQuery(msg) {
                     }
                     pendingTools.length = 0;
                     logErr(`Query interrupted by user, sending partial result (${fullText.length} chars)`);
-                    send({ type: "result", text: fullText, sessionId, costUsd: 0 });
+                    const inputTokens = Math.ceil(fullPrompt.length / 4);
+                    const outputTokens = Math.ceil(fullText.length / 4);
+                    send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
                 }
                 else {
                     logErr("Query aborted (superseded by new query)");
@@ -619,7 +624,9 @@ async function handleQuery(msg) {
                     send({ type: "tool_activity", name, status: "completed" });
                 }
                 pendingTools.length = 0;
-                send({ type: "result", text: fullText, sessionId: activeSessionId, costUsd: 0 });
+                const inputTokens = Math.ceil(fullPrompt.length / 4);
+                const outputTokens = Math.ceil(fullText.length / 4);
+                send({ type: "result", text: fullText, sessionId: activeSessionId, costUsd: 0, inputTokens, outputTokens });
             }
             return;
         }
