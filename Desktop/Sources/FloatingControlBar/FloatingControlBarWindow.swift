@@ -597,15 +597,21 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         guard state.showingAIConversation else { return }
-        // Fade out first, then collapse — gives a smooth "dismissed" feel.
+        // Phase 1: fade out gently.
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.18
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
+            ctx.duration = 0.22
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.animator().alphaValue = 0
         }) { [weak self] in
             guard let self else { return }
+            // Phase 2: collapse while invisible (no jarring resize flash).
             self.closeAIConversation()
-            self.alphaValue = 1   // restore so the collapsed bar stays visible
+            // Phase 3: fade the collapsed pill back in softly.
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                self.animator().alphaValue = 1
+            })
         }
     }
 
