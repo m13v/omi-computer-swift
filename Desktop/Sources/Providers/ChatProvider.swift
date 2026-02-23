@@ -1771,9 +1771,6 @@ class ChatProvider: ObservableObject {
             }
 
             // Query the active bridge with streaming
-            // Each query is standalone — conversation history is in the system prompt
-            // This ensures cross-platform sync (mobile messages appear in context)
-
             // Callbacks for ACP bridge
             let textDeltaHandler: ACPBridge.TextDeltaHandler = { [weak self] delta in
                 Task { @MainActor [weak self] in
