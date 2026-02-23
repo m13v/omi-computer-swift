@@ -25,8 +25,10 @@ class ResourceMonitor {
     private let memoryGrowthRateThreshold: Double = 50
 
     /// Extreme memory threshold - auto-restart to prevent system from becoming unusable.
-    /// At this level the OS is under severe pressure and the user cannot reopen the app.
-    private let memoryAutoRestartThreshold: UInt64 = 4000 // 4GB
+    /// Keep this well below the point where free RAM is exhausted — at 4GB the system
+    /// has ~120MB free and the new instance fails to launch, leaving the user stuck.
+    /// At 3GB there is still ~10-13GB free on typical 16GB machines.
+    private let memoryAutoRestartThreshold: UInt64 = 3000 // 3GB
 
     // MARK: - State
 
