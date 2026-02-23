@@ -893,7 +893,8 @@ class FloatingControlBarManager {
             fullMessage = "[Screenshot of user's screen attached: \(url.path)]\n\n\(message)"
         }
 
-        await provider.sendMessage(fullMessage, model: ShortcutSettings.shared.selectedModel)
+        let floatingBarSuffix = "<response_style_override>This query comes from the floating quick-access bar. Respond in 1–3 sentences maximum. Be direct and concise — no lists, no headers, no lengthy explanations.</response_style_override>"
+        await provider.sendMessage(fullMessage, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix)
 
         // Handle errors after sendMessage completes
         barWindow.state.isAILoading = false
