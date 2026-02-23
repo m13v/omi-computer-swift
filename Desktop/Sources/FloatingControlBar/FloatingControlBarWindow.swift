@@ -597,6 +597,17 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     func windowDidResignKey(_ notification: Notification) {
         guard state.showingAIConversation else { return }
+
+        // Only dismiss when the user physically clicks away.
+        // Programmatic focus changes — e.g. the AI agent activating a browser
+        // window for automation — do NOT produce a mouse-down event, so we
+        // leave the conversation open in those cases.
+        let eventType = NSApp.currentEvent?.type
+        let isMouseClick = eventType == .leftMouseDown
+            || eventType == .rightMouseDown
+            || eventType == .otherMouseDown
+        guard isMouseClick else { return }
+
         // Phase 1: fade out gently.
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
