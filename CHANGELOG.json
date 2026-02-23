@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "0.10.7",
+      "date": "2026-02-22",
+      "changes": [
+        "⚠️ AUTO-UPDATE IS BROKEN — YOU MUST DOWNLOAD MANUALLY ⚠️",
+        "The Install button will NOT work. Please go to https://omi.me/desktop and download the new version.",
+        "Steps: 1) Open https://omi.me/desktop in your browser  2) Download the DMG  3) Open it and drag Omi to Applications  4) Replace the existing app when prompted",
+        "This is a one-time fix. After installing manually, all future updates will work normally."
+      ]
+    },
+    {
       "version": "0.10.6",
       "date": "2026-02-22",
       "changes": [
