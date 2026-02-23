@@ -624,16 +624,16 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         resignKeyAnimationToken += 1
         let token = resignKeyAnimationToken
 
-        // Phase 1: fade out gently.
+        // Phase 1: fade out (easeIn — accelerates to gone, feels intentional).
         NSAnimationContext.runAnimationGroup({ ctx in
-            ctx.duration = 0.22
-            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            ctx.duration = 0.2
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeIn)
             self.animator().alphaValue = 0
         }) { [weak self] in
             guard let self, self.resignKeyAnimationToken == token else { return }
             // Phase 2: collapse while invisible (no jarring resize flash).
             self.closeAIConversation()
-            // Phase 3: fade the collapsed pill back in softly.
+            // Phase 3: fade the collapsed pill back in (easeOut — decelerates into place).
             NSAnimationContext.runAnimationGroup({ ctx in
                 ctx.duration = 0.2
                 ctx.timingFunction = CAMediaTimingFunction(name: .easeOut)
