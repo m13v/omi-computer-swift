@@ -52,6 +52,8 @@ export interface ResultMessage {
     costUsd?: number;
     inputTokens?: number;
     outputTokens?: number;
+    cacheReadTokens?: number;
+    cacheWriteTokens?: number;
 }
 export interface ToolActivityMessage {
     type: "tool_activity";
