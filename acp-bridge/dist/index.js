@@ -578,8 +578,10 @@ async function handleQuery(msg) {
             pendingTools.length = 0;
             const inputTokens = promptResult.usage?.inputTokens ?? Math.ceil(fullPrompt.length / 4);
             const outputTokens = promptResult.usage?.outputTokens ?? Math.ceil(fullText.length / 4);
+            const cacheReadTokens = promptResult.usage?.cachedReadTokens ?? 0;
+            const cacheWriteTokens = promptResult.usage?.cachedWriteTokens ?? 0;
             const costUsd = promptResult._meta?.costUsd ?? 0;
-            send({ type: "result", text: fullText, sessionId, costUsd, inputTokens, outputTokens });
+            send({ type: "result", text: fullText, sessionId, costUsd, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens });
         };
         try {
             await sendPrompt();
@@ -594,7 +596,7 @@ async function handleQuery(msg) {
                     logErr(`Query interrupted by user, sending partial result (${fullText.length} chars)`);
                     const inputTokens = Math.ceil(fullPrompt.length / 4);
                     const outputTokens = Math.ceil(fullText.length / 4);
-                    send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens });
+                    send({ type: "result", text: fullText, sessionId, costUsd: 0, inputTokens, outputTokens, cacheReadTokens: 0, cacheWriteTokens: 0 });
                 }
                 else {
                     logErr("Query aborted (superseded by new query)");
