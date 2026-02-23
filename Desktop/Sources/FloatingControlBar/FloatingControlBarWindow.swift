@@ -556,6 +556,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
 
     // MARK: - NSWindowDelegate
 
+    func windowDidResignKey(_ notification: Notification) {
+        if state.showingAIConversation {
+            closeAIConversation()
+        }
+    }
+
     @objc func windowDidMove(_ notification: Notification) {
         // Only persist position when the user is physically dragging the bar.
         // Programmatic moves (resize animations, chat open/close) should not
