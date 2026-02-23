@@ -1898,6 +1898,17 @@ class ChatProvider: ObservableObject {
 
             if bridgeMode == BridgeMode.omiAI.rawValue {
                 sessionTokensUsed += queryResult.inputTokens + queryResult.outputTokens
+                let r = queryResult
+                Task.detached(priority: .background) {
+                    await APIClient.shared.recordLlmUsage(
+                        inputTokens: r.inputTokens,
+                        outputTokens: r.outputTokens,
+                        cacheReadTokens: r.cacheReadTokens,
+                        cacheWriteTokens: r.cacheWriteTokens,
+                        totalTokens: r.inputTokens + r.outputTokens + r.cacheReadTokens + r.cacheWriteTokens,
+                        costUsd: r.costUsd
+                    )
+                }
             }
 
             // Fire-and-forget: check if user's message mentions goal progress
