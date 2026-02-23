@@ -598,9 +598,21 @@ struct ChatPrompts {
     static let excludedTables: Set<String> = ["screenshots_fts", "screenshots_fts_content", "screenshots_fts_segments", "screenshots_fts_segdir",
                                                "action_items_fts", "action_items_fts_content", "action_items_fts_segments", "action_items_fts_segdir"]
 
-    /// Static suffix appended after the dynamic schema (FTS tables + common patterns)
+    /// Infrastructure columns to strip from schema — file paths, binary blobs, sync state, internal flags.
+    /// New migrations are still picked up automatically; only these specific names are hidden.
+    /// Claude can always query: SELECT sql FROM sqlite_master WHERE name='table_name'
+    static let excludedColumns: Set<String> = [
+        "imagePath", "videoChunkPath", "frameOffset",
+        "ocrDataJson", "extractedTasksJson", "adviceJson",
+        "isIndexed", "backendId", "backendSynced", "backendSyncedAt",
+        "embeddingData", "embedding", "normalizedOcrTextId",
+        "fromStaged",
+    ]
+
+    /// Static suffix appended after the dynamic schema
     static let schemaFooter = """
     FTS tables: screenshots_fts(ocrText, windowTitle, appName), action_items_fts(description)
+    Full DDL for any table: SELECT sql FROM sqlite_master WHERE name='table_name'
     """
 
     // MARK: - Helper Prompts
