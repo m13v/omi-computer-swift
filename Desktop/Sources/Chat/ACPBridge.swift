@@ -311,6 +311,9 @@ actor ACPBridge {
         if let model = model {
             queryDict["model"] = model
         }
+        if let resume = resume {
+            queryDict["resume"] = resume
+        }
 
         let jsonData = try JSONSerialization.data(withJSONObject: queryDict)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
