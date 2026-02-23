@@ -223,6 +223,7 @@ class TaskChatState: ObservableObject {
                 systemPrompt: systemPrompt,
                 cwd: workspacePath.isEmpty ? nil : workspacePath,
                 mode: chatMode.rawValue,
+                resume: currentSessionId,
                 onTextDelta: textDeltaHandler,
                 onToolCall: toolCallHandler,
                 onToolActivity: toolActivityHandler,
@@ -231,6 +232,9 @@ class TaskChatState: ObservableObject {
                 onAuthRequired: onAuthRequired ?? { _, _ in },
                 onAuthSuccess: onAuthSuccess ?? { }
             )
+
+            // Store session ID so subsequent queries can resume
+            currentSessionId = queryResult.sessionId
 
             // Flush remaining streaming buffers
             streamingFlushWorkItem?.cancel()
