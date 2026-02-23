@@ -591,12 +591,16 @@ struct ChatPrompts {
         "memories": "user facts, preferences, personal details (age, relationships, habits, interests) — PRIMARY source for personal questions",
         "ai_user_profiles": "daily AI-generated user profile summaries",
         "indexed_files": "file metadata index from ~/Downloads, ~/Documents, ~/Desktop — path, filename, extension, fileType (document/code/image/video/audio/spreadsheet/presentation/archive/data/other), sizeBytes, folder, depth, timestamps",
+        "goals": "user goals with progress tracking",
+        "staged_tasks": "AI-extracted task candidates pending user review",
+        "task_chat_messages": "messages within task-focused chat sessions",
     ]
 
     /// Tables to exclude from the schema prompt (internal/GRDB tables)
     static let excludedTablePrefixes = ["sqlite_", "grdb_"]
-    static let excludedTables: Set<String> = ["screenshots_fts", "screenshots_fts_content", "screenshots_fts_segments", "screenshots_fts_segdir",
-                                               "action_items_fts", "action_items_fts_content", "action_items_fts_segments", "action_items_fts_segdir"]
+    /// Any table whose name contains "_fts" is an FTS virtual or internal table — exclude all.
+    /// Specific infra tables also excluded.
+    static let excludedTables: Set<String> = ["migration_status", "task_dedup_log"]
 
     /// Infrastructure columns to strip from schema — file paths, binary blobs, sync state, internal flags.
     /// New migrations are still picked up automatically; only these specific names are hidden.
