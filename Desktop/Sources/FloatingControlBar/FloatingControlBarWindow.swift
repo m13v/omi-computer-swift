@@ -11,6 +11,12 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     static let expandedBarSize = NSSize(width: 210, height: 50)
     private static let maxBarSize = NSSize(width: 1200, height: 1000)
     private static let expandedWidth: CGFloat = 430
+    /// Minimum window height when AI response first appears.
+    private static let minResponseHeight: CGFloat = 250
+    /// Base height used as the reference for 2× cap (same as current default response height).
+    private static let defaultBaseResponseHeight: CGFloat = 430
+    /// Overhead (px) added to measured scroll content to account for control bar, header, follow-up input, and padding.
+    private static let responseViewOverhead: CGFloat = 190
 
     let state = FloatingControlBarState()
     private var hostingView: NSHostingView<AnyView>?
@@ -19,6 +25,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     /// Suppresses hover resizes during close animation to prevent position drift.
     private var suppressHoverResize = false
     private var inputHeightCancellable: AnyCancellable?
+    private var responseHeightCancellable: AnyCancellable?
     private var resizeWorkItem: DispatchWorkItem?
     /// Saved center point from before chat opened, used to restore position on close.
     private var preChatCenter: NSPoint?
@@ -328,7 +335,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             self?.focusInputField()
         }
 
-        // Capture screenshot in background without hiding the bar
+        // Clear stale screenshot immediately so a quick send doesn't use the previous session's capture
+        state.screenshotURL = nil
+
+        // Capture fresh screenshot in background without hiding the bar
         Task.detached { [weak self] in
             let url = ScreenCaptureManager.captureScreen()
             let capturedSelf = self
@@ -500,17 +510,41 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     private func resizeToResponseHeight(animated: Bool = false) {
+        // Determine the 2× cap from the user's saved (or default) preferred height.
         let savedSize = UserDefaults.standard.string(forKey: FloatingControlBarWindow.sizeKey)
             .map(NSSizeFromString)
+        let baseHeight = savedSize.map { max($0.height, Self.defaultBaseResponseHeight) } ?? Self.defaultBaseResponseHeight
+        let maxHeight = baseHeight * 2
 
-        let targetSize = savedSize.map {
-            NSSize(
-                width: max($0.width, FloatingControlBarWindow.minBarSize.width),
-                height: max($0.height, 430)
-            )
-        } ?? NSSize(width: 430, height: 430)
+        // Start at a modest height; the content observer will grow it as tokens stream in.
+        let initialSize = NSSize(width: Self.expandedWidth, height: Self.minResponseHeight)
+        resizeAnchored(to: initialSize, makeResizable: true, animated: animated, anchorTop: true)
+        setupResponseHeightObserver(maxHeight: maxHeight)
+    }
 
-        resizeAnchored(to: targetSize, makeResizable: true, animated: animated, anchorTop: true)
+    /// Observes `state.responseContentHeight` and expands the window to fit content,
+    /// capped at `maxHeight`. Never shrinks automatically.
+    private func setupResponseHeightObserver(maxHeight: CGFloat) {
+        responseHeightCancellable?.cancel()
+        responseHeightCancellable = state.$responseContentHeight
+            .removeDuplicates()
+            .debounce(for: .milliseconds(80), scheduler: DispatchQueue.main)
+            .sink { [weak self] contentHeight in
+                guard let self = self,
+                      self.state.showingAIResponse,
+                      contentHeight > 0
+                else { return }
+                let targetHeight = (contentHeight + Self.responseViewOverhead).rounded()
+                let clampedHeight = min(max(targetHeight, Self.minResponseHeight), maxHeight)
+                // Only expand, never auto-shrink.
+                guard clampedHeight > self.frame.height + 2 else { return }
+                self.resizeAnchored(
+                    to: NSSize(width: Self.expandedWidth, height: clampedHeight),
+                    makeResizable: true,
+                    animated: true,
+                    anchorTop: true
+                )
+            }
     }
 
     /// Center the bar near the top of the main screen.
