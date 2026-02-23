@@ -45,6 +45,15 @@ struct AIResponseView: View {
                         // Anchor for auto-scroll
                         Color.clear.frame(height: 1).id("bottom")
                     }
+                    .background(
+                        GeometryReader { geo -> Color in
+                            let h = geo.size.height
+                            DispatchQueue.main.async {
+                                state.responseContentHeight = h
+                            }
+                            return Color.clear
+                        }
+                    )
                 }
                 .onChange(of: currentMessage?.text) {
                     withAnimation(.easeOut(duration: 0.15)) {
