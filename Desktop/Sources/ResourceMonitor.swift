@@ -205,7 +205,7 @@ class ResourceMonitor {
         // the app impossible to reopen without a full computer restart.
         if snapshot.memoryFootprintMB >= memoryAutoRestartThreshold && !autoRestartTriggered && !isDevBuild {
             autoRestartTriggered = true
-            logError("ResourceMonitor: EXTREME memory \(snapshot.memoryFootprintMB)MB — auto-restarting to prevent system degradation")
+            log("ResourceMonitor: EXTREME memory \(snapshot.memoryFootprintMB)MB — auto-restarting to prevent system degradation")
 
             SentrySDK.capture(message: "App Auto-Restarting Due to Extreme Memory") { scope in
                 scope.setLevel(.fatal)
@@ -236,7 +236,7 @@ class ResourceMonitor {
             if lastCriticalTime == nil || now.timeIntervalSince(lastCriticalTime!) > warningCooldown {
                 lastCriticalTime = now
 
-                logError("ResourceMonitor: CRITICAL - Memory usage \(snapshot.memoryFootprintMB)MB exceeds \(memoryCriticalThreshold)MB threshold")
+                log("ResourceMonitor: CRITICAL - Memory usage \(snapshot.memoryFootprintMB)MB exceeds \(memoryCriticalThreshold)MB threshold")
 
                 // Collect component diagnostics immediately at critical threshold
                 Task {
