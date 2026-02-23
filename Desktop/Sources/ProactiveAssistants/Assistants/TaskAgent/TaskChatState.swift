@@ -22,6 +22,8 @@ class TaskChatState: ObservableObject {
     /// Workspace path for file-system tools
     let workspacePath: String
 
+    @Published var currentSessionId: String?
+
     /// Closure to build system prompt from ChatProvider's cached data
     var systemPromptBuilder: (() -> String)?
 
@@ -61,6 +63,10 @@ class TaskChatState: ObservableObject {
 
             messages = records.map { $0.toChatMessage() }
 
+            if let sessionId = try? await TaskChatMessageStorage.shared.getACPSessionId(forTaskId: taskId) {
+                currentSessionId = sessionId
+            }
+
             log("TaskChatState[\(taskId)]: Loaded \(records.count) persisted messages")
         } catch {
             logError("TaskChatState[\(taskId)]: Failed to load persisted messages", error: error)
@@ -70,9 +76,10 @@ class TaskChatState: ObservableObject {
     /// Persist a message to GRDB (fire-and-forget)
     private func persistMessage(_ message: ChatMessage) {
         let taskId = self.taskId
+        let sessionId = self.currentSessionId
         Task.detached {
             do {
-                try await TaskChatMessageStorage.shared.saveMessage(message, taskId: taskId, acpSessionId: nil)
+                try await TaskChatMessageStorage.shared.saveMessage(message, taskId: taskId, acpSessionId: sessionId)
             } catch {
                 logError("TaskChatState[\(taskId)]: Failed to persist message \(message.id)", error: error)
             }
