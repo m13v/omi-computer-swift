@@ -1181,12 +1181,12 @@ class ChatProvider: ObservableObject {
         let enabledSkillNames = getEnabledSkillNames()
         if !enabledSkillNames.isEmpty {
             let allSkills = discoveredSkills + projectDiscoveredSkills
-            let skillDescriptions = allSkills
+            let skillNames = allSkills
                 .filter { enabledSkillNames.contains($0.name) && $0.name != "dev-mode" }
-                .map { "- \($0.name): \($0.description)" }
-                .joined(separator: "\n")
-            if !skillDescriptions.isEmpty {
-                prompt += "\n\n<available_skills>\n\(skillDescriptions)\n</available_skills>"
+                .map { $0.name }
+                .joined(separator: ", ")
+            if !skillNames.isEmpty {
+                prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
             }
         }
 
@@ -1235,12 +1235,12 @@ class ChatProvider: ObservableObject {
         let enabledSkillNames = getEnabledSkillNames()
         if !enabledSkillNames.isEmpty {
             let allSkills = discoveredSkills + projectDiscoveredSkills
-            let skillDescriptions = allSkills
+            let skillNames = allSkills
                 .filter { enabledSkillNames.contains($0.name) && $0.name != "dev-mode" }
-                .map { "- \($0.name): \($0.description)" }
-                .joined(separator: "\n")
-            if !skillDescriptions.isEmpty {
-                prompt += "\n\n<available_skills>\n\(skillDescriptions)\n</available_skills>"
+                .map { $0.name }
+                .joined(separator: ", ")
+            if !skillNames.isEmpty {
+                prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
             }
         }
 
