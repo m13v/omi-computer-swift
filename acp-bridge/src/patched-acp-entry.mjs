@@ -24,17 +24,7 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
 
   const session = this.sessions?.[result.sessionId];
 
-  // Patch 1: Set model if requested
-  if (params.model && session?.query?.setModel) {
-    try {
-      await session.query.setModel(params.model);
-      console.error(`[patched-acp] Model set to: ${params.model}`);
-    } catch (err) {
-      console.error(`[patched-acp] setModel failed: ${err}`);
-    }
-  }
-
-  // Patch 2: Wrap query.next() to intercept SDKResultSuccess and capture cost/usage.
+  // Wrap query.next() to intercept SDKResultSuccess and capture cost/usage.
   // The SDK result message has total_cost_usd and usage (input_tokens, output_tokens, etc.)
   // but acp-agent.js drops them and only returns { stopReason }. We capture them here
   // so that our patched prompt() can attach them to the response.
