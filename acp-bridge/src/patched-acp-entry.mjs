@@ -46,13 +46,7 @@ ClaudeAcpAgent.prototype.newSession = async function (params) {
         item.value?.type === "result" &&
         item.value?.subtype === "success"
       ) {
-        // Debug: dump full result message to inspect actual field names/values
-        const debugKeys = Object.keys(item.value).filter(k => !["type", "subtype", "result", "uuid", "session_id", "permission_denials", "structured_output"].includes(k));
-        const debugObj = {};
-        for (const k of debugKeys) debugObj[k] = item.value[k];
-        console.error(`[patched-acp] SDKResultSuccess fields: ${JSON.stringify(debugObj)}`);
-
-        session._lastCostUsd = item.value.total_cost_usd ?? item.value.totalCostUSD;
+        session._lastCostUsd = item.value.total_cost_usd;
         session._lastUsage = item.value.usage;
         session._lastModelUsage = item.value.modelUsage;
       }
@@ -71,20 +65,22 @@ ClaudeAcpAgent.prototype.prompt = async function (params) {
 
   const session = this.sessions?.[params.sessionId];
   if (session?._lastCostUsd !== undefined) {
-    const sdkUsage = session._lastUsage ?? {};
-    const modelUsage = session._lastModelUsage ?? {};
+    // usage fields are snake_case (raw Anthropic API format)
+    const u = session._lastUsage ?? {};
+    const inputTokens = u.input_tokens ?? 0;
+    const outputTokens = u.output_tokens ?? 0;
+    const cacheRead = u.cache_read_input_tokens ?? 0;
+    const cacheWrite = u.cache_creation_input_tokens ?? 0;
+    const costUsd = session._lastCostUsd;
 
-    // Try both snake_case (API) and camelCase (SDK transforms)
-    const inputTokens = sdkUsage.input_tokens ?? sdkUsage.inputTokens ?? 0;
-    const outputTokens = sdkUsage.output_tokens ?? sdkUsage.outputTokens ?? 0;
-    const cacheRead = sdkUsage.cache_read_input_tokens ?? sdkUsage.cacheReadInputTokens ?? null;
-    const cacheWrite = sdkUsage.cache_creation_input_tokens ?? sdkUsage.cacheCreationInputTokens ?? null;
+    // Total = new input + cache writes + cache reads + output
+    const totalTokens = inputTokens + cacheWrite + cacheRead + outputTokens;
 
     console.error(
-      `[patched-acp] Usage: cost=$${session._lastCostUsd}, ` +
+      `[patched-acp] Usage: cost=$${costUsd}, ` +
       `input=${inputTokens}, output=${outputTokens}, ` +
-      `cacheRead=${cacheRead}, cacheWrite=${cacheWrite}, ` +
-      `modelUsage=${JSON.stringify(modelUsage)}`
+      `cacheWrite=${cacheWrite}, cacheRead=${cacheRead}, ` +
+      `total=${totalTokens}`
     );
 
     const augmented = {
@@ -94,9 +90,9 @@ ClaudeAcpAgent.prototype.prompt = async function (params) {
         outputTokens,
         cachedReadTokens: cacheRead,
         cachedWriteTokens: cacheWrite,
-        totalTokens: (inputTokens) + (outputTokens) + (cacheRead ?? 0) + (cacheWrite ?? 0),
+        totalTokens,
       },
-      _meta: { costUsd: session._lastCostUsd },
+      _meta: { costUsd },
     };
     delete session._lastCostUsd;
     delete session._lastUsage;
