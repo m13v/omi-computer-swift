@@ -4360,7 +4360,7 @@ extension APIClient {
         }
         struct Res: Decodable { let status: String }
         do {
-            let _: Res = try await post("v1/users/me/llm-usage", body: Req(
+            let res: Res = try await post("v1/users/me/llm-usage", body: Req(
                 input_tokens: inputTokens,
                 output_tokens: outputTokens,
                 cache_read_tokens: cacheReadTokens,
@@ -4368,6 +4368,7 @@ extension APIClient {
                 total_tokens: totalTokens,
                 cost_usd: costUsd
             ))
+            log("APIClient: LLM usage recorded OK (status=\(res.status))")
         } catch {
             log("APIClient: LLM usage record failed: \(error.localizedDescription)")
         }
