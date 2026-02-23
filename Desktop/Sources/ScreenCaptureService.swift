@@ -13,6 +13,10 @@ final class ScreenCaptureService: Sendable {
     nonisolated(unsafe) private static var axFailureCountByBundleID: [String: Int] = [:]
     private static let axSkipThreshold = 3
 
+    /// When the AX API is disabled system-wide (apiDisabled error), skip all AX attempts
+    /// to avoid spamming a failing call on every capture cycle (every ~1 second).
+    nonisolated(unsafe) private static var axSystemwideDisabled = false
+
     init() {}
 
     /// Check if we have screen recording permission by actually testing capture
@@ -280,8 +284,8 @@ final class ScreenCaptureService: Sendable {
         }
 
         // Try Accessibility API first (most accurate - gets actual focused window).
-        // Skip if this app has exceeded the cannotComplete failure threshold (e.g. Qt/OpenGL apps).
-        let skipAX = !bundleID.isEmpty && (axFailureCountByBundleID[bundleID] ?? 0) >= axSkipThreshold
+        // Skip if AX is disabled system-wide (apiDisabled) or this app exceeded the cannotComplete threshold.
+        let skipAX = axSystemwideDisabled || (!bundleID.isEmpty && (axFailureCountByBundleID[bundleID] ?? 0) >= axSkipThreshold)
         if !skipAX, let axResult = getWindowInfoViaAccessibility(pid: activePID, bundleID: bundleID, windowList: windowList) {
             return (appName, axResult.title, axResult.windowID)
         }
@@ -322,8 +326,12 @@ final class ScreenCaptureService: Sendable {
 
         guard focusResult == .success, let windowElement = focusedWindow else {
             if focusResult == .apiDisabled {
-                // System-wide AX permission issue — always log
-                log("ACCESSIBILITY_AX: apiDisabled (\(focusResult.rawValue)) for \(bundleID) — system permission broken")
+                // System-wide AX permission issue. Set a flag so we stop attempting
+                // AX on every capture cycle — avoids spinning on a known-broken call.
+                if !axSystemwideDisabled {
+                    axSystemwideDisabled = true
+                    log("ACCESSIBILITY_AX: apiDisabled (\(focusResult.rawValue)) — disabling AX attempts until next launch")
+                }
             } else if focusResult == .cannotComplete {
                 // App-specific failure (Qt, OpenGL, Python-based apps often don't implement AX).
                 // Track per bundle ID and suppress logs after the threshold to avoid spam.
