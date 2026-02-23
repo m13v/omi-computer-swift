@@ -1193,13 +1193,13 @@ class ChatProvider: ObservableObject {
         // Log prompt context summary
         let activeGoalCount = cachedGoals.filter { $0.isActive }.count
         let historyInjected = !history.isEmpty
-        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyInjected ? "injected (\(historyCount) msgs)" : "none"), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
+        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyInjected ? "injected (\(historyCount) msgs)" : "none"), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode_in_skills: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
 
         // Log per-section character breakdown
         let baseTemplate = ChatPromptBuilder.buildDesktopChat(
             userName: userName, memoriesSection: "", goalSection: "", tasksSection: "", aiProfileSection: "", databaseSchema: "")
         let allSkillsForSize = (discoveredSkills + projectDiscoveredSkills)
-            .filter { enabledSkillNames.contains($0.name) && $0.name != "dev-mode" }
+            .filter { enabledSkillNames.contains($0.name) && ($0.name != "dev-mode" || devModeEnabled) }
             .map { $0.name }.joined(separator: ", ")
         let skillsSectionSize = allSkillsForSize.isEmpty ? 0 : allSkillsForSize.count + 80 // names + wrapper
         log("ChatProvider: prompt breakdown — " +
@@ -1212,8 +1212,7 @@ class ChatProvider: ObservableObject {
             "history:\(history.count)c, " +
             "claude_md:\(claudeMdContent?.count ?? 0)c, " +
             "project_claude_md:\(projectClaudeMdContent?.count ?? 0)c, " +
-            "skills:\(skillsSectionSize)c, " +
-            "dev_mode:\(devModeContext?.count ?? 0)c")
+            "skills:\(skillsSectionSize)c")
 
         return prompt
     }
@@ -1250,18 +1249,12 @@ class ChatProvider: ObservableObject {
         if !enabledSkillNames.isEmpty {
             let allSkills = discoveredSkills + projectDiscoveredSkills
             let skillNames = allSkills
-                .filter { enabledSkillNames.contains($0.name) && $0.name != "dev-mode" }
+                .filter { enabledSkillNames.contains($0.name) && ($0.name != "dev-mode" || devModeEnabled) }
                 .map { $0.name }
                 .joined(separator: ", ")
             if !skillNames.isEmpty {
                 prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
             }
-        }
-
-        // Append dev mode context if enabled (full skill content, not just description)
-        if devModeEnabled, let devMode = devModeContext {
-            let workspaceDir = aiChatWorkingDirectory.isEmpty ? "not set" : aiChatWorkingDirectory
-            prompt += "\n\n<dev_mode>\nDev Mode is ENABLED. The user has opted in to app customization.\nWorkspace: \(workspaceDir)\n\n\(devMode)\n</dev_mode>"
         }
 
         log("ChatProvider: task chat prompt built — prompt_length: \(prompt.count) chars")
