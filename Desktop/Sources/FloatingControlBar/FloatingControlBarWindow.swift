@@ -233,6 +233,11 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // Cancel any in-flight chat streaming to prevent re-expansion
         FloatingControlBarManager.shared.cancelChat()
 
+        // Cancel dynamic response-height observer and reset its state
+        responseHeightCancellable?.cancel()
+        responseHeightCancellable = nil
+        state.responseContentHeight = 0
+
         // Cancel PTT if in follow-up mode
         if state.isVoiceFollowUp {
             PushToTalkManager.shared.cancelListening()
