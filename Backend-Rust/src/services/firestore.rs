@@ -336,14 +336,19 @@ impl FirestoreService {
                 }
             }]
         });
+        tracing::info!("LLM usage Firestore commit: doc_path={}", doc_path);
+        tracing::info!("LLM usage request body: {}", serde_json::to_string(&body).unwrap_or_default());
         let resp = self
             .build_request(reqwest::Method::POST, &commit_url)
             .await?
             .json(&body)
             .send()
             .await?;
-        if !resp.status().is_success() {
-            return Err(resp.text().await?.into());
+        let status = resp.status();
+        let resp_body = resp.text().await?;
+        tracing::info!("LLM usage Firestore response: status={} body={}", status, resp_body);
+        if !status.is_success() {
+            return Err(resp_body.into());
         }
         Ok(())
     }
