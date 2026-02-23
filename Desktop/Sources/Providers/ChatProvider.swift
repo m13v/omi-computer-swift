@@ -1201,6 +1201,26 @@ class ChatProvider: ObservableObject {
         let historyInjected = !history.isEmpty
         log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyInjected ? "injected (\(historyCount) msgs)" : "none"), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
 
+        // Log per-section character breakdown
+        let baseTemplate = ChatPromptBuilder.buildDesktopChat(
+            userName: userName, memoriesSection: "", goalSection: "", tasksSection: "", aiProfileSection: "", databaseSchema: "")
+        let allSkillsForSize = (discoveredSkills + projectDiscoveredSkills)
+            .filter { enabledSkillNames.contains($0.name) && $0.name != "dev-mode" }
+            .map { $0.name }.joined(separator: ", ")
+        let skillsSectionSize = allSkillsForSize.isEmpty ? 0 : allSkillsForSize.count + 80 // names + wrapper
+        log("ChatProvider: prompt breakdown — " +
+            "base_template:\(baseTemplate.count)c, " +
+            "context:\(contextSection.count)c, " +
+            "goals:\(goalSection.count)c, " +
+            "tasks:\(tasksSection.count)c, " +
+            "ai_profile:\(aiProfileSection.count)c, " +
+            "schema:\(cachedDatabaseSchema.count)c, " +
+            "history:\(history.count)c, " +
+            "claude_md:\(claudeMdContent?.count ?? 0)c, " +
+            "project_claude_md:\(projectClaudeMdContent?.count ?? 0)c, " +
+            "skills:\(skillsSectionSize)c, " +
+            "dev_mode:\(devModeContext?.count ?? 0)c")
+
         return prompt
     }
 
