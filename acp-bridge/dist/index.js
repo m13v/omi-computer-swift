@@ -398,17 +398,21 @@ async function initializeAcp() {
         throw err;
     }
 }
-function buildMcpServers(mode) {
+function buildMcpServers(mode, cwd) {
     const servers = [];
     // omi-tools (stdio, connects back via Unix socket)
+    const omiToolsEnv = [
+        { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
+        { name: "OMI_QUERY_MODE", value: mode },
+    ];
+    if (cwd) {
+        omiToolsEnv.push({ name: "OMI_WORKSPACE", value: cwd });
+    }
     servers.push({
         name: "omi-tools",
         command: process.execPath,
         args: [omiToolsStdioScript],
-        env: [
-            { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
-            { name: "OMI_QUERY_MODE", value: mode },
-        ],
+        env: omiToolsEnv,
     });
     // Playwright MCP server
     const playwrightArgs = [playwrightCli];
@@ -448,7 +452,7 @@ async function preWarmSession(cwd, models) {
             try {
                 const sessionParams = {
                     cwd: warmCwd,
-                    mcpServers: buildMcpServers("act"),
+                    mcpServers: buildMcpServers("act", warmCwd),
                 };
                 // Retry once after a short delay if session/new fails
                 // (ACP subprocess may not be fully ready immediately after initialize)
@@ -527,7 +531,7 @@ async function handleQuery(msg) {
         if (!sessionId) {
             const sessionParams = {
                 cwd: requestedCwd,
-                mcpServers: buildMcpServers(mode),
+                mcpServers: buildMcpServers(mode, requestedCwd),
             };
             const sessionResult = (await acpRequest("session/new", sessionParams));
             sessionId = sessionResult.sessionId;
