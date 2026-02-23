@@ -512,18 +512,22 @@ type McpServerConfig = {
   env: Array<{ name: string; value: string }>;
 };
 
-function buildMcpServers(mode: string): McpServerConfig[] {
+function buildMcpServers(mode: string, cwd?: string): McpServerConfig[] {
   const servers: McpServerConfig[] = [];
 
   // omi-tools (stdio, connects back via Unix socket)
+  const omiToolsEnv: Array<{ name: string; value: string }> = [
+    { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
+    { name: "OMI_QUERY_MODE", value: mode },
+  ];
+  if (cwd) {
+    omiToolsEnv.push({ name: "OMI_WORKSPACE", value: cwd });
+  }
   servers.push({
     name: "omi-tools",
     command: process.execPath,
     args: [omiToolsStdioScript],
-    env: [
-      { name: "OMI_BRIDGE_PIPE", value: omiToolsPipePath },
-      { name: "OMI_QUERY_MODE", value: mode },
-    ],
+    env: omiToolsEnv,
   });
 
   // Playwright MCP server
@@ -572,7 +576,7 @@ async function preWarmSession(cwd?: string, models?: string[]): Promise<void> {
         try {
           const sessionParams: Record<string, unknown> = {
             cwd: warmCwd,
-            mcpServers: buildMcpServers("act"),
+            mcpServers: buildMcpServers("act", warmCwd),
           };
 
           // Retry once after a short delay if session/new fails
@@ -662,7 +666,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     if (!sessionId) {
       const sessionParams: Record<string, unknown> = {
         cwd: requestedCwd,
-        mcpServers: buildMcpServers(mode),
+        mcpServers: buildMcpServers(mode, requestedCwd),
       };
       const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
 
