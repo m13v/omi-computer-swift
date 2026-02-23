@@ -1070,8 +1070,11 @@ class ChatProvider: ObservableObject {
             if ChatPrompts.excludedTables.contains(name) { continue }
             if ChatPrompts.excludedTablePrefixes.contains(where: { name.hasPrefix($0) }) { continue }
 
-            // Extract columns from CREATE TABLE statement
-            let columns = extractColumns(from: sql)
+            // Extract columns, stripping infrastructure-only ones
+            let columns = extractColumns(from: sql).filter { col in
+                let colName = col.components(separatedBy: .whitespaces).first ?? ""
+                return !ChatPrompts.excludedColumns.contains(colName)
+            }
             guard !columns.isEmpty else { continue }
 
             // Table header with annotation
