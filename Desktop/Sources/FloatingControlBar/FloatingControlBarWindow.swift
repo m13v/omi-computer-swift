@@ -29,6 +29,14 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private var resizeWorkItem: DispatchWorkItem?
     /// Saved center point from before chat opened, used to restore position on close.
     private var preChatCenter: NSPoint?
+    /// Token incremented each time a windowDidResignKey dismiss animation starts.
+    /// Checked in the completion block so a new PTT query can cancel a stale close.
+    private var resignKeyAnimationToken: Int = 0
+    /// The target origin of an in-progress close/restore animation, set in
+    /// closeAIConversation() and cleared when the animation settles.
+    /// Used by savePreChatCenterIfNeeded() to snap to the correct pill position
+    /// if a new PTT query fires while the restore animation is still running.
+    private var pendingRestoreOrigin: NSPoint?
 
     var onPlayPause: (() -> Void)?
     var onAskAI: (() -> Void)?
@@ -265,6 +273,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             resizeWorkItem = nil
             styleMask.remove(.resizable)
             isResizingProgrammatically = true
+            // Record the animation target so savePreChatCenterIfNeeded() can snap to it
+            // if a new PTT query fires while this restore animation is still running.
+            pendingRestoreOrigin = restoreOrigin
             NSAnimationContext.beginGrouping()
             NSAnimationContext.current.duration = 0.3
             NSAnimationContext.current.allowsImplicitAnimation = false
@@ -277,6 +288,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             preChatCenter = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
                 self?.isResizingProgrammatically = false
+                self?.pendingRestoreOrigin = nil
                 // Safety net: if the frame drifted during animation, snap to the correct position.
                 if let self = self, self.frame != targetFrame {
                     self.setFrame(targetFrame, display: true, animate: false)
@@ -608,13 +620,17 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             || eventType == .otherMouseDown
         guard isMouseClick else { return }
 
+        // Stamp a token so a new PTT query can cancel this in-flight dismiss.
+        resignKeyAnimationToken += 1
+        let token = resignKeyAnimationToken
+
         // Phase 1: fade out gently.
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.22
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             self.animator().alphaValue = 0
         }) { [weak self] in
-            guard let self else { return }
+            guard let self, self.resignKeyAnimationToken == token else { return }
             // Phase 2: collapse while invisible (no jarring resize flash).
             self.closeAIConversation()
             // Phase 3: fade the collapsed pill back in softly.
@@ -854,6 +870,11 @@ class FloatingControlBarManager {
             show()
         }
 
+        // Cancel any in-flight windowDidResignKey dismiss animation before saving the
+        // pre-chat center. Without this, the stale completion block fires after the new
+        // query opens and immediately closes it.
+        window.cancelPendingDismiss()
+
         // Save pre-chat center so closeAIConversation can restore the original position.
         // Without this, Escape after a PTT query places the bar at the response window's
         // center instead of where it was before the chat opened.
@@ -995,8 +1016,26 @@ extension FloatingControlBarWindow {
 
     /// Save the current center point so closeAIConversation can restore position.
     /// Only saves if preChatCenter is not already set (avoids overwriting during follow-ups).
+    /// If a close/restore animation is in flight (pendingRestoreOrigin is set), snaps the
+    /// window to that target first so the saved center reflects the true pill position,
+    /// not an intermediate animation frame.
     func savePreChatCenterIfNeeded() {
         guard preChatCenter == nil else { return }
+        // If a restore animation is running, snap to its target immediately so we
+        // record the correct pill position rather than a mid-animation frame.
+        if let restoreOrigin = pendingRestoreOrigin {
+            let size = FloatingControlBarWindow.minBarSize
+            isResizingProgrammatically = true
+            setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: false)
+            isResizingProgrammatically = false
+            pendingRestoreOrigin = nil
+        }
         preChatCenter = NSPoint(x: frame.midX, y: frame.midY)
+    }
+
+    /// Invalidates any in-flight windowDidResignKey dismiss animation so a new PTT
+    /// query won't be immediately closed by a stale completion block.
+    func cancelPendingDismiss() {
+        resignKeyAnimationToken += 1
     }
 }
