@@ -449,7 +449,6 @@ async function preWarmSession(cwd, models) {
                 const sessionParams = {
                     cwd: warmCwd,
                     mcpServers: buildMcpServers("act"),
-                    model: warmModel,
                 };
                 // Retry once after a short delay if session/new fails
                 // (ACP subprocess may not be fully ready immediately after initialize)
@@ -463,6 +462,8 @@ async function preWarmSession(cwd, models) {
                     result = (await acpRequest("session/new", sessionParams));
                 }
                 sessions.set(warmModel, { sessionId: result.sessionId, cwd: warmCwd });
+                // Set the model via the proper ACP method (model field is stripped from session/new by schema)
+                await acpRequest("session/set_model", { sessionId: result.sessionId, modelId: warmModel });
                 logErr(`Pre-warmed session: ${result.sessionId} (cwd=${warmCwd}, model=${warmModel})`);
             }
             catch (err) {
@@ -528,13 +529,14 @@ async function handleQuery(msg) {
                 cwd: requestedCwd,
                 mcpServers: buildMcpServers(mode),
             };
-            if (requestedModel) {
-                sessionParams.model = requestedModel;
-            }
             const sessionResult = (await acpRequest("session/new", sessionParams));
             sessionId = sessionResult.sessionId;
             sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
             isNewSession = true;
+            // Set the model via the proper ACP method (model field is stripped from session/new by schema)
+            if (requestedModel) {
+                await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
+            }
             logErr(`ACP session created: ${sessionId} (model=${requestedModel || "default"}, cwd=${requestedCwd})`);
         }
         else {
