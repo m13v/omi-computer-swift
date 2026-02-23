@@ -1071,20 +1071,21 @@ class ChatProvider: ObservableObject {
             if ChatPrompts.excludedTablePrefixes.contains(where: { name.hasPrefix($0) }) { continue }
             if name.contains("_fts") { continue } // catches all FTS virtual + internal tables
 
-            // Extract columns, stripping infrastructure-only ones
-            let columns = extractColumns(from: sql).filter { col in
-                let colName = col.components(separatedBy: .whitespaces).first ?? ""
-                return !ChatPrompts.excludedColumns.contains(colName)
-            }
-            guard !columns.isEmpty else { continue }
+            // Extract column names only, stripping types, constraints, and infrastructure columns
+            let columnNames = extractColumns(from: sql).compactMap { col -> String? in
+                let name = col.components(separatedBy: .whitespaces).first?
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\"'`")) ?? ""
+                return ChatPrompts.excludedColumns.contains(name) ? nil : name
+            }.filter { !$0.isEmpty }
+            guard !columnNames.isEmpty else { continue }
 
             // Table header with annotation
             let annotation = ChatPrompts.tableAnnotations[name] ?? ""
             let header = annotation.isEmpty ? name : "\(name) — \(annotation)"
             lines.append(header)
 
-            // Columns as compact one-liner
-            lines.append("  \(columns.joined(separator: ", "))")
+            // Column names as compact one-liner
+            lines.append("  \(columnNames.joined(separator: ", "))")
             lines.append("")
         }
 
