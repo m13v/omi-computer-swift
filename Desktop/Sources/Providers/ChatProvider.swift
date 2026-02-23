@@ -1177,23 +1177,17 @@ class ChatProvider: ObservableObject {
         }
 
         // Append enabled skills as available context (global + project)
-        // Exclude dev-mode from the regular skills list — it has its own dedicated section
+        // dev-mode is included in the list when devModeEnabled; full content loaded on demand via load_skill
         let enabledSkillNames = getEnabledSkillNames()
         if !enabledSkillNames.isEmpty {
             let allSkills = discoveredSkills + projectDiscoveredSkills
             let skillNames = allSkills
-                .filter { enabledSkillNames.contains($0.name) && $0.name != "dev-mode" }
+                .filter { enabledSkillNames.contains($0.name) && ($0.name != "dev-mode" || devModeEnabled) }
                 .map { $0.name }
                 .joined(separator: ", ")
             if !skillNames.isEmpty {
                 prompt += "\n\n<available_skills>\nAvailable skills: \(skillNames)\nUse the load_skill tool to get full instructions for any skill before using it.\n</available_skills>"
             }
-        }
-
-        // Append dev mode context if enabled (full skill content, not just description)
-        if devModeEnabled, let devMode = devModeContext {
-            let workspaceDir = aiChatWorkingDirectory.isEmpty ? "not set" : aiChatWorkingDirectory
-            prompt += "\n\n<dev_mode>\nDev Mode is ENABLED. The user has opted in to app customization.\nWorkspace: \(workspaceDir)\n\n\(devMode)\n</dev_mode>"
         }
 
         // Log prompt context summary
