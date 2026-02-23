@@ -11,6 +11,11 @@ async fn record_llm_usage(
     user: AuthUser,
     Json(req): Json<RecordLlmUsageRequest>,
 ) -> Result<Json<RecordLlmUsageResponse>, StatusCode> {
+    tracing::info!(
+        "LLM usage: uid={} input={} output={} cache_read={} cache_write={} total={} cost={}",
+        user.uid, req.input_tokens, req.output_tokens, req.cache_read_tokens,
+        req.cache_write_tokens, req.total_tokens, req.cost_usd
+    );
     match state
         .firestore
         .record_llm_usage(
@@ -24,9 +29,12 @@ async fn record_llm_usage(
         )
         .await
     {
-        Ok(()) => Ok(Json(RecordLlmUsageResponse {
-            status: "ok".to_string(),
-        })),
+        Ok(()) => {
+            tracing::info!("LLM usage write OK for {}", user.uid);
+            Ok(Json(RecordLlmUsageResponse {
+                status: "ok".to_string(),
+            }))
+        }
         Err(e) => {
             tracing::error!("LLM usage write failed for {}: {}", user.uid, e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
