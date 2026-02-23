@@ -1669,7 +1669,7 @@ class ChatProvider: ObservableObject {
     /// - Parameters:
     ///   - text: The message text
     ///   - model: Optional model override for this query (e.g. "claude-sonnet-4-6" for floating bar)
-    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false) async {
+    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false, systemPromptSuffix: String? = nil) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
@@ -1760,7 +1760,10 @@ class ChatProvider: ObservableObject {
 
         do {
             // Build system prompt with locally cached memories (no backend Gemini call)
-            let systemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
+            var systemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
+            if let suffix = systemPromptSuffix, !suffix.isEmpty {
+                systemPrompt += "\n\n" + suffix
+            }
 
             // Query the active bridge with streaming
             // Each query is standalone — conversation history is in the system prompt
