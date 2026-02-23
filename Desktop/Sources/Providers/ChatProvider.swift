@@ -1453,7 +1453,7 @@ class ChatProvider: ObservableObject {
     }
 
     /// Extract description from YAML frontmatter in SKILL.md
-    private nonisolated static func extractSkillDescription(from content: String) -> String {
+    nonisolated static func extractSkillDescription(from content: String) -> String {
         guard content.hasPrefix("---") else {
             // No frontmatter — use first non-empty line as description
             let lines = content.components(separatedBy: "\n")
