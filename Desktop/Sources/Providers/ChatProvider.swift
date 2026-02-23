@@ -1069,6 +1069,7 @@ class ChatProvider: ObservableObject {
             // Skip internal/FTS tables
             if ChatPrompts.excludedTables.contains(name) { continue }
             if ChatPrompts.excludedTablePrefixes.contains(where: { name.hasPrefix($0) }) { continue }
+            if name.contains("_fts") { continue } // catches all FTS virtual + internal tables
 
             // Extract columns, stripping infrastructure-only ones
             let columns = extractColumns(from: sql).filter { col in
