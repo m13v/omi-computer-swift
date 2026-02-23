@@ -213,13 +213,20 @@ class ResourceMonitor {
                 scope.setContext(value: snapshot.asDictionary(), key: "resources")
             }
 
-            // Give Sentry 3 seconds to flush, then relaunch and terminate
+            // Give Sentry 3 seconds to flush, then relaunch and terminate.
+            // Only terminate if the relaunch succeeds — otherwise the user would be
+            // left with no running app and would need a full computer restart.
             DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
                 let task = Process()
                 task.launchPath = "/usr/bin/open"
                 task.arguments = ["-n", Bundle.main.bundleURL.path]
-                try? task.run()
-                NSApp.terminate(nil)
+                do {
+                    try task.run()
+                    NSApp.terminate(nil)
+                } catch {
+                    logError("ResourceMonitor: Failed to relaunch app during auto-restart, aborting terminate to avoid leaving user stuck", error: error)
+                    self.autoRestartTriggered = false  // Allow retry on next threshold check
+                }
             }
             return
         }
