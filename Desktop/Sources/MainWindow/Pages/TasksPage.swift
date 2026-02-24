@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import UniformTypeIdentifiers
 
 // MARK: - Task Category (by due date)
 
@@ -3321,19 +3322,26 @@ struct TaskCategorySection: View {
                                 .frame(height: 2)
                         }
                     }
-                    .dropDestination(for: String.self) { droppedIds, _ in
-                        log("DROP-TOP: Received drop at top of \(category.rawValue), ids=\(droppedIds)")
-                        isTopDropTargeted = false
-                        guard let droppedId = droppedIds.first,
-                              let droppedTask = findTaskGlobal?(droppedId) ?? orderedTasks.first(where: { $0.id == droppedId }) else {
-                            log("DROP-TOP: Could not find dropped task")
-                            return false
+                    .onDrop(of: [.plainText], isTargeted: Binding(
+                        get: { isTopDropTargeted },
+                        set: { targeted in
+                            log("DROP-TOP: isTargeted=\(targeted) on \(category.rawValue)")
+                            isTopDropTargeted = targeted
                         }
-                        onMoveTask?(droppedTask, 0, category)
+                    )) { providers in
+                        log("DROP-TOP: Received drop at top of \(category.rawValue)")
+                        isTopDropTargeted = false
+                        guard let provider = providers.first else { return false }
+                        provider.loadItem(forTypeIdentifier: "public.plain-text", options: nil) { data, error in
+                            guard let data = data as? Data,
+                                  let droppedId = String(data: data, encoding: .utf8) else { return }
+                            DispatchQueue.main.async {
+                                if let droppedTask = findTaskGlobal?(droppedId) ?? orderedTasks.first(where: { $0.id == droppedId }) {
+                                    onMoveTask?(droppedTask, 0, category)
+                                }
+                            }
+                        }
                         return true
-                    } isTargeted: { targeted in
-                        log("DROP-TOP: isTargeted=\(targeted) on \(category.rawValue)")
-                        isTopDropTargeted = targeted
                     }
             }
 
@@ -3406,9 +3414,9 @@ struct TaskCategorySection: View {
 
 // MARK: - Conditional Drag & Drop (reduces gesture graph depth when disabled)
 
-/// Applies .dropDestination to a task row for reorder drop targets.
-/// The .draggable is handled by the drag handle inside TaskRow to avoid conflicts with swipe gestures.
-/// When disabled (e.g. multi-select mode), no drop modifiers are applied.
+/// Applies .onDrop to a task row for reorder drop targets.
+/// Uses onDrag/onDrop (NSItemProvider) instead of draggable/dropDestination for reliable macOS support.
+/// The .onDrag is handled by the drag handle inside TaskRow to avoid conflicts with swipe gestures.
 struct TaskDragDropModifier: ViewModifier {
     let isEnabled: Bool
     let taskId: String
@@ -3433,32 +3441,44 @@ struct TaskDragDropModifier: ViewModifier {
                             .transition(.opacity)
                     }
                 }
-                .dropDestination(for: String.self) { droppedIds, _ in
-                    log("DROP: Received drop on task \(taskId), droppedIds=\(droppedIds)")
+                .onDrop(of: [.plainText], isTargeted: Binding(
+                    get: { isDropTarget },
+                    set: { targeted in
+                        log("DROP: isTargeted=\(targeted) on task \(taskId)")
+                        if targeted {
+                            onHoverChanged?(taskId, true)
+                        } else {
+                            onHoverChanged?(taskId, false)
+                        }
+                    }
+                )) { providers in
+                    log("DROP: Received drop on task \(taskId), providers=\(providers.count)")
                     onDragEnded?()
-                    guard let droppedId = droppedIds.first,
-                          droppedId != taskId else {
-                        log("DROP: Rejected — same task or empty droppedIds")
+                    guard let provider = providers.first else {
+                        log("DROP: No providers")
                         return false
                     }
-                    guard let targetIndex = findTargetIndex?() else {
-                        log("DROP: Rejected — findTargetIndex returned nil")
-                        return false
-                    }
-                    if let droppedTask = findTask?(droppedId) {
-                        log("DROP: Moving task \(droppedId) to index \(targetIndex)")
-                        onMoveTask?(droppedTask, targetIndex)
-                    } else {
-                        log("DROP: Could not find task for id \(droppedId)")
+                    provider.loadItem(forTypeIdentifier: "public.plain-text", options: nil) { data, error in
+                        guard let data = data as? Data,
+                              let droppedId = String(data: data, encoding: .utf8),
+                              droppedId != taskId else {
+                            log("DROP: Rejected — same task or failed to decode")
+                            return
+                        }
+                        DispatchQueue.main.async {
+                            guard let targetIndex = findTargetIndex?() else {
+                                log("DROP: findTargetIndex returned nil")
+                                return
+                            }
+                            if let droppedTask = findTask?(droppedId) {
+                                log("DROP: Moving task \(droppedId) to index \(targetIndex)")
+                                onMoveTask?(droppedTask, targetIndex)
+                            } else {
+                                log("DROP: Could not find task for id \(droppedId)")
+                            }
+                        }
                     }
                     return true
-                } isTargeted: { isTargeted in
-                    log("DROP: isTargeted=\(isTargeted) on task \(taskId)")
-                    if isTargeted {
-                        onHoverChanged?(taskId, true)
-                    } else {
-                        onHoverChanged?(taskId, false)
-                    }
                 }
         } else {
             content
