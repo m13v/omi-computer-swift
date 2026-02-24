@@ -463,6 +463,10 @@ if [ -z "$AUTH" ]; then
   exit 1
 fi
 
+# Ensure data dir exists and is writable by matthewdi
+mkdir -p /home/matthewdi/omi-agent/data
+chown matthewdi:matthewdi /home/matthewdi/omi-agent/data
+
 # Kill any existing agent
 systemctl stop omi-agent 2>/dev/null
 pkill -x node 2>/dev/null || true
