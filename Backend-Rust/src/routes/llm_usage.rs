@@ -40,7 +40,10 @@ async fn get_total_llm_cost(
     user: AuthUser,
 ) -> Result<Json<GetTotalLlmCostResponse>, StatusCode> {
     match state.firestore.get_total_llm_cost(&user.uid).await {
-        Ok(total) => Ok(Json(GetTotalLlmCostResponse { total_cost_usd: total })),
+        Ok(total) => {
+            tracing::info!("LLM total cost for {}: ${:.4}", user.uid, total);
+            Ok(Json(GetTotalLlmCostResponse { total_cost_usd: total }))
+        }
         Err(e) => {
             tracing::error!("LLM total cost fetch failed for {}: {}", user.uid, e);
             Err(StatusCode::INTERNAL_SERVER_ERROR)
