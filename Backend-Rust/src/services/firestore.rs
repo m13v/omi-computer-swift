@@ -6662,8 +6662,10 @@ impl FirestoreService {
                                 == Some(target_app)
                         }
                         None => {
-                            // Looking for main chat: plugin_id is null, absent, or empty
-                            match fields.get("plugin_id") {
+                            // Looking for main chat: both plugin_id AND app_id must be
+                            // null, absent, or empty.  Without the app_id check, task-chat
+                            // sessions (plugin_id=null, app_id="task-chat") match falsely.
+                            let plugin_id_null = match fields.get("plugin_id") {
                                 None => true,
                                 Some(val) => {
                                     val.get("nullValue").is_some()
@@ -6672,7 +6674,18 @@ impl FirestoreService {
                                             .and_then(|v| v.as_str())
                                             .map_or(false, |s| s.is_empty())
                                 }
-                            }
+                            };
+                            let app_id_null = match fields.get("app_id") {
+                                None => true,
+                                Some(val) => {
+                                    val.get("nullValue").is_some()
+                                        || val
+                                            .get("stringValue")
+                                            .and_then(|v| v.as_str())
+                                            .map_or(false, |s| s.is_empty())
+                                }
+                            };
+                            plugin_id_null && app_id_null
                         }
                     };
 
