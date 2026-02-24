@@ -1,6 +1,17 @@
 {
   "releases": [
     {
+      "version": "11.2",
+      "date": "2026-02-24",
+      "changes": [
+        "If the Install button fails, download manually from <a href='https://macos.omi.me' style='font-weight:bold'>macos.omi.me</a> (known issue on macOS 26)",
+        "Fixed Screen Analysis being incorrectly disabled when monitoring stops",
+        "Faster data syncing with gzip compression",
+        "Fixed OMI AI cost tracking to use server-authoritative totals",
+        "Improved Proactive Assistants reliability"
+      ]
+    },
+    {
       "version": "11.1",
       "date": "2026-02-24",
       "changes": [
