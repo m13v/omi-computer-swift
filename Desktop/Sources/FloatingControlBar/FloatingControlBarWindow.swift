@@ -1011,9 +1011,8 @@ class FloatingControlBarManager {
         // Load screenshot as image data for the ACP image content block
         let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
-        let concisePrefix = "[IMPORTANT: You may use tools to find the answer. Your final text response must be 1 sentence only — no lists, no headers.]\n\n"
-        let floatingBarSuffix = "<response_style_override>You may call tools as needed. Your final text response must be 1 sentence maximum — direct and concise, no lists, no headers.</response_style_override><image_usage>A screenshot of the user's current screen may be attached. Only use it if the user's question is about the screen or a visible app. Never mention the screenshot, reference it, or say you are or aren't using it — just answer directly.</image_usage>"
-        await provider.sendMessage(concisePrefix + message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
+        let floatingBarSuffix = "<context_routing>Before answering, determine which context applies: (1) general knowledge question — answer directly from what you know; (2) question about the screen — use the screenshot; (3) question about the codebase or workspace — use tools. Most questions are general knowledge. Only treat a question as codebase-related if it explicitly references code, files, or the project. Never refuse a general knowledge question by saying it's unrelated to the codebase.</context_routing><response_style_override>You may call tools as needed. Your final text response must be 1 sentence maximum — direct and concise, no lists, no headers.</response_style_override><image_usage>A screenshot of the user's current screen may be attached. Only use it if the user's question is about the screen or a visible app. Never mention the screenshot, reference it, or say you are or aren't using it — just answer directly.</image_usage>"
+        await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
 
         // Handle errors after sendMessage completes
         barWindow.state.isAILoading = false
