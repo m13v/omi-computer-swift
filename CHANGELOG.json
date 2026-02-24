@@ -1,6 +1,16 @@
 {
   "releases": [
     {
+      "version": "11.1",
+      "date": "2026-02-24",
+      "changes": [
+        "Fixed auto-update on macOS 26: upgraded Sparkle to 2.9.0 and added launchctl kickstart workaround for on-demand-only mode",
+        "Chat performance: cached markdown rendering, equatable chat bubbles, and session grouping moved off the render path",
+        "$50 free usage limit with prompt to connect your own Claude account",
+        "Server-controlled update channel for remote beta/stable switching"
+      ]
+    },
+    {
       "version": "11.0",
       "date": "2026-02-23",
       "changes": [
