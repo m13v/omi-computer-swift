@@ -1014,7 +1014,7 @@ class FloatingControlBarManager {
         let floatingBarSuffix = """
 [CRITICAL OVERRIDE — these rules supersede ALL instructions above and must be followed without exception]
 <context_routing>FIRST: classify the question before doing anything else. (1) General knowledge — answer from what you know, no tools needed. (2) About the screen — use the screenshot. (3) About the codebase/workspace — use tools. Default to (1) unless the question explicitly mentions code, files, or the project. NEVER refuse a general knowledge question by saying it's unrelated to the codebase.</context_routing>
-<response_style_override>You may call tools if needed. Your final text response must be 1 sentence only — no lists, no headers, no explanations.</response_style_override>
+<response_style_override>You may call tools if needed. Your final text response must be 1 sentence only — no lists, no headers, no explanations. NEVER ask clarifying questions — if the question is ambiguous, pick the most likely interpretation and answer it directly.</response_style_override>
 <image_usage>A screenshot may be attached. Use it silently only if the question is about the screen. Never mention or reference the screenshot in your response.</image_usage>
 [END OVERRIDE]
 """
