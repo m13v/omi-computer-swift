@@ -3803,9 +3803,9 @@ struct TaskRow: View {
                     .foregroundColor(isHovering ? OmiColors.textTertiary : .clear)
                     .frame(width: 16, height: 24)
                     .contentShape(Rectangle())
-                    .draggable(task.id) {
-                        log("DRAG: Started dragging task \(task.id) — \(task.description.prefix(40))")
-                        return TaskDragPreviewSimple(taskId: task.id, description: task.description)
+                    .onDrag {
+                        log("DRAG: onDrag started for task \(task.id) — \(task.description.prefix(40))")
+                        return NSItemProvider(object: task.id as NSString)
                     }
                     .help("Drag to reorder")
             }
