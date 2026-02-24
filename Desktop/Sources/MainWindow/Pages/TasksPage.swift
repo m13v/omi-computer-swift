@@ -2323,7 +2323,12 @@ struct TasksPage: View {
     private func installKeyboardMonitor() {
         guard keyboardMonitor == nil else { return }
         let vm = viewModel
-        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak chatCoordinator] event in
+            // Don't intercept keyboard shortcuts when the chat panel is open —
+            // the chat input may briefly lose first-responder status (e.g. after
+            // sending a message) and we don't want Enter to trigger task-list
+            // actions (inline create / inline edit) in that window.
+            if chatCoordinator?.isPanelOpen == true { return event }
             return vm.handleKeyDown(event) ? nil : event
         }
     }
