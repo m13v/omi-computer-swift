@@ -998,6 +998,9 @@ struct RewindPage: View {
 
                 Button {
                     AnalyticsManager.shared.screenCaptureResetClicked(source: "rewind_empty_state")
+                    // Re-enable screen analysis so it auto-starts after the restart
+                    screenAnalysisEnabled = true
+                    AssistantSettings.shared.screenAnalysisEnabled = true
                     ScreenCaptureService.resetScreenCapturePermissionAndRestart()
                 } label: {
                     Text("Reset & Restart")
