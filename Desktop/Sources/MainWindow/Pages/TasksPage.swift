@@ -3674,19 +3674,13 @@ struct TaskRow: View {
                     .onDrag {
                         log("DRAG: onDrag started for task \(task.id) — \(task.description.prefix(40))")
                         return NSItemProvider(object: task.id as NSString)
+                    } preview: {
+                        TaskDragPreviewSimple(taskId: task.id, description: task.description)
                     }
                     .help("Drag to reorder")
             }
 
             swipeableContent
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.08) : Color.clear)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: 8)
-                        .stroke(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
-                )
                 .contentShape(Rectangle())
                 .onTapGesture {
                     onSelect?(task)
@@ -3695,6 +3689,14 @@ struct TaskRow: View {
                     }
                 }
         }
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.08) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .stroke(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+        )
         .sheet(isPresented: $showTaskDetail) {
             TaskDetailView(
                 task: task,
