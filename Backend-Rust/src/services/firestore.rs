@@ -348,6 +348,48 @@ impl FirestoreService {
         Ok(())
     }
 
+    /// Sum all daily desktop_chat.cost_usd values for a user across all llm_usage documents.
+    pub async fn get_total_llm_cost(
+        &self,
+        uid: &str,
+    ) -> Result<f64, Box<dyn std::error::Error + Send + Sync>> {
+        let parent = format!("{}/{}/{}", self.base_url(), USERS_COLLECTION, uid);
+        let query = json!({
+            "structuredQuery": {
+                "from": [{"collectionId": LLM_USAGE_SUBCOLLECTION}]
+            }
+        });
+
+        let response = self
+            .build_request(reqwest::Method::POST, &format!("{}:runQuery", parent))
+            .await?
+            .json(&query)
+            .send()
+            .await?;
+
+        if !response.status().is_success() {
+            let error_text = response.text().await?;
+            return Err(format!("Firestore query failed: {}", error_text).into());
+        }
+
+        let results: Vec<Value> = response.json().await?;
+        let total: f64 = results.iter().filter_map(|entry| {
+            let cost = entry
+                .get("document")?
+                .get("fields")?
+                .get("desktop_chat")?
+                .get("mapValue")?
+                .get("fields")?
+                .get("cost_usd")?;
+            // Firestore stores doubles as doubleValue, but may also be integerValue
+            cost.get("doubleValue")
+                .and_then(|v| v.as_f64())
+                .or_else(|| cost.get("integerValue").and_then(|v| v.as_str()).and_then(|s| s.parse::<f64>().ok()))
+        }).sum();
+
+        Ok(total)
+    }
+
     // =========================================================================
     // CONVERSATIONS
     // =========================================================================
