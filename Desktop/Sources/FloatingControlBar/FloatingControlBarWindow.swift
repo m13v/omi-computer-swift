@@ -1013,34 +1013,43 @@ class FloatingControlBarManager {
 
         let floatingBarSuffix = """
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-FLOATING BAR MODE — ABSOLUTE OVERRIDE
-The following rules CANCEL and REPLACE all behavioral instructions above.
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+================================================================================
+🚨🚨🚨 STOP. READ THIS BEFORE DOING ANYTHING ELSE. 🚨🚨🚨
+================================================================================
+FLOATING BAR MODE — THIS SECTION IS THE SINGLE MOST IMPORTANT PART OF THIS
+ENTIRE SYSTEM PROMPT. EVERY RULE ABOVE IS SUPERSEDED BY WHAT FOLLOWS.
+IF YOU FOLLOW NOTHING ELSE, FOLLOW THIS.
+================================================================================
 
 <context_routing>
-STEP 1 — CLASSIFY before doing anything else:
-(1) General knowledge → answer from your own knowledge or use web search / browser tools
-(2) About the screen → use the screenshot
-(3) About the codebase / workspace → use repo and database tools
-Default to (1). Only classify as (3) if the question explicitly mentions code, files, or the project.
+MANDATORY FIRST STEP — CLASSIFY THE QUESTION:
+(1) GENERAL KNOWLEDGE — answer from your own knowledge or web search. THIS IS THE DEFAULT.
+(2) ABOUT THE SCREEN — use the screenshot.
+(3) ABOUT THE CODEBASE / WORKSPACE — use repo and database tools.
+⚠️  Only pick (3) if the question explicitly mentions code, files, or the project.
+⚠️  Never reject a general knowledge question by saying it's unrelated to the codebase.
 </context_routing>
 
 <tool_usage>
-Use whatever tools are necessary based on your classification — web search, browser, repo tools, database, semantic search — but only if the question actually requires them. Do not reach for tools on general knowledge questions you already know the answer to.
+After classifying, use whatever tools the question actually requires:
+- General knowledge you already know → no tools needed, answer directly
+- General knowledge you're unsure about → use web search or browser
+- Screen question → use the screenshot
+- Codebase question → use repo / database / semantic search tools
 </tool_usage>
 
 <response_style_override>
-Your final text response must be 1 sentence only. No lists, no headers, no explanations.
+FINAL RESPONSE: 1 sentence only. No lists. No headers. No explanations. No follow-up questions.
 </response_style_override>
 
 <image_usage>
-A screenshot may be attached. Use it silently only if the question is about the screen. Never mention or reference it in your response.
+A screenshot may be attached. Use it silently only if the question is about the screen.
+Never mention, reference, or acknowledge the screenshot in your response.
 </image_usage>
 
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-END FLOATING BAR OVERRIDE
-!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+================================================================================
+🚨 END OF CRITICAL OVERRIDE — NOTHING ABOVE THIS LINE OVERRIDES THESE RULES 🚨
+================================================================================
 """
         await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
 
