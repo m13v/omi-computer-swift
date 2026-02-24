@@ -527,6 +527,12 @@ async function handleQuery(msg) {
                 logErr(`Cwd changed for ${requestedModel} (${existing.cwd} -> ${requestedCwd}), creating new session`);
                 sessions.delete(requestedModel);
             }
+            else if (msg.systemPrompt) {
+                // A custom system prompt requires a fresh session — pre-warmed sessions
+                // are created without one and it can only be set at session/new time.
+                logErr(`Custom systemPrompt provided — skipping pre-warmed session, creating fresh one`);
+                sessions.delete(requestedModel);
+            }
             else {
                 sessionId = existing.sessionId;
             }
@@ -555,7 +561,9 @@ async function handleQuery(msg) {
             const sessionParams = {
                 cwd: requestedCwd,
                 mcpServers: buildMcpServers(mode, requestedCwd),
+                ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
             };
+            logErr(`[DEBUG] session/new _meta.systemPrompt present: ${!!(msg.systemPrompt)}`);
             const sessionResult = (await acpRequest("session/new", sessionParams));
             sessionId = sessionResult.sessionId;
             sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
@@ -601,10 +609,7 @@ async function handleQuery(msg) {
             const sessionPromptPayload = {
                 sessionId,
                 prompt: promptBlocks,
-                ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
             };
-            logErr(`[DEBUG] session/prompt payload keys: ${Object.keys(sessionPromptPayload).join(", ")}`);
-            logErr(`[DEBUG] _meta present: ${!!sessionPromptPayload._meta}`);
             const promptResult = (await acpRequest("session/prompt", sessionPromptPayload));
             logErr(`Prompt completed: stopReason=${promptResult.stopReason}`);
             // Mark any remaining pending tools as completed
