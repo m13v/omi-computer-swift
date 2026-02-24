@@ -37,6 +37,8 @@ actor AgentSyncService {
     private var lastTokenRefresh: Date = .distantPast
     private var isPaused = false
     private var latencyBackoffMultiplier: UInt64 = 1
+    private var lastReuploadAt: Date = .distantPast
+    private let reuploadCooldown: TimeInterval = 30 * 60  // don't re-upload more than once per 30 min
 
     private let batchSize = 100
     private let baseSyncInterval: UInt64 = 3_000_000_000  // 3s in nanoseconds
@@ -163,6 +165,10 @@ actor AgentSyncService {
             consecutiveFailures += 1
             if consecutiveFailures == 1 || consecutiveFailures % 10 == 0 {
                 log("AgentSync: backend unreachable (failures=\(consecutiveFailures), next retry in \(currentSyncInterval() / 1_000_000_000)s)")
+            }
+            // After 3 consecutive failures, check if the VM lost its database
+            if consecutiveFailures == 3 {
+                await checkAndTriggerReupload()
             }
         } else if totalSynced > 0 {
             if consecutiveFailures > 0 {
