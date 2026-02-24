@@ -822,6 +822,19 @@ struct ChatBubble: View {
     }
 }
 
+extension ChatBubble: Equatable {
+    static func == (lhs: ChatBubble, rhs: ChatBubble) -> Bool {
+        // Streaming messages always re-render so SwiftUI sees live updates
+        guard !lhs.message.isStreaming && !rhs.message.isStreaming else { return false }
+        // Completed messages are equal when visible content hasn't changed
+        return lhs.message.id == rhs.message.id
+            && lhs.message.text == rhs.message.text
+            && lhs.message.rating == rhs.message.rating
+            && lhs.app?.id == rhs.app?.id
+            && lhs.isDuplicate == rhs.isDuplicate
+    }
+}
+
 // MARK: - Content Block Grouping
 
 /// Groups consecutive tool call blocks into a single collapsible group
