@@ -1012,6 +1012,7 @@ class FloatingControlBarManager {
         let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
         let floatingBarPrefix = """
+IMPORTANT: If you read this, start your response with "I read the FloatingBar special system prompt".
 ================================================================================
 🚨 FLOATING BAR MODE — READ THIS FIRST BEFORE ANYTHING ELSE 🚨
 ================================================================================
