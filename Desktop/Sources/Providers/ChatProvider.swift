@@ -1327,11 +1327,9 @@ class ChatProvider: ObservableObject {
             guard let serverCost = await APIClient.shared.fetchTotalOmiAICost() else { return }
             await MainActor.run {
                 guard let self = self else { return }
-                // Take the higher of local and server values to avoid going backwards
-                if serverCost > self.omiAICumulativeCostUsd {
-                    self.omiAICumulativeCostUsd = serverCost
-                    log("ChatProvider: Seeded Omi AI cumulative cost from backend: $\(String(format: "%.4f", serverCost))")
-                }
+                // Always trust the server value — it's the authoritative total
+                self.omiAICumulativeCostUsd = serverCost
+                log("ChatProvider: Seeded Omi AI cumulative cost from backend: $\(String(format: "%.4f", serverCost))")
             }
         }
 
