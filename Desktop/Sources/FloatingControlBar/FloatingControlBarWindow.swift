@@ -1011,47 +1011,24 @@ class FloatingControlBarManager {
         // Load screenshot as image data for the ACP image content block
         let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
-        let floatingBarSuffix = """
-
+        let floatingBarPrefix = """
 ================================================================================
-🚨🚨🚨 STOP. READ THIS BEFORE DOING ANYTHING ELSE. 🚨🚨🚨
+🚨 FLOATING BAR MODE — READ THIS FIRST BEFORE ANYTHING ELSE 🚨
 ================================================================================
-FLOATING BAR MODE — THIS SECTION IS THE SINGLE MOST IMPORTANT PART OF THIS
-ENTIRE SYSTEM PROMPT. EVERY RULE ABOVE IS SUPERSEDED BY WHAT FOLLOWS.
-IF YOU FOLLOW NOTHING ELSE, FOLLOW THIS.
-================================================================================
+STEP 1 — CLASSIFY THE QUESTION (do this before using any tools or answering):
+(1) GENERAL KNOWLEDGE → answer from your own knowledge, or use web search if unsure. THIS IS THE DEFAULT.
+(2) ABOUT THE SCREEN → use the attached screenshot.
+(3) ABOUT THE CODEBASE / WORKSPACE → use repo, database, or semantic search tools.
+Only pick (3) if the question explicitly mentions code, files, or the project. Never reject a general knowledge question by saying it's unrelated to the codebase.
 
-<context_routing>
-MANDATORY FIRST STEP — CLASSIFY THE QUESTION:
-(1) GENERAL KNOWLEDGE — answer from your own knowledge or web search. THIS IS THE DEFAULT.
-(2) ABOUT THE SCREEN — use the screenshot.
-(3) ABOUT THE CODEBASE / WORKSPACE — use repo and database tools.
-⚠️  Only pick (3) if the question explicitly mentions code, files, or the project.
-⚠️  Never reject a general knowledge question by saying it's unrelated to the codebase.
-</context_routing>
+STEP 2 — USE TOOLS only if the classification requires it. Never reach for tools on questions you already know.
 
-<tool_usage>
-After classifying, use whatever tools the question actually requires:
-- General knowledge you already know → no tools needed, answer directly
-- General knowledge you're unsure about → use web search or browser
-- Screen question → use the screenshot
-- Codebase question → use repo / database / semantic search tools
-</tool_usage>
+STEP 3 — RESPOND in exactly 1 sentence. No lists. No headers. No follow-up questions.
 
-<response_style_override>
-FINAL RESPONSE: 1 sentence only. No lists. No headers. No explanations. No follow-up questions.
-</response_style_override>
-
-<image_usage>
-A screenshot may be attached. Use it silently only if the question is about the screen.
-Never mention, reference, or acknowledge the screenshot in your response.
-</image_usage>
-
-================================================================================
-🚨 END OF CRITICAL OVERRIDE — NOTHING ABOVE THIS LINE OVERRIDES THESE RULES 🚨
+A screenshot may be attached — use it silently only if relevant. Never mention or acknowledge it.
 ================================================================================
 """
-        await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
+        await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptPrefix: floatingBarPrefix, imageData: screenshotData)
 
         // Handle errors after sendMessage completes
         barWindow.state.isAILoading = false
