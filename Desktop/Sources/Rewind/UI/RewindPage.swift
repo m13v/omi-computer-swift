@@ -8,8 +8,6 @@ struct RewindPage: View {
     var appState: AppState? = nil
 
     @StateObject private var viewModel = RewindViewModel()
-    @ObservedObject private var audioLevels = AudioLevelMonitor.shared
-    @ObservedObject private var recordingTimer = RecordingTimer.shared
 
     @State private var currentIndex: Int = 0
     @State private var currentImage: NSImage?
@@ -1344,35 +1342,11 @@ struct RewindPage: View {
                 }
                 .buttonStyle(.plain)
 
-                // Audio level waveforms
-                HStack(spacing: 16) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "mic.fill")
-                            .scaledFont(size: 12)
-                            .foregroundColor(OmiColors.textTertiary)
-                        AudioLevelWaveformView(
-                            level: audioLevels.microphoneLevel,
-                            barCount: 8,
-                            isActive: true
-                        )
-                    }
+                // Audio level waveforms (self-observing, won't re-render parent)
+                RecordingBarAudioLevels()
 
-                    HStack(spacing: 6) {
-                        Image(systemName: "speaker.wave.2.fill")
-                            .scaledFont(size: 12)
-                            .foregroundColor(OmiColors.textTertiary)
-                        AudioLevelWaveformView(
-                            level: audioLevels.systemLevel,
-                            barCount: 8,
-                            isActive: true
-                        )
-                    }
-                }
-
-                // Duration
-                Text(recordingTimer.formattedDuration)
-                    .scaledFont(size: 14, weight: .medium, design: .monospaced)
-                    .foregroundColor(OmiColors.textSecondary)
+                // Duration (self-observing, won't re-render parent)
+                RecordingBarDuration()
             } else if appState.isSavingConversation {
                 // Saving indicator
                 ZStack {
