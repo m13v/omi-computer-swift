@@ -331,7 +331,7 @@ actor ACPBridge {
 
         // Read messages until we get a result or error
         while true {
-            let message = try await waitForMessage(timeout: 90.0)
+            let message = try await waitForMessage(timeout: 300.0)
 
             switch message {
             case .`init`:
