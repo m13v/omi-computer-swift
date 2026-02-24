@@ -477,6 +477,14 @@ class ChatProvider: ObservableObject {
                     }
                 }
             }
+
+        // Keep groupedSessions in sync — runs off the hot path so SwiftUI body never recomputes it
+        sessionGroupingObserver = Publishers.CombineLatest3($sessions, $searchQuery, $currentSession)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _, _, _ in
+                guard let self else { return }
+                self.groupedSessions = self.computeGroupedSessions()
+            }
     }
 
     /// Pre-start the active bridge so the first query doesn't wait for process launch
@@ -2353,8 +2361,8 @@ class ChatProvider: ObservableObject {
 
     // MARK: - Session Grouping Helpers
 
-    /// Group sessions by date for sidebar display (uses filteredSessions for search)
-    var groupedSessions: [(String, [ChatSession])] {
+    /// Group sessions by date — called by the Combine observer, not on every SwiftUI render pass.
+    private func computeGroupedSessions() -> [(String, [ChatSession])] {
         let calendar = Calendar.current
         let now = Date()
 
