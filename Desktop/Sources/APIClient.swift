@@ -4378,4 +4378,15 @@ extension APIClient {
             log("APIClient: LLM usage record failed: \(error.localizedDescription)")
         }
     }
+
+    func fetchTotalOmiAICost() async -> Double? {
+        struct Res: Decodable { let total_cost_usd: Double }
+        do {
+            let res: Res = try await get("v1/users/me/llm-usage/total")
+            return res.total_cost_usd
+        } catch {
+            log("APIClient: LLM total cost fetch failed: \(error.localizedDescription)")
+            return nil
+        }
+    }
 }
