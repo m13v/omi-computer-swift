@@ -1708,7 +1708,7 @@ class ChatProvider: ObservableObject {
     /// - Parameters:
     ///   - text: The message text
     ///   - model: Optional model override for this query (e.g. "claude-sonnet-4-6" for floating bar)
-    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false, systemPromptSuffix: String? = nil, imageData: Data? = nil) async {
+    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false, systemPromptSuffix: String? = nil, systemPromptPrefix: String? = nil, imageData: Data? = nil) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
@@ -1800,6 +1800,9 @@ class ChatProvider: ObservableObject {
         do {
             // Build system prompt with locally cached memories (no backend Gemini call)
             var systemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
+            if let prefix = systemPromptPrefix, !prefix.isEmpty {
+                systemPrompt = prefix + "\n\n" + systemPrompt
+            }
             if let suffix = systemPromptSuffix, !suffix.isEmpty {
                 systemPrompt += "\n\n" + suffix
             }
