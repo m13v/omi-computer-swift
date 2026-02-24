@@ -168,6 +168,9 @@ else
     echo "Warning: acp-bridge directory not found at $ACP_BRIDGE_DIR"
 fi
 
+step "Checking schema docs..."
+bash scripts/check_schema_docs.sh
+
 step "Building Swift app (swift build -c debug)..."
 xcrun swift build -c debug --package-path Desktop
 
