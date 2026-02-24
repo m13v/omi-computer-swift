@@ -274,6 +274,9 @@ class ChatProvider: ObservableObject {
     @Published var isLoadingMoreMessages = false
     @Published var showStarredOnly = false
     @Published var searchQuery = ""
+    /// Pre-computed grouped sessions for sidebar display.
+    /// Updated reactively via Combine instead of recomputed on every SwiftUI render pass.
+    @Published private(set) var groupedSessions: [(String, [ChatSession])] = []
 
     /// Triggered when a browser tool is called but the extension token isn't configured.
     /// The UI should observe this and present BrowserExtensionSetup.
@@ -335,6 +338,7 @@ class ChatProvider: ObservableObject {
     private let maxMessagesInMemory = 200
     private var multiChatObserver: AnyCancellable?
     private var playwrightExtensionObserver: AnyCancellable?
+    private var sessionGroupingObserver: AnyCancellable?
 
     // MARK: - Cross-Platform Message Polling
     /// Polls for new messages from other platforms (mobile) every 15 seconds.
