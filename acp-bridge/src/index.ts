@@ -706,11 +706,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     }
     activeSessionId = sessionId;
 
-    // Only prepend system prompt on the first message in a new session.
-    // On subsequent messages the session already has the context.
-    fullPrompt = isNewSession && msg.systemPrompt
-      ? `<system>\n${msg.systemPrompt}\n</system>\n\n${msg.prompt}`
-      : msg.prompt;
+    fullPrompt = msg.prompt;
 
     // Set up notification handler for this query
     acpNotificationHandler = (method: string, params: unknown) => {
@@ -735,6 +731,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       const promptResult = (await acpRequest("session/prompt", {
         sessionId,
         prompt: promptBlocks,
+        ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
       })) as {
         stopReason: string;
         // Populated by patched-acp-entry.mjs intercepting SDKResultSuccess
