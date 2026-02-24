@@ -82,6 +82,7 @@ struct ChatInputView: View {
                         .padding(.trailing, 8)
                 }
             }
+            .frame(height: editorHeight)
 
             // Send/Stop button — inline to the right of the input
             if isSending && !hasText {
