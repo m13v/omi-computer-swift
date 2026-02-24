@@ -327,6 +327,7 @@ class ChatProvider: ObservableObject {
     @Published var sessionTokensUsed: Int = 0
 
     private let messagesPageSize = 50
+    private let maxMessagesInMemory = 200
     private var multiChatObserver: AnyCancellable?
     private var playwrightExtensionObserver: AnyCancellable?
 
@@ -805,6 +806,11 @@ class ChatProvider: ObservableObject {
             // Append older messages and re-sort to ensure correct chronological order
             messages.append(contentsOf: newMessages)
             messages.sort(by: { $0.createdAt < $1.createdAt })
+
+            // Cap memory usage: keep only the most recent messages
+            if messages.count > maxMessagesInMemory {
+                messages.removeFirst(messages.count - maxMessagesInMemory)
+            }
 
             // Check if there are more
             hasMoreMessages = olderMessages.count == messagesPageSize
