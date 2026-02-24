@@ -1102,15 +1102,8 @@ class ChatProvider: ObservableObject {
             let header = annotation.isEmpty ? name : "\(name) — \(annotation)"
             lines.append(header)
 
-            // Column names with inline descriptions
-            let colDescs = ChatPrompts.columnAnnotations[name] ?? [:]
-            for colName in columnNames {
-                if let desc = colDescs[colName] {
-                    lines.append("  \(colName) — \(desc)")
-                } else {
-                    lines.append("  \(colName)")
-                }
-            }
+            // Column names as compact one-liner
+            lines.append("  \(columnNames.joined(separator: ", "))")
             lines.append("")
         }
 
