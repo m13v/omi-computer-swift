@@ -2056,7 +2056,7 @@ struct TasksPage: View {
 
     init(viewModel: TasksViewModel, chatCoordinator: TaskChatCoordinator, chatProvider: ChatProvider? = nil) {
         self.viewModel = viewModel
-        self._chatCoordinator = ObservedObject(wrappedValue: chatCoordinator)
+        self.chatCoordinator = chatCoordinator
         self.chatProvider = chatProvider
     }
 
