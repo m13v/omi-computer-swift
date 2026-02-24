@@ -636,6 +636,17 @@ function startServer() {
     mkdirSync(dataDir, { recursive: true });
   }
 
+  // Clean up any stale upload temp file left by a previous crashed upload
+  const uploadTmpPath = DB_PATH + ".uploading";
+  if (existsSync(uploadTmpPath)) {
+    try {
+      unlinkSync(uploadTmpPath);
+      log("Cleaned up stale upload temp file");
+    } catch (e) {
+      log(`Warning: could not remove stale upload temp file: ${e.message}`);
+    }
+  }
+
   const httpServer = createServer((req, res) => {
     // Health check endpoint (no auth)
     if (req.url === "/health" && req.method === "GET") {
