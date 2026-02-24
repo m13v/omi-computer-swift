@@ -225,7 +225,7 @@ actor AgentVMService {
         var request = URLRequest(url: uploadURL)
         request.httpMethod = "POST"
         request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
-        request.setValue("deflate", forHTTPHeaderField: "Content-Encoding")
+        request.setValue("gzip", forHTTPHeaderField: "Content-Encoding")
         request.timeoutInterval = 600
 
         do {
