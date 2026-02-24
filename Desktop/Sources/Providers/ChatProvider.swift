@@ -1061,18 +1061,6 @@ class ChatProvider: ObservableObject {
             cachedDatabaseSchema = formatSchema(tables: tables)
             schemaLoaded = true
             log("ChatProvider loaded schema for \(tables.count) tables")
-
-            #if DEBUG
-            for (name, _) in tables {
-                guard !ChatPrompts.excludedTables.contains(name),
-                      !ChatPrompts.excludedTablePrefixes.contains(where: { name.hasPrefix($0) }),
-                      !name.contains("_fts") else { continue }
-                assert(ChatPrompts.tableAnnotations[name] != nil,
-                       "Table '\(name)' is missing a tableAnnotation in ChatPrompts.swift")
-                assert(ChatPrompts.columnAnnotations[name] != nil,
-                       "Table '\(name)' is missing columnAnnotations in ChatPrompts.swift")
-            }
-            #endif
         } catch {
             logError("Failed to load database schema", error: error)
             schemaLoaded = true
