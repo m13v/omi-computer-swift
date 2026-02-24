@@ -3,7 +3,8 @@
 use axum::{extract::State, http::StatusCode, routing::{get, post}, Json, Router};
 
 use crate::auth::AuthUser;
-use crate::models::{GetTotalLlmCostResponse, RecordLlmUsageRequest, RecordLlmUsageResponse};
+use crate::models::{RecordLlmUsageRequest, RecordLlmUsageResponse};
+use crate::models::llm_usage::GetTotalLlmCostResponse;
 use crate::AppState;
 
 async fn record_llm_usage(
