@@ -585,6 +585,19 @@ struct ChatBubble: View {
     @State private var isHovering = false
     @State private var isExpanded = false
     @State private var showCopied = false
+    /// Cached grouped content blocks — pre-computed on init to avoid recreating
+    /// `[ContentBlockGroup]` on every SwiftUI layout pass.
+    @State private var cachedGroupedBlocks: [ContentBlockGroup]
+
+    init(message: ChatMessage, app: OmiApp?, onRate: @escaping (Int?) -> Void,
+         onCitationTap: ((Citation) -> Void)? = nil, isDuplicate: Bool = false) {
+        self.message = message
+        self.app = app
+        self.onRate = onRate
+        self.onCitationTap = onCitationTap
+        self.isDuplicate = isDuplicate
+        self._cachedGroupedBlocks = State(initialValue: ContentBlockGroup.group(message.contentBlocks))
+    }
 
     /// Messages longer than this are truncated with a "Show more" button
     private static let truncationThreshold = 500
@@ -640,8 +653,7 @@ struct ChatBubble: View {
                     TypingIndicator()
                 } else if message.sender == .ai && !message.contentBlocks.isEmpty {
                     // Render structured content blocks, grouping consecutive tool calls
-                    let groupedBlocks = ContentBlockGroup.group(message.contentBlocks)
-                    ForEach(groupedBlocks) { group in
+                    ForEach(cachedGroupedBlocks) { group in
                         switch group {
                         case .text(_, let text):
                             if !text.isEmpty {
@@ -660,7 +672,7 @@ struct ChatBubble: View {
                     // Show typing indicator at end if still streaming
                     // (skip only when last group is tool calls with a running tool — it already has a spinner)
                     if message.isStreaming {
-                        if case .toolCalls(_, let calls) = groupedBlocks.last,
+                        if case .toolCalls(_, let calls) = cachedGroupedBlocks.last,
                            calls.contains(where: { block in
                                if case .toolCall(_, _, .running, _, _, _) = block { return true }
                                return false
@@ -754,6 +766,10 @@ struct ChatBubble: View {
         }
         .frame(maxWidth: .infinity, alignment: message.sender == .user ? .trailing : .leading)
         .onHover { isHovering = $0 }
+        .onChange(of: message.contentBlocks.count) { _ in
+            // Refresh grouped blocks during streaming as new tool calls arrive
+            cachedGroupedBlocks = ContentBlockGroup.group(message.contentBlocks)
+        }
     }
 
     @ViewBuilder
