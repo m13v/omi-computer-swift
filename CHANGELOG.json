@@ -4,10 +4,7 @@
       "version": "11.0",
       "date": "2026-02-23",
       "changes": [
-        "<span style='color:red;font-size:16px;font-weight:bold'>⚠️ AUTO-UPDATE IS BROKEN — YOU MUST DOWNLOAD MANUALLY</span>",
-        "<span style='color:red'>The Install button will NOT work.</span> Please download the new version here: <a href='https://macos.omi.me' style='color:red;font-weight:bold;font-size:15px'>macos.omi.me</a>",
-        "Steps: 1) Click the link above or open <a href='https://macos.omi.me'>macos.omi.me</a> in your browser  2) Download the DMG  3) Open it and drag Omi to Applications  4) Replace the existing app when prompted",
-        "This is a one-time fix. After installing manually, all future updates will work normally.",
+        "If the Install button fails, download manually from <a href='https://macos.omi.me' style='font-weight:bold'>macos.omi.me</a> (known issue on macOS 26)",
         "Task chat session history: resume previous AI conversations about tasks across app restarts",
         "Dedicated task chat side panel with better layout isolation and session ID display",
         "Add task button in toolbar (⌘N) for quick inline task creation",
