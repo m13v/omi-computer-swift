@@ -3705,6 +3705,12 @@ struct AssistantSettingsResponse: Codable {
     var task: TaskSettingsResponse?
     var advice: AdviceSettingsResponse?
     var memory: MemorySettingsResponse?
+    var updateChannel: String?
+
+    enum CodingKeys: String, CodingKey {
+        case shared, focus, task, advice, memory
+        case updateChannel = "update_channel"
+    }
 }
 
 // MARK: - Focus Sessions API
