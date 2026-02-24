@@ -154,6 +154,13 @@ class TaskChatState: ObservableObject {
 
         guard await ensureBridgeStarted() else { return }
 
+        // Re-check isSending after the async bridge start — another sendMessage call
+        // could have slipped through the initial guard while the bridge was starting.
+        guard !isSending else {
+            log("TaskChatState[\(taskId)]: sendMessage racing after bridge start, ignoring")
+            return
+        }
+
         isSending = true
         errorMessage = nil
 
