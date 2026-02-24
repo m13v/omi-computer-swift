@@ -3379,10 +3379,9 @@ struct TaskCategorySection: View {
 
 // MARK: - Conditional Drag & Drop (reduces gesture graph depth when disabled)
 
-/// Conditionally applies .draggable + .dropDestination to avoid deep ExclusiveGesture nesting.
-/// When disabled (e.g. multi-select mode), the view has fewer gesture modifiers, preventing hangs.
-/// Uses closures instead of the full orderedTasks array to avoid gesture graph rebuilds
-/// when the array identity changes during recomputes (every 30s auto-refresh).
+/// Applies .dropDestination to a task row for reorder drop targets.
+/// The .draggable is handled by the drag handle inside TaskRow to avoid conflicts with swipe gestures.
+/// When disabled (e.g. multi-select mode), no drop modifiers are applied.
 struct TaskDragDropModifier: ViewModifier {
     let isEnabled: Bool
     let taskId: String
@@ -3406,9 +3405,6 @@ struct TaskDragDropModifier: ViewModifier {
                             .frame(height: 2)
                             .transition(.opacity)
                     }
-                }
-                .draggable(taskId) {
-                    TaskDragPreviewSimple(taskId: taskId, description: taskDescription)
                 }
                 .dropDestination(for: String.self) { droppedIds, _ in
                     onDragEnded?()
@@ -3763,7 +3759,21 @@ struct TaskRow: View {
     }
 
     private var taskRowContent: some View {
-        HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 0) {
+            // Drag handle (visible on hover, only in categorized view)
+            if category != nil && !isMultiSelectMode && !isDeletedTask {
+                Image(systemName: "line.3.horizontal")
+                    .scaledFont(size: 10)
+                    .foregroundColor(isHovering ? OmiColors.textTertiary : .clear)
+                    .frame(width: 16, height: 24)
+                    .contentShape(Rectangle())
+                    .draggable(task.id) {
+                        TaskDragPreviewSimple(taskId: task.id, description: task.description)
+                    }
+                    .help("Drag to reorder")
+            }
+
+            HStack(alignment: .center, spacing: 12) {
             // Indent visual (vertical line for indented tasks)
             if indentLevel > 0 {
                 HStack(spacing: 0) {
@@ -4006,6 +4016,7 @@ struct TaskRow: View {
                 }
             }
 
+            } // end inner HStack(spacing: 12)
         }
         .overlay(alignment: .trailing) {
             // Hover actions overlaid on trailing edge (no layout shift)
