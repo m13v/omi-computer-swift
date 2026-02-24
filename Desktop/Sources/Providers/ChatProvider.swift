@@ -418,6 +418,19 @@ class ChatProvider: ObservableObject {
     init() {
         log("ChatProvider initialized, will start Claude bridge on first use")
 
+        // Seed cumulative Omi AI cost from backend on launch (background, no latency)
+        Task.detached(priority: .background) { [weak self] in
+            guard let serverCost = await APIClient.shared.fetchTotalOmiAICost() else { return }
+            await MainActor.run {
+                guard let self = self else { return }
+                // Take the higher of local and server values to avoid going backwards
+                if serverCost > self.omiAICumulativeCostUsd {
+                    self.omiAICumulativeCostUsd = serverCost
+                    log("ChatProvider: Seeded Omi AI cumulative cost from backend: $\(String(format: "%.4f", serverCost))")
+                }
+            }
+        }
+
         // Observe changes to multiChatEnabled setting
         multiChatObserver = UserDefaults.standard.publisher(for: \.multiChatEnabled)
             .dropFirst() // Skip initial value
