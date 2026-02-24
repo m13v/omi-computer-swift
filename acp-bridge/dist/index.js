@@ -165,6 +165,10 @@ function startAcpProcess() {
     // If absent (Mode B), ACP will use user's own OAuth.
     const env = { ...process.env };
     delete env.CLAUDE_CODE_USE_VERTEX;
+    // Remove CLAUDECODE so the ACP subprocess (and the Claude Code it spawns) don't
+    // inherit the nested-session guard. Without this, `--resume` silently fails when
+    // Claude Code detects it's being launched from inside another Claude Code session.
+    delete env.CLAUDECODE;
     env.NODE_NO_WARNINGS = "1";
     // Use our patched ACP entry point (adds model selection support)
     // Located in dist/ (same as __dirname) so it's included in the app bundle
