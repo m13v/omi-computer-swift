@@ -124,6 +124,11 @@ struct ChatInputView: View {
                 pendingText?.wrappedValue = ""
             }
         }
+        .onChange(of: inputText) { _, newValue in
+            if newValue.isEmpty {
+                editorHeight = inputMinHeight
+            }
+        }
         .onChange(of: askModeEnabled) { _, enabled in
             if !enabled {
                 mode = .act
