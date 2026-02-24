@@ -22,6 +22,9 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     private var hostingView: NSHostingView<AnyView>?
     private var isResizingProgrammatically = false
     private var isUserDragging = false
+    /// Set by ResizeHandleNSView while the user is manually dragging the corner.
+    /// Prevents the response-height observer from fighting manual resize.
+    var isUserResizing = false
     /// Suppresses hover resizes during close animation to prevent position drift.
     private var suppressHoverResize = false
     private var inputHeightCancellable: AnyCancellable?
@@ -549,6 +552,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             .sink { [weak self] contentHeight in
                 guard let self = self,
                       self.state.showingAIResponse,
+                      !self.isUserResizing,
                       contentHeight > 0
                 else { return }
                 let targetHeight = (contentHeight + Self.responseViewOverhead).rounded()
@@ -660,7 +664,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     }
 
     func windowDidResize(_ notification: Notification) {
-        if !isResizingProgrammatically && state.showingAIResponse {
+        if !isResizingProgrammatically && !isUserResizing && state.showingAIResponse {
             UserDefaults.standard.set(
                 NSStringFromSize(self.frame.size), forKey: FloatingControlBarWindow.sizeKey
             )
