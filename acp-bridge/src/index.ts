@@ -661,6 +661,11 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       if (existing.cwd !== requestedCwd) {
         logErr(`Cwd changed for ${requestedModel} (${existing.cwd} -> ${requestedCwd}), creating new session`);
         sessions.delete(requestedModel);
+      } else if (msg.systemPrompt) {
+        // A custom system prompt requires a fresh session — pre-warmed sessions
+        // are created without one and it can only be set at session/new time.
+        logErr(`Custom systemPrompt provided — skipping pre-warmed session, creating fresh one`);
+        sessions.delete(requestedModel);
       } else {
         sessionId = existing.sessionId;
       }
@@ -689,7 +694,9 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       const sessionParams: Record<string, unknown> = {
         cwd: requestedCwd,
         mcpServers: buildMcpServers(mode, requestedCwd),
+        ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
       };
+      logErr(`[DEBUG] session/new _meta.systemPrompt present: ${!!(msg.systemPrompt)}`);
       const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
 
       sessionId = sessionResult.sessionId;
@@ -739,10 +746,7 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       const sessionPromptPayload = {
         sessionId,
         prompt: promptBlocks,
-        ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
       };
-      logErr(`[DEBUG] session/prompt payload keys: ${Object.keys(sessionPromptPayload).join(", ")}`);
-      logErr(`[DEBUG] _meta present: ${!!sessionPromptPayload._meta}`);
 
       const promptResult = (await acpRequest("session/prompt", sessionPromptPayload)) as {
         stopReason: string;
