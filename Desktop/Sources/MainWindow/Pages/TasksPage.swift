@@ -2021,7 +2021,7 @@ struct TasksPage: View {
     var chatProvider: ChatProvider?
 
     // Chat panel state
-    @StateObject private var chatCoordinator: TaskChatCoordinator
+    @ObservedObject var chatCoordinator: TaskChatCoordinator
     @State private var showChatPanel = false
     @AppStorage("tasksChatPanelWidth") private var chatPanelWidth: Double = 400
     /// The window width before the chat panel was opened, so we can restore it exactly.
@@ -2047,11 +2047,10 @@ struct TasksPage: View {
     @State private var isDraggingDivider = false
     @State private var dragStartWidth: Double = 0
 
-    init(viewModel: TasksViewModel, chatProvider: ChatProvider? = nil) {
+    init(viewModel: TasksViewModel, chatCoordinator: TaskChatCoordinator, chatProvider: ChatProvider? = nil) {
         self.viewModel = viewModel
+        self._chatCoordinator = ObservedObject(wrappedValue: chatCoordinator)
         self.chatProvider = chatProvider
-        let provider = chatProvider ?? ChatProvider()
-        _chatCoordinator = StateObject(wrappedValue: TaskChatCoordinator(chatProvider: provider))
     }
 
     var body: some View {
@@ -2126,8 +2125,11 @@ struct TasksPage: View {
         .background(Color.clear)
         // Modal creation sheet removed — Cmd+N now creates inline at top
         .onAppear {
-            // Wire coordinator so delete operations can purge in-memory chat states
-            viewModel.chatCoordinator = chatCoordinator
+            // Restore panel UI if coordinator was open when we navigated away
+            if chatCoordinator.isPanelOpen, chatCoordinator.activeTaskId != nil {
+                showChatPanel = true
+                adjustWindowWidth(expand: true)
+            }
             // If tasks are already loaded, notify sidebar to clear loading indicator
             if !viewModel.isLoading {
                 NotificationCenter.default.post(name: .tasksPageDidLoad, object: nil)
@@ -2144,11 +2146,12 @@ struct TasksPage: View {
             }
         }
         .onDisappear {
-            // Reset chat state and shrink window when navigating away from Tasks tab
+            // Shrink window when navigating away, but keep coordinator alive
+            // so streaming state and unread dots persist across tab switches.
             if showChatPanel {
                 adjustWindowWidth(expand: false)
                 showChatPanel = false
-                chatCoordinator.closeChat()
+                // Do NOT call chatCoordinator.closeChat() — coordinator state persists at app level
             }
         }
     }
@@ -3922,24 +3925,42 @@ struct TaskRow: View {
                             AgentStatusIndicator(task: task)
                         }
 
-                        // Investigate button (background AI chat)
+                        // Investigate / View chat button (background AI chat)
                         if let coordinator = chatCoordinator,
                            TaskAgentSettings.shared.isChatEnabled,
                            !coordinator.streamingTaskIds.contains(task.id),
                            !coordinator.unreadTaskIds.contains(task.id) {
-                            Button {
-                                onInvestigate?(task)
-                            } label: {
-                                HStack(spacing: 3) {
-                                    Image(systemName: "magnifyingglass")
-                                        .scaledFont(size: 9)
-                                    Text("Investigate")
-                                        .scaledFont(size: 10, weight: .medium)
+                            if task.chatSessionId != nil {
+                                // Previous session exists but is no longer active — let user view/resume it
+                                Button {
+                                    onOpenChat?(task)
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "bubble.left")
+                                            .scaledFont(size: 9)
+                                        Text("View chat")
+                                            .scaledFont(size: 10, weight: .medium)
+                                    }
+                                    .foregroundColor(OmiColors.purplePrimary)
                                 }
-                                .foregroundColor(OmiColors.textSecondary)
+                                .buttonStyle(.plain)
+                                .help("View previous AI investigation")
+                            } else {
+                                // No prior session — start fresh investigation
+                                Button {
+                                    onInvestigate?(task)
+                                } label: {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "magnifyingglass")
+                                            .scaledFont(size: 9)
+                                        Text("Investigate")
+                                            .scaledFont(size: 10, weight: .medium)
+                                    }
+                                    .foregroundColor(OmiColors.textSecondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Start AI investigation in background")
                             }
-                            .buttonStyle(.plain)
-                            .help("Start AI investigation in background")
                         }
 
                         // Chat session status (streaming indicator or unread dot)
