@@ -2026,6 +2026,9 @@ struct TasksPage: View {
     // entire task list (including all row layout) on every streaming token.
     // TaskChatSidePanelView handles coordinator observation in an isolated subtree.
     var chatCoordinator: TaskChatCoordinator
+    /// Mirrors coordinator.activeTaskId — updated via onReceive so task rows
+    /// highlight the correct item without observing the full coordinator.
+    @State private var activeChatTaskId: String? = nil
     @State private var showChatPanel = false
     @AppStorage("tasksChatPanelWidth") private var chatPanelWidth: Double = 400
     /// The window width before the chat panel was opened, so we can restore it exactly.
@@ -2147,12 +2150,9 @@ struct TasksPage: View {
                 // Do NOT call chatCoordinator.closeChat() — coordinator state persists at app level
             }
         }
-    }
-
-    /// The currently active task for the chat panel
-    private var activeTask: TaskActionItem? {
-        guard let taskId = chatCoordinator.activeTaskId else { return nil }
-        return viewModel.findTask(taskId)
+        .onReceive(chatCoordinator.$activeTaskId) { taskId in
+            activeChatTaskId = taskId
+        }
     }
 
     /// Start a background AI investigation for a task (no panel opens)
@@ -3031,7 +3031,7 @@ struct TasksPage: View {
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
-                                    activeChatTaskId: chatCoordinator.activeTaskId,
+                                    activeChatTaskId: activeChatTaskId,
                                     chatCoordinator: chatCoordinator,
                                     dropTargetTaskId: viewModel.dropTargetTaskId,
                                     dropAbove: viewModel.dropAbove,
@@ -3102,7 +3102,7 @@ struct TasksPage: View {
                                     onSelect: { task in selectTask(task) },
                                     onHover: { viewModel.hoveredTaskId = $0 },
                                     isChatActive: showChatPanel,
-                                    activeChatTaskId: chatCoordinator.activeTaskId,
+                                    activeChatTaskId: activeChatTaskId,
                                     chatCoordinator: chatCoordinator,
                                     editingTaskId: viewModel.editingTaskId,
                                     onEditingChanged: { editing in
@@ -3192,6 +3192,37 @@ struct TasksPage: View {
                 await viewModel.loadTasks()
             }
             .onAppear { viewModel.scrollProxy = proxy }
+        }
+    }
+}
+
+// MARK: - Task Chat Side Panel (isolated coordinator observation)
+
+/// Owns @ObservedObject for the coordinator so streaming updates only
+/// re-render this subtree — not the task list on the left.
+private struct TaskChatSidePanelView: View {
+    @ObservedObject var coordinator: TaskChatCoordinator
+    let viewModel: TasksViewModel
+    let onClose: () -> Void
+
+    private var activeTask: TaskActionItem? {
+        guard let taskId = coordinator.activeTaskId else { return nil }
+        return viewModel.findTask(taskId)
+    }
+
+    var body: some View {
+        if let taskState = coordinator.activeTaskState {
+            TaskChatPanel(
+                taskState: taskState,
+                coordinator: coordinator,
+                task: activeTask,
+                onClose: onClose
+            )
+        } else {
+            TaskChatPanelPlaceholder(
+                coordinator: coordinator,
+                onClose: onClose
+            )
         }
     }
 }
