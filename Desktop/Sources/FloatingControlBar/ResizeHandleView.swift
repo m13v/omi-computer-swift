@@ -9,7 +9,9 @@ struct ResizeHandleView: NSViewRepresentable {
     weak var targetWindow: NSWindow?
 
     func makeNSView(context: Context) -> ResizeHandleNSView {
-        ResizeHandleNSView(targetWindow: targetWindow)
+        let view = ResizeHandleNSView()
+        view.targetWindow = targetWindow
+        return view
     }
 
     func updateNSView(_ nsView: ResizeHandleNSView, context: Context) {
@@ -23,11 +25,7 @@ class ResizeHandleNSView: NSView {
     private var initialWindowFrame: NSRect = .zero
 
     override func resetCursorRects() {
-        if #available(macOS 15, *) {
-            addCursorRect(bounds, cursor: .resizeNorthwestSoutheast)
-        } else {
-            addCursorRect(bounds, cursor: .crosshair)
-        }
+        addCursorRect(bounds, cursor: .crosshair)
     }
 
     override func mouseDown(with event: NSEvent) {
