@@ -193,7 +193,7 @@ struct ChatPage: View {
                 }
             )
         }
-        .alert("Omi AI Usage Limit Reached", isPresented: $chatProvider.showOmiThresholdAlert) {
+        .alert("Free Usage Limit Reached", isPresented: $chatProvider.showOmiThresholdAlert) {
             Button("Connect Claude Account") {
                 chatProvider.showOmiThresholdAlert = false
                 if !chatProvider.isClaudeConnected {
@@ -204,7 +204,7 @@ struct ChatPage: View {
                 chatProvider.showOmiThresholdAlert = false
             }
         } message: {
-            Text("You've used $50 of Omi AI credits. To keep chatting, connect your own Claude account (Pro or Max subscription).")
+            Text("Please connect your Claude account to continue chatting.")
         }
         .overlay {
             // Loading overlay when fetching citation
