@@ -589,9 +589,14 @@ async function handleQuery(msg) {
         };
         // Send the prompt — retry with fresh session if stale
         const sendPrompt = async () => {
+            const promptBlocks = [];
+            if (msg.imageBase64) {
+                promptBlocks.push({ type: "image", data: msg.imageBase64, mimeType: "image/jpeg" });
+            }
+            promptBlocks.push({ type: "text", text: fullPrompt });
             const promptResult = (await acpRequest("session/prompt", {
                 sessionId,
-                prompt: [{ type: "text", text: fullPrompt }],
+                prompt: promptBlocks,
             }));
             logErr(`Prompt completed: stopReason=${promptResult.stopReason}`);
             // Mark any remaining pending tools as completed
