@@ -708,6 +708,14 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
 
     fullPrompt = msg.prompt;
 
+    // DEBUG: Log system prompt injection
+    if (msg.systemPrompt) {
+      logErr(`[DEBUG] systemPrompt present, length=${msg.systemPrompt.length}`);
+      logErr(`[DEBUG] systemPrompt first 200 chars: ${msg.systemPrompt.slice(0, 200)}`);
+    } else {
+      logErr(`[DEBUG] systemPrompt is EMPTY or undefined`);
+    }
+
     // Set up notification handler for this query
     acpNotificationHandler = (method: string, params: unknown) => {
       if (abortController.signal.aborted) return;
@@ -728,11 +736,15 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
       }
       promptBlocks.push({ type: "text", text: fullPrompt });
 
-      const promptResult = (await acpRequest("session/prompt", {
+      const sessionPromptPayload = {
         sessionId,
         prompt: promptBlocks,
         ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
-      })) as {
+      };
+      logErr(`[DEBUG] session/prompt payload keys: ${Object.keys(sessionPromptPayload).join(", ")}`);
+      logErr(`[DEBUG] _meta present: ${!!sessionPromptPayload._meta}`);
+
+      const promptResult = (await acpRequest("session/prompt", sessionPromptPayload)) as {
         stopReason: string;
         // Populated by patched-acp-entry.mjs intercepting SDKResultSuccess
         usage?: { inputTokens: number; outputTokens: number; cachedReadTokens?: number | null; cachedWriteTokens?: number | null; totalTokens: number };
