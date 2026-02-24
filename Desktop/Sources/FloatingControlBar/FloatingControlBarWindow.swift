@@ -979,14 +979,12 @@ class FloatingControlBarManager {
                 }
             }
 
-        // Build prompt with screenshot context if available
-        var fullMessage = message
-        if let url = latestScreenshot {
-            fullMessage = "[Screenshot of user's screen attached: \(url.path)]\n\n\(message)"
-        }
+        // Load screenshot as image data for the ACP image content block
+        let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
-        let floatingBarSuffix = "<response_style_override>This query comes from the floating quick-access bar. Respond in 1–3 sentences maximum. Be direct and concise — no lists, no headers, no lengthy explanations.</response_style_override>"
-        await provider.sendMessage(fullMessage, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix)
+        let concisePrefix = "[IMPORTANT: Reply in 1–3 sentences only. No lists, no headers, no lengthy explanations. Be extremely concise.]\n\n"
+        let floatingBarSuffix = "<response_style_override>Respond in 1–3 sentences maximum. Be direct and concise — no lists, no headers, no lengthy explanations.</response_style_override>"
+        await provider.sendMessage(concisePrefix + message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
 
         // Handle errors after sendMessage completes
         barWindow.state.isAILoading = false
