@@ -1034,6 +1034,9 @@ struct RewindPage: View {
                     .multilineTextAlignment(.center)
 
                 Button {
+                    // Re-enable screen analysis so it auto-starts after permission is granted and app restarts
+                    screenAnalysisEnabled = true
+                    AssistantSettings.shared.screenAnalysisEnabled = true
                     ScreenCaptureService.requestAllScreenCapturePermissions()
                     ScreenCaptureService.openScreenRecordingPreferences()
                 } label: {
