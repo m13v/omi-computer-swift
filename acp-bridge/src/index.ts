@@ -665,16 +665,23 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Reuse existing session if alive, resume a persisted one, or create a new one
     if (msg.resume && !sessionId) {
       // Resume a persisted session by ID (survives process restarts via ~/.claude/projects/)
-      const resumeResult = (await acpRequest("session/resume", {
-        sessionId: msg.resume,
-        cwd: requestedCwd,
-        mcpServers: buildMcpServers(mode, requestedCwd),
-      })) as { sessionId: string };
-      sessionId = msg.resume;
-      sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
-      isNewSession = false;
-      logErr(`ACP session resumed: ${sessionId}`);
-    } else if (!sessionId) {
+      // Fall back to session/new if the session file is gone or resume fails
+      try {
+        await acpRequest("session/resume", {
+          sessionId: msg.resume,
+          cwd: requestedCwd,
+          mcpServers: buildMcpServers(mode, requestedCwd),
+        });
+        sessionId = msg.resume;
+        sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
+        isNewSession = false;
+        logErr(`ACP session resumed: ${sessionId}`);
+      } catch (resumeErr) {
+        logErr(`ACP session resume failed (will create new session): ${resumeErr}`);
+        // Fall through to session/new below
+      }
+    }
+    if (!sessionId) {
       const sessionParams: Record<string, unknown> = {
         cwd: requestedCwd,
         mcpServers: buildMcpServers(mode, requestedCwd),
