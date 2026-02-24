@@ -206,6 +206,7 @@ struct ChatMessagesView<WelcomeContent: View>: View {
                                     isDuplicate: dupeIds.contains(message.id)
                                 )
                                 .id(message.id)
+                                .equatable()
                             }
                         }
                     }
