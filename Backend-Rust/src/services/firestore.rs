@@ -4841,12 +4841,16 @@ impl FirestoreService {
             excluded_apps: Some(self.parse_string_array(f, "excluded_apps")),
         });
 
+        // Read top-level update_channel from user doc (not from assistant_settings sub-map)
+        let update_channel = self.parse_string(fields, "update_channel");
+
         Ok(AssistantSettingsData {
             shared,
             focus,
             task,
             advice,
             memory,
+            update_channel,
         })
     }
 
