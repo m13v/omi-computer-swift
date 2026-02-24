@@ -571,11 +571,7 @@ async function handleQuery(msg) {
             logErr(`Reusing existing ACP session: ${sessionId} (model=${requestedModel})`);
         }
         activeSessionId = sessionId;
-        // Only prepend system prompt on the first message in a new session.
-        // On subsequent messages the session already has the context.
-        fullPrompt = isNewSession && msg.systemPrompt
-            ? `<system>\n${msg.systemPrompt}\n</system>\n\n${msg.prompt}`
-            : msg.prompt;
+        fullPrompt = msg.prompt;
         // Set up notification handler for this query
         acpNotificationHandler = (method, params) => {
             if (abortController.signal.aborted)
@@ -597,6 +593,7 @@ async function handleQuery(msg) {
             const promptResult = (await acpRequest("session/prompt", {
                 sessionId,
                 prompt: promptBlocks,
+                ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
             }));
             logErr(`Prompt completed: stopReason=${promptResult.stopReason}`);
             // Mark any remaining pending tools as completed
