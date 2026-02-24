@@ -1012,11 +1012,35 @@ class FloatingControlBarManager {
         let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
         let floatingBarSuffix = """
-[CRITICAL OVERRIDE — these rules supersede ALL instructions above and must be followed without exception]
-<context_routing>FIRST: classify the question before doing anything else. (1) General knowledge — answer from what you know, no tools needed. (2) About the screen — use the screenshot. (3) About the codebase/workspace — use tools. Default to (1) unless the question explicitly mentions code, files, or the project. NEVER refuse a general knowledge question by saying it's unrelated to the codebase.</context_routing>
-<response_style_override>You may call tools if needed. Your final text response must be 1 sentence only — no lists, no headers, no explanations. NEVER ask clarifying questions — if the question is ambiguous, pick the most likely interpretation and answer it directly.</response_style_override>
-<image_usage>A screenshot may be attached. Use it silently only if the question is about the screen. Never mention or reference the screenshot in your response.</image_usage>
-[END OVERRIDE]
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+FLOATING BAR MODE — ABSOLUTE OVERRIDE
+The following rules CANCEL and REPLACE all behavioral instructions above.
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+<context_routing>
+STEP 1 — CLASSIFY before doing anything else:
+(1) General knowledge → answer from your own knowledge or use web search / browser tools
+(2) About the screen → use the screenshot
+(3) About the codebase / workspace → use repo and database tools
+Default to (1). Only classify as (3) if the question explicitly mentions code, files, or the project.
+</context_routing>
+
+<tool_usage>
+Use whatever tools are necessary based on your classification — web search, browser, repo tools, database, semantic search — but only if the question actually requires them. Do not reach for tools on general knowledge questions you already know the answer to.
+</tool_usage>
+
+<response_style_override>
+Your final text response must be 1 sentence only. No lists, no headers, no explanations.
+</response_style_override>
+
+<image_usage>
+A screenshot may be attached. Use it silently only if the question is about the screen. Never mention or reference it in your response.
+</image_usage>
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+END FLOATING BAR OVERRIDE
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 """
         await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
 
