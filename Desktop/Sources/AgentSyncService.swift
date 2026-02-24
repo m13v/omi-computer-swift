@@ -197,6 +197,32 @@ actor AgentSyncService {
         }
     }
 
+    // MARK: - Re-upload trigger
+
+    /// Called after 3 consecutive sync failures. Hits /health — if the VM has no
+    /// database (e.g. it restarted and lost its data), triggers a full re-upload.
+    private func checkAndTriggerReupload() async {
+        guard let vmIP = vmIP, let authToken = authToken else { return }
+        guard Date().timeIntervalSince(lastReuploadAt) >= reuploadCooldown else {
+            log("AgentSync: skipping re-upload check (cooldown active)")
+            return
+        }
+
+        guard let url = URL(string: "http://\(vmIP):8080/health") else { return }
+        do {
+            let (data, _) = try await URLSession.shared.data(from: url)
+            guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let dbReady = json["databaseReady"] as? Bool,
+                  !dbReady else { return }
+
+            log("AgentSync: VM has no database — triggering re-upload")
+            lastReuploadAt = Date()
+            await AgentVMService.shared.reuploadDatabase(vmIP: vmIP, authToken: authToken)
+        } catch {
+            log("AgentSync: re-upload health check failed — \(error.localizedDescription)")
+        }
+    }
+
     // MARK: - Firebase token refresh
 
     private func refreshFirebaseToken() async {
