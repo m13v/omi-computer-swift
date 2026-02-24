@@ -989,7 +989,7 @@ class FloatingControlBarManager {
         let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
         let concisePrefix = "[IMPORTANT: Reply in 1–3 sentences only. No lists, no headers, no lengthy explanations. Be extremely concise.]\n\n"
-        let floatingBarSuffix = "<response_style_override>Respond in 1–3 sentences maximum. Be direct and concise — no lists, no headers, no lengthy explanations.</response_style_override>"
+        let floatingBarSuffix = "<response_style_override>Respond in 1–3 sentences maximum. Be direct and concise — no lists, no headers, no lengthy explanations.</response_style_override><image_usage>A screenshot of the user's current screen may be attached. Only reference or analyze it if the user's question is explicitly about the screen, a visible app, or something they are currently looking at. For all other questions — general knowledge, advice, coding help, etc. — ignore the screenshot entirely and answer based on the text alone.</image_usage>"
         await provider.sendMessage(concisePrefix + message, model: ShortcutSettings.shared.selectedModel, systemPromptSuffix: floatingBarSuffix, imageData: screenshotData)
 
         // Handle errors after sendMessage completes
