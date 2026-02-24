@@ -201,8 +201,9 @@ struct TaskChatPanel: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 20)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .frame(maxWidth: .infinity)
         .padding()
+        .padding(.vertical, 60)
     }
 }
 
