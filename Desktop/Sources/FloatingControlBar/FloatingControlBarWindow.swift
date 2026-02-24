@@ -268,37 +268,48 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         // fires mid-animation, reads an intermediate frame, and causes position drift.
         suppressHoverResize = true
 
-        // Restore to saved center so hover expand/collapse stays consistent (no drift).
-        if let center = preChatCenter {
-            let size = FloatingControlBarWindow.minBarSize
-            let restoreOrigin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
-            resizeWorkItem?.cancel()
-            resizeWorkItem = nil
-            styleMask.remove(.resizable)
-            isResizingProgrammatically = true
-            // Record the animation target so savePreChatCenterIfNeeded() can snap to it
-            // if a new PTT query fires while this restore animation is still running.
-            pendingRestoreOrigin = restoreOrigin
-            NSAnimationContext.beginGrouping()
-            NSAnimationContext.current.duration = 0.3
-            NSAnimationContext.current.allowsImplicitAnimation = false
-            NSAnimationContext.current.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-            self.setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: true)
-            NSAnimationContext.endGrouping()
-            // Keep isResizingProgrammatically true until animation finishes to prevent
-            // intermediate frames from triggering unwanted side effects.
-            let targetFrame = NSRect(origin: restoreOrigin, size: size)
-            preChatCenter = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-                self?.isResizingProgrammatically = false
-                self?.pendingRestoreOrigin = nil
-                // Safety net: if the frame drifted during animation, snap to the correct position.
-                if let self = self, self.frame != targetFrame {
-                    self.setFrame(targetFrame, display: true, animate: false)
-                }
-            }
+        // Determine the target origin for the collapsed pill.
+        // Non-draggable: always use the fixed default position so the pill never drifts,
+        // regardless of where the expanded window ended up (anchorTop grows downward,
+        // so the window center shifts — anchoring from center would land in the wrong spot).
+        // Draggable + preChatCenter set: restore to where the bar was before chat opened.
+        // Draggable + no preChatCenter: fall back to current center-anchor (best effort).
+        let size = FloatingControlBarWindow.minBarSize
+        let restoreOrigin: NSPoint
+        if !ShortcutSettings.shared.draggableBarEnabled {
+            restoreOrigin = defaultPillOrigin()
+        } else if let center = preChatCenter {
+            restoreOrigin = NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2)
         } else {
-            resizeAnchored(to: FloatingControlBarWindow.minBarSize, makeResizable: false, animated: true)
+            restoreOrigin = NSPoint(x: frame.midX - size.width / 2, y: frame.midY - size.height / 2)
+        }
+
+        resizeWorkItem?.cancel()
+        resizeWorkItem = nil
+        styleMask.remove(.resizable)
+        isResizingProgrammatically = true
+        // Record the animation target so savePreChatCenterIfNeeded() can snap to it
+        // if a new PTT query fires while this restore animation is still running.
+        pendingRestoreOrigin = restoreOrigin
+        NSAnimationContext.beginGrouping()
+        NSAnimationContext.current.duration = 0.3
+        NSAnimationContext.current.allowsImplicitAnimation = false
+        NSAnimationContext.current.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+        self.setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: true)
+        NSAnimationContext.endGrouping()
+        let targetFrame = NSRect(origin: restoreOrigin, size: size)
+        preChatCenter = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            guard let self = self else { return }
+            self.isResizingProgrammatically = false
+            self.pendingRestoreOrigin = nil
+            // Safety net: only snap if no new AI session was opened while the animation ran.
+            // Without this guard, a rapid PTT query that fires within 0.35s gets collapsed
+            // back to the pill position by this stale completion block.
+            guard !self.state.showingAIConversation else { return }
+            if self.frame != targetFrame {
+                self.setFrame(targetFrame, display: true, animate: false)
+            }
         }
 
         // Allow hover resizes again after the animation settles.
@@ -568,6 +579,18 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
                     anchorTop: true
                 )
             }
+    }
+
+    /// Compute the default origin for the collapsed pill (top-center of the key screen).
+    /// Used by closeAIConversation in non-draggable mode and centerOnMainScreen.
+    private func defaultPillOrigin() -> NSPoint {
+        let size = FloatingControlBarWindow.minBarSize
+        let targetScreen = NSApp.keyWindow?.screen ?? NSScreen.main ?? NSScreen.screens.first
+        guard let screen = targetScreen else { return .zero }
+        let visibleFrame = screen.visibleFrame
+        let x = visibleFrame.midX - size.width / 2
+        let y = visibleFrame.maxY - size.height - 20
+        return NSPoint(x: x, y: y)
     }
 
     /// Center the bar near the top of the main screen.
@@ -1030,12 +1053,23 @@ extension FloatingControlBarWindow {
     /// If a close/restore animation is in flight (pendingRestoreOrigin is set), snaps the
     /// window to that target first so the saved center reflects the true pill position,
     /// not an intermediate animation frame.
+    /// In non-draggable mode, always snaps to the fixed default position so the saved
+    /// center is always the canonical top-center default, never a drifted value.
     func savePreChatCenterIfNeeded() {
         guard preChatCenter == nil else { return }
-        // If a restore animation is running, snap to its target immediately so we
-        // record the correct pill position rather than a mid-animation frame.
-        if let restoreOrigin = pendingRestoreOrigin {
-            let size = FloatingControlBarWindow.minBarSize
+        let size = FloatingControlBarWindow.minBarSize
+        if !ShortcutSettings.shared.draggableBarEnabled {
+            // Non-draggable: always snap to the default pill position before saving.
+            // This ensures preChatCenter is always the canonical default, not a
+            // mid-animation frame or drifted position from a previous session.
+            let origin = defaultPillOrigin()
+            isResizingProgrammatically = true
+            setFrame(NSRect(origin: origin, size: size), display: true, animate: false)
+            isResizingProgrammatically = false
+            pendingRestoreOrigin = nil
+        } else if let restoreOrigin = pendingRestoreOrigin {
+            // Draggable: if a restore animation is running, snap to its target immediately
+            // so we record the correct pill position rather than a mid-animation frame.
             isResizingProgrammatically = true
             setFrame(NSRect(origin: restoreOrigin, size: size), display: true, animate: false)
             isResizingProgrammatically = false
