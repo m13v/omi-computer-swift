@@ -593,7 +593,7 @@ struct ChatPrompts {
         "indexed_files": "file metadata index from ~/Downloads, ~/Documents, ~/Desktop — path, filename, extension, fileType (document/code/image/video/audio/spreadsheet/presentation/archive/data/other), sizeBytes, folder, depth, timestamps",
         "goals": "user goals with progress tracking",
         "staged_tasks": "AI-extracted task candidates pending user review",
-        "task_chat_messages": "messages within task-focused chat sessions",
+        "task_chat_messages": "Claude Code agent ↔ user chat history, one thread per task (action item)",
         "observations": "per-screenshot AI observations used to detect tasks and activities",
     ]
 
