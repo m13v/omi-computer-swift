@@ -967,7 +967,7 @@ class TasksViewModel: ObservableObject {
     }
 
     /// Handle a key-down event. Returns true if the event was consumed.
-    func handleKeyDown(_ event: NSEvent) -> Bool {
+    func handleKeyDown(_ event: NSEvent, chatOpen: Bool = false) -> Bool {
         // Don't intercept keys when a text field has focus
         if let firstResponder = NSApp.keyWindow?.firstResponder,
            firstResponder is NSTextView || firstResponder is NSTextField {
@@ -1043,7 +1043,9 @@ class TasksViewModel: ObservableObject {
         }
 
         // Enter: inline create or double-enter for edit
-        if keyCode == 36 && modifiers.isEmpty && keyboardSelectedTaskId != nil {
+        // Skip when chat panel is open — the input may briefly lose focus after
+        // sending a message and we don't want Enter to accidentally trigger here.
+        if !chatOpen && keyCode == 36 && modifiers.isEmpty && keyboardSelectedTaskId != nil {
             if !searchText.isEmpty { return false }
 
             let now = Date()
@@ -2318,12 +2320,8 @@ struct TasksPage: View {
         guard keyboardMonitor == nil else { return }
         let vm = viewModel
         keyboardMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak chatCoordinator] event in
-            // Don't intercept keyboard shortcuts when the chat panel is open —
-            // the chat input may briefly lose first-responder status (e.g. after
-            // sending a message) and we don't want Enter to trigger task-list
-            // actions (inline create / inline edit) in that window.
-            if chatCoordinator?.isPanelOpen == true { return event }
-            return vm.handleKeyDown(event) ? nil : event
+            let chatOpen = chatCoordinator?.isPanelOpen == true
+            return vm.handleKeyDown(event, chatOpen: chatOpen) ? nil : event
         }
     }
 
