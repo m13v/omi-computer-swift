@@ -536,8 +536,10 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         let baseHeight = savedSize.map { max($0.height, Self.defaultBaseResponseHeight) } ?? Self.defaultBaseResponseHeight
         let maxHeight = baseHeight * 2
 
-        // Start at a modest height; the content observer will grow it as tokens stream in.
-        let initialSize = NSSize(width: Self.expandedWidth, height: Self.minResponseHeight)
+        // Start at the larger of minResponseHeight or current frame height so we never
+        // shrink the window (e.g. during follow-up exchanges where it's already expanded).
+        let startHeight = max(Self.minResponseHeight, frame.height)
+        let initialSize = NSSize(width: Self.expandedWidth, height: startHeight)
         resizeAnchored(to: initialSize, makeResizable: true, animated: animated, anchorTop: true)
         setupResponseHeightObserver(maxHeight: maxHeight)
     }
@@ -955,6 +957,7 @@ class FloatingControlBarManager {
         chatCancellable?.cancel()
         barWindow.state.currentAIMessage = nil
         barWindow.state.isAILoading = true
+        var hasSetUpResponseHeight = false
         chatCancellable = provider.$messages
             .receive(on: DispatchQueue.main)
             .sink { [weak barWindow] messages in
@@ -968,9 +971,12 @@ class FloatingControlBarManager {
 
                 if aiMessage.isStreaming {
                     barWindow?.state.isAILoading = false
-                    if let barWindow = barWindow, !barWindow.state.showingAIResponse {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
-                            barWindow.state.showingAIResponse = true
+                    if let barWindow = barWindow, !hasSetUpResponseHeight {
+                        hasSetUpResponseHeight = true
+                        if !barWindow.state.showingAIResponse {
+                            withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
+                                barWindow.state.showingAIResponse = true
+                            }
                         }
                         barWindow.resizeToResponseHeightPublic(animated: true)
                     }
