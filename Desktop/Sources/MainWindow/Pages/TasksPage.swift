@@ -2455,6 +2455,7 @@ struct TasksPage: View {
                 if chatProvider != nil && TaskAgentSettings.shared.isChatEnabled {
                     chatToggleButton
                 }
+                addTaskButton
                 taskSettingsButton
             }
         }
@@ -2493,6 +2494,23 @@ struct TasksPage: View {
         }
         .buttonStyle(.plain)
         .help("Save current filters as a view")
+    }
+
+    private var addTaskButton: some View {
+        Button {
+            viewModel.inlineCreateAfterTaskId = nil
+            viewModel.isInlineCreating = true
+        } label: {
+            Image(systemName: "plus")
+                .scaledFont(size: 13)
+                .foregroundColor(OmiColors.textSecondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(OmiColors.backgroundSecondary)
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+        .help("Add task (⌘N)")
     }
 
     // MARK: - Filter Dropdown
