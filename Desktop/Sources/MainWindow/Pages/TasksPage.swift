@@ -3638,28 +3638,44 @@ struct TaskRow: View {
     }
 
     var body: some View {
-        swipeableContent
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.08) : Color.clear)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 8)
-                    .stroke(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture {
-                onSelect?(task)
-                if isChatActive, !isActiveChatTask {
-                    onOpenChat?(task)
-                }
+        HStack(alignment: .center, spacing: 0) {
+            // Drag handle OUTSIDE swipeableContent so DragGesture doesn't intercept it
+            if category != nil && !isMultiSelectMode && !isDeletedTask {
+                Image(systemName: "line.3.horizontal")
+                    .scaledFont(size: 10)
+                    .foregroundColor(isHovering ? OmiColors.textTertiary : .clear)
+                    .frame(width: 16, height: 24)
+                    .contentShape(Rectangle())
+                    .onDrag {
+                        log("DRAG: onDrag started for task \(task.id) — \(task.description.prefix(40))")
+                        return NSItemProvider(object: task.id as NSString)
+                    }
+                    .help("Drag to reorder")
             }
-            .sheet(isPresented: $showTaskDetail) {
-                TaskDetailView(
-                    task: task,
-                    onDismiss: { showTaskDetail = false }
+
+            swipeableContent
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.08) : Color.clear)
                 )
-            }
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isActiveChatTask ? OmiColors.purplePrimary.opacity(0.3) : Color.clear, lineWidth: 1)
+                )
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    onSelect?(task)
+                    if isChatActive, !isActiveChatTask {
+                        onOpenChat?(task)
+                    }
+                }
+        }
+        .sheet(isPresented: $showTaskDetail) {
+            TaskDetailView(
+                task: task,
+                onDismiss: { showTaskDetail = false }
+            )
+        }
     }
 
     // MARK: - Swipeable Content
@@ -3815,22 +3831,7 @@ struct TaskRow: View {
     }
 
     private var taskRowContent: some View {
-        HStack(alignment: .center, spacing: 0) {
-            // Drag handle (visible on hover, only in categorized view)
-            if category != nil && !isMultiSelectMode && !isDeletedTask {
-                Image(systemName: "line.3.horizontal")
-                    .scaledFont(size: 10)
-                    .foregroundColor(isHovering ? OmiColors.textTertiary : .clear)
-                    .frame(width: 16, height: 24)
-                    .contentShape(Rectangle())
-                    .onDrag {
-                        log("DRAG: onDrag started for task \(task.id) — \(task.description.prefix(40))")
-                        return NSItemProvider(object: task.id as NSString)
-                    }
-                    .help("Drag to reorder")
-            }
-
-            HStack(alignment: .center, spacing: 12) {
+        HStack(alignment: .center, spacing: 12) {
             // Indent visual (vertical line for indented tasks)
             if indentLevel > 0 {
                 HStack(spacing: 0) {
@@ -4073,7 +4074,6 @@ struct TaskRow: View {
                 }
             }
 
-            } // end inner HStack(spacing: 12)
         }
         .overlay(alignment: .trailing) {
             // Hover actions overlaid on trailing edge (no layout shift)
