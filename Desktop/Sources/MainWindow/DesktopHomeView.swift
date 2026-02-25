@@ -92,13 +92,16 @@ struct DesktopHomeView: View {
                             }
 
                             // Migration: one-time reset for users whose screenAnalysisEnabled
-                            // was incorrectly set to false by a bug in stopMonitoring() that
-                            // persisted false on every automatic stop (failures, sign-out, etc.).
-                            let migrationKey = "screenAnalysisAutoStartFixed_v1"
+                            // was incorrectly set to false by a bug in syncMonitoringState() that
+                            // persisted false whenever monitoring stopped for any reason.
+                            // v2: re-run because the root cause (syncMonitoringState disabling the
+                            // setting) was only fixed in this release, so v1 users got re-broken.
+                            let migrationKey = "screenAnalysisAutoStartFixed_v2"
                             if !UserDefaults.standard.bool(forKey: migrationKey) {
                                 UserDefaults.standard.set(true, forKey: "screenAnalysisEnabled")
+                                AssistantSettings.shared.screenAnalysisEnabled = true
                                 UserDefaults.standard.set(true, forKey: migrationKey)
-                                log("DesktopHomeView: Applied screenAnalysisAutoStart migration — reset to enabled")
+                                log("DesktopHomeView: Applied screenAnalysisAutoStart v2 migration — reset to enabled")
                                 // Push true to server so syncFromServer() doesn't revert it
                                 Task { await SettingsSyncManager.shared.syncToServer() }
                             }
