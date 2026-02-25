@@ -163,6 +163,10 @@ actor RewindIndexer {
                 timestamp: frame.captureTime
             )
 
+            // Frame was dropped by encoder (e.g. aspect ratio debounce) — skip DB insert
+            // since there's no video chunk to load later
+            guard let encodedFrame = encodedFrame else { return }
+
             // OCR gating: throttle frequency, deduplicate, then check battery
             var ocrText: String?
             var ocrDataJson: String?
@@ -202,9 +206,8 @@ actor RewindIndexer {
                 timestamp: frame.captureTime,
                 appName: frame.appName,
                 windowTitle: frame.windowTitle,
-                imagePath: "",
-                videoChunkPath: encodedFrame?.videoChunkPath,
-                frameOffset: encodedFrame?.frameOffset,
+                videoChunkPath: encodedFrame.videoChunkPath,
+                frameOffset: encodedFrame.frameOffset,
                 ocrText: ocrText,
                 ocrDataJson: ocrDataJson,
                 isIndexed: isIndexed,
