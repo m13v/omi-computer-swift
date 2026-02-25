@@ -415,6 +415,23 @@ struct SidebarView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
             syncMonitoringState()
+            // Auto-restart: if monitoring stopped but user's setting says it should be on,
+            // try to restart after a delay (handles transient failures, sleep/wake, etc.)
+            if !isMonitoring && screenAnalysisEnabled && !isTogglingMonitoring {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    let plugin = ProactiveAssistantsPlugin.shared
+                    guard !plugin.isMonitoring && screenAnalysisEnabled else { return }
+                    plugin.refreshScreenRecordingPermission()
+                    if plugin.hasScreenRecordingPermission {
+                        log("SidebarView: Auto-restarting monitoring (stopped unexpectedly)")
+                        plugin.startMonitoring { success, _ in
+                            if !success {
+                                log("SidebarView: Auto-restart failed, will retry on next app activation")
+                            }
+                        }
+                    }
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
             // Refresh permissions when app becomes active (user may have changed them in System Settings)
@@ -1143,11 +1160,8 @@ struct SidebarView: View {
     private func syncMonitoringState() {
         let pluginState = ProactiveAssistantsPlugin.shared.isMonitoring
         isMonitoring = pluginState
-        // Keep persistent setting in sync when monitoring stops due to errors
-        if !pluginState && screenAnalysisEnabled {
-            screenAnalysisEnabled = false
-            AssistantSettings.shared.screenAnalysisEnabled = false
-        }
+        // Don't touch screenAnalysisEnabled here — it represents the user's preference,
+        // not the current monitoring state. Auto-restart below will handle recovery.
     }
 
     // MARK: - Page Loading Helpers
