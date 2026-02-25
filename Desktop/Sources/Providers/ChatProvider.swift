@@ -414,7 +414,8 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     /// On subsequent queries the bridge reuses the same session, so the
     /// system prompt is ignored — it is only re-applied if the session is
     /// invalidated (e.g. cwd change) and a new session/new is triggered.
-    /// Conversation history is NOT included here; the ACP SDK owns it.
+    /// Conversation history from before app launch IS included (via buildConversationHistory());
+    /// after session/new the ACP SDK tracks ongoing history natively.
     private var cachedMainSystemPrompt: String = ""
 
     // MARK: - CLAUDE.md & Skills (Global)
