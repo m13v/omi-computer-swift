@@ -44,7 +44,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
     var onPlayPause: (() -> Void)?
     var onAskAI: (() -> Void)?
     var onHide: (() -> Void)?
-    var onSendQuery: ((String, URL?) -> Void)?
+    var onSendQuery: ((String) -> Void)?
 
     override init(
         contentRect: NSRect, styleMask style: NSWindow.StyleMask,
@@ -107,7 +107,7 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             onPlayPause: { [weak self] in self?.onPlayPause?() },
             onAskAI: { [weak self] in self?.handleAskAI() },
             onHide: { [weak self] in self?.hideBar() },
-            onSendQuery: { [weak self] message, screenshotURL in self?.onSendQuery?(message, screenshotURL) },
+            onSendQuery: { [weak self] message in self?.onSendQuery?(message) },
             onCloseAI: { [weak self] in self?.closeAIConversation() }
         ).environmentObject(state)
 
@@ -185,35 +185,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
         } else {
             AnalyticsManager.shared.floatingBarAskOmiOpened(source: "button")
             onAskAI?()
-        }
-    }
-
-    func captureScreenshot(thenFocusInput: Bool = false) {
-        // Temporarily hide the bar to avoid capturing it in the screenshot
-        let wasVisible = isVisible
-        if wasVisible { orderOut(nil) }
-
-        // Small delay to let the window disappear before capture
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            // Capture screenshot off main thread — PNG encoding + file write can block
-            Task.detached {
-                let url = ScreenCaptureManager.captureScreen()
-                await MainActor.run {
-                    self?.state.screenshotURL = url
-                }
-            }
-
-            if wasVisible {
-                self?.orderFront(nil)
-                self?.makeKeyAndOrderFront(nil)
-            }
-
-            if thenFocusInput {
-                // Focus after a short delay to let SwiftUI create the text view
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                    self?.focusInputField()
-                }
-            }
         }
     }
 
