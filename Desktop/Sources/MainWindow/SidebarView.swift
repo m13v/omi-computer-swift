@@ -97,6 +97,8 @@ struct SidebarView: View {
     @State private var isMonitoring = false
     @State private var isTogglingMonitoring = false
     @State private var isTogglingTranscription = false
+    @State private var monitoringAutoRestartAttempts = 0
+    private let maxAutoRestartAttempts = 3
 
     // Page loading states (show spinner in place of icon)
     @State private var isRewindPageLoading = false
@@ -413,20 +415,26 @@ struct SidebarView: View {
                 await TierManager.shared.checkTierIfNeeded()
             }
         }
-        .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { _ in
+        .onReceive(NotificationCenter.default.publisher(for: .assistantMonitoringStateDidChange)) { notification in
             syncMonitoringState()
-            // Auto-restart: if monitoring stopped but user's setting says it should be on,
-            // try to restart after a delay (handles transient failures, sleep/wake, etc.)
-            if !isMonitoring && screenAnalysisEnabled && !isTogglingMonitoring {
+            let isNowMonitoring = (notification.userInfo?["isMonitoring"] as? Bool) ?? ProactiveAssistantsPlugin.shared.isMonitoring
+            if isNowMonitoring {
+                // Reset retry counter on successful start
+                monitoringAutoRestartAttempts = 0
+            } else if screenAnalysisEnabled && !isTogglingMonitoring && monitoringAutoRestartAttempts < maxAutoRestartAttempts {
+                // Auto-restart: monitoring stopped but user's setting says it should be on.
+                // Try to restart after a delay (handles transient failures, sleep/wake, etc.)
+                monitoringAutoRestartAttempts += 1
+                let attempt = monitoringAutoRestartAttempts
                 DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
                     let plugin = ProactiveAssistantsPlugin.shared
                     guard !plugin.isMonitoring && screenAnalysisEnabled else { return }
                     plugin.refreshScreenRecordingPermission()
                     if plugin.hasScreenRecordingPermission {
-                        log("SidebarView: Auto-restarting monitoring (stopped unexpectedly)")
+                        log("SidebarView: Auto-restarting monitoring (attempt \(attempt)/\(maxAutoRestartAttempts))")
                         plugin.startMonitoring { success, _ in
                             if !success {
-                                log("SidebarView: Auto-restart failed, will retry on next app activation")
+                                log("SidebarView: Auto-restart attempt \(attempt) failed")
                             }
                         }
                     }
