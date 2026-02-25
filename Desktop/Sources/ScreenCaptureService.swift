@@ -199,12 +199,39 @@ final class ScreenCaptureService: Sendable {
         return !sckGranted // Broken if TCC yes but SCK no
     }
 
-    /// Reset screen capture permission using tccutil
-    /// This resets BOTH the traditional TCC and ScreenCaptureKit consent
-    /// Returns true if reset succeeded
+    /// Attempt soft recovery of screen capture permission without resetting TCC.
+    /// Re-registers with Launch Services and re-requests ScreenCaptureKit consent.
+    /// Returns true if capture works after recovery.
+    static func attemptSoftRecovery() async -> Bool {
+        log("Screen capture: Attempting soft recovery (lsregister + SCK re-request)...")
+
+        // 1. Re-register with Launch Services synchronously so the OS maps our bundle ID
+        //    to the current app binary (fixes stale registrations from old builds/updates)
+        ensureLaunchServicesRegistrationSync()
+
+        // 2. Re-request ScreenCaptureKit consent (macOS 14+)
+        //    This can fix the "TCC says yes but SCK says no" broken state
+        if #available(macOS 14.0, *) {
+            let sckGranted = await requestScreenCaptureKitPermission()
+            if sckGranted {
+                log("Screen capture: Soft recovery succeeded (SCK re-consent granted)")
+                return true
+            }
+            log("Screen capture: SCK re-request did not succeed, testing actual capture...")
+        }
+
+        // 3. Test if capture actually works now (covers cases where CGPreflight was stale)
+        let works = testCapturePermission()
+        log("Screen capture: Soft recovery capture test = \(works ? "SUCCESS" : "FAILED")")
+        return works
+    }
+
+    /// Reset screen capture permission using tccutil (nuclear option).
+    /// This removes the TCC entry entirely — user must re-grant in System Settings.
+    /// Only use as a last resort when soft recovery has already failed.
     static func resetScreenCapturePermission() -> Bool {
         let bundleId = Bundle.main.bundleIdentifier ?? "com.omi.computer-macos"
-        log("Resetting screen capture permission for \(bundleId) via tccutil...")
+        log("Resetting screen capture permission for \(bundleId) via tccutil (hard reset)...")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
