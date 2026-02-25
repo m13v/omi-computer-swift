@@ -409,6 +409,13 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     private var aiProfileLoaded = false
     private var cachedDatabaseSchema: String = ""
     private var schemaLoaded = false
+    /// System prompt built once at warmup and reused for every query.
+    /// The ACP session is pre-warmed with this prompt via session/new.
+    /// On subsequent queries the bridge reuses the same session, so the
+    /// system prompt is ignored — it is only re-applied if the session is
+    /// invalidated (e.g. cwd change) and a new session/new is triggered.
+    /// Conversation history is NOT included here; the ACP SDK owns it.
+    private var cachedMainSystemPrompt: String = ""
 
     // MARK: - CLAUDE.md & Skills (Global)
     @Published var claudeMdContent: String?
@@ -552,8 +559,10 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                     }
                 }
             )
-            // Pre-warm ACP sessions with their respective system prompts
+            // Pre-warm ACP sessions with their respective system prompts.
+            // This is the only place the system prompt is built and applied.
             let mainSystemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
+            cachedMainSystemPrompt = mainSystemPrompt
             let floatingSystemPrompt = Self.floatingBarSystemPromptPrefix + "\n\n" + mainSystemPrompt
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
                 .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
