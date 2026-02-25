@@ -170,6 +170,17 @@ struct DesktopHomeView: View {
                             appState.hasCompletedOnboarding = false
                             appState.stopTranscription()
                         }
+                        // Handle transcription toggle from menu bar
+                        .onReceive(NotificationCenter.default.publisher(for: .toggleTranscriptionRequested)) { notification in
+                            if let enabled = notification.userInfo?["enabled"] as? Bool {
+                                log("DesktopHomeView: Menu bar toggled transcription: \(enabled)")
+                                if enabled {
+                                    appState.startTranscription()
+                                } else {
+                                    appState.stopTranscription()
+                                }
+                            }
+                        }
                         // Periodic file re-scan (every 3 hours)
                         .task {
                             while !Task.isCancelled {
