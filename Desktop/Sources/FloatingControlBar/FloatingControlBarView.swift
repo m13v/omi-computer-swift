@@ -8,7 +8,7 @@ struct FloatingControlBarView: View {
     var onPlayPause: () -> Void
     var onAskAI: () -> Void
     var onHide: () -> Void
-    var onSendQuery: (String, URL?) -> Void
+    var onSendQuery: (String) -> Void
     var onCloseAI: () -> Void
 
     @State private var isHovering = false
@@ -235,13 +235,12 @@ struct FloatingControlBarView: View {
             ),
             onSend: { message in
                 state.displayedQuery = message
-                let screenshot = state.screenshotURL
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     state.showingAIResponse = true
                     state.isAILoading = true
                     state.currentAIMessage = nil
                 }
-                onSendQuery(message, screenshot)
+                onSendQuery(message)
             },
             onCancel: onCloseAI,
             onHeightChange: { [weak state] height in
@@ -283,12 +282,11 @@ struct FloatingControlBarView: View {
                 }
 
                 state.displayedQuery = message
-                let screenshot = state.screenshotURL
                 withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                     state.isAILoading = true
                     state.currentAIMessage = nil
                 }
-                onSendQuery(message, screenshot)
+                onSendQuery(message)
             }
         )
         .transition(
