@@ -363,8 +363,8 @@ class AcpError extends Error {
 
 // --- State ---
 
-/** Pre-warmed sessions keyed by model name */
-const sessions = new Map<string, { sessionId: string; cwd: string }>();
+/** Pre-warmed sessions keyed by sessionKey (e.g. "main", "floating", or model name for backward compat) */
+const sessions = new Map<string, { sessionId: string; cwd: string; model?: string }>();
 /** The session currently being used by an active query (for interrupt) */
 let activeSessionId = "";
 let activeAbort: AbortController | null = null;
@@ -561,54 +561,59 @@ function buildMcpServers(mode: string, cwd?: string): McpServerConfig[] {
 const DEFAULT_MODEL = "claude-opus-4-6";
 const SONNET_MODEL = "claude-sonnet-4-6";
 
-async function preWarmSession(cwd?: string, models?: string[]): Promise<void> {
+interface WarmupSessionConfig {
+  key: string;
+  model: string;
+  systemPrompt?: string;
+}
+
+async function preWarmSession(cwd?: string, sessionConfigs?: WarmupSessionConfig[], models?: string[]): Promise<void> {
   const warmCwd = cwd || process.env.HOME || "/";
-  const warmModels = models && models.length > 0 ? models : [DEFAULT_MODEL, SONNET_MODEL];
+
+  // Build the list of sessions to warm: new format (sessionConfigs) takes priority over legacy (models array)
+  const toWarm: WarmupSessionConfig[] = sessionConfigs && sessionConfigs.length > 0
+    ? sessionConfigs.filter((s) => !sessions.has(s.key))
+    : (models && models.length > 0 ? models : [DEFAULT_MODEL, SONNET_MODEL])
+        .filter((m) => !sessions.has(m))
+        .map((m) => ({ key: m, model: m }));
+
+  if (toWarm.length === 0) {
+    logErr("All requested sessions already pre-warmed");
+    return;
+  }
 
   try {
     await initializeAcp();
 
-    // Pre-warm each model that doesn't already have a session, in parallel
-    const toWarm = warmModels.filter((m) => !sessions.has(m));
-    if (toWarm.length === 0) {
-      logErr("All requested models already have pre-warmed sessions");
-      return;
-    }
-
     await Promise.all(
-      toWarm.map(async (warmModel) => {
+      toWarm.map(async (cfg) => {
         try {
           const sessionParams: Record<string, unknown> = {
             cwd: warmCwd,
             mcpServers: buildMcpServers("act", warmCwd),
+            ...(cfg.systemPrompt ? { _meta: { systemPrompt: cfg.systemPrompt } } : {}),
           };
 
           // Retry once after a short delay if session/new fails
-          // (ACP subprocess may not be fully ready immediately after initialize)
           let result: { sessionId: string };
           try {
             result = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
           } catch (firstErr) {
-            logErr(`Pre-warm session/new failed for ${warmModel}, retrying in 2s: ${firstErr}`);
+            logErr(`Pre-warm session/new failed for ${cfg.key}, retrying in 2s: ${firstErr}`);
             await new Promise((r) => setTimeout(r, 2000));
             result = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
           }
 
-          sessions.set(warmModel, { sessionId: result.sessionId, cwd: warmCwd });
-          // Set the model via the proper ACP method (model field is stripped from session/new by schema)
-          await acpRequest("session/set_model", { sessionId: result.sessionId, modelId: warmModel });
-          logErr(
-            `Pre-warmed session: ${result.sessionId} (cwd=${warmCwd}, model=${warmModel})`
-          );
+          sessions.set(cfg.key, { sessionId: result.sessionId, cwd: warmCwd, model: cfg.model });
+          await acpRequest("session/set_model", { sessionId: result.sessionId, modelId: cfg.model });
+          logErr(`Pre-warmed session: ${result.sessionId} (key=${cfg.key}, model=${cfg.model}, hasSystemPrompt=${!!cfg.systemPrompt})`);
         } catch (err) {
-          // If pre-warm fails with auth error, start OAuth flow.
-          // Only -32000 is AUTH_REQUIRED; -32603 is a generic error (credit balance, API error, etc.)
           if (err instanceof AcpError && err.code === -32000) {
             logErr(`Pre-warm failed with auth error (code=${err.code}), starting OAuth flow`);
             await startAuthFlow();
-            return; // After auth, warmup will happen on next query
+            return;
           }
-          logErr(`Pre-warm failed for ${warmModel}: ${err}`);
+          logErr(`Pre-warm failed for ${cfg.key}: ${err}`);
         }
       })
     );
