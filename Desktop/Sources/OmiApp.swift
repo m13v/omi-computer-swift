@@ -533,7 +533,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Hide the app icon from the Dock (if no Omi windows are visible)
-    private func checkAndHideDockIconIfNeeded() {
+    @MainActor private func checkAndHideDockIconIfNeeded() {
         // Check if any Omi windows are still visible (not minimized, not closed)
         let hasVisibleOmiWindow = NSApp.windows.contains { window in
             window.title.hasPrefix("Omi") && window.isVisible && !window.isMiniaturized
