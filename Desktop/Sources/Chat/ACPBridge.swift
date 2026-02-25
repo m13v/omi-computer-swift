@@ -263,11 +263,21 @@ actor ACPBridge {
     /// Tell the bridge to pre-create ACP sessions in the background.
     /// This saves ~4s on the first query by doing session/new ahead of time.
     /// Pass multiple models to pre-warm sessions for both Opus and Sonnet in parallel.
-    func warmupSession(cwd: String? = nil, models: [String]? = nil) {
+    struct WarmupSessionConfig {
+        let key: String
+        let model: String
+        let systemPrompt: String?
+    }
+
+    func warmupSession(cwd: String? = nil, sessions: [WarmupSessionConfig]) {
         guard isRunning else { return }
         var dict: [String: Any] = ["type": "warmup"]
         if let cwd = cwd { dict["cwd"] = cwd }
-        if let models = models { dict["models"] = models }
+        dict["sessions"] = sessions.map { s -> [String: Any] in
+            var entry: [String: Any] = ["key": s.key, "model": s.model]
+            if let sp = s.systemPrompt { entry["systemPrompt"] = sp }
+            return entry
+        }
         if let data = try? JSONSerialization.data(withJSONObject: dict),
            let str = String(data: data, encoding: .utf8) {
             sendLine(str)
@@ -280,6 +290,7 @@ actor ACPBridge {
     func query(
         prompt: String,
         systemPrompt: String,
+        sessionKey: String? = nil,
         cwd: String? = nil,
         mode: String? = nil,
         model: String? = nil,
@@ -303,6 +314,9 @@ actor ACPBridge {
             "prompt": prompt,
             "systemPrompt": systemPrompt
         ]
+        if let sessionKey = sessionKey {
+            queryDict["sessionKey"] = sessionKey
+        }
         if let cwd = cwd {
             queryDict["cwd"] = cwd
         }
