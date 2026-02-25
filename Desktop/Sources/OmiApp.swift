@@ -503,7 +503,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ) { [weak self] notification in
             guard let window = notification.object as? NSWindow,
                   window.title.hasPrefix("Omi") else { return }
-            self?.checkAndHideDockIconIfNeeded()
+            Task { @MainActor in
+                self?.checkAndHideDockIconIfNeeded()
+            }
         }
         windowObservers.append(minimizeObserver)
 
