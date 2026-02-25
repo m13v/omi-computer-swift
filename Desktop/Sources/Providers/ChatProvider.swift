@@ -1354,8 +1354,8 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         // Seed cumulative Omi AI cost from backend now that auth is ready (background, no latency)
         Task.detached(priority: .background) { [weak self] in
             guard let serverCost = await APIClient.shared.fetchTotalOmiAICost() else { return }
+            guard let self else { return }
             await MainActor.run {
-                guard let self = self else { return }
                 // Always trust the server value — it's the authoritative total
                 self.omiAICumulativeCostUsd = serverCost
                 log("ChatProvider: Seeded Omi AI cumulative cost from backend: $\(String(format: "%.4f", serverCost))")
