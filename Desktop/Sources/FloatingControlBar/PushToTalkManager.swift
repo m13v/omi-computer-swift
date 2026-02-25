@@ -261,7 +261,6 @@ class PushToTalkManager: ObservableObject {
     liveFinalizationTimeout = nil
     stopAudioTranscription()
     state = .idle
-    capturedScreenshotURL = nil
     transcriptSegments = []
     lastInterimText = ""
     batchAudioLock.lock()
