@@ -1753,6 +1753,13 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             return
         }
 
+        // Guard: Block query if Omi account $50 usage threshold already reached
+        if bridgeMode == BridgeMode.omiAI.rawValue && omiAICumulativeCostUsd >= 50.0 {
+            showOmiThresholdAlert = true
+            Task { await self.switchBridgeMode(to: .userClaude) }
+            return
+        }
+
         // Determine session ID based on mode
         // In default chat mode (isInDefaultChat=true): no session ID (compatible with Flutter)
         // In session mode: require session ID
