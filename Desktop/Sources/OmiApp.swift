@@ -141,6 +141,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var windowObservers: [NSObjectProtocol] = []
     private var statusBarItem: NSStatusItem?
     private var toggleBarObserver: NSObjectProtocol?
+    private var screenCaptureSwitch: NSSwitch?
+    private var audioRecordingSwitch: NSSwitch?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Ignore SIGPIPE so broken-pipe writes return errors instead of crashing the app.
@@ -632,6 +634,29 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Create menu
         let menu = NSMenu()
+
+        // Quick toggles for screen capture and audio recording
+        let screenCaptureItem = NSMenuItem()
+        let screenCaptureView = makeToggleItemView(
+            title: "Screen Capture",
+            iconName: "rectangle.dashed.badge.record",
+            isOn: AssistantSettings.shared.screenAnalysisEnabled && ProactiveAssistantsPlugin.shared.isMonitoring,
+            action: #selector(screenCaptureToggled(_:))
+        )
+        screenCaptureItem.view = screenCaptureView
+        menu.addItem(screenCaptureItem)
+
+        let audioRecordingItem = NSMenuItem()
+        let audioRecordingView = makeToggleItemView(
+            title: "Audio Recording",
+            iconName: "mic.fill",
+            isOn: AssistantSettings.shared.transcriptionEnabled,
+            action: #selector(audioRecordingToggled(_:))
+        )
+        audioRecordingItem.view = audioRecordingView
+        menu.addItem(audioRecordingItem)
+
+        menu.addItem(NSMenuItem.separator())
 
         // Open app item
         let openItem = NSMenuItem(title: "Open \(displayName)", action: #selector(openOmiFromMenu), keyEquivalent: "o")
