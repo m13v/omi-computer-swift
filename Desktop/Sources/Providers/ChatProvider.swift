@@ -564,10 +564,10 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             // This is the only place the system prompt is built and applied.
             let mainSystemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
             cachedMainSystemPrompt = mainSystemPrompt
-            let floatingSystemPrompt = Self.floatingBarSystemPromptPrefix + "\n\n" + mainSystemPrompt
+            // let floatingSystemPrompt = Self.floatingBarSystemPromptPrefix + "\n\n" + mainSystemPrompt
             await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
                 .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
-                .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt)
+                .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: mainSystemPrompt)
             ])
             return true
         } catch {
