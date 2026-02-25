@@ -644,7 +644,7 @@ extension MixpanelManager {
     }
 
     func updateCheckFailed(error: String, errorDomain: String, errorCode: Int, underlyingError: String? = nil, underlyingDomain: String? = nil, underlyingCode: Int? = nil) {
-        var props: [String: Any] = [
+        var props: [String: MixpanelType] = [
             "error": error,
             "error_domain": errorDomain,
             "error_code": errorCode
