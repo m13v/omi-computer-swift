@@ -1198,7 +1198,9 @@ A screenshot may be attached — use it silently only if relevant. Never mention
 
     // MARK: - Build System Prompt with Variables
 
-    /// Builds the system prompt with dynamic template variables
+    /// Builds the system prompt for ACP session initialization.
+    /// Called once at warmup (via ensureBridgeStarted) and cached in cachedMainSystemPrompt.
+    /// Do NOT call this per-query — the ACP SDK owns conversation history after session/new.
     private func buildSystemPrompt(contextString: String) -> String {
         // Get user name from AuthService
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
@@ -1211,8 +1213,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         let goalSection = formatGoalSection()
         let tasksSection = formatTasksSection()
         let aiProfileSection = formatAIProfileSection()
-        let historyMessages = messages.filter { !$0.text.isEmpty && !$0.isStreaming }
-        let historyCount = min(historyMessages.count, 20)
 
         // Build base prompt with goals, AI profile, and dynamic schema
         var prompt = ChatPromptBuilder.buildDesktopChat(
@@ -1223,12 +1223,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             aiProfileSection: aiProfileSection,
             databaseSchema: cachedDatabaseSchema
         )
-
-        // Append conversation history from Firestore (source of truth for cross-platform sync)
-        let history = buildConversationHistory()
-        if !history.isEmpty {
-            prompt += "\n\n<conversation_history>\nBelow is the recent conversation history between you and the user. Use this to maintain continuity — the user can see these messages in the chat UI and expects you to be aware of them.\n\(history)\n</conversation_history>"
-        }
 
         // Append global CLAUDE.md instructions if enabled
         if claudeMdEnabled, let claudeMd = claudeMdContent {
@@ -1256,8 +1250,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
 
         // Log prompt context summary
         let activeGoalCount = cachedGoals.filter { $0.isActive }.count
-        let historyInjected = !history.isEmpty
-        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyInjected ? "injected (\(historyCount) msgs)" : "none"), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode_in_skills: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
+        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode_in_skills: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
 
         // Log per-section character breakdown
         let baseTemplate = ChatPromptBuilder.buildDesktopChat(
@@ -1273,7 +1266,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             "tasks:\(tasksSection.count)c, " +
             "ai_profile:\(aiProfileSection.count)c, " +
             "schema:\(cachedDatabaseSchema.count)c, " +
-            "history:\(history.count)c, " +
             "claude_md:\(claudeMdContent?.count ?? 0)c, " +
             "project_claude_md:\(projectClaudeMdContent?.count ?? 0)c, " +
             "skills:\(skillsSectionSize)c")
@@ -1282,8 +1274,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     }
 
     /// Build system prompt for task chat sessions.
-    /// Same as buildSystemPrompt but **omits** conversation_history section
-    /// (the Claude SDK handles history via `resume: sessionId`).
     func buildTaskChatSystemPrompt() -> String {
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
         let contextSection = formatMemoriesSection()
@@ -1336,25 +1326,6 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         )
     }
 
-    /// Build conversation history from messages (loaded from Firestore)
-    /// This ensures cross-platform sync: messages from mobile appear in context
-    private func buildConversationHistory() -> String {
-        // Take recent messages, excluding the current user message (last one) and any empty streaming placeholders
-        let historyMessages = messages.filter { msg in
-            !msg.text.isEmpty && !msg.isStreaming
-        }
-
-        // Skip if no history
-        guard !historyMessages.isEmpty else { return "" }
-
-        // Limit to last 20 messages to avoid excessive prompt size
-        let recent = historyMessages.suffix(20)
-
-        return recent.map { msg in
-            let role = msg.sender == .user ? "human" : "assistant"
-            return "\(role): \(msg.text)"
-        }.joined(separator: "\n")
-    }
 
     /// Initialize chat: fetch sessions and load messages
     func initialize() async {
@@ -1847,8 +1818,11 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         var toolStartTimes: [String: Date] = [:]
 
         do {
-            // Build system prompt with locally cached memories (no backend Gemini call)
-            var systemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
+            // Use the system prompt built at warmup. The ACP bridge applies it only
+            // at session/new; for the normal reused-session path it is ignored.
+            // Passing it here ensures it is applied if the session was invalidated
+            // (e.g. cwd change) and a new session/new is triggered mid-conversation.
+            var systemPrompt = cachedMainSystemPrompt
             if let prefix = systemPromptPrefix, !prefix.isEmpty {
                 systemPrompt = prefix + "\n\n" + systemPrompt
             }
