@@ -256,6 +256,28 @@ enum ChatMode: String, CaseIterable {
 /// Uses hybrid architecture: Swift → Claude Agent (via Node.js bridge) for AI, Backend for persistence + context
 @MainActor
 class ChatProvider: ObservableObject {
+
+    // MARK: - Floating Bar System Prompt Prefix
+    /// Static prefix injected at the top of the system prompt for floating bar sessions.
+    /// Defined here so it can be referenced both at warmup time and at query time.
+    static let floatingBarSystemPromptPrefix = """
+================================================================================
+🚨 FLOATING BAR MODE — READ THIS FIRST BEFORE ANYTHING ELSE 🚨
+================================================================================
+STEP 1 — CLASSIFY THE QUESTION (do this before using any tools or answering):
+(1) GENERAL KNOWLEDGE → answer from your own knowledge, or use web search if unsure. THIS IS THE DEFAULT.
+(2) ABOUT THE SCREEN → use the attached screenshot.
+(3) ABOUT THE CODEBASE / WORKSPACE → use repo, database, or semantic search tools.
+Only pick (3) if the question explicitly mentions code, files, or the project. Never reject a general knowledge question by saying it's unrelated to the codebase.
+
+STEP 2 — USE TOOLS only if the classification requires it. If you don't recognize a term, search the web for it — never ask the user to clarify.
+
+STEP 3 — RESPOND in exactly 1 sentence. No lists. No headers. No follow-up questions.
+
+A screenshot may be attached — use it silently only if relevant. Never mention or acknowledge it.
+================================================================================
+"""
+
     // MARK: - Published State
     @Published var chatMode: ChatMode = .act
     @Published var draftText = ""
@@ -530,8 +552,13 @@ class ChatProvider: ObservableObject {
                     }
                 }
             )
-            // Pre-warm an ACP session in background so first query is faster
-            await acpBridge.warmupSession(cwd: workingDirectory, models: ["claude-opus-4-6", "claude-sonnet-4-6"])
+            // Pre-warm ACP sessions with their respective system prompts
+            let mainSystemPrompt = buildSystemPrompt(contextString: formatMemoriesSection())
+            let floatingSystemPrompt = Self.floatingBarSystemPromptPrefix + "\n\n" + mainSystemPrompt
+            await acpBridge.warmupSession(cwd: workingDirectory, sessions: [
+                .init(key: "main", model: "claude-opus-4-6", systemPrompt: mainSystemPrompt),
+                .init(key: "floating", model: "claude-sonnet-4-6", systemPrompt: floatingSystemPrompt)
+            ])
             return true
         } catch {
             logError("Failed to start ACP bridge", error: error)
@@ -1708,7 +1735,7 @@ class ChatProvider: ObservableObject {
     /// - Parameters:
     ///   - text: The message text
     ///   - model: Optional model override for this query (e.g. "claude-sonnet-4-6" for floating bar)
-    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false, systemPromptSuffix: String? = nil, systemPromptPrefix: String? = nil, imageData: Data? = nil) async {
+    func sendMessage(_ text: String, model: String? = nil, isFollowUp: Bool = false, systemPromptSuffix: String? = nil, systemPromptPrefix: String? = nil, sessionKey: String? = nil, imageData: Data? = nil) async {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
@@ -1860,6 +1887,7 @@ class ChatProvider: ObservableObject {
             let queryResult = try await acpBridge.query(
                 prompt: trimmedText,
                 systemPrompt: systemPrompt,
+                sessionKey: sessionKey ?? "main",
                 cwd: workingDirectory,
                 mode: chatMode.rawValue,
                 model: model ?? modelOverride,
