@@ -332,6 +332,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self.setupMenuBar()
         }
 
+        // Periodic health check: verify menu bar icon is still visible every 30 seconds.
+        // Safety net for any edge case (macOS Sequoia bugs, activation policy races) that
+        // causes the status bar item to vanish while the process keeps running.
+        Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                if self.statusBarItem?.isVisible != true || self.statusBarItem?.button == nil {
+                    log("AppDelegate: [MENUBAR] Health check: icon missing, recreating")
+                    self.setupMenuBar()
+                }
+            }
+        }
+
         // Start Sentry heartbeat timer (every 5 minutes) to capture breadcrumbs periodically
         startSentryHeartbeat()
 
@@ -537,12 +550,36 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Works around a macOS Sequoia bug where NSStatusBar items vanish
     /// when switching to .accessory activation policy.
     private func refreshMenuBarIcon() {
-        guard let statusBarItem = statusBarItem else { return }
-        statusBarItem.isVisible = false
-        DispatchQueue.main.async {
-            statusBarItem.isVisible = true
-            log("AppDelegate: [MENUBAR] Refreshed status bar item after policy change")
+        guard let item = statusBarItem else {
+            // Status bar item was lost — recreate it
+            log("AppDelegate: [MENUBAR] refreshMenuBarIcon: statusBarItem is nil, recreating")
+            setupMenuBar()
+            return
         }
+        // Re-assert visibility synchronously
+        item.isVisible = true
+        // Re-apply the icon to force the system to redraw
+        if let button = item.button {
+            if OMIApp.launchMode == .rewind {
+                if let icon = NSImage(systemSymbolName: "clock.arrow.circlepath", accessibilityDescription: "Omi Rewind") {
+                    icon.isTemplate = true
+                    button.image = icon
+                }
+            } else if let iconURL = Bundle.resourceBundle.url(forResource: "app_launcher_icon", withExtension: "png"),
+                      let icon = NSImage(contentsOf: iconURL) {
+                icon.isTemplate = true
+                icon.size = NSSize(width: 18, height: 18)
+                button.image = icon
+            }
+        }
+        // Safety net: verify again after a short delay
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+            if self?.statusBarItem?.isVisible != true {
+                log("AppDelegate: [MENUBAR] Icon still not visible after refresh, recreating")
+                self?.setupMenuBar()
+            }
+        }
+        log("AppDelegate: [MENUBAR] Refreshed status bar item after policy change")
     }
 
     /// Set up menu bar icon using NSStatusBar (more reliable than SwiftUI MenuBarExtra)
