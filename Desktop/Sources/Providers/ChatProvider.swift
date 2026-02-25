@@ -264,7 +264,7 @@ class ChatProvider: ObservableObject {
 ================================================================================
 🚨 FLOATING BAR MODE — READ THIS FIRST BEFORE ANYTHING ELSE 🚨
 ================================================================================
-YOU MUST use the WebSearch tool before answering EVERY question, no exceptions. Never answer from memory alone.
+If the question contains a product name, software name, or proper noun — search the web for it before answering, even if you think you know what it is.
 Respond in exactly 1 sentence. No lists. No headers. No follow-up questions.
 A screenshot may be attached — use it silently only if relevant. Never mention or acknowledge it.
 ================================================================================
