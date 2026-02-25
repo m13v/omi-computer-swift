@@ -287,6 +287,20 @@ actor ACPBridge {
     // MARK: - Query
 
     /// Send a query to the ACP agent and stream results back.
+    ///
+    /// SESSION LIFECYCLE (Desktop app — not the VM/agent-cloud flow):
+    /// Sessions are pre-warmed at startup via warmupSession(). The bridge reuses
+    /// the same session for every subsequent query, so `systemPrompt` is ignored
+    /// for the normal path. It is only applied if the session was invalidated
+    /// (e.g. cwd change) and the bridge creates a new session/new internally.
+    /// Pass cachedMainSystemPrompt here — never rebuild the full system prompt
+    /// per-query, and never inject conversation history into it (the ACP SDK
+    /// maintains conversation history natively within the session).
+    ///
+    /// TOKEN COUNTS: The cacheReadTokens/cacheWriteTokens returned by the bridge
+    /// reflect the TOTAL across all internal tool-use rounds within this single
+    /// session/prompt call. The ACP SDK handles tool use internally — there is no
+    /// separate "sub-agent" spawning visible at this level.
     func query(
         prompt: String,
         systemPrompt: String,
