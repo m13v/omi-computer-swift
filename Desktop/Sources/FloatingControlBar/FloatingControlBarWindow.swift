@@ -230,7 +230,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             state.showingAIResponse = false
             state.aiInputText = ""
             state.currentAIMessage = nil
-            state.screenshotURL = nil
             state.chatHistory = []
             state.isVoiceFollowUp = false
             state.voiceFollowUpTranscript = ""
@@ -337,17 +336,6 @@ class FloatingControlBarWindow: NSWindow, NSWindowDelegate {
             self?.focusInputField()
         }
 
-        // Clear stale screenshot immediately so a quick send doesn't use the previous session's capture
-        state.screenshotURL = nil
-
-        // Capture fresh screenshot in background without hiding the bar
-        Task.detached { [weak self] in
-            let url = ScreenCaptureManager.captureScreen()
-            let capturedSelf = self
-            await MainActor.run {
-                capturedSelf?.state.screenshotURL = url
-            }
-        }
     }
 
     private func setupInputHeightObserver() {
@@ -735,10 +723,10 @@ class FloatingControlBarManager {
         // Reuse the sidebar's ChatProvider (bridge is already warm from app startup)
         self.chatProvider = chatProvider
 
-        barWindow.onSendQuery = { [weak self, weak barWindow, weak chatProvider] message, screenshotURL in
+        barWindow.onSendQuery = { [weak self, weak barWindow, weak chatProvider] message in
             guard let self = self, let barWindow = barWindow, let provider = chatProvider else { return }
             Task { @MainActor in
-                await self.sendAIQuery(message, screenshotURL: screenshotURL, barWindow: barWindow, provider: provider)
+                await self.sendAIQuery(message, barWindow: barWindow, provider: provider)
             }
         }
 
@@ -851,7 +839,6 @@ class FloatingControlBarManager {
         window.state.showingAIResponse = false
         window.state.aiInputText = ""
         window.state.currentAIMessage = nil
-        window.state.screenshotURL = nil
         window.state.chatHistory = []
         window.state.isVoiceFollowUp = false
         window.state.voiceFollowUpTranscript = ""
@@ -859,10 +846,10 @@ class FloatingControlBarManager {
         guard let provider = self.chatProvider else { return }
 
         // Re-wire the onSendQuery to use the shared provider
-        window.onSendQuery = { [weak self, weak window, weak provider] message, screenshotURL in
+        window.onSendQuery = { [weak self, weak window, weak provider] message in
             guard let self = self, let window = window, let provider = provider else { return }
             Task { @MainActor in
-                await self.sendAIQuery(message, screenshotURL: screenshotURL, barWindow: window, provider: provider)
+                await self.sendAIQuery(message, barWindow: window, provider: provider)
             }
         }
 
@@ -935,11 +922,17 @@ class FloatingControlBarManager {
 
     // MARK: - AI Query
 
-    private func sendAIQuery(_ message: String, screenshotURL: URL?, barWindow: FloatingControlBarWindow, provider: ChatProvider) async {
-        // Capture a fresh screenshot for every message so context is always current
-        let latestScreenshot = await Task.detached { ScreenCaptureManager.captureScreen() }.value
+    private func sendAIQuery(_ message: String, barWindow: FloatingControlBarWindow, provider: ChatProvider) async {
+        // Hide the bar, capture a clean screenshot, then restore — same path for both typed and PTT
+        barWindow.orderOut(nil)
+        try? await Task.sleep(nanoseconds: 150_000_000) // 150ms for window to disappear
+        let screenshotData = await Task.detached { () -> Data? in
+            guard let url = ScreenCaptureManager.captureScreen() else { return nil }
+            return try? Data(contentsOf: url)
+        }.value
+        barWindow.makeKeyAndOrderFront(nil)
 
-        AnalyticsManager.shared.floatingBarQuerySent(messageLength: message.count, hasScreenshot: latestScreenshot != nil)
+        AnalyticsManager.shared.floatingBarQuerySent(messageLength: message.count, hasScreenshot: screenshotData != nil)
 
         // Provider is already initialized by ViewModelContainer at app launch
 
@@ -978,9 +971,6 @@ class FloatingControlBarManager {
                     barWindow?.state.isAILoading = false
                 }
             }
-
-        // Load screenshot as image data for the ACP image content block
-        let screenshotData = latestScreenshot.flatMap { try? Data(contentsOf: $0) }
 
         await provider.sendMessage(message, model: ShortcutSettings.shared.selectedModel, systemPromptPrefix: ChatProvider.floatingBarSystemPromptPrefix, sessionKey: "floating", imageData: screenshotData)
 
