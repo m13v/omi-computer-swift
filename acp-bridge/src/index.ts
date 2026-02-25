@@ -655,22 +655,18 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
     // Ensure ACP is initialized
     await initializeAcp();
 
-    // Look up a pre-warmed session for the requested model
+    // Look up a pre-warmed session by sessionKey (falls back to model name for backward compat)
     const requestedModel = msg.model || DEFAULT_MODEL;
+    const sessionKey = msg.sessionKey ?? requestedModel;
     const requestedCwd = msg.cwd || process.env.HOME || "/";
     let sessionId = "";
 
-    const existing = sessions.get(requestedModel);
+    const existing = sessions.get(sessionKey);
     if (existing) {
       // If cwd changed, invalidate this specific session
       if (existing.cwd !== requestedCwd) {
-        logErr(`Cwd changed for ${requestedModel} (${existing.cwd} -> ${requestedCwd}), creating new session`);
-        sessions.delete(requestedModel);
-      } else if (msg.systemPrompt) {
-        // A custom system prompt requires a fresh session — pre-warmed sessions
-        // are created without one and it can only be set at session/new time.
-        logErr(`Custom systemPrompt provided — skipping pre-warmed session, creating fresh one`);
-        sessions.delete(requestedModel);
+        logErr(`Cwd changed for ${sessionKey} (${existing.cwd} -> ${requestedCwd}), creating new session`);
+        sessions.delete(sessionKey);
       } else {
         sessionId = existing.sessionId;
       }
@@ -701,32 +697,22 @@ async function handleQuery(msg: QueryMessage): Promise<void> {
         mcpServers: buildMcpServers(mode, requestedCwd),
         ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
       };
-      logErr(`[DEBUG] session/new _meta.systemPrompt present: ${!!(msg.systemPrompt)}`);
       const sessionResult = (await acpRequest("session/new", sessionParams)) as { sessionId: string };
 
       sessionId = sessionResult.sessionId;
-      sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
+      sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
       isNewSession = true;
-      // Set the model via the proper ACP method (model field is stripped from session/new by schema)
       if (requestedModel) {
         await acpRequest("session/set_model", { sessionId, modelId: requestedModel });
       }
-      logErr(`ACP session created: ${sessionId} (model=${requestedModel || "default"}, cwd=${requestedCwd})`);
+      logErr(`ACP session created: ${sessionId} (key=${sessionKey}, model=${requestedModel || "default"}, cwd=${requestedCwd})`);
     } else {
       isNewSession = false;
-      logErr(`Reusing existing ACP session: ${sessionId} (model=${requestedModel})`);
+      logErr(`Reusing existing ACP session: ${sessionId} (key=${sessionKey})`);
     }
     activeSessionId = sessionId;
 
     fullPrompt = msg.prompt;
-
-    // DEBUG: Log system prompt injection
-    if (msg.systemPrompt) {
-      logErr(`[DEBUG] systemPrompt present, length=${msg.systemPrompt.length}`);
-      logErr(`[DEBUG] systemPrompt first 200 chars: ${msg.systemPrompt.slice(0, 200)}`);
-    } else {
-      logErr(`[DEBUG] systemPrompt is EMPTY or undefined`);
-    }
 
     // Set up notification handler for this query
     acpNotificationHandler = (method: string, params: unknown) => {
@@ -1111,10 +1097,15 @@ async function main(): Promise<void> {
 
       case "warmup": {
         const wm = msg as WarmupMessage;
-        // Support both single model (backward compat) and models array
-        const models = wm.models ?? (wm.model ? [wm.model] : undefined);
-        logErr(`Warmup requested (cwd=${wm.cwd || "default"}, models=${JSON.stringify(models) || "default"})`);
-        preWarmPromise = preWarmSession(wm.cwd, models);
+        if (wm.sessions && wm.sessions.length > 0) {
+          logErr(`Warmup requested (cwd=${wm.cwd || "default"}, sessions=${wm.sessions.map(s => s.key).join(", ")})`);
+          preWarmPromise = preWarmSession(wm.cwd, wm.sessions);
+        } else {
+          // Backward compat: models array or single model
+          const models = wm.models ?? (wm.model ? [wm.model] : undefined);
+          logErr(`Warmup requested (cwd=${wm.cwd || "default"}, models=${JSON.stringify(models) || "default"})`);
+          preWarmPromise = preWarmSession(wm.cwd, undefined, models);
+        }
         break;
       }
 
