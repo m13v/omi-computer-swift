@@ -1,6 +1,19 @@
 {
   "releases": [
     {
+      "version": "11.3",
+      "date": "2026-02-24",
+      "changes": [
+        "If the Install button fails, download manually from <a href='https://macos.omi.me' style='font-weight:bold'>macos.omi.me</a> (known issue on macOS 26)",
+        "Resizable floating bar with dedicated AI session and concise single-sentence answers",
+        "Faster follow-up messages: send your next query immediately without waiting for server sync",
+        "Fixed duplicate messages from cross-platform sync race condition",
+        "Better Rewind empty states with permission guidance and auto-start after granting access",
+        "Auto-opens download page when Sparkle installer fails on macOS 26",
+        "Cloud agent: automatic database re-upload, hot-reload for agent code, keepalive ping"
+      ]
+    },
+    {
       "version": "11.2",
       "date": "2026-02-24",
       "changes": [
