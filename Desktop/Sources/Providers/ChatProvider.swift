@@ -1821,8 +1821,14 @@ A screenshot may be attached — use it silently only if relevant. Never mention
         isSending = true
         errorMessage = nil
 
-        // Save user message to backend and add to UI
+        // Save user message to backend and add to UI.
         // (skip for follow-ups — sendFollowUp already did both)
+        //
+        // The save is fire-and-forget (unstructured Task) so it doesn't block
+        // the ACP query from starting. This is safe because isSending=true for
+        // the entire duration of the ACP query, so the poll timer is suppressed
+        // the whole time — by the time isSending is released the user message
+        // save has almost always already completed and its ID has been synced.
         let userMessageId = UUID().uuidString
         let isFirstMessage = messages.isEmpty
         let capturedSessionId = sessionId
@@ -1836,7 +1842,8 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                         appId: capturedAppId,
                         sessionId: capturedSessionId
                     )
-                    // Sync local message ID with server ID
+                    // Adopt the server ID (local UUID → server ID) and mark synced.
+                    // isSynced=true enables rating buttons on the message bubble.
                     await MainActor.run {
                         if let index = self?.messages.firstIndex(where: { $0.id == userMessageId }) {
                             self?.messages[index].id = response.id
@@ -1858,7 +1865,11 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             messages.append(userMessage)
         }
 
-        // Create placeholder AI message
+        // Create a placeholder AI message shown immediately in the UI while
+        // streaming. It starts with a local UUID (isSynced=false, no rating buttons).
+        // Lifecycle: local UUID → streaming text appended token by token →
+        // isStreaming=false → isSending=false → backend save → ID replaced with
+        // server ID, isSynced=true (rating buttons appear).
         let aiMessageId = UUID().uuidString
         let aiMessage = ChatMessage(
             id: aiMessageId,
@@ -1986,12 +1997,23 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             // Release the sending lock as soon as the AI response is visible in the
             // UI. Backend persistence is slow (can timeout at 30s+) and should not
             // block the user from making new queries to Claude.
+            //
+            // IMPORTANT: releasing isSending here opens a race window with the poll
+            // timer. The poll can now fetch backend messages while saveMessage() is
+            // still in-flight. The AI message still has a local UUID at this point
+            // (isSynced=false). pollForNewMessages() handles this by merging the
+            // backend copy into the local message rather than appending a duplicate.
             isSending = false
             isStopping = false
 
-            // Always save AI response to backend with the captured session ID.
-            // aiMessageId is captured so we find the right message even if a new
-            // query has started.
+            // Save AI response to backend. aiMessageId is captured above so we can
+            // locate the right message even if the user has started a new query by
+            // the time this completes.
+            //
+            // After save: update the in-memory message's ID from local UUID to the
+            // server-assigned ID, and mark isSynced=true. This is the normal path
+            // (no race). The poll's merge logic handles the case where the poll fires
+            // before this update runs.
             let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
             if !textToSave.isEmpty {
                 do {
@@ -2003,6 +2025,9 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                         sessionId: capturedSessionId,
                         metadata: toolMetadata
                     )
+                    // Adopt the server ID so future polls find this message by ID
+                    // (existingIds check in pollForNewMessages). isSynced=true enables
+                    // thumbs-up/down rating UI.
                     if let syncIndex = messages.firstIndex(where: { $0.id == aiMessageId }) {
                         messages[syncIndex].id = response.id
                         messages[syncIndex].isSynced = true
