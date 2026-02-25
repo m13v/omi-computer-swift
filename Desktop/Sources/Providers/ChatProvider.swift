@@ -1931,10 +1931,15 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 log("Chat response arrived after session switch")
             }
 
+            // Release the sending lock as soon as the AI response is visible in the
+            // UI. Backend persistence is slow (can timeout at 30s+) and should not
+            // block the user from making new queries to Claude.
+            isSending = false
+            isStopping = false
+
             // Always save AI response to backend with the captured session ID.
-            // Even if the user switched to a different task, this response belongs
-            // to the original session (concurrent queries are prevented by the
-            // isSending guard, so the response is always correct for its session).
+            // aiMessageId is captured so we find the right message even if a new
+            // query has started.
             let textToSave = queryResult.text.isEmpty ? messageText : queryResult.text
             if !textToSave.isEmpty {
                 do {
