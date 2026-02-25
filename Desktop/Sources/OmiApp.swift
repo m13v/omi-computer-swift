@@ -800,10 +800,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle.target = self
         toggle.action = action
         toggle.sizeToFit()
-        // Fixed right-aligned position for all toggles
+        // Right-aligned position, pinned to right edge even when menu resizes the view
         let toggleX = width - toggle.frame.width - 16
         let toggleY = (height - toggle.frame.height) / 2
         toggle.frame = NSRect(x: toggleX, y: toggleY, width: toggle.frame.width, height: toggle.frame.height)
+        toggle.autoresizingMask = [.minXMargin]
         view.addSubview(toggle)
 
         // Store reference for later updates
