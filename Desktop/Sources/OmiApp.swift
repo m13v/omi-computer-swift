@@ -551,7 +551,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Force-refresh the menu bar icon after activation policy changes.
     /// Works around a macOS Sequoia bug where NSStatusBar items vanish
     /// when switching to .accessory activation policy.
-    private func refreshMenuBarIcon() {
+    @MainActor private func refreshMenuBarIcon() {
         guard let item = statusBarItem else {
             // Status bar item was lost — recreate it
             log("AppDelegate: [MENUBAR] refreshMenuBarIcon: statusBarItem is nil, recreating")
