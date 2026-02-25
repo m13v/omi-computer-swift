@@ -1340,6 +1340,16 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     }
 
 
+    /// Formats the last 10 non-empty messages in the current session as a conversation history string.
+    /// Used to seed new ACP sessions with context from the existing chat UI history.
+    private func buildConversationHistory() -> String {
+        let recent = messages.filter { !$0.text.isEmpty }.suffix(10)
+        return recent.map { msg in
+            let role = msg.sender == .user ? "User" : "Assistant"
+            return "\(role): \(msg.text)"
+        }.joined(separator: "\n")
+    }
+
     /// Initialize chat: fetch sessions and load messages
     func initialize() async {
         // Seed cumulative Omi AI cost from backend now that auth is ready (background, no latency)
