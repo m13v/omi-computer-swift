@@ -340,8 +340,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self = self else { return }
-                if self.statusBarItem?.isVisible != true || self.statusBarItem?.button == nil {
-                    log("AppDelegate: [MENUBAR] Health check: icon missing, recreating")
+                let item = self.statusBarItem
+                let button = item?.button
+                let isPhantom = button != nil && button!.frame.width == 0
+                if item?.isVisible != true || button == nil || isPhantom {
+                    log("AppDelegate: [MENUBAR] Health check: icon missing or phantom (visible=\(item?.isVisible ?? false), button=\(button != nil), frame=\(button?.frame ?? .zero)), recreating")
                     self.setupMenuBar()
                 }
             }
@@ -577,8 +580,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         // Safety net: verify again after a short delay
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
-            if self?.statusBarItem?.isVisible != true {
-                log("AppDelegate: [MENUBAR] Icon still not visible after refresh, recreating")
+            let button = self?.statusBarItem?.button
+            let isPhantom = button != nil && button!.frame.width == 0
+            if self?.statusBarItem?.isVisible != true || isPhantom {
+                log("AppDelegate: [MENUBAR] Icon still not visible/phantom after refresh (frame=\(button?.frame ?? .zero)), recreating")
                 self?.setupMenuBar()
             }
         }
@@ -589,6 +594,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @MainActor private func setupMenuBar() {
         log("AppDelegate: [MENUBAR] Setting up NSStatusBar menu (macOS \(ProcessInfo.processInfo.operatingSystemVersionString))")
         log("AppDelegate: [MENUBAR] Thread: \(Thread.isMainThread ? "main" : "background"), statusBar items: \(NSStatusBar.system.thickness)")
+
+        // Explicitly remove old status item before creating a new one.
+        // Relying on ARC deallocation alone can leave "phantom" items that exist
+        // in memory but never render on screen.
+        if let old = statusBarItem {
+            NSStatusBar.system.removeStatusItem(old)
+            statusBarItem = nil
+            log("AppDelegate: [MENUBAR] Removed old status bar item before recreating")
+        }
 
         statusBarItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
