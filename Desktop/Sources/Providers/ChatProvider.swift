@@ -1200,7 +1200,8 @@ A screenshot may be attached — use it silently only if relevant. Never mention
 
     /// Builds the system prompt for ACP session initialization.
     /// Called once at warmup (via ensureBridgeStarted) and cached in cachedMainSystemPrompt.
-    /// Do NOT call this per-query — the ACP SDK owns conversation history after session/new.
+    /// Conversation history is injected here so the brand-new ACP session starts with context
+    /// from before the app launch. After session/new the ACP SDK owns history natively.
     private func buildSystemPrompt(contextString: String) -> String {
         // Get user name from AuthService
         let userName = AuthService.shared.displayName.isEmpty ? "there" : AuthService.shared.givenName
@@ -1223,6 +1224,14 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             aiProfileSection: aiProfileSection,
             databaseSchema: cachedDatabaseSchema
         )
+
+        // Inject conversation history so the new ACP session has context from before app launch.
+        // The ACP SDK maintains history natively after this via session/prompt — this only matters
+        // at session creation time.
+        let history = buildConversationHistory()
+        if !history.isEmpty {
+            prompt += "\n\n<conversation_history>\nBelow is the recent conversation history between you and the user. Use this to maintain continuity — the user can see these messages in the chat UI and expects you to be aware of them.\n\(history)\n</conversation_history>"
+        }
 
         // Append global CLAUDE.md instructions if enabled
         if claudeMdEnabled, let claudeMd = claudeMdContent {
@@ -1250,7 +1259,10 @@ A screenshot may be attached — use it silently only if relevant. Never mention
 
         // Log prompt context summary
         let activeGoalCount = cachedGoals.filter { $0.isActive }.count
-        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode_in_skills: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
+        let historyInjected = !history.isEmpty
+        let historyMessages = messages.filter { !$0.text.isEmpty && !$0.isStreaming }
+        let historyCount = min(historyMessages.count, 20)
+        log("ChatProvider: prompt built — schema: \(!cachedDatabaseSchema.isEmpty ? "yes" : "no"), goals: \(activeGoalCount), tasks: \(cachedTasks.count), ai_profile: \(!cachedAIProfile.isEmpty ? "yes" : "no"), memories: \(cachedMemories.count), history: \(historyInjected ? "injected (\(historyCount) msgs)" : "none"), claude_md: \(claudeMdEnabled && claudeMdContent != nil ? "yes" : "no"), project_claude_md: \(projectClaudeMdEnabled && projectClaudeMdContent != nil ? "yes" : "no"), skills: \(enabledSkillNames.count), dev_mode_in_skills: \(devModeEnabled && devModeContext != nil ? "yes" : "no"), prompt_length: \(prompt.count) chars")
 
         // Log per-section character breakdown
         let baseTemplate = ChatPromptBuilder.buildDesktopChat(
@@ -1266,6 +1278,7 @@ A screenshot may be attached — use it silently only if relevant. Never mention
             "tasks:\(tasksSection.count)c, " +
             "ai_profile:\(aiProfileSection.count)c, " +
             "schema:\(cachedDatabaseSchema.count)c, " +
+            "history:\(history.count)c, " +
             "claude_md:\(claudeMdContent?.count ?? 0)c, " +
             "project_claude_md:\(projectClaudeMdContent?.count ?? 0)c, " +
             "skills:\(skillsSectionSize)c")
