@@ -137,8 +137,11 @@ class AppState: ObservableObject {
     private var systemAudioCaptureService: Any?  // SystemAudioCaptureService (macOS 14.4+)
     private var audioMixer: AudioMixer?
 
-    // Speaker segments for diarized transcription
+    // Speaker segments for diarized transcription (sliding window — older segments are in SQLite)
     private var speakerSegments: [SpeakerSegment] = []
+    private let maxInMemorySegments = 200
+    private var totalSegmentCount = 0  // Total segments created this session (including trimmed)
+    private var totalWordCount = 0     // Running word count for analytics
 
     // Conversation tracking for auto-save
     private var recordingStartTime: Date?
@@ -1134,6 +1137,8 @@ class AppState: ObservableObject {
             audioSource = effectiveSource
             currentTranscript = ""
             speakerSegments = []
+            totalSegmentCount = 0
+            totalWordCount = 0
             liveSpeakerPersonMap = [:]
             LiveTranscriptMonitor.shared.clear()
             recordingStartTime = Date()
@@ -1352,7 +1357,7 @@ class AppState: ObservableObject {
 
     /// Finish the current conversation and keep recording for a new one
     func finishConversation() async -> FinishConversationResult {
-        guard !speakerSegments.isEmpty else {
+        guard totalSegmentCount > 0 || !speakerSegments.isEmpty else {
             log("Transcription: No segments to finish")
             return .discarded
         }
@@ -1363,6 +1368,8 @@ class AppState: ObservableObject {
 
         // Clear segments for the next conversation but keep recording
         speakerSegments = []
+        totalSegmentCount = 0
+        totalWordCount = 0
         liveSpeakerPersonMap = [:]
         LiveTranscriptMonitor.shared.clear()
         LiveNotesMonitor.shared.endSession()
@@ -1453,9 +1460,7 @@ class AppState: ObservableObject {
 
     /// Clear transcription state after saving
     private func clearTranscriptionState() {
-        let wordCount = currentTranscript.split(separator: " ").count
-
-        log("Transcription: Final segments count: \(speakerSegments.count)")
+        log("Transcription: Final segments count: \(totalSegmentCount) (in-memory: \(speakerSegments.count)), words: \(totalWordCount)")
 
         // End live notes session
         LiveNotesMonitor.shared.endSession()
@@ -1469,7 +1474,10 @@ class AppState: ObservableObject {
         currentSessionId = nil
 
         // Track transcription stopped
-        AnalyticsManager.shared.transcriptionStopped(wordCount: wordCount)
+        AnalyticsManager.shared.transcriptionStopped(wordCount: totalWordCount)
+        totalSegmentCount = 0
+        totalWordCount = 0
+        currentTranscript = ""
 
         log("Transcription: Stopped")
     }
@@ -2057,6 +2065,9 @@ class AppState: ObservableObject {
 
         // Gap-based merging: combine with existing segments if same speaker and gap < 3 seconds
         for newSeg in newSegments {
+            // Track word count incrementally
+            totalWordCount += newSeg.text.split(separator: " ").count
+
             if let lastIdx = speakerSegments.indices.last,
                speakerSegments[lastIdx].speaker == newSeg.speaker,
                newSeg.start - speakerSegments[lastIdx].end < 3.0 {
@@ -2074,7 +2085,14 @@ class AppState: ObservableObject {
                     log("Transcript [ADD] Speaker \(newSeg.speaker): first segment")
                 }
                 speakerSegments.append(newSeg)
+                totalSegmentCount += 1
             }
+        }
+
+        // Sliding window: trim old segments from memory (they're already persisted in SQLite)
+        if speakerSegments.count > maxInMemorySegments {
+            let excess = speakerSegments.count - maxInMemorySegments
+            speakerSegments.removeFirst(excess)
         }
 
         // Log current segments summary (only last 5 segments when count > 20 to avoid log spam)
@@ -2120,12 +2138,11 @@ class AppState: ObservableObject {
         }
     }
 
-    /// Update the display transcript from speaker segments
+    /// Update the display transcript — no-op since word count is tracked incrementally
+    /// and views use LiveTranscriptMonitor.segments directly
     private func updateTranscriptDisplay() {
-        currentTranscript = speakerSegments.map { seg in
-            let speakerLabel = seg.speaker == 0 ? "You" : "Speaker \(seg.speaker)"
-            return "\(speakerLabel): \(seg.text)"
-        }.joined(separator: "\n")
+        // Previously rebuilt currentTranscript from all speakerSegments on every incoming segment,
+        // causing O(N^2) string allocations. Word count is now tracked via totalWordCount.
     }
 
     /// Append text to transcript (fallback when no word-level data)
