@@ -765,10 +765,101 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApplication.shared.terminate(nil)
     }
 
+    // MARK: - Menu Bar Toggle Items
+
+    /// Create a custom NSView for a menu item with an icon, label, and toggle switch
+    private func makeToggleItemView(title: String, iconName: String, isOn: Bool, action: Selector) -> NSView {
+        let height: CGFloat = 32
+        let width: CGFloat = 250
+        let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+
+        // Icon
+        let iconView = NSImageView(frame: NSRect(x: 16, y: 7, width: 16, height: 16))
+        if let img = NSImage(systemSymbolName: iconName, accessibilityDescription: title) {
+            img.isTemplate = true
+            iconView.image = img
+            iconView.contentTintColor = .secondaryLabelColor
+        }
+        view.addSubview(iconView)
+
+        // Label
+        let label = NSTextField(labelWithString: title)
+        label.frame = NSRect(x: 40, y: 8, width: 140, height: 16)
+        label.font = .systemFont(ofSize: 13)
+        label.textColor = .labelColor
+        view.addSubview(label)
+
+        // Toggle switch
+        let toggle = NSSwitch()
+        toggle.controlSize = .mini
+        toggle.state = isOn ? .on : .off
+        toggle.target = self
+        toggle.action = action
+        toggle.sizeToFit()
+        toggle.frame.origin = NSPoint(x: width - toggle.frame.width - 16, y: (height - toggle.frame.height) / 2)
+        view.addSubview(toggle)
+
+        // Store reference for later updates
+        if action == #selector(screenCaptureToggled(_:)) {
+            screenCaptureSwitch = toggle
+        } else if action == #selector(audioRecordingToggled(_:)) {
+            audioRecordingSwitch = toggle
+        }
+
+        return view
+    }
+
+    @MainActor @objc private func screenCaptureToggled(_ sender: NSSwitch) {
+        let enabled = sender.state == .on
+        log("AppDelegate: [MENUBAR] Screen capture toggled: \(enabled)")
+        AnalyticsManager.shared.menuBarActionClicked(action: enabled ? "screen_capture_on" : "screen_capture_off")
+        AnalyticsManager.shared.settingToggled(setting: "monitoring", enabled: enabled)
+
+        if enabled {
+            if !ProactiveAssistantsPlugin.shared.hasScreenRecordingPermission {
+                // No permission — revert toggle and open preferences
+                sender.state = .off
+                ProactiveAssistantsPlugin.shared.openScreenRecordingPreferences()
+                return
+            }
+            AssistantSettings.shared.screenAnalysisEnabled = true
+            ProactiveAssistantsPlugin.shared.startMonitoring { success, error in
+                DispatchQueue.main.async {
+                    if !success {
+                        log("AppDelegate: [MENUBAR] Screen capture failed to start: \(error ?? "unknown")")
+                        sender.state = .off
+                        AssistantSettings.shared.screenAnalysisEnabled = false
+                    }
+                }
+            }
+        } else {
+            AssistantSettings.shared.screenAnalysisEnabled = false
+            ProactiveAssistantsPlugin.shared.stopMonitoring()
+        }
+    }
+
+    @MainActor @objc private func audioRecordingToggled(_ sender: NSSwitch) {
+        let enabled = sender.state == .on
+        log("AppDelegate: [MENUBAR] Audio recording toggled: \(enabled)")
+        AnalyticsManager.shared.menuBarActionClicked(action: enabled ? "audio_recording_on" : "audio_recording_off")
+        AnalyticsManager.shared.settingToggled(setting: "transcription", enabled: enabled)
+
+        AssistantSettings.shared.transcriptionEnabled = enabled
+        // Request the main view to start/stop transcription (needs AppState)
+        NotificationCenter.default.post(
+            name: .toggleTranscriptionRequested,
+            object: nil,
+            userInfo: ["enabled": enabled]
+        )
+    }
+
     // MARK: - NSMenuDelegate
     func menuWillOpen(_ menu: NSMenu) {
         log("AppDelegate: [MENUBAR] Menu opened by user")
         AnalyticsManager.shared.menuBarOpened()
+        // Refresh toggle states to match current runtime state
+        screenCaptureSwitch?.state = ProactiveAssistantsPlugin.shared.isMonitoring ? .on : .off
+        audioRecordingSwitch?.state = AssistantSettings.shared.transcriptionEnabled ? .on : .off
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
