@@ -773,14 +773,14 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     /// Create a custom NSView for a menu item with an icon, label, and toggle switch
     private func makeToggleItemView(title: String, iconName: String, isOn: Bool, action: Selector) -> NSView {
-        let height: CGFloat = 32
-        let width: CGFloat = 250
+        let height: CGFloat = 36
+        let width: CGFloat = 260
         let view = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
-        // Icon
-        let iconView = NSImageView(frame: NSRect(x: 16, y: 7, width: 16, height: 16))
-        if let img = NSImage(systemSymbolName: iconName, accessibilityDescription: title) {
-            img.isTemplate = true
+        // Icon — use a fixed-size image with symbol configuration for consistent rendering
+        let iconView = NSImageView(frame: NSRect(x: 16, y: 10, width: 16, height: 16))
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium)
+        if let img = NSImage(systemSymbolName: iconName, accessibilityDescription: title)?.withSymbolConfiguration(config) {
             iconView.image = img
             iconView.contentTintColor = .secondaryLabelColor
         }
@@ -788,19 +788,22 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // Label
         let label = NSTextField(labelWithString: title)
-        label.frame = NSRect(x: 40, y: 8, width: 140, height: 16)
+        label.frame = NSRect(x: 40, y: 10, width: 150, height: 16)
         label.font = .systemFont(ofSize: 13)
         label.textColor = .labelColor
         view.addSubview(label)
 
-        // Toggle switch
+        // Toggle switch — use .small for consistent rendering across items
         let toggle = NSSwitch()
-        toggle.controlSize = .mini
+        toggle.controlSize = .small
         toggle.state = isOn ? .on : .off
         toggle.target = self
         toggle.action = action
         toggle.sizeToFit()
-        toggle.frame.origin = NSPoint(x: width - toggle.frame.width - 16, y: (height - toggle.frame.height) / 2)
+        // Fixed right-aligned position for all toggles
+        let toggleX = width - toggle.frame.width - 16
+        let toggleY = (height - toggle.frame.height) / 2
+        toggle.frame = NSRect(x: toggleX, y: toggleY, width: toggle.frame.width, height: toggle.frame.height)
         view.addSubview(toggle)
 
         // Store reference for later updates
