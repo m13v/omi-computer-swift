@@ -144,6 +144,17 @@ struct DesktopHomeView: View {
                         // Refresh conversations when app becomes active (e.g. switching back from another app)
                         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
                             Task { await appState.refreshConversations() }
+                            // Auto-start monitoring when returning to app if screen analysis is enabled
+                            // but monitoring is not running. Handles the case where the user granted
+                            // screen recording permission in System Settings and switched back.
+                            let plugin = ProactiveAssistantsPlugin.shared
+                            if AssistantSettings.shared.screenAnalysisEnabled && !plugin.isMonitoring {
+                                plugin.refreshScreenRecordingPermission()
+                                if plugin.hasScreenRecordingPermission {
+                                    log("DesktopHomeView: Permission available on app active — starting monitoring")
+                                    plugin.startMonitoring { _, _ in }
+                                }
+                            }
                         }
                         // Periodic refresh every 30s to pick up conversations from other devices (e.g. Omi Glass)
                         .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
