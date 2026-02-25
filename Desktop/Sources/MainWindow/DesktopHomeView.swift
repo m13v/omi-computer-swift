@@ -234,7 +234,7 @@ struct DesktopHomeView: View {
             // Force dark appearance on the window
             DispatchQueue.main.async {
                 for window in NSApp.windows {
-                    if window.title == "Omi" {
+                    if window.title.hasPrefix("Omi") {
                         window.appearance = NSAppearance(named: .darkAqua)
                     }
                 }
