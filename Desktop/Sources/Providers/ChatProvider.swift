@@ -1635,7 +1635,9 @@ A screenshot may be attached — use it silently only if relevant. Never mention
     private func pollForNewMessages() async {
         // Skip if user is signed out (tokens are cleared)
         guard AuthState.shared.isSignedIn else { return }
-        // Skip if we're in the middle of sending, loading, or streaming
+        // Skip if we're actively sending. Note: isSending is released *before* the AI
+        // message is saved to the backend (to unblock the next query). This means the
+        // poll can run while saveMessage() is still in-flight — see the race note below.
         guard !isSending, !isLoading, !isLoadingSessions else { return }
         // Skip if messages haven't been loaded yet (initial load not done)
         guard !messages.isEmpty || sessionsLoadError != nil else { return }
@@ -1659,14 +1661,45 @@ A screenshot may be attached — use it silently only if relevant. Never mention
                 )
             }
 
+            // Build a lookup of existing IDs for fast O(1) checks.
             let existingIds = Set(messages.map(\.id))
-            let newMessages = persistedMessages
-                .filter { !existingIds.contains($0.id) }
-                .map(ChatMessage.init(from:))
 
-            if !newMessages.isEmpty {
-                log("ChatProvider poll: found \(newMessages.count) new message(s) from other platforms")
-                messages.append(contentsOf: newMessages)
+            var genuinelyNewMessages: [ChatMessage] = []
+
+            for dbMsg in persistedMessages {
+                // Fast path: already in memory by server ID — skip.
+                if existingIds.contains(dbMsg.id) { continue }
+
+                // Race-condition guard: isSending is released before the backend save
+                // completes (intentionally, to unblock the next query). If this poll
+                // fires between "isSending = false" and "messages[i].id = response.id",
+                // the backend message lands here with a server ID that doesn't match
+                // the local UUID still sitting in messages[]. Without this check we'd
+                // append a duplicate.
+                //
+                // Detection: find an in-memory message that (a) hasn't been synced yet
+                // (isSynced=false → still has a local UUID) and (b) has the same text.
+                // If found, this is the same message — just update its ID in-place
+                // instead of appending a copy.
+                let dbSender: ChatSender = dbMsg.sender == "human" ? .user : .ai
+                let dbPrefix = String(dbMsg.text.prefix(200))
+                if let localIndex = messages.firstIndex(where: {
+                    !$0.isSynced && $0.sender == dbSender && String($0.text.prefix(200)) == dbPrefix
+                }) {
+                    // Merge: adopt the server ID so future polls find it by ID.
+                    messages[localIndex].id = dbMsg.id
+                    messages[localIndex].isSynced = true
+                    log("ChatProvider poll: merged backend ID \(dbMsg.id) into local message (was unsynced)")
+                    continue
+                }
+
+                // Genuinely new message from another platform (phone, web, etc.)
+                genuinelyNewMessages.append(ChatMessage(from: dbMsg))
+            }
+
+            if !genuinelyNewMessages.isEmpty {
+                log("ChatProvider poll: found \(genuinelyNewMessages.count) new message(s) from other platforms")
+                messages.append(contentsOf: genuinelyNewMessages)
                 messages.sort(by: { $0.createdAt < $1.createdAt })
             }
         } catch {
