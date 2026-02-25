@@ -826,7 +826,7 @@ class FloatingControlBarManager {
     }
 
     /// Open AI input with a pre-filled query and auto-send (used by PTT).
-    func openAIInputWithQuery(_ query: String, screenshot: URL?) {
+    func openAIInputWithQuery(_ query: String) {
         guard let window = window else { return }
 
         // Cancel stale subscriptions immediately to prevent old data from flashing
@@ -879,7 +879,7 @@ class FloatingControlBarManager {
 
         // Auto-send the query
         Task { @MainActor in
-            await self.sendAIQuery(query, screenshotURL: screenshot, barWindow: window, provider: provider)
+            await self.sendAIQuery(query, barWindow: window, provider: provider)
         }
     }
 
@@ -887,7 +887,7 @@ class FloatingControlBarManager {
     func sendFollowUpQuery(_ query: String) {
         guard let window = window, window.state.showingAIResponse else {
             // No active conversation — fall back to new conversation
-            openAIInputWithQuery(query, screenshot: nil)
+            openAIInputWithQuery(query)
             return
         }
 
@@ -906,8 +906,7 @@ class FloatingControlBarManager {
         window.state.currentAIMessage = nil
         window.state.isAILoading = true
 
-        let screenshot = window.state.screenshotURL
-        window.onSendQuery?(query, screenshot)
+        window.onSendQuery?(query)
     }
 
     /// Access the bar state for PTT updates.
