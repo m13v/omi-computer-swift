@@ -184,6 +184,11 @@ class AppState: ObservableObject {
         // Setup lifecycle observers for saving conversations
         setupLifecycleObservers()
 
+        // Wire up memory pressure callback so ResourceMonitor can trim transcript state
+        ResourceMonitor.shared.onMemoryPressureTrimTranscript = { [weak self] in
+            self?.trimTranscriptStateForMemoryPressure()
+        }
+
         // Listen for screen capture permission loss notifications
         screenCapturePermissionLostObserver = NotificationCenter.default.addObserver(
             forName: .screenCapturePermissionLost,
@@ -1480,6 +1485,18 @@ class AppState: ObservableObject {
         currentTranscript = ""
 
         log("Transcription: Stopped")
+    }
+
+    /// Aggressively trim transcript state to free memory (called by ResourceMonitor during critical memory pressure).
+    /// Segments are already persisted in SQLite, so trimming in-memory state is safe.
+    func trimTranscriptStateForMemoryPressure() {
+        let beforeCount = speakerSegments.count
+        if speakerSegments.count > 50 {
+            speakerSegments = Array(speakerSegments.suffix(50))
+        }
+        currentTranscript = ""
+        LiveTranscriptMonitor.shared.updateSegments(speakerSegments)
+        log("ResourceMonitor: Trimmed transcript state \(beforeCount) -> \(speakerSegments.count) segments")
     }
 
     // MARK: - Conversations
