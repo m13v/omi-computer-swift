@@ -2096,7 +2096,7 @@ class AppState: ObservableObject {
         }
 
         // Log current segments summary (only last 5 segments when count > 20 to avoid log spam)
-        log("Transcript [SEGMENTS] Total: \(speakerSegments.count) segments")
+        log("Transcript [SEGMENTS] Total: \(totalSegmentCount) segments (in-memory: \(speakerSegments.count))")
         let logSegments = speakerSegments.count > 20
             ? Array(speakerSegments.suffix(5))
             : speakerSegments
