@@ -171,6 +171,11 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             log("AppDelegate: Set application icon from OmiIcon.icns")
         }
 
+        // One-time icon cache reset: forces macOS to pick up the new squircle icon.
+        // Without this, users who had the old square icon see it cached indefinitely
+        // in the Dock, notifications, and Sparkle updater.
+        resetIconCacheIfNeeded()
+
         // Initialize NotificationService early to set up UNUserNotificationCenterDelegate
         // This ensures notifications display properly when app is in foreground
         _ = NotificationService.shared
