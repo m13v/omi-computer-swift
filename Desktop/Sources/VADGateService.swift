@@ -1,5 +1,5 @@
 import Foundation
-import onnxruntime
+import OnnxRuntimeBindings
 
 // MARK: - Silero VAD Model (ONNX Runtime)
 
