@@ -96,6 +96,7 @@ public class ProactiveAssistantsPlugin: NSObject {
     private var backgroundPollCount = 0
     private let maxBackgroundPollAttempts = 5  // 5 attempts × 60s = 5 minutes
     private static var hasAutoResetThisSession = false
+    private static var hasSoftRecoveryThisSession = false
 
     // MARK: - Initialization
 
