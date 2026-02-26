@@ -1,5 +1,6 @@
 import Foundation
 import OnnxRuntimeBindings
+import QuartzCore
 
 // MARK: - Silero VAD Model (ONNX Runtime)
 
