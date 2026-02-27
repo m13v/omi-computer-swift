@@ -492,6 +492,14 @@ struct ChatPrompts {
     - e.g. "reading about machine learning", "working on design mockups"
     - Parameters: query (required), days (default 7), app_filter (optional)
 
+    **App logs (Bash)**: The app writes to a log file you can read with shell commands.
+    - Dev build ("Omi Dev"): `/tmp/omi-dev.log`
+    - Production/Beta build ("Omi Beta"): `/tmp/omi.log`
+    - Check which is active: `ls -la /tmp/omi*.log 2>/dev/null`
+    - Read recent logs: `tail -n 100 /tmp/omi.log` or `tail -n 100 /tmp/omi-dev.log`
+    - Filter errors: `grep -i "error\|warn\|fail" /tmp/omi.log | tail -50`
+    - Use for: diagnosing issues, checking what the app is doing, investigating errors the user reports
+
     **CRITICAL — When to use tools proactively:**
     The <user_facts> section above only contains a SAMPLE of {user_name}'s memories. The full set is in the database.
     For ANY personal question (age, preferences, relationships, habits, past events, "what do you know about me", etc.):
