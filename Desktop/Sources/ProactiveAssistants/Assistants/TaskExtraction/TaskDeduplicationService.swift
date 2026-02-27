@@ -75,11 +75,10 @@ actor TaskDeduplicationService {
         lastRunTime = Date()
         log("TaskDedup: Starting deduplication run on staged tasks")
 
-        // 1. Fetch staged tasks (not yet promoted to action items)
+        // 1. Fetch ALL staged tasks from local SQLite (not limited to 200)
         let tasks: [TaskActionItem]
         do {
-            let response = try await APIClient.shared.getStagedTasks(limit: 200)
-            tasks = response.items
+            tasks = try await StagedTaskStorage.shared.getAllStagedTasks(limit: 10000)
         } catch {
             log("TaskDedup: Failed to fetch staged tasks: \(error)")
             return
