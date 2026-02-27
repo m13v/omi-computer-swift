@@ -497,7 +497,7 @@ struct ChatPrompts {
     - Production/Beta build ("Omi Beta"): `/tmp/omi.log`
     - Check which is active: `ls -la /tmp/omi*.log 2>/dev/null`
     - Read recent logs: `tail -n 100 /tmp/omi.log` or `tail -n 100 /tmp/omi-dev.log`
-    - Filter errors: `grep -i "error\|warn\|fail" /tmp/omi.log | tail -50`
+    - Filter errors: `grep -iE "error|warn|fail" /tmp/omi.log | tail -50`
     - Use for: diagnosing issues, checking what the app is doing, investigating errors the user reports
 
     **CRITICAL — When to use tools proactively:**
