@@ -585,6 +585,7 @@ struct ChatBubble: View {
     @State private var isHovering = false
     @State private var isExpanded = false
     @State private var showCopied = false
+    @State private var isPreviousStepsExpanded = false
     /// Cached grouped content blocks — pre-computed on init to avoid recreating
     /// `[ContentBlockGroup]` on every SwiftUI layout pass.
     @State private var cachedGroupedBlocks: [ContentBlockGroup]
@@ -652,34 +653,74 @@ struct ChatBubble: View {
                     // Show typing indicator for empty streaming message
                     TypingIndicator()
                 } else if message.sender == .ai && !message.contentBlocks.isEmpty {
-                    // Render structured content blocks, grouping consecutive tool calls
-                    ForEach(cachedGroupedBlocks) { group in
-                        switch group {
-                        case .text(_, let text):
-                            if !text.isEmpty {
-                                SelectableMarkdown(text: text, sender: .ai)
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 10)
-                                    .background(OmiColors.backgroundSecondary)
-                                    .cornerRadius(18)
+                    if message.isStreaming && cachedGroupedBlocks.count > 1 {
+                        // While streaming with multiple blocks: collapse previous, show only latest
+                        let previousCount = cachedGroupedBlocks.count - 1
+                        let currentGroup = cachedGroupedBlocks[cachedGroupedBlocks.count - 1]
+
+                        // Collapsed/expanded previous steps
+                        if isPreviousStepsExpanded {
+                            ForEach(Array(cachedGroupedBlocks.dropLast())) { group in
+                                blockView(for: group)
                             }
-                        case .toolCalls(_, let calls):
-                            ToolCallsGroup(calls: calls)
-                        case .thinking(_, let text):
-                            ThinkingBlock(text: text)
+                            Button(action: { isPreviousStepsExpanded = false }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "chevron.up")
+                                        .scaledFont(size: 9)
+                                    Text("Hide previous steps")
+                                        .scaledFont(size: 12)
+                                }
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                            }
+                            .buttonStyle(.plain)
+                        } else {
+                            Button(action: { isPreviousStepsExpanded = true }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "chevron.down")
+                                        .scaledFont(size: 9)
+                                    Text("\(previousCount) previous step\(previousCount == 1 ? "" : "s")")
+                                        .scaledFont(size: 12)
+                                }
+                                .foregroundColor(OmiColors.textTertiary)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(OmiColors.backgroundTertiary.opacity(0.5))
+                                .cornerRadius(18)
+                            }
+                            .buttonStyle(.plain)
                         }
-                    }
-                    // Show typing indicator at end if still streaming
-                    // (skip only when last group is tool calls with a running tool — it already has a spinner)
-                    if message.isStreaming {
-                        if case .toolCalls(_, let calls) = cachedGroupedBlocks.last,
+
+                        // Current / latest block
+                        blockView(for: currentGroup)
+
+                        // Typing indicator at end
+                        if case .toolCalls(_, let calls) = currentGroup,
                            calls.contains(where: { block in
                                if case .toolCall(_, _, .running, _, _, _) = block { return true }
                                return false
                            }) {
-                            // Tool group has a running tool — its card already shows a spinner
+                            // Running tool card already shows a spinner
                         } else {
                             TypingIndicator()
+                        }
+                    } else {
+                        // Not streaming (or only one block): render all blocks normally
+                        ForEach(cachedGroupedBlocks) { group in
+                            blockView(for: group)
+                        }
+                        // Show typing indicator at end if still streaming
+                        if message.isStreaming {
+                            if case .toolCalls(_, let calls) = cachedGroupedBlocks.last,
+                               calls.contains(where: { block in
+                                   if case .toolCall(_, _, .running, _, _, _) = block { return true }
+                                   return false
+                               }) {
+                                // Tool group has a running tool — its card already shows a spinner
+                            } else {
+                                TypingIndicator()
+                            }
                         }
                     }
                 } else if isDuplicate && !isExpanded {
@@ -774,6 +815,24 @@ struct ChatBubble: View {
             // Refresh grouped blocks when text content changes within existing blocks
             // (streaming appends to the last text block without changing count)
             cachedGroupedBlocks = ContentBlockGroup.group(message.contentBlocks)
+        }
+    }
+
+    @ViewBuilder
+    private func blockView(for group: ContentBlockGroup) -> some View {
+        switch group {
+        case .text(_, let text):
+            if !text.isEmpty {
+                SelectableMarkdown(text: text, sender: .ai)
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 10)
+                    .background(OmiColors.backgroundSecondary)
+                    .cornerRadius(18)
+            }
+        case .toolCalls(_, let calls):
+            ToolCallsGroup(calls: calls)
+        case .thinking(_, let text):
+            ThinkingBlock(text: text)
         }
     }
 
