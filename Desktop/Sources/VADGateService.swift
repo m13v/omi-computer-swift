@@ -11,7 +11,7 @@ import onnxruntime
 /// Wraps Silero VAD ONNX model for speech probability inference.
 /// Input: 512 Float32 samples at 16kHz. Output: speech probability [0,1].
 final class SileroVADModel {
-#if canImport(onnxruntime)
+#if canImport(OnnxRuntimeBindings) || canImport(onnxruntime)
     private let session: ORTSession
     private let env: ORTEnv
     private var state: [Float]  // [2, 1, 128] = 256 floats (combined h+c for v5)
@@ -128,6 +128,12 @@ struct GateOutput {
     let shouldFinalize: Bool
 }
 
+struct BatchGateOutput {
+    let audioBuffer: Data?          // Complete speech audio (nil if still accumulating)
+    let speechStartWallTime: Double // CACurrentMediaTime() when speech started
+    let isComplete: Bool            // True when hangover→silence emits the buffer
+}
+
 // MARK: - DG Wall-Clock Timestamp Mapper
 
 /// Maps Deepgram audio-time timestamps to wall-clock-relative timestamps.
@@ -195,14 +201,20 @@ final class DgWallMapper {
 /// Runs Silero VAD on each channel independently (deinterleaved from stereo).
 /// Audio is gated when BOTH channels are silent.
 final class VADGateService {
-    // Constants matching backend vad_gate.py
-    private let preRollMs: Double = 300
-    private let hangoverMs: Double = 4000
-    private let speechThreshold: Float = 0.65
-    private let finalizeSilenceMs: Double = 300
+    // Constants
+    private let preRollMs: Double = 500
+    private let hangoverMs: Double = 4000       // Streaming mode: controls finalize timing
+    private let batchHangoverMs: Double = 2000  // Batch mode: controls chunk boundary (user-visible latency)
     private let keepaliveSec: Double = 20
     private let vadWindowSamples = 512
     private let sampleRate = 16000
+
+    // VAD thresholds with hysteresis (inspired by Screenpipe's Silero VAD)
+    // Speech onset requires higher confidence than silence onset — prevents oscillation
+    private let speechThreshold: Float = 0.5    // Probability above which a frame counts as speech
+    private let silenceThreshold: Float = 0.35  // Probability below which a frame counts as silence
+    private let frameHistorySize = 10           // Number of frames in smoothing window
+    private let minSpeechFrames = 3             // Minimum speech frames in window to declare speech
 
     // Two VAD models: one per channel (mic and system)
     private var micVAD: SileroVADModel?
@@ -212,11 +224,14 @@ final class VADGateService {
     private var micVADBuffer: [Float] = []
     private var sysVADBuffer: [Float] = []
 
+    // Probability history for smoothing (per channel, streaming mode)
+    private var micProbHistory: [Float] = []
+    private var sysProbHistory: [Float] = []
+
     // State machine
     private var state: GateState = .silence
     private var audioCursorMs: Double = 0.0
     private var lastSpeechMs: Double = 0.0
-    private var hangoverFinalized = false
 
     // Pre-roll buffer
     private var preRollChunks: [Data] = []
@@ -243,8 +258,27 @@ final class VADGateService {
     private var lastMetricsLogTime: Double = 0
     private let metricsLogInterval: Double = 30  // Log metrics every 30 seconds
 
+    // Batch mode state
+    private var batchAudioBuffer = Data()
+    private var batchSpeechStartWallTime: Double = 0.0
+    private var batchState: GateState = .silence
+    private var batchLastSpeechMs: Double = 0.0
+    private var batchAudioCursorMs: Double = 0.0
+    private var batchPreRollChunks: [Data] = []
+    private var batchPreRollTotalMs: Double = 0.0
+
+    // Batch mode VAD buffers (separate from streaming mode)
+    private var batchMicVADBuffer: [Float] = []
+    private var batchSysVADBuffer: [Float] = []
+    // Separate VAD models for batch mode (each model carries internal state)
+    private var batchMicVAD: SileroVADModel?
+    private var batchSysVAD: SileroVADModel?
+    // Probability history for smoothing (per channel, batch mode)
+    private var batchMicProbHistory: [Float] = []
+    private var batchSysProbHistory: [Float] = []
+
     // Fail-open flag
-    private let modelAvailable: Bool
+    let modelAvailable: Bool
 
     init() {
         let mic = SileroVADModel()
@@ -252,6 +286,8 @@ final class VADGateService {
         micVAD = mic
         sysVAD = sys
         modelAvailable = mic != nil && sys != nil
+        batchMicVAD = SileroVADModel()
+        batchSysVAD = SileroVADModel()
         if modelAvailable {
             log("VADGateService: Initialized with Silero VAD models")
         } else {
@@ -296,18 +332,13 @@ final class VADGateService {
         micVADBuffer.append(contentsOf: micSamples)
         sysVADBuffer.append(contentsOf: sysSamples)
 
-        // Run VAD when buffers have enough samples
-        var micSpeech = false
-        var sysSpeech = false
-
+        // Run VAD when buffers have enough samples, collecting probabilities for smoothing
         if micVADBuffer.count >= vadWindowSamples, let vad = micVAD {
             while micVADBuffer.count >= vadWindowSamples {
                 let window = Array(micVADBuffer.prefix(vadWindowSamples))
                 micVADBuffer.removeFirst(vadWindowSamples)
                 let prob = vad.predict(window)
-                if prob > speechThreshold {
-                    micSpeech = true
-                }
+                appendToHistory(&micProbHistory, prob: prob)
             }
         }
 
@@ -316,9 +347,7 @@ final class VADGateService {
                 let window = Array(sysVADBuffer.prefix(vadWindowSamples))
                 sysVADBuffer.removeFirst(vadWindowSamples)
                 let prob = vad.predict(window)
-                if prob > speechThreshold {
-                    sysSpeech = true
-                }
+                appendToHistory(&sysProbHistory, prob: prob)
             }
         }
 
@@ -330,7 +359,20 @@ final class VADGateService {
             sysVADBuffer = Array(sysVADBuffer.suffix(vadWindowSamples))
         }
 
-        let isSpeech = micSpeech || sysSpeech
+        // Evaluate smoothed speech decision per channel
+        let micDecision = evaluateFrameHistory(micProbHistory)
+        let sysDecision = evaluateFrameHistory(sysProbHistory)
+
+        // Speech if either channel detects speech; silence only if both say silence
+        let isSpeech: Bool
+        if micDecision == .speech || sysDecision == .speech {
+            isSpeech = true
+        } else if micDecision == .silence && sysDecision == .silence {
+            isSpeech = false
+        } else {
+            // At least one channel is .hold — maintain previous speech state to avoid cutting
+            isSpeech = (state == .speech || state == .hangover)
+        }
 
         if isSpeech {
             lastSpeechMs = audioCursorMs
@@ -379,6 +421,39 @@ final class VADGateService {
     }
 
     // MARK: - Private
+
+    /// Evaluate speech status from probability history using smoothing and hysteresis.
+    /// Returns true if speech is detected based on frame history analysis.
+    /// - Requires `minSpeechFrames` (3) frames above `speechThreshold` (0.5) → speech
+    /// - Requires majority of frames below `silenceThreshold` (0.35) → silence
+    /// - Otherwise maintains current state (unknown/hold)
+    private enum VadDecision {
+        case speech
+        case silence
+        case hold  // Not enough evidence — maintain current state
+    }
+
+    private func evaluateFrameHistory(_ history: [Float]) -> VadDecision {
+        guard !history.isEmpty else { return .hold }
+
+        let speechFrames = history.filter { $0 > speechThreshold }.count
+        let silenceFrames = history.filter { $0 < silenceThreshold }.count
+
+        if speechFrames >= minSpeechFrames {
+            return .speech
+        } else if silenceFrames > history.count / 2 {
+            return .silence
+        }
+        return .hold
+    }
+
+    /// Append a probability to a history array, keeping it bounded to `frameHistorySize`.
+    private func appendToHistory(_ history: inout [Float], prob: Float) {
+        history.append(prob)
+        if history.count > frameHistorySize {
+            history.removeFirst(history.count - frameHistorySize)
+        }
+    }
 
     private func logMetrics() {
         let bytesSkipped = bytesReceived - bytesSent
@@ -438,7 +513,6 @@ final class VADGateService {
             if !isSpeech {
                 // SPEECH -> HANGOVER
                 state = .hangover
-                hangoverFinalized = false
             }
 
             return GateOutput(audioToSend: pcmData, shouldFinalize: false)
@@ -449,37 +523,185 @@ final class VADGateService {
             if isSpeech {
                 // HANGOVER -> SPEECH
                 state = .speech
-                hangoverFinalized = false
                 dgWallMapper.onAudioSent(chunkDuration: chunkDurationSec, wallTime: wallRel)
                 lastSendWallTime = wallTime
                 return GateOutput(audioToSend: pcmData, shouldFinalize: false)
             }
 
             if timeSinceSpeechMs > hangoverMs {
-                // HANGOVER -> SILENCE
+                // HANGOVER -> SILENCE: finalize so Deepgram flushes pending transcript
                 state = .silence
-                let needFinalize = !hangoverFinalized
-                hangoverFinalized = false
                 preRollChunks.removeAll()
                 preRollTotalMs = 0.0
                 preRollChunks.append(pcmData)
                 preRollTotalMs = chunkMs
                 dgWallMapper.onSilenceSkipped()
-                return GateOutput(audioToSend: Data(), shouldFinalize: needFinalize)
+                return GateOutput(audioToSend: Data(), shouldFinalize: true)
             }
 
-            // Mid-hangover finalize
-            var shouldFinalizeNow = false
-            if !hangoverFinalized && timeSinceSpeechMs >= finalizeSilenceMs {
-                shouldFinalizeNow = true
-                hangoverFinalized = true
-            }
-
-            // Still in hangover: send audio
+            // Still in hangover: send audio, let Deepgram's own endpointing
+            // (endpointing=300 + utterance_end_ms=1000) handle utterance boundaries
             dgWallMapper.onAudioSent(chunkDuration: chunkDurationSec, wallTime: wallRel)
             lastSendWallTime = wallTime
-            return GateOutput(audioToSend: pcmData, shouldFinalize: shouldFinalizeNow)
+            return GateOutput(audioToSend: pcmData, shouldFinalize: false)
         }
+    }
+
+    // MARK: - Batch Mode
+
+    /// Process stereo Int16 audio through VAD, accumulating a buffer until silence.
+    /// Returns a completed buffer when hangover→silence transition occurs.
+    func processAudioBatch(_ stereoData: Data) -> BatchGateOutput {
+        guard modelAvailable else {
+            // Fail-open: return every chunk immediately as a complete buffer
+            return BatchGateOutput(audioBuffer: stereoData, speechStartWallTime: CACurrentMediaTime(), isComplete: true)
+        }
+
+        lock.lock()
+        defer { lock.unlock() }
+
+        let wallTime = CACurrentMediaTime()
+
+        // Calculate chunk duration
+        let bytesPerFrame = 4  // Stereo Int16: 2 channels * 2 bytes
+        let numFrames = stereoData.count / bytesPerFrame
+        let chunkMs = Double(numFrames) * 1000.0 / Double(sampleRate)
+        batchAudioCursorMs += chunkMs
+
+        // Deinterleave and run VAD
+        let (micSamples, sysSamples) = deinterleave(stereoData)
+
+        batchMicVADBuffer.append(contentsOf: micSamples)
+        batchSysVADBuffer.append(contentsOf: sysSamples)
+
+        if batchMicVADBuffer.count >= vadWindowSamples, let vad = batchMicVAD {
+            while batchMicVADBuffer.count >= vadWindowSamples {
+                let window = Array(batchMicVADBuffer.prefix(vadWindowSamples))
+                batchMicVADBuffer.removeFirst(vadWindowSamples)
+                let prob = vad.predict(window)
+                appendToHistory(&batchMicProbHistory, prob: prob)
+            }
+        }
+
+        if batchSysVADBuffer.count >= vadWindowSamples, let vad = batchSysVAD {
+            while batchSysVADBuffer.count >= vadWindowSamples {
+                let window = Array(batchSysVADBuffer.prefix(vadWindowSamples))
+                batchSysVADBuffer.removeFirst(vadWindowSamples)
+                let prob = vad.predict(window)
+                appendToHistory(&batchSysProbHistory, prob: prob)
+            }
+        }
+
+        // Keep buffers bounded
+        if batchMicVADBuffer.count > vadWindowSamples {
+            batchMicVADBuffer = Array(batchMicVADBuffer.suffix(vadWindowSamples))
+        }
+        if batchSysVADBuffer.count > vadWindowSamples {
+            batchSysVADBuffer = Array(batchSysVADBuffer.suffix(vadWindowSamples))
+        }
+
+        // Evaluate smoothed speech decision per channel
+        let micDecision = evaluateFrameHistory(batchMicProbHistory)
+        let sysDecision = evaluateFrameHistory(batchSysProbHistory)
+
+        let isSpeech: Bool
+        if micDecision == .speech || sysDecision == .speech {
+            isSpeech = true
+        } else if micDecision == .silence && sysDecision == .silence {
+            isSpeech = false
+        } else {
+            // .hold — maintain previous state to avoid cutting mid-speech
+            isSpeech = (batchState == .speech || batchState == .hangover)
+        }
+        if isSpeech { batchLastSpeechMs = batchAudioCursorMs }
+
+        // Batch state machine
+        switch batchState {
+        case .silence:
+            // Buffer pre-roll
+            batchPreRollChunks.append(stereoData)
+            batchPreRollTotalMs += chunkMs
+            while batchPreRollTotalMs > preRollMs && batchPreRollChunks.count > 1 {
+                let evicted = batchPreRollChunks.removeFirst()
+                let evictedMs = Double(evicted.count / bytesPerFrame) * 1000.0 / Double(sampleRate)
+                batchPreRollTotalMs -= evictedMs
+            }
+
+            if isSpeech {
+                // SILENCE -> SPEECH: start new buffer with pre-roll
+                batchState = .speech
+                batchAudioBuffer = Data()
+                for chunk in batchPreRollChunks {
+                    batchAudioBuffer.append(chunk)
+                }
+                batchSpeechStartWallTime = wallTime - (batchPreRollTotalMs / 1000.0)
+                batchPreRollChunks.removeAll()
+                batchPreRollTotalMs = 0.0
+            }
+
+            return BatchGateOutput(audioBuffer: nil, speechStartWallTime: 0, isComplete: false)
+
+        case .speech:
+            batchAudioBuffer.append(stereoData)
+
+            if !isSpeech {
+                // SPEECH -> HANGOVER
+                batchState = .hangover
+            }
+
+            return BatchGateOutput(audioBuffer: nil, speechStartWallTime: batchSpeechStartWallTime, isComplete: false)
+
+        case .hangover:
+            batchAudioBuffer.append(stereoData)
+            let timeSinceSpeechMs = batchAudioCursorMs - batchLastSpeechMs
+
+            if isSpeech {
+                // HANGOVER -> SPEECH
+                batchState = .speech
+                return BatchGateOutput(audioBuffer: nil, speechStartWallTime: batchSpeechStartWallTime, isComplete: false)
+            }
+
+            if timeSinceSpeechMs > batchHangoverMs {
+                // HANGOVER -> SILENCE: emit completed buffer
+                batchState = .silence
+                let completedBuffer = batchAudioBuffer
+                let startTime = batchSpeechStartWallTime
+                batchAudioBuffer = Data()
+                batchPreRollChunks.removeAll()
+                batchPreRollTotalMs = 0.0
+                // Seed pre-roll with current chunk for next speech
+                batchPreRollChunks.append(stereoData)
+                batchPreRollTotalMs = chunkMs
+
+                let durationSec = Double(completedBuffer.count / bytesPerFrame) / Double(sampleRate)
+                log("VADGate [batch]: Speech chunk complete — \(completedBuffer.count) bytes (\(String(format: "%.1f", durationSec))s)")
+
+                return BatchGateOutput(audioBuffer: completedBuffer, speechStartWallTime: startTime, isComplete: true)
+            }
+
+            return BatchGateOutput(audioBuffer: nil, speechStartWallTime: batchSpeechStartWallTime, isComplete: false)
+        }
+    }
+
+    /// Flush remaining batch audio buffer (call when recording stops).
+    func flushBatchBuffer() -> BatchGateOutput? {
+        lock.lock()
+        defer { lock.unlock() }
+
+        guard batchState != .silence && !batchAudioBuffer.isEmpty else { return nil }
+
+        let completedBuffer = batchAudioBuffer
+        let startTime = batchSpeechStartWallTime
+        batchAudioBuffer = Data()
+        batchState = .silence
+        batchPreRollChunks.removeAll()
+        batchPreRollTotalMs = 0.0
+
+        let bytesPerFrame = 4
+        let durationSec = Double(completedBuffer.count / bytesPerFrame) / Double(sampleRate)
+        log("VADGate [batch]: Flushing remaining buffer — \(completedBuffer.count) bytes (\(String(format: "%.1f", durationSec))s)")
+
+        return BatchGateOutput(audioBuffer: completedBuffer, speechStartWallTime: startTime, isComplete: true)
     }
 
     /// Deinterleave stereo Int16 data into two Float32 arrays normalized to [-1.0, 1.0].

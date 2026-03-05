@@ -6,11 +6,13 @@ import Sparkle
 enum UpdateChannel: String, CaseIterable {
     case stable = "stable"
     case beta = "beta"
+    case staging = "staging"
 
     var displayName: String {
         switch self {
         case .stable: return "Stable"
         case .beta: return "Beta"
+        case .staging: return "Staging"
         }
     }
 
@@ -18,6 +20,7 @@ enum UpdateChannel: String, CaseIterable {
         switch self {
         case .stable: return "Recommended for most users"
         case .beta: return "Early access to new features"
+        case .staging: return "Internal testing builds"
         }
     }
 }
@@ -86,8 +89,8 @@ final class UpdaterDelegate: NSObject, SPUUpdaterDelegate {
                 logSync("Sparkle: Error info [\(key)] = \(value)")
             }
             // Build diagnostic properties for analytics
-            var errorDomain = nsError.domain
-            var errorCode = nsError.code
+            let errorDomain = nsError.domain
+            let errorCode = nsError.code
             var underlyingMessage: String? = nil
             var underlyingDomain: String? = nil
             var underlyingCode: Int? = nil
@@ -296,6 +299,11 @@ final class UpdaterViewModel: ObservableObject {
     /// Manually check for updates
     func checkForUpdates() {
         updaterController.checkForUpdates(nil)
+    }
+
+    /// Background update check (no UI). Used after channel changes.
+    func checkForUpdatesInBackground() {
+        updaterController.updater.checkForUpdatesInBackground()
     }
 
     /// Get the current app version string

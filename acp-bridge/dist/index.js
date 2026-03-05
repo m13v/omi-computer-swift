@@ -418,7 +418,7 @@ async function initializeAcp() {
         throw err;
     }
 }
-function buildMcpServers(mode, cwd) {
+function buildMcpServers(mode, cwd, sessionKey) {
     const servers = [];
     // omi-tools (stdio, connects back via Unix socket)
     const omiToolsEnv = [
@@ -427,6 +427,9 @@ function buildMcpServers(mode, cwd) {
     ];
     if (cwd) {
         omiToolsEnv.push({ name: "OMI_WORKSPACE", value: cwd });
+    }
+    if (sessionKey === "onboarding") {
+        omiToolsEnv.push({ name: "OMI_ONBOARDING", value: "true" });
     }
     servers.push({
         name: "omi-tools",
@@ -475,7 +478,7 @@ async function preWarmSession(cwd, sessionConfigs, models) {
             try {
                 const sessionParams = {
                     cwd: warmCwd,
-                    mcpServers: buildMcpServers("act", warmCwd),
+                    mcpServers: buildMcpServers("act", warmCwd, cfg.key),
                     ...(cfg.systemPrompt ? { _meta: { systemPrompt: cfg.systemPrompt } } : {}),
                 };
                 // Retry once after a short delay if session/new fails
@@ -556,12 +559,12 @@ async function handleQuery(msg) {
                 await acpRequest("session/resume", {
                     sessionId: msg.resume,
                     cwd: requestedCwd,
-                    mcpServers: buildMcpServers(mode, requestedCwd),
+                    mcpServers: buildMcpServers(mode, requestedCwd, sessionKey),
                 });
                 sessionId = msg.resume;
-                sessions.set(requestedModel, { sessionId, cwd: requestedCwd });
+                sessions.set(sessionKey, { sessionId, cwd: requestedCwd, model: requestedModel });
                 isNewSession = false;
-                logErr(`ACP session resumed: ${sessionId}`);
+                logErr(`ACP session resumed: ${sessionId} (key=${sessionKey})`);
             }
             catch (resumeErr) {
                 logErr(`ACP session resume failed (will create new session): ${resumeErr}`);
@@ -571,7 +574,7 @@ async function handleQuery(msg) {
         if (!sessionId) {
             const sessionParams = {
                 cwd: requestedCwd,
-                mcpServers: buildMcpServers(mode, requestedCwd),
+                mcpServers: buildMcpServers(mode, requestedCwd, sessionKey),
                 ...(msg.systemPrompt ? { _meta: { systemPrompt: msg.systemPrompt } } : {}),
             };
             const sessionResult = (await acpRequest("session/new", sessionParams));
@@ -754,17 +757,17 @@ function handleSessionUpdate(params, pendingTools, onText) {
             let title = update.title ?? "unknown";
             const kind = update.kind ?? "";
             const status = update.status ?? "pending";
-            // Fix undefined titles for server-side tools (e.g. WebSearch, WebFetch)
-            // where input may not be populated when the notification fires
-            if (title.includes("undefined")) {
+            // Recover real tool name for server-side tools (e.g. WebSearch, WebFetch)
+            // where title may arrive as undefined/unknown
+            if (title === "unknown" || title.includes("undefined")) {
                 const meta = update._meta;
                 const toolName = meta?.claudeCode?.toolName;
                 const rawInput = update.rawInput;
                 if (toolName === "WebSearch" && rawInput?.query) {
-                    title = `"${rawInput.query}"`;
+                    title = `WebSearch: "${rawInput.query}"`;
                 }
                 else if (toolName === "WebFetch" && rawInput?.url) {
-                    title = `Fetch ${rawInput.url}`;
+                    title = `WebFetch: ${rawInput.url}`;
                 }
                 else if (toolName) {
                     title = toolName;
@@ -796,7 +799,15 @@ function handleSessionUpdate(params, pendingTools, onText) {
         case "tool_call_update": {
             const toolCallId = update.toolCallId ?? "";
             const status = update.status ?? "";
-            const title = update.title ?? "unknown";
+            let title = update.title ?? "unknown";
+            // Recover real tool name (same logic as tool_call)
+            if (title === "unknown" || title.includes("undefined")) {
+                const meta = update._meta;
+                const toolName = meta?.claudeCode?.toolName;
+                if (toolName) {
+                    title = toolName;
+                }
+            }
             if (status === "completed" || status === "failed" || status === "cancelled") {
                 // Remove from pending
                 const idx = pendingTools.indexOf(title);
